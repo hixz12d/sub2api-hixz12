@@ -91,8 +91,6 @@ type grokMediaEligibilityProber interface {
 	ProbeMediaEligibility(ctx context.Context, accountID int64) (bool, string, error)
 }
 
-const maxOpenAIFirstOutputTimeoutSwitches = 1
-
 func openAIForwardSucceededForScheduling(result *service.OpenAIForwardResult) bool {
 	return result.SucceededForScheduling()
 }
@@ -424,8 +422,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	requireCompact := isOpenAIRemoteCompactPath(c)
 
 	maxAccountSwitches := h.maxAccountSwitches
+	accountSwitchLimit := maxAccountSwitches
 	switchCount := 0
-	firstOutputTimeoutSwitchCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
 	var lastFailoverErr *service.UpstreamFailoverError
@@ -585,10 +583,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
-					if openAIFirstOutputFailoverExhausted(failoverErr, &firstOutputTimeoutSwitchCount) {
-						h.handleFailoverExhausted(c, failoverErr, streamStarted)
-						return
-					}
+					// Persist tighter limits before a pool-mode retry continues this request.
+					accountSwitchLimit = openAIAccountSwitchLimit(accountSwitchLimit, failoverErr)
 					// 池模式：同账号重试
 					if failoverErr.RetryableOnSameAccount {
 						retryLimit := account.GetPoolModeRetryCount()
@@ -608,13 +604,15 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 							continue
 						}
 					}
-					h.gatewayService.RecordOpenAIAccountSwitch()
-					failedAccountIDs[account.ID] = struct{}{}
-					lastFailoverErr = failoverErr
-					if switchCount >= maxAccountSwitches {
+					// Pool-mode retries above stay on the same account. Only actual account
+					// changes consume the tighter stream-failure / keepalive replay budget.
+					if switchCount >= accountSwitchLimit {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
+					h.gatewayService.RecordOpenAIAccountSwitch()
+					failedAccountIDs[account.ID] = struct{}{}
+					lastFailoverErr = failoverErr
 					switchCount++
 					if h.gatewayService.ShouldStopOpenAIOAuth429Failover(account, failoverErr.StatusCode, switchCount, &oauth429FailoverState) {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
@@ -624,7 +622,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						zap.Int64("account_id", account.ID),
 						zap.Int("upstream_status", failoverErr.StatusCode),
 						zap.Int("switch_count", switchCount),
-						zap.Int("max_switches", maxAccountSwitches),
+						zap.Int("max_switches", accountSwitchLimit),
+						zap.Int("excluded_account_count", len(failedAccountIDs)),
+						zap.Bool("safe_after_non_semantic_write", failoverErr.SafeToFailoverAfterWrite),
+						zap.Bool("same_account_retryable", failoverErr.RetryableOnSameAccount),
 					}
 					if account.Proxy != nil {
 						failoverSwitchFields = append(failoverSwitchFields,
@@ -2561,15 +2562,18 @@ func openAIRequestAllowsFailoverReplay(c *gin.Context) bool {
 	return !failoverClientGone(c)
 }
 
-func openAIFirstOutputFailoverExhausted(failoverErr *service.UpstreamFailoverError, switchCount *int) bool {
-	if failoverErr == nil || !failoverErr.SafeToFailoverAfterWrite || switchCount == nil {
-		return false
+func openAIAccountSwitchLimit(configured int, failoverErr *service.UpstreamFailoverError) int {
+	if configured <= 0 || failoverErr == nil {
+		return configured
 	}
-	if *switchCount >= maxOpenAIFirstOutputTimeoutSwitches {
-		return true
+	limit := configured
+	if failoverErr.SafeToFailoverAfterWrite && limit > 1 {
+		limit = 1
 	}
-	*switchCount = *switchCount + 1
-	return false
+	if failoverErr.MaxAccountSwitches > 0 && failoverErr.MaxAccountSwitches < limit {
+		limit = failoverErr.MaxAccountSwitches
+	}
+	return limit
 }
 
 // errorResponse returns OpenAI API format error response

@@ -27,14 +27,33 @@ func TestOpenAIForwardMayFailoverOnlyAfterNonSemanticWrite(t *testing.T) {
 	require.False(t, openAIForwardMayFailover(c, before, &service.UpstreamFailoverError{}))
 }
 
-func TestOpenAIFirstOutputFailoverStopsAfterOneAccountSwitch(t *testing.T) {
-	failoverErr := &service.UpstreamFailoverError{SafeToFailoverAfterWrite: true}
-	count := 0
+func TestOpenAIAccountSwitchLimit(t *testing.T) {
+	tests := []struct {
+		name       string
+		configured int
+		failover   *service.UpstreamFailoverError
+		want       int
+	}{
+		{name: "configured budget", configured: 3, failover: nil, want: 3},
+		{name: "keepalive committed", configured: 3, failover: &service.UpstreamFailoverError{SafeToFailoverAfterWrite: true}, want: 1},
+		{name: "stream terminal failure", configured: 3, failover: &service.UpstreamFailoverError{MaxAccountSwitches: 1}, want: 1},
+		{name: "disabled switching remains disabled", configured: 0, failover: &service.UpstreamFailoverError{SafeToFailoverAfterWrite: true, MaxAccountSwitches: 1}, want: 0},
+		{name: "configured one remains one", configured: 1, failover: &service.UpstreamFailoverError{}, want: 1},
+	}
 
-	require.False(t, openAIFirstOutputFailoverExhausted(failoverErr, &count))
-	require.Equal(t, 1, count)
-	require.True(t, openAIFirstOutputFailoverExhausted(failoverErr, &count))
-	require.Equal(t, 1, count)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, openAIAccountSwitchLimit(tt.configured, tt.failover))
+		})
+	}
+
+	t.Run("request limit never widens", func(t *testing.T) {
+		limit := openAIAccountSwitchLimit(3, &service.UpstreamFailoverError{MaxAccountSwitches: 1})
+		require.Equal(t, 1, limit)
+
+		limit = openAIAccountSwitchLimit(limit, &service.UpstreamFailoverError{})
+		require.Equal(t, 1, limit)
+	})
 }
 
 func TestOpenAIRequestAllowsFailoverReplayStopsCanceledClient(t *testing.T) {
