@@ -117,7 +117,7 @@ func isOpenAIInstructionsRequiredError(upstreamStatusCode int, upstreamMsg strin
 }
 
 func isOpenAITransientProcessingError(upstreamStatusCode int, upstreamMsg string, upstreamBody []byte) bool {
-	if upstreamStatusCode != http.StatusBadRequest && upstreamStatusCode != http.StatusServiceUnavailable {
+	if upstreamStatusCode != http.StatusBadRequest && upstreamStatusCode != http.StatusBadGateway && upstreamStatusCode != http.StatusServiceUnavailable {
 		return false
 	}
 
@@ -132,7 +132,7 @@ func isOpenAITransientProcessingError(upstreamStatusCode int, upstreamMsg string
 	if len(upstreamBody) > 0 && hasOpenAIServerOverloadedCode(upstreamBody) {
 		return true
 	}
-	if upstreamStatusCode != http.StatusBadRequest {
+	if upstreamStatusCode != http.StatusBadRequest && upstreamStatusCode != http.StatusBadGateway {
 		return false
 	}
 
@@ -145,6 +145,11 @@ func isOpenAITransientProcessingError(upstreamStatusCode int, upstreamMsg string
 			return true
 		}
 		if strings.Contains(lower, "selected model is at capacity") {
+			return true
+		}
+		if strings.Contains(lower, "servers are currently overloaded") ||
+			strings.Contains(lower, "our servers are overloaded") ||
+			strings.Contains(lower, "currently overloaded") {
 			return true
 		}
 		return strings.Contains(lower, "you can retry your request") &&

@@ -181,10 +181,28 @@ func OpenAICompactKeepaliveAdjustedWrittenSize(c *gin.Context) int {
 	return -1
 }
 
-// openAICompactKeepaliveWriter 包装 gin.ResponseWriter：写侧方法先停拍心跳
-// （互斥锁下建立 happens-before），读侧方法仅加锁不停拍——热路径的状态读取
-// （如 Forward 前的 Size 快照）不能误杀心跳。心跳 goroutine 直接写内层
-// writer（k.writer），不经过本包装器，不会递归。
+// OpenAICompactKeepaliveBytes returns the number of downstream heartbeat bytes
+// written for the current compact request. It is telemetry-only evidence and
+// does not imply that semantic output has started.
+func OpenAICompactKeepaliveBytes(c *gin.Context) int {
+	if c == nil {
+		return 0
+	}
+	value, ok := c.Get(openAICompactSSEKeepaliveKey)
+	if !ok {
+		return 0
+	}
+	k, ok := value.(*openAICompactSSEKeepalive)
+	if !ok || k == nil {
+		return 0
+	}
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return k.bytes
+}
+
+// openAICompactKeepaliveWriter wraps gin.ResponseWriter and stops the heartbeat
+// before request-side writes. This preserves the heartbeat-only wire baseline.
 type openAICompactKeepaliveWriter struct {
 	gin.ResponseWriter
 	k *openAICompactSSEKeepalive

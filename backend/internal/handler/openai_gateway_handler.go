@@ -322,6 +322,19 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		return
 	}
 	reqLog = reqLog.With(zap.String("model", reqModel), zap.Bool("stream", reqStream))
+	attemptTelemetry := newGatewayRequestAttemptTelemetry(
+		c,
+		reqLog,
+		"/v1/responses",
+		reqModel,
+		reqStream,
+		subject.UserID,
+		apiKey.ID,
+		apiKey.GroupID,
+	)
+	defer func() {
+		attemptTelemetry.finish(c, streamStarted)
+	}()
 	previousResponseID := strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String())
 	if previousResponseID != "" {
 		previousResponseIDKind := service.ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
@@ -424,11 +437,13 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	maxAccountSwitches := h.maxAccountSwitches
 	accountSwitchLimit := maxAccountSwitches
 	switchCount := 0
+	attemptIndex := 0
 	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	var passthroughFailoverState openAIPassthroughFailoverState
+	autoRetryRound := 0
 
 	// 生图意图的 /v1/responses 请求必须调度到确实支持 Responses API 的账号，否则
 	// 会在 forward 阶段被静默降级为无法生图的 Chat Completions 直转（#4417）。
@@ -444,13 +459,17 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		if !openAIRequestAllowsFailoverReplay(c) {
 			return
 		}
+		selectionSessionHash := sessionHash
+		if autoRetryRound > 0 && !strings.HasPrefix(sessionHash, "openai-pool-retry-") {
+			selectionSessionHash = ""
+		}
 		// Select account supporting the requested model
 		reqLog.Debug("openai.account_selecting", zap.Int("excluded_account_count", len(failedAccountIDs)))
 		selection, scheduleDecision, err := h.gatewayService.SelectAccountWithSchedulerForCapability(
 			c.Request.Context(),
 			apiKey.GroupID,
 			previousResponseID,
-			sessionHash,
+			selectionSessionHash,
 			reqModel,
 			failedAccountIDs,
 			service.OpenAIUpstreamTransportAny,
@@ -470,6 +489,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				zap.Int("excluded_account_count", len(failedAccountIDs)),
 			)
 			if len(failedAccountIDs) == 0 {
+				if autoRetryRound > 0 && lastFailoverErr != nil {
+					h.handleFailoverExhausted(c, lastFailoverErr, streamStarted)
+					return
+				}
 				if errors.Is(err, service.ErrNoAvailableCompactAccounts) {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
 					h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "compact_not_supported", "No available accounts support /responses/compact", streamStarted)
@@ -483,6 +506,16 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				return
 			}
 			if lastFailoverErr != nil {
+				if waitOpenAIPreOutputAutoRetry(c, reqLog, lastFailoverErr, -1, autoRetryRound, switchCount) {
+					autoRetryRound++
+					sessionHash = ""
+					failedAccountIDs = make(map[int64]struct{})
+					sameAccountRetryCount = make(map[int64]int)
+					switchCount = 0
+					accountSwitchLimit = maxAccountSwitches
+					oauth429FailoverState = service.OpenAIOAuth429FailoverState{}
+					continue
+				}
 				h.handleFailoverExhausted(c, lastFailoverErr, streamStarted)
 			} else {
 				h.handleFailoverExhaustedSimple(c, 502, streamStarted)
@@ -510,12 +543,23 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			zap.Float64("load_skew", scheduleDecision.LoadSkew),
 		)
 		account := selection.Account
-		sessionHash = ensureOpenAIPoolModeSessionHash(sessionHash, account)
+		sessionHash = ensureOpenAIPoolModeSessionHash(selectionSessionHash, account)
+		attemptSessionHash := sessionHash
 		reqLog.Debug("openai.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))
 		setOpsSelectedAccount(c, account.ID, account.Platform)
+		attemptIndex++
+		currentAttemptTelemetry := attemptTelemetry.beginAttempt(
+			attemptIndex,
+			account,
+			account.GetMappedModel(reqModel),
+			scheduleDecision.Layer,
+			scheduleDecision.StickyPreviousHit,
+			scheduleDecision.StickySessionHit,
+		)
 
-		accountReleaseFunc, acquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, sessionHash, selection, reqStream, &streamStarted, reqLog)
+		accountReleaseFunc, acquired := h.acquireResponsesAccountSlot(c, apiKey.GroupID, attemptSessionHash, selection, reqStream, &streamStarted, reqLog)
 		if !acquired {
+			currentAttemptTelemetry.recordDecision("account_slot_unavailable", false, switchCount)
 			return
 		}
 
@@ -529,6 +573,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		// 从不可变的 canonical forwardBody 派生本次尝试 body 并整块剔除上游私有的加密
 		// reasoning item（含耦合的 id/summary），避免非透传上游 400 拒绝 Kiro reasoning 形态。
 		attemptBody := h.deriveOpenAIForwardAttemptBody(reqLog, forwardBody, account, &passthroughFailoverState)
+		service.ResetOpenAIAttemptWireState(c)
 		result, err := func() (*service.OpenAIForwardResult, error) {
 			defer func() {
 				if accountReleaseFunc != nil {
@@ -552,6 +597,31 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		if err == nil && result != nil && result.FirstTokenMs != nil {
 			service.SetOpsLatencyMs(c, service.OpsTimeToFirstTokenMsKey, int64(*result.FirstTokenMs))
 		}
+		var attemptFailoverErr *service.UpstreamFailoverError
+		_ = errors.As(err, &attemptFailoverErr)
+		attemptRetryEligible := attemptFailoverErr != nil && openAIForwardMayFailover(c, writerSizeBeforeForward, attemptFailoverErr)
+		attemptWriterCommitted := service.OpenAICompactKeepaliveAdjustedWrittenSize(c) != writerSizeBeforeForward
+		attemptUpstreamModel := account.GetMappedModel(reqModel)
+		attemptUpstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account, result)
+		attemptInputTokens, attemptOutputTokens := 0, 0
+		var attemptFirstTokenMs *int
+		if result != nil {
+			attemptUpstreamModel = result.UpstreamModel
+			attemptInputTokens = result.Usage.InputTokens
+			attemptOutputTokens = result.Usage.OutputTokens
+			attemptFirstTokenMs = result.FirstTokenMs
+		}
+		currentAttemptTelemetry.recordForwardComplete(
+			c,
+			attemptUpstreamModel,
+			attemptUpstreamEndpoint,
+			attemptInputTokens,
+			attemptOutputTokens,
+			attemptFirstTokenMs,
+			err,
+			attemptWriterCommitted,
+			attemptRetryEligible,
+		)
 		if err != nil {
 			if result != nil && result.ImageCount > 0 {
 				reqLog.Warn("openai.forward_partial_error_with_image_result",
@@ -607,6 +677,18 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					// Pool-mode retries above stay on the same account. Only actual account
 					// changes consume the tighter stream-failure / keepalive replay budget.
 					if switchCount >= accountSwitchLimit {
+						exhaustedSwitchCount := switchCount
+						if waitOpenAIPreOutputAutoRetry(c, reqLog, failoverErr, writerSizeBeforeForward, autoRetryRound, switchCount) {
+							autoRetryRound++
+							sessionHash = ""
+							failedAccountIDs = make(map[int64]struct{})
+							sameAccountRetryCount = make(map[int64]int)
+							switchCount = 0
+							accountSwitchLimit = maxAccountSwitches
+							oauth429FailoverState = service.OpenAIOAuth429FailoverState{}
+							currentAttemptTelemetry.recordDecision("pre_output_auto_retry", false, exhaustedSwitchCount)
+							continue
+						}
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
 					}
@@ -638,6 +720,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 						failoverSwitchFields = append(failoverSwitchFields, zap.Int64p("proxy_id", account.ProxyID))
 					}
 					reqLog.Warn("openai.upstream_failover_switching", failoverSwitchFields...)
+					currentAttemptTelemetry.recordDecision("switch_account", true, switchCount)
 					continue
 				}
 				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), false, nil)
@@ -2553,6 +2636,42 @@ func openAIForwardMayFailover(c *gin.Context, writerSizeBeforeForward int, failo
 		return true
 	}
 	return failoverErr != nil && failoverErr.SafeToFailoverAfterWrite
+}
+
+const openAIPreOutputAutoRetryDelay = 350 * time.Millisecond
+
+// waitOpenAIPreOutputAutoRetry adds one conservative replay round after the
+// configured account-switch budget is exhausted. It is limited to Capacity
+// failures before semantic output and never runs after a client disconnect.
+func waitOpenAIPreOutputAutoRetry(
+	c *gin.Context,
+	reqLog *zap.Logger,
+	failoverErr *service.UpstreamFailoverError,
+	writerSizeBeforeForward int,
+	retryRound int,
+	switchCount int,
+) bool {
+	if retryRound > 0 || failoverErr == nil || service.ClassifyOpenAIAttemptFailure(failoverErr) != "capacity" {
+		return false
+	}
+	if !openAIForwardMayFailover(c, writerSizeBeforeForward, failoverErr) || failoverClientGone(c) {
+		return false
+	}
+	if reqLog != nil {
+		reqLog.Warn("openai.pre_output_capacity_auto_retry",
+			zap.Int("switch_count", switchCount),
+			zap.Duration("delay", openAIPreOutputAutoRetryDelay),
+			zap.Bool("safe_after_nonsemantic_write", failoverErr.SafeToFailoverAfterWrite),
+		)
+	}
+	timer := time.NewTimer(openAIPreOutputAutoRetryDelay)
+	defer timer.Stop()
+	select {
+	case <-c.Request.Context().Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 func openAIRequestAllowsFailoverReplay(c *gin.Context) bool {
