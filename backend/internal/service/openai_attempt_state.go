@@ -20,6 +20,8 @@ type OpenAIAttemptWireState struct {
 
 const openAIAttemptWireStateKey = "openai_attempt_wire_state"
 
+const OpenAIAttemptFailureReasonCapacity GatewayFailureReason = "openai_capacity"
+
 // ResetOpenAIAttemptWireState starts a fresh request-local snapshot for one
 // account attempt. It does not alter the response writer or scheduling state.
 func ResetOpenAIAttemptWireState(c *gin.Context) {
@@ -112,7 +114,9 @@ func ClassifyOpenAIAttemptFailure(err error) string {
 		switch {
 		case isOpenAIContextWindowError(message, body):
 			return "context_window"
-		case isOpenAITransientProcessingError(failoverErr.StatusCode, message, body):
+		case failoverErr.Reason == OpenAIAttemptFailureReasonCapacity:
+			return "capacity"
+		case openAIStreamFailureIsCapacity(failoverErr.StatusCode, body, message):
 			return "capacity"
 		case failoverErr.IsCredentialFailure() || failoverErr.StatusCode == 401 || failoverErr.StatusCode == 403:
 			return "credential"

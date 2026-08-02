@@ -873,7 +873,7 @@ func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool 
 	if isOpenAIContextWindowError(message, payload) {
 		return false
 	}
-	if isOpenAITransientProcessingError(http.StatusBadRequest, message, payload) {
+	if openAIStreamFailureIsCapacity(http.StatusBadRequest, payload, message) {
 		return true
 	}
 	code := strings.ToLower(strings.TrimSpace(gjson.GetBytes(payload, "response.error.code").String()))
@@ -903,6 +903,40 @@ func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool 
 		}
 	}
 	return true
+}
+
+// openAIStreamFailureIsCapacity reads only protocol error fields. A terminal
+// response may echo instructions or output text, which must not affect retry classification.
+func openAIStreamFailureIsCapacity(upstreamStatusCode int, payload []byte, message string) bool {
+	if upstreamStatusCode != http.StatusBadRequest && upstreamStatusCode != http.StatusBadGateway && upstreamStatusCode != http.StatusServiceUnavailable {
+		return false
+	}
+	values := make([]string, 0, 7)
+	if strings.TrimSpace(message) != "" {
+		values = append(values, message)
+	}
+	for _, path := range []string{
+		"error.code",
+		"response.error.code",
+		"code",
+		"error.message",
+		"response.error.message",
+		"message",
+	} {
+		if value := strings.TrimSpace(gjson.GetBytes(payload, path).String()); value != "" {
+			values = append(values, value)
+		}
+	}
+	for _, value := range values {
+		normalized := strings.ToLower(strings.TrimSpace(value))
+		if normalized == "server_is_overloaded" || normalized == "slow_down" {
+			return true
+		}
+		if isOpenAITransientProcessingError(upstreamStatusCode, value, nil) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *OpenAIGatewayService) recordOpenAIStreamUpstreamError(
@@ -967,15 +1001,22 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 		},
 	})
 	maxAccountSwitches := 0
+	failureReason := GatewayFailureReason("")
 	if len(payload) > 0 && openAIStreamFailedEventShouldFailover(payload, message) {
 		// A streamed terminal failure may already have consumed the full prompt.
 		// Permit one alternate account, not the handler's broader generic budget.
 		maxAccountSwitches = 1
+		// Keep the internal Capacity classification after the client-safe error body
+		// is rebuilt; the raw upstream code is intentionally not exposed downstream.
+		if !isOpenAIContextWindowError(message, payload) && openAIStreamFailureIsCapacity(http.StatusBadGateway, payload, message) {
+			failureReason = OpenAIAttemptFailureReasonCapacity
+		}
 	}
 	return &UpstreamFailoverError{
 		StatusCode:         http.StatusBadGateway,
 		ResponseBody:       body,
 		MaxAccountSwitches: maxAccountSwitches,
+		Reason:             failureReason,
 	}
 }
 

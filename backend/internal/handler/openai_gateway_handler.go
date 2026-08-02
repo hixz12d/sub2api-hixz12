@@ -510,7 +510,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					autoRetryRound++
 					sessionHash = ""
 					failedAccountIDs = make(map[int64]struct{})
-					sameAccountRetryCount = make(map[int64]int)
+					// Preserve per-account pool retry counts across the automatic round; the upstream may already have consumed input.
 					switchCount = 0
 					accountSwitchLimit = maxAccountSwitches
 					oauth429FailoverState = service.OpenAIOAuth429FailoverState{}
@@ -682,7 +682,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 							autoRetryRound++
 							sessionHash = ""
 							failedAccountIDs = make(map[int64]struct{})
-							sameAccountRetryCount = make(map[int64]int)
+							// This remains one logical request, so do not reset per-account retry counts.
 							switchCount = 0
 							accountSwitchLimit = maxAccountSwitches
 							oauth429FailoverState = service.OpenAIOAuth429FailoverState{}
@@ -1450,6 +1450,14 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 	ctx := c.Request.Context()
 	account := selection.Account
 	if selection.Acquired {
+		// Scheduler-selected slots may already be acquired before the handler
+		// generates the one-shot pool retry hash. Bind it here so same-account
+		// retries remain sticky instead of being rebalanced on the next loop.
+		if !selection.PreserveStickyBinding && isOpenAIPoolRetrySessionHash(sessionHash) {
+			if err := h.gatewayService.BindStickySession(ctx, groupID, sessionHash, account.ID); err != nil {
+				reqLog.Warn("openai.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+			}
+		}
 		return wrapReleaseOnDone(ctx, selection.ReleaseFunc), true
 	}
 	if selection.WaitPlan == nil {
@@ -1469,8 +1477,10 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 		return nil, false
 	}
 	if fastAcquired {
-		if err := h.gatewayService.BindStickySession(ctx, groupID, sessionHash, account.ID); err != nil {
-			reqLog.Warn("openai.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+		if !selection.PreserveStickyBinding && sessionHash != "" {
+			if err := h.gatewayService.BindStickySession(ctx, groupID, sessionHash, account.ID); err != nil {
+				reqLog.Warn("openai.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+			}
 		}
 		return wrapReleaseOnDone(ctx, fastReleaseFunc), true
 	}
@@ -1512,8 +1522,10 @@ func (h *OpenAIGatewayHandler) acquireResponsesAccountSlot(
 
 	// Slot acquired: no longer waiting in queue.
 	releaseWait()
-	if err := h.gatewayService.BindStickySession(ctx, groupID, sessionHash, account.ID); err != nil {
-		reqLog.Warn("openai.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+	if !selection.PreserveStickyBinding && sessionHash != "" {
+		if err := h.gatewayService.BindStickySession(ctx, groupID, sessionHash, account.ID); err != nil {
+			reqLog.Warn("openai.bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+		}
 	}
 	return wrapReleaseOnDone(ctx, accountReleaseFunc), true
 }
@@ -1869,8 +1881,10 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			accountReleaseFunc = fastReleaseFunc
 		}
 		currentAccountRelease = wrapReleaseOnDone(ctx, accountReleaseFunc)
-		if err := h.gatewayService.BindStickySession(ctx, apiKey.GroupID, sessionHash, account.ID); err != nil {
-			reqLog.Warn("openai.websocket_bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+		if !selection.PreserveStickyBinding && sessionHash != "" {
+			if err := h.gatewayService.BindStickySession(ctx, apiKey.GroupID, sessionHash, account.ID); err != nil {
+				reqLog.Warn("openai.websocket_bind_sticky_session_failed", zap.Int64("account_id", account.ID), zap.Error(err))
+			}
 		}
 
 		token, _, err := h.gatewayService.GetRequestCredential(ctx, c, account)
@@ -2730,12 +2744,18 @@ func setOpenAIClientTransportWS(c *gin.Context) {
 	service.SetOpenAIClientTransport(c, service.OpenAIClientTransportWS)
 }
 
+const openAIPoolRetrySessionHashPrefix = "openai-pool-retry-"
+
+func isOpenAIPoolRetrySessionHash(sessionHash string) bool {
+	return strings.HasPrefix(strings.TrimSpace(sessionHash), openAIPoolRetrySessionHashPrefix)
+}
+
 func ensureOpenAIPoolModeSessionHash(sessionHash string, account *service.Account) string {
 	if sessionHash != "" || account == nil || !account.IsPoolMode() {
 		return sessionHash
 	}
 	// 为当前请求生成一次性粘性会话键，确保同账号重试不会重新负载均衡到其他账号。
-	return "openai-pool-retry-" + uuid.NewString()
+	return openAIPoolRetrySessionHashPrefix + uuid.NewString()
 }
 
 func openAIWSIngressFallbackSessionSeed(userID, apiKeyID int64, groupID *int64) string {

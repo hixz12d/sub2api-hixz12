@@ -2389,6 +2389,7 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_SessionStickyBusyEscape
 	require.Nil(t, selection.WaitPlan)
 	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
 	require.False(t, decision.StickySessionHit)
+	require.True(t, selection.PreserveStickyBinding)
 	if selection.ReleaseFunc != nil {
 		selection.ReleaseFunc()
 	}

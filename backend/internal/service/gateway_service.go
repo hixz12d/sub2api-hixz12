@@ -533,10 +533,11 @@ type AccountWaitPlan struct {
 }
 
 type AccountSelectionResult struct {
-	Account     *Account
-	Acquired    bool
-	ReleaseFunc func()
-	WaitPlan    *AccountWaitPlan // nil means no wait allowed
+	Account               *Account
+	Acquired              bool
+	ReleaseFunc           func()
+	WaitPlan              *AccountWaitPlan // nil means no wait allowed
+	PreserveStickyBinding bool             // scheduler selected an escape account; keep the original sticky binding
 }
 
 // ClaudeUsage 表示Claude API返回的usage信息

@@ -16,8 +16,11 @@ func TestWaitOpenAIPreOutputAutoRetryOnlyRetriesUncommittedCapacity(t *testing.T
 	c, _ := gin.CreateTestContext(firstRecorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
 	failoverErr := &service.UpstreamFailoverError{
-		StatusCode:   http.StatusBadGateway,
-		ResponseBody: []byte(`{"type":"response.failed","response":{"error":{"message":"Our servers are currently overloaded. Please try again later."}}}`),
+		StatusCode: http.StatusBadGateway,
+		// The stream error wrapper intentionally hides the upstream code from
+		// the client; the preserved internal reason must still trigger retry.
+		ResponseBody: []byte(`{"error":{"type":"upstream_error","message":"Please retry later."}}`),
+		Reason:       service.OpenAIAttemptFailureReasonCapacity,
 	}
 	writerBefore := service.OpenAICompactKeepaliveAdjustedWrittenSize(c)
 
@@ -31,4 +34,10 @@ func TestWaitOpenAIPreOutputAutoRetryOnlyRetriesUncommittedCapacity(t *testing.T
 	_, _ = c.Writer.Write([]byte("data: semantic output\n\n"))
 	require.False(t, waitOpenAIPreOutputAutoRetry(c, nil, failoverErr, writerBefore, 0, 1))
 	require.False(t, waitOpenAIPreOutputAutoRetry(c, nil, failoverErr, writerBefore, 1, 1))
+}
+
+func TestIsOpenAIPoolRetrySessionHash(t *testing.T) {
+	require.True(t, isOpenAIPoolRetrySessionHash("openai-pool-retry-abc"))
+	require.False(t, isOpenAIPoolRetrySessionHash("real-session-hash"))
+	require.False(t, isOpenAIPoolRetrySessionHash(""))
 }
