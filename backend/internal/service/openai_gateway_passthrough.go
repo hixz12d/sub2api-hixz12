@@ -63,6 +63,13 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			})
 			return nil, fmt.Errorf("openai passthrough rejected before upstream: %s", rejectReason)
 		}
+		if isOpenAICodexModel(reqModel) && !gjson.GetBytes(body, "instructions").Exists() {
+			nextBody, setErr := sjson.SetBytes(body, "instructions", defaultCodexSynthInstructions(reqModel))
+			if setErr != nil {
+				return nil, fmt.Errorf("set passthrough codex instructions: %w", setErr)
+			}
+			body = nextBody
+		}
 
 		normalizedBody, normalized, err := normalizeOpenAIPassthroughOAuthBody(body, isOpenAIResponsesCompactPath(c))
 		if err != nil {
@@ -727,9 +734,16 @@ type openaiNonStreamingResultPassthrough struct {
 	imageOutputSizes []string
 }
 
-func openAIStreamClientOutputStarted(c *gin.Context, localStarted bool, attemptWriterSizeBefore, nonSemanticWrittenBytes int) bool {
+func openAIStreamClientOutputStarted(c *gin.Context, localStarted bool, attemptState ...int) bool {
 	if localStarted {
 		return true
+	}
+	attemptWriterSizeBefore, nonSemanticWrittenBytes := 0, 0
+	if len(attemptState) > 0 {
+		attemptWriterSizeBefore = attemptState[0]
+	}
+	if len(attemptState) > 1 {
+		nonSemanticWrittenBytes = attemptState[1]
 	}
 	if c == nil || c.Writer == nil {
 		return false
@@ -782,10 +796,10 @@ func openAIStreamFailedEventSemanticStatus(payload []byte, message string) int {
 	}
 	combined := strings.TrimSpace(errType + " " + code + " " + strings.ToLower(strings.TrimSpace(message)))
 	switch {
-	case strings.Contains(errType, "invalid_request"):
-		return http.StatusBadRequest
 	case strings.Contains(combined, "rate_limit"):
 		return http.StatusTooManyRequests
+	case strings.Contains(errType, "invalid_request"):
+		return http.StatusBadRequest
 	case strings.Contains(combined, "authentication") || strings.Contains(combined, "unauthorized") || strings.Contains(combined, "invalid_api_key"):
 		return http.StatusUnauthorized
 	case strings.Contains(combined, "permission") || strings.Contains(combined, "forbidden") || strings.Contains(combined, "access denied"):
@@ -795,6 +809,19 @@ func openAIStreamFailedEventSemanticStatus(payload []byte, message string) int {
 	default:
 		return http.StatusBadGateway
 	}
+}
+
+func openAIStreamFailureStatus(payload []byte, message string) int {
+	if len(bytes.TrimSpace(payload)) == 0 || !gjson.ValidBytes(payload) {
+		return http.StatusBadGateway
+	}
+	// Keep the existing 502 failover behavior for other response.failed events.
+	// Only rate limits need promotion because they participate in the account's
+	// configurable 429 same-account retry policy.
+	if openAIStreamFailedEventSemanticStatus(payload, message) == http.StatusTooManyRequests {
+		return http.StatusTooManyRequests
+	}
+	return http.StatusBadGateway
 }
 
 func openAIStreamFailedEventPassthroughBody(payload []byte, failedMessage string) []byte {
@@ -873,6 +900,13 @@ func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool 
 	if isOpenAIContextWindowError(message, payload) {
 		return false
 	}
+	// response.failed is transported over HTTP 200. Promote an internal rate
+	// limit to 429 so the configured pool retry policy can handle it.
+	if openAIStreamFailureStatus(payload, message) == http.StatusTooManyRequests {
+		return true
+	}
+	// Capacity inference is restricted to protocol error fields so echoed prompt
+	// or output text cannot trigger a replay.
 	if openAIStreamFailureIsCapacity(http.StatusBadRequest, payload, message) {
 		return true
 	}
@@ -939,6 +973,15 @@ func openAIStreamFailureIsCapacity(upstreamStatusCode int, payload []byte, messa
 	return false
 }
 
+func openAIStreamFailedEventRetryableOnSameAccount(account *Account, payload []byte, message string) bool {
+	if account == nil || !account.IsPoolMode() {
+		return false
+	}
+	semanticStatus := openAIStreamFailedEventSemanticStatus(payload, message)
+	return account.IsPoolModeRetryableStatus(semanticStatus) ||
+		openAIStreamFailureIsCapacity(semanticStatus, payload, message)
+}
+
 func (s *OpenAIGatewayService) recordOpenAIStreamUpstreamError(
 	c *gin.Context,
 	account *Account,
@@ -952,6 +995,7 @@ func (s *OpenAIGatewayService) recordOpenAIStreamUpstreamError(
 	if message == "" {
 		message = "OpenAI upstream response failed"
 	}
+	statusCode := openAIStreamFailureStatus(payload, message)
 	detail := ""
 	if len(payload) > 0 && s != nil && s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
 		maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
@@ -961,10 +1005,10 @@ func (s *OpenAIGatewayService) recordOpenAIStreamUpstreamError(
 		detail = truncateString(string(payload), maxBytes)
 	}
 	if c != nil {
-		setOpsUpstreamError(c, http.StatusBadGateway, message, detail)
+		setOpsUpstreamError(c, statusCode, message, detail)
 		event := OpsUpstreamErrorEvent{
 			Platform:           PlatformOpenAI,
-			UpstreamStatusCode: http.StatusBadGateway,
+			UpstreamStatusCode: statusCode,
 			UpstreamRequestID:  strings.TrimSpace(upstreamRequestID),
 			Passthrough:        passthrough,
 			Kind:               kind,
@@ -988,15 +1032,28 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 	upstreamRequestID string,
 	payload []byte,
 	message string,
+	responseHeaders ...http.Header,
 ) *UpstreamFailoverError {
 	message = sanitizeUpstreamErrorMessage(strings.TrimSpace(message))
 	if message == "" {
 		message = "OpenAI stream disconnected before completion"
 	}
+	statusCode := openAIStreamFailureStatus(payload, message)
+	var headers http.Header
+	if len(responseHeaders) > 0 && responseHeaders[0] != nil {
+		headers = responseHeaders[0].Clone()
+	}
+	// 流内 failed 事件承载于 HTTP 200，响应头是正常配额快照而非限流信号，
+	// 不写账号级限流/封禁状态；重试与切号由 failover 引擎按
+	// StatusCode/RetryableOnSameAccount 决定。
 	message = s.recordOpenAIStreamUpstreamError(c, account, passthrough, upstreamRequestID, "failover", payload, message)
+	errType := "upstream_error"
+	if statusCode == http.StatusTooManyRequests {
+		errType = "rate_limit_error"
+	}
 	body, _ := json.Marshal(gin.H{
 		"error": gin.H{
-			"type":    "upstream_error",
+			"type":    errType,
 			"message": message,
 		},
 	})
@@ -1008,15 +1065,17 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 		maxAccountSwitches = 1
 		// Keep the internal Capacity classification after the client-safe error body
 		// is rebuilt; the raw upstream code is intentionally not exposed downstream.
-		if !isOpenAIContextWindowError(message, payload) && openAIStreamFailureIsCapacity(http.StatusBadGateway, payload, message) {
+		if !isOpenAIContextWindowError(message, payload) && openAIStreamFailureIsCapacity(statusCode, payload, message) {
 			failureReason = OpenAIAttemptFailureReasonCapacity
 		}
 	}
 	return &UpstreamFailoverError{
-		StatusCode:         http.StatusBadGateway,
-		ResponseBody:       body,
-		MaxAccountSwitches: maxAccountSwitches,
-		Reason:             failureReason,
+		StatusCode:             statusCode,
+		ResponseBody:           body,
+		ResponseHeaders:        headers,
+		RetryableOnSameAccount: openAIStreamFailedEventRetryableOnSameAccount(account, payload, message),
+		MaxAccountSwitches:     maxAccountSwitches,
+		Reason:                 failureReason,
 	}
 }
 
@@ -1123,7 +1182,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		}
 	}
 	newPreOutputFailoverError := func(payload []byte, message string) *UpstreamFailoverError {
-		failoverErr := s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, payload, message)
+		failoverErr := s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, payload, message, resp.Header)
 		if attemptWriterSizeBefore >= 0 {
 			failoverErr.SafeToFailoverAfterWrite = true
 		}

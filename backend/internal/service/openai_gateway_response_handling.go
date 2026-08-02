@@ -295,7 +295,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		}
 	}
 	newPreOutputFailoverError := func(payload []byte, message string) *UpstreamFailoverError {
-		failoverErr := s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, payload, message)
+		failoverErr := s.newOpenAIStreamFailoverError(c, account, false, upstreamRequestID, payload, message, resp.Header)
 		if attemptWriterSizeBefore >= 0 || downstreamKeepaliveBytes > 0 {
 			failoverErr.SafeToFailoverAfterWrite = true
 		}

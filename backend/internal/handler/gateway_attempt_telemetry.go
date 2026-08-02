@@ -165,6 +165,7 @@ func (a *gatewayAttemptTelemetry) recordForwardComplete(
 	err error,
 	writerCommitted bool,
 	retryEligible bool,
+	compactKeepaliveBytesBefore int,
 ) {
 	if a == nil || a.parent == nil || a.parent.log == nil {
 		return
@@ -173,7 +174,7 @@ func (a *gatewayAttemptTelemetry) recordForwardComplete(
 	if writerCommitted {
 		state.TransportCommitted = true
 	}
-	if service.OpenAICompactKeepaliveBytes(c) > 0 {
+	if service.OpenAICompactKeepaliveBytes(c) > compactKeepaliveBytesBefore && !state.SemanticOutputStarted {
 		state.TransportCommitted = true
 		state.HeartbeatOnly = true
 	}
