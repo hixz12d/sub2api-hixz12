@@ -96,6 +96,13 @@ func openAIForwardSucceededForScheduling(result *service.OpenAIForwardResult) bo
 	return result.SucceededForScheduling()
 }
 
+func openAIForwardErrorShouldAbortForClientDisconnect(c *gin.Context, result *service.OpenAIForwardResult) bool {
+	if result != nil && result.ImageCount > 0 {
+		return false
+	}
+	return failoverClientGone(c)
+}
+
 func resolveOpenAIMessagesDispatchMappedModel(apiKey *service.APIKey, requestedModel string) string {
 	if apiKey == nil || apiKey.Group == nil {
 		return ""
@@ -645,6 +652,14 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			attemptRetryEligible,
 			compactKeepaliveBytesBefore,
 		)
+		if err != nil && openAIForwardErrorShouldAbortForClientDisconnect(c, result) {
+			currentAttemptTelemetry.recordDecision("client_disconnected", false, switchCount)
+			reqLog.Info("openai.forward_aborted_client_disconnected",
+				zap.Int64("account_id", account.ID),
+				zap.Error(err),
+			)
+			return
+		}
 		if err != nil {
 			if result != nil && result.ImageCount > 0 {
 				reqLog.Warn("openai.forward_partial_error_with_image_result",
@@ -757,7 +772,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				upstreamErrorAlreadyCommunicated := openAIForwardErrorAlreadyCommunicated(c, writerSizeBeforeForward, err)
 				wroteFallback := false
 				if !upstreamErrorAlreadyCommunicated {
-					wroteFallback = h.ensureForwardErrorResponse(c, streamStarted)
+					wroteFallback = h.ensureOpenAIStreamReadErrorResponse(c, err, streamStarted)
+					if !wroteFallback {
+						wroteFallback = h.ensureForwardErrorResponse(c, streamStarted)
+					}
 				}
 				fields := []zap.Field{
 					zap.Int64("account_id", account.ID),
@@ -2734,7 +2752,7 @@ func (h *OpenAIGatewayHandler) handleStreamingAwareErrorWithCode(
 		// 通用 `event: error` 帧不被识别为终止事件，会导致
 		// "stream closed before response.completed"。
 		if inboundIsResponses(c) {
-			if writeResponsesFailedSSE(c, errType, message) {
+			if writeResponsesFailedSSEWithCode(c, errType, code, message) {
 				return
 			}
 		}

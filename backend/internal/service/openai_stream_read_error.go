@@ -25,7 +25,9 @@ func (e *openAIUpstreamStreamReadError) Error() string {
 
 func (e *openAIUpstreamStreamReadError) Unwrap() error { return e.cause }
 
-func newOpenAIUpstreamStreamReadError(err error) error {
+// NewOpenAIUpstreamStreamReadError wraps a stream read failure with stable,
+// sanitized details for handler responses and telemetry.
+func NewOpenAIUpstreamStreamReadError(err error) error {
 	code, message := classifyOpenAIUpstreamStreamReadError(err)
 	return &openAIUpstreamStreamReadError{
 		cause:         err,

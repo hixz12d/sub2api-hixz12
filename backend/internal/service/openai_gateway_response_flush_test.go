@@ -302,6 +302,30 @@ func TestOpenAIResponseFlush_CanceledAfterOutputFlushesResidualWithoutErrorEvent
 	require.NotContains(t, gotBody, "stream_read_error")
 }
 
+func TestOpenAIResponseFlush_HTTP2ReadErrorAfterOutputReturnsSanitizedError(t *testing.T) {
+	body := "data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n"
+	recorder := newOpenAIResponseFlushRecorder()
+	streamErr := errors.New("stream error: stream ID 87; INTERNAL_ERROR; received from peer")
+
+	result, err := runOpenAIResponseFlushTest(
+		recorder,
+		&openAIResponseFlushReadError{payload: []byte(body), err: streamErr},
+		config.GatewayConfig{},
+	)
+
+	require.Error(t, err)
+	require.NotNil(t, result)
+	code, message, ok := OpenAIUpstreamStreamReadErrorDetails(err)
+	require.True(t, ok)
+	require.Equal(t, OpenAIUpstreamHTTP2StreamErrorCode, code)
+	require.Equal(t, "Upstream HTTP/2 stream failed", message)
+	gotBody, _ := recorder.snapshot()
+	require.Equal(t, body, gotBody)
+	require.NotContains(t, gotBody, `"type":"error"`)
+	require.NotContains(t, gotBody, "stream ID")
+	require.NotContains(t, gotBody, "INTERNAL_ERROR")
+}
+
 func TestOpenAIResponseFlush_KeepaliveFlushesImmediately(t *testing.T) {
 	recorder := newOpenAIResponseFlushRecorder()
 	reader, writer := io.Pipe()

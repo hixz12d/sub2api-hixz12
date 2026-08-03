@@ -1,7 +1,9 @@
 package service
 
 import (
+	"context"
 	"errors"
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -107,6 +109,17 @@ func ClassifyOpenAIAttemptFailure(err error) string {
 		return "none"
 	}
 
+	if errors.Is(err, context.Canceled) {
+		return "canceled"
+	}
+	if _, _, ok := OpenAIUpstreamStreamReadErrorDetails(err); ok {
+		lower := strings.ToLower(strings.TrimSpace(err.Error()))
+		if errors.Is(err, context.DeadlineExceeded) || strings.Contains(lower, "timeout") {
+			return "timeout"
+		}
+		return "transport"
+	}
+
 	var failoverErr *UpstreamFailoverError
 	if errors.As(err, &failoverErr) && failoverErr != nil {
 		message := strings.TrimSpace(err.Error())
@@ -128,12 +141,15 @@ func ClassifyOpenAIAttemptFailure(err error) string {
 	}
 
 	lower := strings.ToLower(strings.TrimSpace(err.Error()))
+	if isOpenAITransientProcessingError(http.StatusBadGateway, lower, nil) {
+		return "capacity"
+	}
 	switch {
 	case strings.Contains(lower, "context") && (strings.Contains(lower, "length") || strings.Contains(lower, "window") || strings.Contains(lower, "token")):
 		return "context_window"
 	case strings.Contains(lower, "timeout") || strings.Contains(lower, "deadline exceeded"):
 		return "timeout"
-	case strings.Contains(lower, "connection") || strings.Contains(lower, "http/2") || strings.Contains(lower, "broken pipe"):
+	case strings.Contains(lower, "connection") || strings.Contains(lower, "http/2") || strings.Contains(lower, "stream error: stream id ") || strings.Contains(lower, "broken pipe"):
 		return "transport"
 	default:
 		return "unknown"

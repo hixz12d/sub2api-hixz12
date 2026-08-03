@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -67,6 +68,25 @@ func TestClassifyOpenAIAttemptFailureSeparatesCapacityAndContext(t *testing.T) {
 	}))
 	require.Equal(t, "timeout", ClassifyOpenAIAttemptFailure(errors.New("upstream deadline exceeded")))
 	require.Equal(t, "transport", ClassifyOpenAIAttemptFailure(errors.New("http/2 stream was reset")))
+}
+
+func TestClassifyOpenAIAttemptFailure_ClassifiesHTTP2StreamResetAsTransport(t *testing.T) {
+	err := errors.New("stream read error: stream error: stream ID 87; INTERNAL_ERROR; received from peer")
+	require.Equal(t, "transport", ClassifyOpenAIAttemptFailure(err))
+}
+
+func TestClassifyOpenAIAttemptFailure_ClassifiesObservedOverloadAfterOutputAsCapacity(t *testing.T) {
+	err := errors.New("upstream response failed: Our servers are currently overloaded. Please try again later.")
+	require.Equal(t, "capacity", ClassifyOpenAIAttemptFailure(err))
+}
+
+func TestClassifyOpenAIAttemptFailure_ClassifiesClientCancellation(t *testing.T) {
+	require.Equal(t, "canceled", ClassifyOpenAIAttemptFailure(context.Canceled))
+}
+
+func TestClassifyOpenAIAttemptFailure_ClassifiesWrappedStreamTimeout(t *testing.T) {
+	err := NewOpenAIUpstreamStreamReadError(errors.New("read tcp: i/o timeout"))
+	require.Equal(t, "timeout", ClassifyOpenAIAttemptFailure(err))
 }
 
 func TestNewOpenAIStreamFailoverErrorPreservesCapacityReason(t *testing.T) {
