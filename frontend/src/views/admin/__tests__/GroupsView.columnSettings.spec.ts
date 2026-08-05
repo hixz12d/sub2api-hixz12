@@ -41,6 +41,8 @@ const messages: Record<string, string> = {
   'admin.groups.columns.usage': 'Usage',
   'admin.groups.columns.status': 'Status',
   'admin.groups.columns.actions': 'Actions',
+  'common.active': 'Active',
+  'common.disabled': 'Disabled',
 }
 
 vi.mock('@/api/admin', () => ({
@@ -149,6 +151,9 @@ const DataTableStub = {
     <div>
       <div data-test="columns">{{ columns.map((col) => col.key).join(',') }}</div>
       <div data-test="rows">{{ data.map((row) => row.name).join(',') }}</div>
+      <div v-for="row in data" :key="row.id" :data-test="'status-' + row.id">
+        <slot name="cell-status" :value="row.status" />
+      </div>
     </div>
   `,
 }
@@ -253,6 +258,20 @@ describe('admin GroupsView column settings', () => {
     localStorage.clear()
   })
 
+  it('renders the production disabled status as a localized label', async () => {
+    listGroups.mockResolvedValue({
+      items: [createGroup({ status: 'disabled' as AdminGroup['status'] })],
+      total: 1,
+      page: 1,
+      page_size: 20,
+      pages: 1,
+    })
+
+    const wrapper = await mountView()
+
+    expect(wrapper.get('[data-test="status-1"]').text()).toBe('Disabled')
+    expect(wrapper.text()).not.toContain('admin.accounts.status.disabled')
+  })
   it('hides the id column by default while keeping other group columns visible', async () => {
     const wrapper = await mountView()
 
