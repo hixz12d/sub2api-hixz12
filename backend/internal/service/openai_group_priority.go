@@ -101,22 +101,6 @@ func shuffleOpenAIWithinSortGroups(accounts []accountWithLoad, groupID *int64, m
 	}
 }
 
-func openAIMinBindingPriority(accounts []*Account, groupID *int64) (int, bool) {
-	best := 0
-	found := false
-	for _, account := range accounts {
-		priority, ok := openAIAccountBindingPriority(account, groupID)
-		if !ok {
-			continue
-		}
-		if !found || priority < best {
-			best = priority
-			found = true
-		}
-	}
-	return best, found
-}
-
 func prioritizeOpenAICompactAccountsForScheduling(accounts []*Account, groupID *int64, mode string) []*Account {
 	if mode != OpenAIAccountPriorityModeBinding {
 		return prioritizeOpenAICompactAccounts(accounts)

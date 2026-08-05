@@ -1815,6 +1815,10 @@ func (stubGroupRepo) CreateFromSource(ctx context.Context, group *service.Group,
 	return errors.New("not implemented")
 }
 
+func (stubGroupRepo) UpdateAccountGroupPriorities(ctx context.Context, groupID int64, updates []service.AccountGroupPriorityUpdate) ([]service.AccountGroupPriorityUpdate, error) {
+	return nil, errors.New("not implemented")
+}
+
 type stubAccountRepo struct {
 	bulkUpdateIDs []int64
 }

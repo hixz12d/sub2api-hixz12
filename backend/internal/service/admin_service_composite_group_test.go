@@ -63,7 +63,6 @@ func TestAdminService_CreateCompositeGroupCopiesAccountsFromConcreteGroups(t *te
 }
 
 func TestAdminService_UpdateCompositeGroupCopiesAccountsFromConcreteGroups(t *testing.T) {
-	var clearedGroupID int64
 	var copiedFrom []int64
 	var boundGroupID int64
 	var boundAccountIDs []int64
@@ -72,10 +71,6 @@ func TestAdminService_UpdateCompositeGroupCopiesAccountsFromConcreteGroups(t *te
 			10: {ID: 10, Platform: PlatformOpenAI},
 			20: {ID: 20, Platform: PlatformGrok},
 			99: {ID: 99, Platform: PlatformComposite, RateMultiplier: 1, SubscriptionType: SubscriptionTypeStandard},
-		},
-		deleteAccountGroupsByGroupIDFn: func(groupID int64) (int64, error) {
-			clearedGroupID = groupID
-			return 2, nil
 		},
 		getAccountIDsByGroupIDsFn: func(groupIDs []int64) ([]int64, error) {
 			copiedFrom = append([]int64{}, groupIDs...)
@@ -87,7 +82,12 @@ func TestAdminService_UpdateCompositeGroupCopiesAccountsFromConcreteGroups(t *te
 			return nil
 		},
 	}
-	svc := &adminServiceImpl{groupRepo: groupRepo}
+	svc := &adminServiceImpl{
+		groupRepo: groupRepo,
+		runInTransaction: func(ctx context.Context, fn func(context.Context) error) error {
+			return fn(ctx)
+		},
+	}
 	maxReasoningEffort := "low"
 	reasoningEffortMappings := []ReasoningEffortMapping{{From: "max", To: "high"}}
 
@@ -101,7 +101,6 @@ func TestAdminService_UpdateCompositeGroupCopiesAccountsFromConcreteGroups(t *te
 	require.Equal(t, PlatformComposite, group.Platform)
 	require.Equal(t, "low", group.MaxReasoningEffort)
 	require.Equal(t, reasoningEffortMappings, group.ReasoningEffortMappings)
-	require.Equal(t, int64(99), clearedGroupID)
 	require.ElementsMatch(t, []int64{10, 20}, copiedFrom)
 	require.Equal(t, int64(99), boundGroupID)
 	require.ElementsMatch(t, []int64{301, 302}, boundAccountIDs)

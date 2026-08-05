@@ -927,19 +927,25 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 
 	if copyAccounts {
-		if s.entClient == nil {
-			return nil, errors.New("ent client is required for atomic group and account binding updates")
-		}
-		tx, err := s.entClient.Tx(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("begin group update transaction: %w", err)
-		}
-		defer func() { _ = tx.Rollback() }()
-		if err := persist(dbent.NewTxContext(ctx, tx)); err != nil {
-			return nil, err
-		}
-		if err := tx.Commit(); err != nil {
-			return nil, fmt.Errorf("commit group update transaction: %w", err)
+		if s.runInTransaction != nil {
+			if err := s.runInTransaction(ctx, persist); err != nil {
+				return nil, err
+			}
+		} else {
+			if s.entClient == nil {
+				return nil, errors.New("ent client is required for atomic group and account binding updates")
+			}
+			tx, err := s.entClient.Tx(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("begin group update transaction: %w", err)
+			}
+			defer func() { _ = tx.Rollback() }()
+			if err := persist(dbent.NewTxContext(ctx, tx)); err != nil {
+				return nil, err
+			}
+			if err := tx.Commit(); err != nil {
+				return nil, fmt.Errorf("commit group update transaction: %w", err)
+			}
 		}
 	} else if err := persist(ctx); err != nil {
 		return nil, err

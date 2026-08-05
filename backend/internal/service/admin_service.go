@@ -642,6 +642,7 @@ type adminServiceImpl struct {
 	proxyLatencyCache    ProxyLatencyCache
 	authCacheInvalidator APIKeyAuthCacheInvalidator
 	entClient            *dbent.Client // 用于开启数据库事务
+	runInTransaction     func(context.Context, func(context.Context) error) error
 	settingService       *SettingService
 	defaultSubAssigner   DefaultSubscriptionAssigner
 	userSubRepo          UserSubscriptionRepository

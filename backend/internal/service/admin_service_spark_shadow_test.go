@@ -45,6 +45,19 @@ func (s *sparkShadowRepoStub) Create(_ context.Context, account *Account) error 
 	return nil
 }
 
+func (s *sparkShadowRepoStub) CreateWithAccountGroups(ctx context.Context, account *Account, groups []AccountGroup) error {
+	account.AccountGroups = append([]AccountGroup(nil), groups...)
+	account.GroupIDs = account.GroupIDs[:0]
+	for _, group := range groups {
+		account.GroupIDs = append(account.GroupIDs, group.GroupID)
+	}
+	if err := s.Create(ctx, account); err != nil {
+		return err
+	}
+	s.groupsOf[account.ID] = append([]int64(nil), account.GroupIDs...)
+	return nil
+}
+
 func (s *sparkShadowRepoStub) GetByID(_ context.Context, id int64) (*Account, error) {
 	acc, ok := s.accounts[id]
 	if !ok {
@@ -746,6 +759,10 @@ func (s *raceCreateRepoStub) Create(ctx context.Context, account *Account) error
 	return s.sparkShadowRepoStub.Create(ctx, account)
 }
 
+func (s *raceCreateRepoStub) CreateWithAccountGroups(ctx context.Context, account *Account, _ []AccountGroup) error {
+	return s.Create(ctx, account)
+}
+
 // bindFailRepoStub 让 BindGroups 失败,用于验证绑组失败时补偿删除刚建的影子(外审 C/P1)。
 type bindFailRepoStub struct {
 	*sparkShadowRepoStub
@@ -753,6 +770,10 @@ type bindFailRepoStub struct {
 
 func (s *bindFailRepoStub) BindGroups(_ context.Context, _ int64, _ []int64) error {
 	return errors.New("simulated bind failure")
+}
+
+func (s *bindFailRepoStub) CreateWithAccountGroups(_ context.Context, _ *Account, _ []AccountGroup) error {
+	return errors.New("simulated atomic binding failure")
 }
 
 // sparkShadowValidatingGroupRepoStub 实现 groupExistenceBatchReader(ExistsByIDs),
