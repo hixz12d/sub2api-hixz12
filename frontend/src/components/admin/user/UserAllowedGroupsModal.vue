@@ -32,6 +32,7 @@
             <div
               v-for="config in exclusiveGroupConfigs"
               :key="config.groupId"
+              :data-test="`group-config-${config.groupId}`"
               class="group relative overflow-hidden rounded-xl border-2 p-4 transition-all duration-200"
               :class="config.isSelected
                 ? 'border-primary-400 bg-primary-50/50 shadow-sm dark:border-primary-500 dark:bg-primary-900/20'
@@ -44,6 +45,7 @@
                     <input
                       type="checkbox"
                       :checked="config.isSelected"
+                      :data-test="`group-toggle-${config.groupId}`"
                       @change="toggleExclusiveGroup(config.groupId)"
                       class="peer sr-only"
                     />
@@ -61,6 +63,12 @@
                     <span class="text-base font-semibold text-gray-900 dark:text-white">{{ config.groupName }}</span>
                     <span class="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700 dark:bg-purple-900/40 dark:text-purple-300">
                       {{ t('admin.groups.exclusive') }}
+                    </span>
+                    <span
+                      v-if="config.status !== 'active'"
+                      class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-dark-600 dark:text-gray-300"
+                    >
+                      {{ t('common.disabled') }}
                     </span>
                   </div>
                   <div class="mt-1.5 flex items-center gap-3 text-sm">
@@ -166,7 +174,7 @@
     <template #footer>
       <div class="flex justify-end gap-3">
         <button @click="$emit('close')" class="btn btn-secondary px-5">{{ t('common.cancel') }}</button>
-        <button @click="handleSave" :disabled="submitting" class="btn btn-primary px-6">
+        <button @click="handleSave" :disabled="submitting || loading || loadFailed" class="btn btn-primary px-6">
           <svg v-if="submitting" class="-ml-1 mr-2 h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
@@ -191,6 +199,7 @@ interface GroupRateConfig {
   groupId: number
   groupName: string
   platform: GroupPlatform
+  status: string
   isExclusive: boolean
   defaultRate: number
   customRate: number | null
@@ -205,8 +214,10 @@ const appStore = useAppStore()
 const groups = ref<Group[]>([])
 const groupConfigs = ref<GroupRateConfig[]>([])
 const originalGroupRates = ref<Record<number, number>>({}) // 记录原始专属倍率，用于检测删除
+const originalAllowedGroups = ref<number[]>([])
 const loading = ref(false)
 const submitting = ref(false)
+const loadFailed = ref(false)
 
 // 分离专属分组和公开分组
 const exclusiveGroups = computed(() => groups.value.filter((g) => g.is_exclusive))
@@ -226,22 +237,26 @@ watch(
 
 const load = async () => {
   loading.value = true
+  loadFailed.value = false
   try {
     const res = await adminAPI.groups.list(1, 1000)
-    // 只显示标准类型且活跃的分组
-    groups.value = res.items.filter((g) => g.subscription_type === 'standard' && g.status === 'active')
-
-    // 初始化配置
     const userAllowedGroups = props.user?.allowed_groups || []
     const userGroupRates = props.user?.group_rates || {}
 
-    // 保存原始专属倍率，用于检测删除操作
+    // Disabled exclusive groups remain visible so existing authorization can be
+    // inspected and changed without activating the group for traffic.
+    groups.value = res.items.filter(
+      (g) => g.subscription_type === 'standard' && (g.status === 'active' || g.is_exclusive)
+    )
+
     originalGroupRates.value = { ...userGroupRates }
+    originalAllowedGroups.value = [...userAllowedGroups]
 
     groupConfigs.value = groups.value.map((g) => ({
       groupId: g.id,
       groupName: g.name,
       platform: g.platform,
+      status: g.status,
       isExclusive: g.is_exclusive,
       defaultRate: g.rate_multiplier,
       customRate: userGroupRates[g.id] ?? null,
@@ -250,7 +265,9 @@ const load = async () => {
       isSelected: g.is_exclusive ? userAllowedGroups.includes(g.id) : true,
     }))
   } catch (error) {
+    loadFailed.value = true
     console.error('Failed to load groups:', error)
+    appStore.showError(t('admin.users.failedToLoadGroups'))
   } finally {
     loading.value = false
   }
@@ -280,8 +297,13 @@ const handleSave = async () => {
   submitting.value = true
 
   try {
-    // 构建 allowed_groups（仅包含专属分组中被勾选的）
-    const allowedGroups = groupConfigs.value.filter((c) => c.isExclusive && c.isSelected).map((c) => c.groupId)
+    const managedGroupIds = new Set(
+      groupConfigs.value.filter((c) => c.isExclusive).map((c) => c.groupId)
+    )
+    const preservedAllowedGroups = originalAllowedGroups.value.filter((id) => !managedGroupIds.has(id))
+    const selectedAllowedGroups = groupConfigs.value
+      .filter((c) => c.isExclusive && c.isSelected).map((c) => c.groupId)
+    const allowedGroups = [...new Set([...preservedAllowedGroups, ...selectedAllowedGroups])]
 
     // 构建 group_rates
     // - 有新专属倍率: 设置为该值
