@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAuthCacheInvalidationTriggers_CoverSecurityMutationsOnly(t *testing.T) {
+func TestAuthCacheInvalidationTriggers_CoverSecurityAndGroupMutations(t *testing.T) {
 	ctx := context.Background()
 	suffix := time.Now().UnixNano()
 	group := mustCreateGroup(t, integrationEntClient, &service.Group{
@@ -91,7 +91,8 @@ func TestAuthCacheInvalidationTriggers_CoverSecurityMutationsOnly(t *testing.T) 
 
 	_, err = integrationDB.ExecContext(ctx, "UPDATE groups SET name = name || '-cosmetic' WHERE id = $1", group.ID)
 	require.NoError(t, err)
-	require.Zero(t, count(), "cosmetic group update must not enqueue")
+	require.Equal(t, 1, count(), "all group updates must conservatively invalidate bound keys")
+	clear()
 	_, err = integrationDB.ExecContext(ctx, "UPDATE groups SET allow_image_generation = NOT allow_image_generation WHERE id = $1", group.ID)
 	require.NoError(t, err)
 	require.Equal(t, 1, count(), "image-generation permission changes must enqueue bound keys")
