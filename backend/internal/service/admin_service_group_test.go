@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
@@ -28,6 +29,9 @@ type groupRepoStubForAdmin struct {
 	deleteAccountGroupsByGroupIDFn func(groupID int64) (int64, error)
 	bindAccountsToGroupFn          func(groupID int64, accountIDs []int64) error
 	getAccountIDsByGroupIDsFn      func(groupIDs []int64) ([]int64, error)
+	casExpectedMode                string
+	casCalls                       int
+	casErr                         error
 
 	listWithFiltersCalls       int
 	listWithFiltersParams      pagination.PaginationParams
@@ -50,6 +54,17 @@ func (s *groupRepoStubForAdmin) Create(_ context.Context, g *Group) error {
 
 func (s *groupRepoStubForAdmin) Update(_ context.Context, g *Group) error {
 	s.updated = g
+	return nil
+}
+
+func (s *groupRepoStubForAdmin) UpdateOpenAIAccountPriorityModeIfCurrent(_ context.Context, g *Group, expectedMode string) error {
+	s.casCalls++
+	s.casExpectedMode = expectedMode
+	if s.casErr != nil {
+		return s.casErr
+	}
+	clone := *g
+	s.updated = &clone
 	return nil
 }
 
@@ -1689,4 +1704,45 @@ func TestAdminService_PreviewCompositeRouteUsesExplicitRoutes(t *testing.T) {
 	require.Equal(t, "claude-sonnet-4-6", decision.UpstreamModel)
 	require.NotNil(t, decision.Route)
 	require.Equal(t, int64(11), decision.Route.ID)
+}
+
+func TestAdminService_UpdateGroupPriorityModeWithExpected(t *testing.T) {
+	updatedAt := time.Now().UTC()
+	existing := &Group{
+		ID:                        38,
+		Platform:                  PlatformOpenAI,
+		OpenAIAccountPriorityMode: OpenAIAccountPriorityModeGlobal,
+		UpdatedAt:                 updatedAt,
+	}
+	repo := &groupRepoStubForAdmin{getByID: existing}
+	invalidator := &authCacheInvalidatorStub{}
+	svc := &adminServiceImpl{groupRepo: repo, authCacheInvalidator: invalidator}
+
+	got, err := svc.AdminUpdateGroupOpenAIAccountPriorityModeWithExpected(
+		context.Background(), 38, OpenAIAccountPriorityModeBinding, OpenAIAccountPriorityModeGlobal, updatedAt,
+	)
+
+	require.NoError(t, err)
+	require.Equal(t, OpenAIAccountPriorityModeBinding, got.OpenAIAccountPriorityMode)
+	require.Equal(t, 1, repo.casCalls)
+	require.Equal(t, OpenAIAccountPriorityModeGlobal, repo.casExpectedMode)
+	require.Equal(t, []int64{38}, invalidator.groupIDs)
+}
+
+func TestAdminService_UpdateGroupPriorityModeWithExpected_RejectsDrift(t *testing.T) {
+	updatedAt := time.Now().UTC()
+	repo := &groupRepoStubForAdmin{getByID: &Group{
+		ID:                        38,
+		Platform:                  PlatformOpenAI,
+		OpenAIAccountPriorityMode: OpenAIAccountPriorityModeBinding,
+		UpdatedAt:                 updatedAt,
+	}}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	_, err := svc.AdminUpdateGroupOpenAIAccountPriorityModeWithExpected(
+		context.Background(), 38, OpenAIAccountPriorityModeBinding, OpenAIAccountPriorityModeGlobal, updatedAt,
+	)
+
+	require.ErrorIs(t, err, ErrGroupPriorityModeConflict)
+	require.Zero(t, repo.casCalls)
 }

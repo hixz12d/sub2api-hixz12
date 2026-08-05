@@ -1095,31 +1095,93 @@ func (s *adminServiceImpl) UpdateGroupSortOrders(ctx context.Context, updates []
 	return s.groupRepo.UpdateSortOrders(ctx, updates)
 }
 
+// AdminUpdateGroupOpenAIAccountPriorityModeWithExpected atomically changes only
+// the OpenAI scheduling mode when both the mode and group snapshot are unchanged.
+func (s *adminServiceImpl) AdminUpdateGroupOpenAIAccountPriorityModeWithExpected(ctx context.Context, groupID int64, mode, expectedMode string, expectedUpdatedAt time.Time) (*Group, error) {
+	mode = strings.TrimSpace(strings.ToLower(mode))
+	expectedMode = strings.TrimSpace(strings.ToLower(expectedMode))
+	if mode != OpenAIAccountPriorityModeGlobal && mode != OpenAIAccountPriorityModeBinding {
+		return nil, infraerrors.BadRequest("INVALID_OPENAI_ACCOUNT_PRIORITY_MODE", "mode must be global or binding")
+	}
+	if expectedMode != OpenAIAccountPriorityModeGlobal && expectedMode != OpenAIAccountPriorityModeBinding {
+		return nil, infraerrors.BadRequest("INVALID_EXPECTED_OPENAI_ACCOUNT_PRIORITY_MODE", "expected_mode must be global or binding")
+	}
+	if expectedUpdatedAt.IsZero() {
+		return nil, infraerrors.BadRequest("INVALID_EXPECTED_UPDATED_AT", "expected_updated_at is required")
+	}
+	group, err := s.groupRepo.GetByID(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	if group.Platform != PlatformOpenAI {
+		return nil, infraerrors.BadRequest("GROUP_PLATFORM_NOT_OPENAI", "group priority mode is available only for OpenAI groups")
+	}
+	if group.OpenAIAccountPriorityMode != expectedMode || !group.UpdatedAt.Equal(expectedUpdatedAt) {
+		return nil, ErrGroupPriorityModeConflict
+	}
+	repo, ok := s.groupRepo.(GroupPriorityModeCASRepository)
+	if !ok {
+		return nil, infraerrors.InternalServer("GROUP_PRIORITY_MODE_CAS_UNAVAILABLE", "guarded group priority mode update is not supported")
+	}
+	group.OpenAIAccountPriorityMode = mode
+	if err := repo.UpdateOpenAIAccountPriorityModeIfCurrent(ctx, group, expectedMode); err != nil {
+		return nil, fmt.Errorf("update group priority mode: %w", err)
+	}
+	if s.authCacheInvalidator != nil {
+		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, groupID)
+	}
+	return group, nil
+}
+
 // AdminUpdateAPIKeyGroupID 管理员修改 API Key 分组绑定
 // groupID: nil=不修改, 指向0=解绑, 指向正整数=绑定到目标分组
+// AdminUpdateAPIKeyGroupID 管理员修改 API Key 分组绑定。
+// groupID: nil=不修改, 指向0=解绑, 指向正整数=绑定到目标分组。
 func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID int64, groupID *int64) (*AdminUpdateAPIKeyGroupIDResult, error) {
+	return s.adminUpdateAPIKeyGroupID(ctx, keyID, groupID, nil, nil)
+}
+
+// AdminUpdateAPIKeyGroupIDWithExpected is the guarded form used by migration
+// tooling. expectedGroupID=0 means the key must currently be unbound.
+func (s *adminServiceImpl) AdminUpdateAPIKeyGroupIDWithExpected(ctx context.Context, keyID int64, groupID, expectedGroupID *int64, expectedUpdatedAt *time.Time) (*AdminUpdateAPIKeyGroupIDResult, error) {
+	if expectedGroupID != nil && *expectedGroupID < 0 {
+		return nil, infraerrors.BadRequest("INVALID_EXPECTED_GROUP_ID", "expected_group_id must be non-negative")
+	}
+	if expectedUpdatedAt != nil && expectedUpdatedAt.IsZero() {
+		return nil, infraerrors.BadRequest("INVALID_EXPECTED_UPDATED_AT", "expected_updated_at must be a non-zero timestamp")
+	}
+	return s.adminUpdateAPIKeyGroupID(ctx, keyID, groupID, expectedGroupID, expectedUpdatedAt)
+}
+
+func (s *adminServiceImpl) adminUpdateAPIKeyGroupID(ctx context.Context, keyID int64, groupID, expectedGroupID *int64, expectedUpdatedAt *time.Time) (*AdminUpdateAPIKeyGroupIDResult, error) {
 	apiKey, err := s.apiKeyRepo.GetByID(ctx, keyID)
 	if err != nil {
 		return nil, err
 	}
-
-	if groupID == nil {
-		// nil 表示不修改，直接返回
-		return &AdminUpdateAPIKeyGroupIDResult{APIKey: apiKey}, nil
+	if expectedUpdatedAt != nil && !apiKey.UpdatedAt.Equal(*expectedUpdatedAt) {
+		return nil, ErrAPIKeyGroupConflict
 	}
 
+	if expectedGroupID != nil {
+		matches := (*expectedGroupID == 0 && apiKey.GroupID == nil) ||
+			(*expectedGroupID > 0 && apiKey.GroupID != nil && *apiKey.GroupID == *expectedGroupID)
+		if !matches {
+			return nil, ErrAPIKeyGroupConflict
+		}
+	}
+	if groupID == nil {
+		return &AdminUpdateAPIKeyGroupIDResult{APIKey: apiKey}, nil
+	}
 	if *groupID < 0 {
 		return nil, infraerrors.BadRequest("INVALID_GROUP_ID", "group_id must be non-negative")
 	}
 
 	result := &AdminUpdateAPIKeyGroupIDResult{}
-
 	if *groupID == 0 {
-		// 0 表示解绑分组（不修改 user_allowed_groups，避免影响用户其他 Key）
+		// 0 表示解绑分组（不修改 user_allowed_groups，避免影响用户其他 Key）。
 		apiKey.GroupID = nil
 		apiKey.Group = nil
 	} else {
-		// 验证目标分组存在且状态为 active
 		group, err := s.groupRepo.GetByID(ctx, *groupID)
 		if err != nil {
 			return nil, err
@@ -1127,7 +1189,6 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 		if group.Status != StatusActive {
 			return nil, infraerrors.BadRequest("GROUP_NOT_ACTIVE", "target group is not active")
 		}
-		// 订阅类型分组：用户须持有该分组的有效订阅才可绑定
 		if group.IsSubscriptionType() {
 			if s.userSubRepo == nil {
 				return nil, infraerrors.InternalServer("SUBSCRIPTION_REPOSITORY_UNAVAILABLE", "subscription repository is not configured")
@@ -1139,63 +1200,76 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 				return nil, err
 			}
 		}
-
 		gid := *groupID
 		apiKey.GroupID = &gid
 		apiKey.Group = group
 
-		// 专属标准分组：使用事务保证「添加分组权限」与「更新 API Key」的原子性
 		if group.IsExclusive && !group.IsSubscriptionType() {
-			opCtx := ctx
-			var tx *dbent.Tx
-			if s.entClient == nil {
-				logger.LegacyPrintf("service.admin", "Warning: entClient is nil, skipping transaction protection for exclusive group binding")
-			} else {
-				var txErr error
-				tx, txErr = s.entClient.Tx(ctx)
+			if s.userRepo == nil {
+				return nil, infraerrors.InternalServer("USER_REPOSITORY_UNAVAILABLE", "user repository is not configured")
+			}
+			casRepo, guarded := s.apiKeyRepo.(APIKeyGroupCASRepository)
+			if expectedGroupID != nil && !guarded {
+				return nil, infraerrors.InternalServer("API_KEY_GROUP_CAS_UNAVAILABLE", "guarded group binding is not supported")
+			}
+			if s.entClient != nil {
+				tx, txErr := s.entClient.Tx(ctx)
 				if txErr != nil {
 					return nil, fmt.Errorf("begin transaction: %w", txErr)
 				}
 				defer func() { _ = tx.Rollback() }()
-				opCtx = dbent.NewTxContext(ctx, tx)
-			}
-
-			if addErr := s.userRepo.AddGroupToAllowedGroups(opCtx, apiKey.UserID, gid); addErr != nil {
-				return nil, fmt.Errorf("add group to user allowed groups: %w", addErr)
-			}
-			if err := s.apiKeyRepo.Update(opCtx, apiKey, APIKeyUpdateFields{GroupID: true}); err != nil {
-				return nil, fmt.Errorf("update api key: %w", err)
-			}
-			if tx != nil {
+				opCtx := dbent.NewTxContext(ctx, tx)
+				if addErr := s.userRepo.AddGroupToAllowedGroups(opCtx, apiKey.UserID, gid); addErr != nil {
+					return nil, fmt.Errorf("add group to user allowed groups: %w", addErr)
+				}
+				if expectedGroupID != nil {
+					if err := casRepo.UpdateGroupIDIfCurrent(opCtx, apiKey, *expectedGroupID); err != nil {
+						return nil, fmt.Errorf("update api key: %w", err)
+					}
+				} else if err := s.apiKeyRepo.Update(opCtx, apiKey, APIKeyUpdateFields{GroupID: true}); err != nil {
+					return nil, fmt.Errorf("update api key: %w", err)
+				}
 				if err := tx.Commit(); err != nil {
 					return nil, fmt.Errorf("commit transaction: %w", err)
 				}
-			}
 
+				result.AutoGrantedGroupAccess = true
+				result.GrantedGroupID = &gid
+				result.GrantedGroupName = group.Name
+				if s.authCacheInvalidator != nil {
+					s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, apiKey.Key)
+				}
+				result.APIKey = apiKey
+				return result, nil
+			}
+			if expectedGroupID != nil {
+				return nil, infraerrors.InternalServer("GROUP_BINDING_TRANSACTION_UNAVAILABLE", "guarded exclusive group binding requires a transaction")
+			}
+			// Preserve the legacy non-guarded behavior for test doubles and rolling
+			// upgrades. Production wiring supplies entClient and uses the atomic path.
+			if addErr := s.userRepo.AddGroupToAllowedGroups(ctx, apiKey.UserID, gid); addErr != nil {
+				return nil, fmt.Errorf("add group to user allowed groups: %w", addErr)
+			}
 			result.AutoGrantedGroupAccess = true
 			result.GrantedGroupID = &gid
 			result.GrantedGroupName = group.Name
-
-			// 失效认证缓存（在事务提交后执行）
-			if s.authCacheInvalidator != nil {
-				s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, apiKey.Key)
-			}
-
-			result.APIKey = apiKey
-			return result, nil
 		}
 	}
 
-	// 非专属分组 / 解绑：无需事务，单步更新即可
-	if err := s.apiKeyRepo.Update(ctx, apiKey, APIKeyUpdateFields{GroupID: true}); err != nil {
+	if expectedGroupID != nil {
+		casRepo, guarded := s.apiKeyRepo.(APIKeyGroupCASRepository)
+		if !guarded {
+			return nil, infraerrors.InternalServer("API_KEY_GROUP_CAS_UNAVAILABLE", "guarded group binding is not supported")
+		}
+		if err := casRepo.UpdateGroupIDIfCurrent(ctx, apiKey, *expectedGroupID); err != nil {
+			return nil, fmt.Errorf("update api key: %w", err)
+		}
+	} else if err := s.apiKeyRepo.Update(ctx, apiKey, APIKeyUpdateFields{GroupID: true}); err != nil {
 		return nil, fmt.Errorf("update api key: %w", err)
 	}
-
-	// 失效认证缓存
 	if s.authCacheInvalidator != nil {
 		s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, apiKey.Key)
 	}
-
 	result.APIKey = apiKey
 	return result, nil
 }

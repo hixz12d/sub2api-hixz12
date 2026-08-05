@@ -173,6 +173,27 @@ func TestAdminAPIKeyHandler_UpdateGroup_ServiceError(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, rec.Code)
 }
 
+func TestAdminAPIKeyHandler_UpdateGroup_ExpectedGroupID(t *testing.T) {
+	router := setupAPIKeyHandler(newStubAdminService())
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/api-keys/10", bytes.NewBufferString(`{"group_id":2,"expected_group_id":0}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+func TestAdminAPIKeyHandler_UpdateGroup_ExpectedGroupConflict(t *testing.T) {
+	router := setupAPIKeyHandler(newStubAdminService())
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/admin/api-keys/10", bytes.NewBufferString(`{"group_id":2,"expected_group_id":1}`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusConflict, rec.Code)
+	require.Contains(t, rec.Body.String(), "API_KEY_GROUP_CONFLICT")
+}
+
 // H2: empty body → group_id is nil → no-op, returns original key
 func TestAdminAPIKeyHandler_UpdateGroup_EmptyBody_NoChange(t *testing.T) {
 	router := setupAPIKeyHandler(newStubAdminService())

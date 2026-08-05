@@ -171,6 +171,83 @@ func (s *APIKeyRepoSuite) TestUpdate_ClearGroupID() {
 	s.Require().Nil(got.GroupID, "expected GroupID to be cleared")
 }
 
+func (s *APIKeyRepoSuite) TestUpdateGroupIDIfCurrent() {
+	user := s.mustCreateUser("cas-group@test.com")
+	source := s.mustCreateGroup("g-cas-source")
+	target := s.mustCreateGroup("g-cas-target")
+	key := &service.APIKey{
+		UserID:  user.ID,
+		Key:     "sk-cas-group",
+		Name:    "CAS Group Key",
+		GroupID: &source.ID,
+		Status:  service.StatusActive,
+	}
+	s.Require().NoError(s.repo.Create(s.ctx, key))
+	createdUpdatedAt := key.UpdatedAt
+
+	key.GroupID = &target.ID
+	s.Require().ErrorIs(
+		s.repo.UpdateGroupIDIfCurrent(s.ctx, key, target.ID),
+		service.ErrAPIKeyGroupConflict,
+	)
+	got, err := s.repo.GetByID(s.ctx, key.ID)
+	s.Require().NoError(err)
+	s.Require().Equal(source.ID, *got.GroupID)
+
+	s.Require().NoError(s.repo.UpdateGroupIDIfCurrent(s.ctx, key, source.ID))
+	s.Require().Greater(key.UpdatedAt, createdUpdatedAt)
+	got, err = s.repo.GetByID(s.ctx, key.ID)
+	s.Require().NoError(err)
+	s.Require().Equal(target.ID, *got.GroupID)
+	s.Require().Equal(got.UpdatedAt, key.UpdatedAt)
+}
+
+func (s *APIKeyRepoSuite) TestUpdateGroupIDIfCurrent_UnboundExpectedZero() {
+	user := s.mustCreateUser("cas-unbound@test.com")
+	target := s.mustCreateGroup("g-cas-unbound-target")
+	key := &service.APIKey{
+		UserID: user.ID,
+		Key:    "sk-cas-unbound",
+		Name:   "CAS Unbound Key",
+		Status: service.StatusActive,
+	}
+	s.Require().NoError(s.repo.Create(s.ctx, key))
+
+	key.GroupID = &target.ID
+	s.Require().NoError(s.repo.UpdateGroupIDIfCurrent(s.ctx, key, 0))
+	got, err := s.repo.GetByID(s.ctx, key.ID)
+	s.Require().NoError(err)
+	s.Require().Equal(target.ID, *got.GroupID)
+}
+
+func (s *APIKeyRepoSuite) TestUpdateGroupIDIfCurrent_RejectsConcurrentMutation() {
+	user := s.mustCreateUser("cas-concurrent@test.com")
+	source := s.mustCreateGroup("g-cas-concurrent-source")
+	target := s.mustCreateGroup("g-cas-concurrent-target")
+	key := &service.APIKey{
+		UserID:  user.ID,
+		Key:     "sk-cas-concurrent",
+		Name:    "Before",
+		GroupID: &source.ID,
+		Status:  service.StatusActive,
+	}
+	s.Require().NoError(s.repo.Create(s.ctx, key))
+	stale := *key
+
+	key.Name = "Concurrent change"
+	s.Require().NoError(s.repo.Update(s.ctx, key, service.APIKeyUpdateFields{Name: true}))
+	stale.GroupID = &target.ID
+
+	s.Require().ErrorIs(
+		s.repo.UpdateGroupIDIfCurrent(s.ctx, &stale, source.ID),
+		service.ErrAPIKeyGroupConflict,
+	)
+	got, err := s.repo.GetByID(s.ctx, key.ID)
+	s.Require().NoError(err)
+	s.Require().Equal(source.ID, *got.GroupID)
+	s.Require().Equal("Concurrent change", got.Name)
+}
+
 // --- Delete ---
 
 func (s *APIKeyRepoSuite) TestDelete() {

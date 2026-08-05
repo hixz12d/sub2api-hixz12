@@ -331,6 +331,38 @@ func (r *apiKeyRepository) Update(ctx context.Context, key *service.APIKey, fiel
 	return nil
 }
 
+// UpdateGroupIDIfCurrent changes only the group when the key is still bound to
+// the expected group. expectedGroupID=0 represents an unbound key.
+func (r *apiKeyRepository) UpdateGroupIDIfCurrent(ctx context.Context, key *service.APIKey, expectedGroupID int64) error {
+	client := clientFromContext(ctx, r.client)
+	builder := client.APIKey.Update().
+		Where(apikey.IDEQ(key.ID), apikey.DeletedAtIsNil())
+	if !key.UpdatedAt.IsZero() {
+		builder = builder.Where(apikey.UpdatedAtEQ(key.UpdatedAt))
+	}
+	if expectedGroupID == 0 {
+		builder = builder.Where(apikey.GroupIDIsNil())
+	} else {
+		builder = builder.Where(apikey.GroupIDEQ(expectedGroupID))
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	builder = builder.SetUpdatedAt(now)
+	if key.GroupID == nil {
+		builder = builder.ClearGroupID()
+	} else {
+		builder = builder.SetGroupID(*key.GroupID)
+	}
+	affected, err := builder.Save(ctx)
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return service.ErrAPIKeyGroupConflict
+	}
+	key.UpdatedAt = now
+	return nil
+}
+
 func (r *apiKeyRepository) Delete(ctx context.Context, id int64) error {
 	// 存在唯一键约束 生成tombstone key 用来释放原key，长度远小于 128，满足 schema 限制
 	tombstoneKey := fmt.Sprintf("__deleted__%d__%d", id, time.Now().UnixNano())
