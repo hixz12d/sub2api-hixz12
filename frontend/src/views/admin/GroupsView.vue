@@ -353,7 +353,7 @@
                 value === 'active' ? 'badge-success' : 'badge-danger',
               ]"
             >
-              {{ t("admin.accounts.status." + value) }}
+              {{ formatGroupStatus(value) }}
             </span>
           </template>
 
@@ -4418,6 +4418,14 @@ const columns = computed<Column[]>(() =>
 if (typeof window !== "undefined") {
   loadSavedColumns();
 }
+
+const formatGroupStatus = (status: string) => {
+  if (status === "active") return t("common.active");
+  if (status === "inactive" || status === "disabled") {
+    return t("common.disabled");
+  }
+  return status;
+};
 
 // Filter options
 const statusOptions = computed(() => [
