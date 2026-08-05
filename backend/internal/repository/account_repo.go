@@ -1779,23 +1779,23 @@ func (r *accountRepository) GetGroups(ctx context.Context, accountID int64) ([]s
 func (r *accountRepository) BindGroups(ctx context.Context, accountID int64, groupIDs []int64) error {
 	// Preserve priorities for retained memberships. Membership rows and the
 	// scheduler event commit together so no crash window can leave stale buckets.
-	tx, err := r.client.Tx(ctx)
-	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
+	txCtx, txClient, tx, err := beginRepositoryTx(ctx, r.client)
+	if err != nil {
 		return err
 	}
-
-	var txClient *dbent.Client
-	if err == nil {
+	if tx != nil {
 		defer func() { _ = tx.Rollback() }()
-		txClient = tx.Client()
-	} else {
-		txClient = r.client
+	}
+	// Lock the owning row so concurrent replacements serialize even when the
+	// account currently has no account_groups rows to lock.
+	if _, err := txClient.Account.Query().Where(dbaccount.IDEQ(accountID)).ForUpdate().Only(txCtx); err != nil {
+		return translatePersistenceError(err, service.ErrAccountNotFound, nil)
 	}
 
 	existing, err := txClient.AccountGroup.Query().
 		Where(dbaccountgroup.AccountIDEQ(accountID)).
 		ForUpdate().
-		All(ctx)
+		All(txCtx)
 	if err != nil {
 		return err
 	}

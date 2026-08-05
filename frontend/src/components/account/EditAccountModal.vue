@@ -4158,13 +4158,14 @@ const handleClose = () => {
 
 const submitUpdateAccount = async (accountID: number, updatePayload: Record<string, unknown>) => {
   submitting.value = true
+  let committedAccount: Account | null = null
   try {
     let updatedAccount = await adminAPI.accounts.update(accountID, withAntigravityConfirmFlag(updatePayload))
+    committedAccount = updatedAccount
     if (updatedAccount.platform === 'openai') {
-      const currentPriorities = accountGroupPriorityMap(updatedAccount)
       const originalPriorities = accountGroupPriorityMap(props.account)
       for (const group of selectedPriorityGroups.value) {
-        const expectedPriority = currentPriorities.get(group.id) ?? originalPriorities.get(group.id) ?? 50
+        const expectedPriority = originalPriorities.get(group.id) ?? 50
         const draftPriority = Number(groupPriorityDraft[group.id] ?? expectedPriority)
         const priority = Number.isInteger(draftPriority) && draftPriority > 0 && draftPriority <= 1_000_000
           ? draftPriority
@@ -4183,6 +4184,7 @@ const submitUpdateAccount = async (accountID: number, updatePayload: Record<stri
           ]
         }
       }
+      committedAccount = updatedAccount
     }
     appStore.showSuccess(t('admin.accounts.accountUpdated'))
     emit('updated', updatedAccount)
@@ -4196,6 +4198,17 @@ const submitUpdateAccount = async (accountID: number, updatePayload: Record<stri
           await submitUpdateAccount(accountID, updatePayload)
         }
       })
+      return
+    }
+    if (committedAccount) {
+      try {
+        const reconciledAccount = await adminAPI.accounts.getById(accountID)
+        resetGroupPriorityDraft(reconciledAccount)
+        emit('updated', reconciledAccount)
+        appStore.showError(t('admin.accounts.accountSavedPriorityUpdateFailed'))
+      } catch {
+        appStore.showError(t('admin.accounts.accountSavedPriorityUpdateFailed'))
+      }
       return
     }
     appStore.showError(error.message || t('admin.accounts.failedToUpdate'))

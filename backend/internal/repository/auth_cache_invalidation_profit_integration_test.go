@@ -2,9 +2,9 @@
 
 package repository
 
-// migration 193 回归：groups 触发器的 durable 失效监视清单必须覆盖利润控制
-// 配置及 D 依赖的分组计价字段（正常后台保存走 InvalidateAuthCacheByGroupID 即时失效，触发器兜底
-// 直改 SQL / 更新与失效之间崩溃等 out-of-band 场景）。
+// Migration 194 regression: every persisted group update invalidates API-key
+// auth snapshots. This deliberately favors complete authorization/routing cache
+// convergence over a fragile column allowlist as the group schema evolves.
 
 import (
 	"context"
@@ -58,7 +58,8 @@ func TestAuthCacheInvalidationTrigger_ProfitControlColumns(t *testing.T) {
 
 	_, err := integrationDB.ExecContext(ctx, "UPDATE groups SET name = name || '-cosmetic' WHERE id = $1", group.ID)
 	require.NoError(t, err)
-	require.Zero(t, count(), "cosmetic 更新不得入队（既有语义回归）")
+	require.Equal(t, 1, count(), "every group update must invalidate auth snapshots")
+	clear()
 
 	_, err = integrationDB.ExecContext(ctx, "UPDATE groups SET profit_control_enabled = NOT profit_control_enabled WHERE id = $1", group.ID)
 	require.NoError(t, err)
@@ -77,7 +78,7 @@ func TestAuthCacheInvalidationTrigger_ProfitControlColumns(t *testing.T) {
 
 	_, err = integrationDB.ExecContext(ctx, "UPDATE groups SET profit_min_margin = profit_min_margin WHERE id = $1", group.ID)
 	require.NoError(t, err)
-	require.Zero(t, count(), "利润字段无实际变化的 UPDATE 不得入队")
+	require.Equal(t, 1, count(), "even no-op SQL updates must invalidate auth snapshots")
 
 	for name, update := range map[string]string{
 		"platform":             "platform = 'anthropic'",
@@ -87,6 +88,7 @@ func TestAuthCacheInvalidationTrigger_ProfitControlColumns(t *testing.T) {
 		"peak_start":           "peak_start = '08:00'",
 		"peak_end":             "peak_end = '09:00'",
 		"peak_rate_multiplier": "peak_rate_multiplier = 1.2",
+		"allow_live":           "allow_live = NOT allow_live",
 	} {
 		t.Run(name, func(t *testing.T) {
 			clear()

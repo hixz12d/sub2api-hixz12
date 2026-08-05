@@ -14,7 +14,7 @@ describe('admin group account priority API', () => {
   beforeEach(() => {
     patch.mockReset()
     patch.mockResolvedValue({
-      data: [{ account_id: 17, group_id: 9, priority: 1 }]
+      data: { items: [{ account_id: 17, group_id: 9, priority: 1 }] }
     })
   })
 

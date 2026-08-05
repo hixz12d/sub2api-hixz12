@@ -1381,7 +1381,7 @@ func (s *adminServiceImpl) CreateShadow(ctx context.Context, parentID int64, opt
 	accountGroups := make([]AccountGroup, 0, len(groupIDs))
 	for _, groupID := range groupIDs {
 		priority := 50
-		if inheritedPriority, ok := bindingPriorityByGroup[groupID]; ok && inheritedPriority > 0 {
+		if inheritedPriority, ok := bindingPriorityByGroup[groupID]; ok {
 			priority = inheritedPriority
 		}
 		accountGroups = append(accountGroups, AccountGroup{GroupID: groupID, Priority: priority})

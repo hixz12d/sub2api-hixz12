@@ -864,32 +864,20 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	sanitizeGroupReasoningEffortPolicy(group)
 
-	if err := s.groupRepo.Update(ctx, group); err != nil {
-		return nil, err
-	}
-
-	if s.authCacheInvalidator != nil {
-		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, id)
-	}
-
-	// 如果指定了复制账号的源分组，同步绑定（替换当前分组的账号）
-	if len(input.CopyAccountsFromGroupIDs) > 0 {
-		// 去重源分组 IDs
+	copyAccounts := len(input.CopyAccountsFromGroupIDs) > 0
+	var accountIDsToCopy []int64
+	if copyAccounts {
 		seen := make(map[int64]struct{})
 		uniqueSourceGroupIDs := make([]int64, 0, len(input.CopyAccountsFromGroupIDs))
 		for _, srcGroupID := range input.CopyAccountsFromGroupIDs {
-			// 校验：源分组不能是自身
 			if srcGroupID == id {
 				return nil, fmt.Errorf("cannot copy accounts from self")
 			}
-			// 去重
 			if _, exists := seen[srcGroupID]; !exists {
 				seen[srcGroupID] = struct{}{}
 				uniqueSourceGroupIDs = append(uniqueSourceGroupIDs, srcGroupID)
 			}
 		}
-
-		// 校验源分组的平台是否与当前分组一致
 		for _, srcGroupID := range uniqueSourceGroupIDs {
 			srcGroup, err := s.groupRepo.GetByIDLite(ctx, srcGroupID)
 			if err != nil {
@@ -900,15 +888,11 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 			}
 		}
 
-		// 获取所有源分组的账号（去重）
-		accountIDsToCopy, err := s.groupRepo.GetAccountIDsByGroupIDs(ctx, uniqueSourceGroupIDs)
+		var err error
+		accountIDsToCopy, err = s.groupRepo.GetAccountIDsByGroupIDs(ctx, uniqueSourceGroupIDs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get accounts from source groups: %w", err)
 		}
-
-		// The repository performs a priority-preserving atomic replacement after filtering.
-
-		// require_oauth_only: 过滤掉 apikey 类型账号
 		if group.RequireOAuthOnly && groupSupportsOAuthOnlyFilter(group.Platform) && len(accountIDsToCopy) > 0 {
 			accounts, err := s.accountRepo.GetByIDs(ctx, accountIDsToCopy)
 			if err != nil {
@@ -920,18 +904,49 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 					oauthIDs[acc.ID] = struct{}{}
 				}
 			}
-			var filtered []int64
-			for _, aid := range accountIDsToCopy {
-				if _, ok := oauthIDs[aid]; ok {
-					filtered = append(filtered, aid)
+			filtered := make([]int64, 0, len(accountIDsToCopy))
+			for _, accountID := range accountIDsToCopy {
+				if _, ok := oauthIDs[accountID]; ok {
+					filtered = append(filtered, accountID)
 				}
 			}
 			accountIDsToCopy = filtered
 		}
+	}
 
-		if err := s.groupRepo.BindAccountsToGroup(ctx, id, accountIDsToCopy); err != nil {
-			return nil, fmt.Errorf("failed to replace account bindings for group: %w", err)
+	persist := func(opCtx context.Context) error {
+		if err := s.groupRepo.Update(opCtx, group); err != nil {
+			return err
 		}
+		if copyAccounts {
+			if err := s.groupRepo.BindAccountsToGroup(opCtx, id, accountIDsToCopy); err != nil {
+				return fmt.Errorf("failed to replace account bindings for group: %w", err)
+			}
+		}
+		return nil
+	}
+
+	if copyAccounts {
+		if s.entClient == nil {
+			return nil, errors.New("ent client is required for atomic group and account binding updates")
+		}
+		tx, err := s.entClient.Tx(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("begin group update transaction: %w", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		if err := persist(dbent.NewTxContext(ctx, tx)); err != nil {
+			return nil, err
+		}
+		if err := tx.Commit(); err != nil {
+			return nil, fmt.Errorf("commit group update transaction: %w", err)
+		}
+	} else if err := persist(ctx); err != nil {
+		return nil, err
+	}
+
+	if s.authCacheInvalidator != nil {
+		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, id)
 	}
 
 	return group, nil

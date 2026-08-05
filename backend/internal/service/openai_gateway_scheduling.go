@@ -1097,7 +1097,7 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 				return a.account.LastUsedAt.Before(*b.account.LastUsedAt)
 			}
 		})
-		shuffleWithinSortGroups(available)
+		shuffleOpenAIWithinSortGroups(available, groupID, priorityMode)
 		if rateOrder.enabled {
 			sort.SliceStable(available, func(i, j int) bool {
 				if priorityMode == OpenAIAccountPriorityModeBinding {

@@ -231,11 +231,11 @@ export async function updateAccountPriorities(
   id: number,
   mutations: AccountPriorityMutation[]
 ): Promise<AccountGroup[]> {
-  const { data } = await apiClient.patch<AccountGroup[]>(
+  const { data } = await apiClient.patch<{ items: AccountGroup[] }>(
     `/admin/groups/${id}/account-priorities`,
     { items: mutations }
   )
-  return data
+  return data.items
 }
 
 /**

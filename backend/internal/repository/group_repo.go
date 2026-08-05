@@ -44,11 +44,25 @@ func newGroupRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor) *groupRep
 }
 
 func (r *groupRepository) Create(ctx context.Context, groupIn *service.Group) error {
-	if err := createGroupRecord(ctx, r.client, groupIn); err != nil {
+	if groupIn == nil {
+		return errors.New("group is nil")
+	}
+	groupIn.OpenAIAccountPriorityMode = service.NormalizeOpenAIAccountPriorityMode(groupIn.Platform, groupIn.OpenAIAccountPriorityMode)
+	txCtx, txClient, tx, err := beginRepositoryTx(ctx, r.client)
+	if err != nil {
 		return err
 	}
-	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventGroupChanged, nil, &groupIn.ID, nil); err != nil {
-		logger.LegacyPrintf("repository.group", "[SchedulerOutbox] enqueue group create failed: group=%d err=%v", groupIn.ID, err)
+	if tx != nil {
+		defer func() { _ = tx.Rollback() }()
+	}
+	if err := createGroupRecord(txCtx, txClient, groupIn); err != nil {
+		return err
+	}
+	if err := enqueueSchedulerOutbox(txCtx, txClient, service.SchedulerOutboxEventGroupChanged, nil, &groupIn.ID, nil); err != nil {
+		return err
+	}
+	if tx != nil {
+		return tx.Commit()
 	}
 	return nil
 }
@@ -57,6 +71,7 @@ func createGroupRecord(ctx context.Context, client *dbent.Client, groupIn *servi
 	if groupIn == nil {
 		return errors.New("group is nil")
 	}
+	groupIn.OpenAIAccountPriorityMode = service.NormalizeOpenAIAccountPriorityMode(groupIn.Platform, groupIn.OpenAIAccountPriorityMode)
 	builder := client.Group.Create().
 		SetName(groupIn.Name).
 		SetDescription(groupIn.Description).
@@ -231,7 +246,18 @@ func (r *groupRepository) GetByIDLite(ctx context.Context, id int64) (*service.G
 }
 
 func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) error {
-	builder := r.client.Group.UpdateOneID(groupIn.ID).
+	if groupIn == nil {
+		return errors.New("group is nil")
+	}
+	groupIn.OpenAIAccountPriorityMode = service.NormalizeOpenAIAccountPriorityMode(groupIn.Platform, groupIn.OpenAIAccountPriorityMode)
+	txCtx, txClient, tx, err := beginRepositoryTx(ctx, r.client)
+	if err != nil {
+		return err
+	}
+	if tx != nil {
+		defer func() { _ = tx.Rollback() }()
+	}
+	builder := txClient.Group.UpdateOneID(groupIn.ID).
 		SetName(groupIn.Name).
 		SetDescription(groupIn.Description).
 		SetPlatform(groupIn.Platform).
@@ -354,24 +380,36 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 	// 处理 SupportedModelScopes（始终设置，空数组表示不限制）
 	builder = builder.SetSupportedModelScopes(groupIn.SupportedModelScopes)
 
-	updated, err := builder.Save(ctx)
+	updated, err := builder.Save(txCtx)
 	if err != nil {
 		return translatePersistenceError(err, service.ErrGroupNotFound, service.ErrGroupExists)
 	}
 	groupIn.UpdatedAt = updated.UpdatedAt
-	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventGroupChanged, nil, &groupIn.ID, nil); err != nil {
-		logger.LegacyPrintf("repository.group", "[SchedulerOutbox] enqueue group update failed: group=%d err=%v", groupIn.ID, err)
+	if err := enqueueSchedulerOutbox(txCtx, txClient, service.SchedulerOutboxEventGroupChanged, nil, &groupIn.ID, nil); err != nil {
+		return err
+	}
+	if tx != nil {
+		return tx.Commit()
 	}
 	return nil
 }
 
 func (r *groupRepository) Delete(ctx context.Context, id int64) error {
-	_, err := r.client.Group.Delete().Where(group.IDEQ(id)).Exec(ctx)
+	txCtx, txClient, tx, err := beginRepositoryTx(ctx, r.client)
 	if err != nil {
+		return err
+	}
+	if tx != nil {
+		defer func() { _ = tx.Rollback() }()
+	}
+	if _, err := txClient.Group.Delete().Where(group.IDEQ(id)).Exec(txCtx); err != nil {
 		return translatePersistenceError(err, service.ErrGroupNotFound, nil)
 	}
-	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventGroupChanged, nil, &id, nil); err != nil {
-		logger.LegacyPrintf("repository.group", "[SchedulerOutbox] enqueue group delete failed: group=%d err=%v", id, err)
+	if err := enqueueSchedulerOutbox(txCtx, txClient, service.SchedulerOutboxEventGroupChanged, nil, &id, nil); err != nil {
+		return err
+	}
+	if tx != nil {
+		return tx.Commit()
 	}
 	return nil
 }
@@ -1065,22 +1103,23 @@ func (r *groupRepository) BindAccountsToGroup(ctx context.Context, groupID int64
 	}
 	sort.Slice(targetIDs, func(i, j int) bool { return targetIDs[i] < targetIDs[j] })
 
-	tx, err := r.client.Tx(ctx)
-	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
+	txCtx, txClient, tx, err := beginRepositoryTx(ctx, r.client)
+	if err != nil {
 		return err
 	}
-	var txClient *dbent.Client
-	if err == nil {
+	if tx != nil {
 		defer func() { _ = tx.Rollback() }()
-		txClient = tx.Client()
-	} else {
-		txClient = r.client
+	}
+	// Lock the owning row so concurrent replacements serialize even when the
+	// group currently has no account_groups rows to lock.
+	if _, err := txClient.Group.Query().Where(group.IDEQ(groupID)).ForUpdate().Only(txCtx); err != nil {
+		return translatePersistenceError(err, service.ErrGroupNotFound, nil)
 	}
 
 	existing, err := txClient.AccountGroup.Query().
 		Where(dbaccountgroup.GroupIDEQ(groupID)).
 		ForUpdate().
-		All(ctx)
+		All(txCtx)
 	if err != nil {
 		return err
 	}

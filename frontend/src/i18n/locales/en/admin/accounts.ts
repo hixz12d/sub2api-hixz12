@@ -832,6 +832,7 @@ export default {
       groupPriorityLabel: 'Group priority for {group}',
       failedToCreate: 'Failed to create account',
       failedToUpdate: 'Failed to update account',
+      accountSavedPriorityUpdateFailed: 'Account saved, but group priority updates conflicted. The latest server state has been reloaded.',
       pleaseSelectStatus: 'Please select a valid account status',
       mixedChannelWarningTitle: 'Mixed Channel Warning',
       mixedChannelWarning: 'Warning: Group "{groupName}" contains both {currentPlatform} and {otherPlatform} accounts. Mixing different channels may cause thinking block signature validation issues, which will fallback to non-thinking mode. Are you sure you want to continue?',

@@ -74,6 +74,33 @@ func sortOpenAIAccountsBySchedulingPriorityAndLastUsed(accounts []*Account, grou
 	})
 }
 
+// shuffleOpenAIWithinSortGroups preserves the binding-priority tier barrier.
+// The generic shuffle groups by global account priority and may otherwise mix
+// adjacent binding tiers that happen to share the same global sort values.
+func shuffleOpenAIWithinSortGroups(accounts []accountWithLoad, groupID *int64, mode string) {
+	if mode != OpenAIAccountPriorityModeBinding {
+		shuffleWithinSortGroups(accounts)
+		return
+	}
+	for start := 0; start < len(accounts); {
+		priority, ok := openAIAccountBindingPriority(accounts[start].account, groupID)
+		if !ok {
+			start++
+			continue
+		}
+		end := start + 1
+		for end < len(accounts) {
+			candidatePriority, candidateOK := openAIAccountBindingPriority(accounts[end].account, groupID)
+			if !candidateOK || candidatePriority != priority {
+				break
+			}
+			end++
+		}
+		shuffleWithinSortGroups(accounts[start:end])
+		start = end
+	}
+}
+
 func openAIMinBindingPriority(accounts []*Account, groupID *int64) (int, bool) {
 	best := 0
 	found := false

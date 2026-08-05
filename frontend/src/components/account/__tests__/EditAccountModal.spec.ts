@@ -1,9 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent } from 'vue'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 
-const { updateAccountMock, checkMixedChannelRiskMock, authIsSimpleMode } = vi.hoisted(() => ({
+const {
+  updateAccountMock,
+  getAccountByIDMock,
+  updateAccountPrioritiesMock,
+  checkMixedChannelRiskMock,
+  authIsSimpleMode
+} = vi.hoisted(() => ({
   updateAccountMock: vi.fn(),
+  getAccountByIDMock: vi.fn(),
+  updateAccountPrioritiesMock: vi.fn(),
   checkMixedChannelRiskMock: vi.fn(),
   authIsSimpleMode: { value: true }
 }))
@@ -28,7 +36,11 @@ vi.mock('@/api/admin', () => ({
   adminAPI: {
     accounts: {
       update: updateAccountMock,
+      getById: getAccountByIDMock,
       checkMixedChannelRisk: checkMixedChannelRiskMock
+    },
+    groups: {
+      updateAccountPriorities: updateAccountPrioritiesMock
     },
     settings: {
       getWebSearchEmulationConfig: vi.fn().mockResolvedValue({ enabled: false, providers: [] }),
@@ -290,13 +302,13 @@ function buildOpenAISetupTokenAccount() {
   } as any
 }
 
-function mountModal(account = buildAccount()) {
+function mountModal(account = buildAccount(), groups: any[] = []) {
   return mount(EditAccountModal, {
     props: {
       show: true,
       account,
       proxies: [],
-      groups: []
+      groups
     },
     global: {
       stubs: {
@@ -314,6 +326,62 @@ function mountModal(account = buildAccount()) {
 describe('EditAccountModal', () => {
   beforeEach(() => {
     authIsSimpleMode.value = true
+    getAccountByIDMock.mockReset()
+    updateAccountPrioritiesMock.mockReset()
+  })
+
+  it('uses the originally loaded membership priority as the CAS expectation', async () => {
+    authIsSimpleMode.value = false
+    const account = {
+      ...buildAccount(),
+      group_ids: [7],
+      account_groups: [{ account_id: 1, group_id: 7, priority: 1 }]
+    }
+    const updatedAccount = {
+      ...account,
+      account_groups: [{ account_id: 1, group_id: 7, priority: 9 }]
+    }
+    updateAccountMock.mockReset()
+    updateAccountMock.mockResolvedValue(updatedAccount)
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountPrioritiesMock.mockResolvedValue([{ account_id: 1, group_id: 7, priority: 2 }])
+
+    const wrapper = mountModal(account, [{ id: 7, name: 'OpenAI group', platform: 'openai' }])
+    await wrapper.get('input[aria-label="admin.accounts.groupPriorityLabel"]').setValue('2')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(updateAccountPrioritiesMock).toHaveBeenCalledWith(7, [{
+      account_id: 1,
+      priority: 2,
+      expected_priority: 1
+    }])
+  })
+
+  it('reloads server state and keeps the modal open after a priority update conflict', async () => {
+    authIsSimpleMode.value = false
+    const account = {
+      ...buildAccount(),
+      group_ids: [7],
+      account_groups: [{ account_id: 1, group_id: 7, priority: 1 }]
+    }
+    const reconciledAccount = { ...account, name: 'Server state' }
+    updateAccountMock.mockReset()
+    updateAccountMock.mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset()
+    checkMixedChannelRiskMock.mockResolvedValue({ has_risk: false })
+    updateAccountPrioritiesMock.mockRejectedValue(Object.assign(new Error('conflict'), { status: 409 }))
+    getAccountByIDMock.mockResolvedValue(reconciledAccount)
+
+    const wrapper = mountModal(account, [{ id: 7, name: 'OpenAI group', platform: 'openai' }])
+    await wrapper.get('input[aria-label="admin.accounts.groupPriorityLabel"]').setValue('2')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(getAccountByIDMock).toHaveBeenCalledWith(1)
+    expect(wrapper.emitted('updated')?.at(-1)).toEqual([reconciledAccount])
+    expect(wrapper.emitted('close')).toBeUndefined()
   })
 
   it('reopening the same account rehydrates the OpenAI whitelist from props', async () => {

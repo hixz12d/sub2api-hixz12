@@ -891,6 +891,7 @@ export default {
       groupPriorityLabel: '{group} 的分组内优先级',
       failedToCreate: '创建账号失败',
       failedToUpdate: '更新账号失败',
+      accountSavedPriorityUpdateFailed: '账号已保存，但分组优先级更新发生冲突，已重新加载服务器最新状态。',
       pleaseSelectStatus: '请选择有效的账号状态',
       mixedChannelWarningTitle: '混合渠道警告',
       mixedChannelWarning: '警告：分组 "{groupName}" 中同时包含 {currentPlatform} 和 {otherPlatform} 账号。混合使用不同渠道可能导致 thinking block 签名验证问题，会自动回退到非 thinking 模式。确定要继续吗？',
