@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -221,6 +222,12 @@ type UpdateGroupRequest struct {
 
 type UpdateGroupAccountPrioritiesRequest struct {
 	Items []service.AccountGroupPriorityUpdate `json:"items" binding:"required,min=1,max=500,dive"`
+}
+
+type UpdateGroupPriorityModeRequest struct {
+	Mode              string    `json:"mode" binding:"required,oneof=global binding"`
+	ExpectedMode      string    `json:"expected_mode" binding:"required,oneof=global binding"`
+	ExpectedUpdatedAt time.Time `json:"expected_updated_at" binding:"required"`
 }
 
 type CompositeRouteRequest struct {
@@ -674,6 +681,28 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		return
 	}
 
+	response.Success(c, dto.GroupFromServiceAdmin(group))
+}
+
+// UpdateOpenAIAccountPriorityMode applies a guarded mode-only update.
+// PATCH /api/v1/admin/groups/:id/openai-priority-mode
+func (h *GroupHandler) UpdateOpenAIAccountPriorityMode(c *gin.Context) {
+	groupID, ok := parsePositiveIDParam(c, "id")
+	if !ok {
+		return
+	}
+	var req UpdateGroupPriorityModeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	group, err := h.adminService.AdminUpdateGroupOpenAIAccountPriorityModeWithExpected(
+		c.Request.Context(), groupID, req.Mode, req.ExpectedMode, req.ExpectedUpdatedAt,
+	)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 	response.Success(c, dto.GroupFromServiceAdmin(group))
 }
 

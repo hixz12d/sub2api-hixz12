@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	dbaccountgroup "github.com/Wei-Shaw/sub2api/ent/accountgroup"
@@ -391,6 +392,48 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 	if tx != nil {
 		return tx.Commit()
 	}
+	return nil
+}
+
+func (r *groupRepository) UpdateOpenAIAccountPriorityModeIfCurrent(ctx context.Context, groupIn *service.Group, expectedMode string) error {
+	if groupIn == nil {
+		return errors.New("group is nil")
+	}
+	txCtx, txClient, tx, err := beginRepositoryTx(ctx, r.client)
+	if err != nil {
+		return err
+	}
+	if tx != nil {
+		defer func() { _ = tx.Rollback() }()
+	}
+	builder := txClient.Group.Update().Where(
+		group.IDEQ(groupIn.ID),
+		group.DeletedAtIsNil(),
+		group.OpenaiAccountPriorityModeEQ(expectedMode),
+	)
+	if !groupIn.UpdatedAt.IsZero() {
+		builder = builder.Where(group.UpdatedAtEQ(groupIn.UpdatedAt))
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	affected, err := builder.
+		SetOpenaiAccountPriorityMode(groupIn.OpenAIAccountPriorityMode).
+		SetUpdatedAt(now).
+		Save(txCtx)
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return service.ErrGroupPriorityModeConflict
+	}
+	if err := enqueueSchedulerOutbox(txCtx, txClient, service.SchedulerOutboxEventGroupChanged, nil, &groupIn.ID, nil); err != nil {
+		return err
+	}
+	if tx != nil {
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+	}
+	groupIn.UpdatedAt = now
 	return nil
 }
 

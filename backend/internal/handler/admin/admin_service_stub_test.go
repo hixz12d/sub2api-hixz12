@@ -371,6 +371,10 @@ func (s *stubAdminService) UpdateGroup(ctx context.Context, id int64, input *ser
 	return &group, nil
 }
 
+func (s *stubAdminService) AdminUpdateGroupOpenAIAccountPriorityModeWithExpected(_ context.Context, id int64, mode, _ string, _ time.Time) (*service.Group, error) {
+	return &service.Group{ID: id, Platform: service.PlatformOpenAI, OpenAIAccountPriorityMode: mode}, nil
+}
+
 func (s *stubAdminService) UpdateGroupAccountPriorities(_ context.Context, _ int64, updates []service.AccountGroupPriorityUpdate) ([]service.AccountGroupPriorityUpdate, error) {
 	return updates, nil
 }
@@ -740,6 +744,23 @@ func (s *stubAdminService) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 			}
 			return &service.AdminUpdateAPIKeyGroupIDResult{APIKey: &k}, nil
 		}
+	}
+	return nil, service.ErrAPIKeyNotFound
+}
+
+func (s *stubAdminService) AdminUpdateAPIKeyGroupIDWithExpected(ctx context.Context, keyID int64, groupID, expectedGroupID *int64, _ *time.Time) (*service.AdminUpdateAPIKeyGroupIDResult, error) {
+	for i := range s.apiKeys {
+		if s.apiKeys[i].ID != keyID {
+			continue
+		}
+		current := s.apiKeys[i].GroupID
+		matches := expectedGroupID == nil ||
+			(*expectedGroupID == 0 && current == nil) ||
+			(*expectedGroupID > 0 && current != nil && *current == *expectedGroupID)
+		if !matches {
+			return nil, service.ErrAPIKeyGroupConflict
+		}
+		return s.AdminUpdateAPIKeyGroupID(ctx, keyID, groupID)
 	}
 	return nil, service.ErrAPIKeyNotFound
 }

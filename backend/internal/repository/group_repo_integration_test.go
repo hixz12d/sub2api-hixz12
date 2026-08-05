@@ -287,6 +287,56 @@ func (s *GroupRepoSuite) TestUpdate() {
 	s.Require().Equal("updated", got.Name)
 }
 
+func (s *GroupRepoSuite) TestUpdateOpenAIAccountPriorityModeIfCurrentPublishesOutbox() {
+	group := &service.Group{
+		Name:                      "mode-cas",
+		Platform:                  service.PlatformOpenAI,
+		OpenAIAccountPriorityMode: service.OpenAIAccountPriorityModeGlobal,
+		RateMultiplier:            1,
+		Status:                    service.StatusActive,
+		SubscriptionType:          service.SubscriptionTypeStandard,
+	}
+	s.Require().NoError(s.repo.Create(s.ctx, group))
+	var before int64
+	s.Require().NoError(scanSingleRow(s.ctx, s.tx, "SELECT count(*) FROM scheduler_outbox WHERE group_id=$1", []any{group.ID}, &before))
+
+	group.OpenAIAccountPriorityMode = service.OpenAIAccountPriorityModeBinding
+	s.Require().NoError(s.repo.UpdateOpenAIAccountPriorityModeIfCurrent(s.ctx, group, service.OpenAIAccountPriorityModeGlobal))
+
+	got, err := s.repo.GetByID(s.ctx, group.ID)
+	s.Require().NoError(err)
+	s.Require().Equal(service.OpenAIAccountPriorityModeBinding, got.OpenAIAccountPriorityMode)
+	s.Require().Equal(got.UpdatedAt, group.UpdatedAt)
+	var after int64
+	s.Require().NoError(scanSingleRow(s.ctx, s.tx, "SELECT count(*) FROM scheduler_outbox WHERE group_id=$1", []any{group.ID}, &after))
+	s.Require().Equal(before+1, after)
+}
+
+func (s *GroupRepoSuite) TestUpdateOpenAIAccountPriorityModeIfCurrentRejectsStaleSnapshot() {
+	group := &service.Group{
+		Name:                      "mode-cas-stale",
+		Platform:                  service.PlatformOpenAI,
+		OpenAIAccountPriorityMode: service.OpenAIAccountPriorityModeGlobal,
+		RateMultiplier:            1,
+		Status:                    service.StatusActive,
+		SubscriptionType:          service.SubscriptionTypeStandard,
+	}
+	s.Require().NoError(s.repo.Create(s.ctx, group))
+	stale := *group
+	group.Description = "concurrent change"
+	s.Require().NoError(s.repo.Update(s.ctx, group))
+	stale.OpenAIAccountPriorityMode = service.OpenAIAccountPriorityModeBinding
+
+	s.Require().ErrorIs(
+		s.repo.UpdateOpenAIAccountPriorityModeIfCurrent(s.ctx, &stale, service.OpenAIAccountPriorityModeGlobal),
+		service.ErrGroupPriorityModeConflict,
+	)
+	got, err := s.repo.GetByID(s.ctx, group.ID)
+	s.Require().NoError(err)
+	s.Require().Equal(service.OpenAIAccountPriorityModeGlobal, got.OpenAIAccountPriorityMode)
+	s.Require().Equal("concurrent change", got.Description)
+}
+
 func (s *GroupRepoSuite) TestGetByID_PreservesMessagesDispatchModelConfig() {
 	group := &service.Group{
 		Name:                  "openai-dispatch",
