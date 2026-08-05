@@ -499,6 +499,7 @@ export interface PaginationConfig {
 export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'composite'
 
 export type SubscriptionType = 'standard' | 'subscription'
+export type OpenAIAccountPriorityMode = 'global' | 'binding'
 
 export interface OpenAIMessagesDispatchModelConfig {
   opus_mapped_model?: string
@@ -566,6 +567,7 @@ export interface Group {
 }
 
 export interface AdminGroup extends Group {
+  openai_account_priority_mode: OpenAIAccountPriorityMode
   // 分组利润控制（openai/anthropic/gemini/grok/antigravity 分组可启用；margin/buffer 为小数存储）。
   // 仅管理员可见：与 rate_multiplier 相乘即可反推上游成本上限，不得下放到 Group。
   profit_control_enabled: boolean
@@ -770,6 +772,7 @@ export interface CreateGroupRequest {
   require_privacy_set?: boolean
   // 从指定分组复制账号
   copy_accounts_from_group_ids?: number[]
+  openai_account_priority_mode?: OpenAIAccountPriorityMode
 }
 
 export interface UpdateGroupRequest {
@@ -824,6 +827,7 @@ export interface UpdateGroupRequest {
   require_oauth_only?: boolean
   require_privacy_set?: boolean
   copy_accounts_from_group_ids?: number[]
+  openai_account_priority_mode?: OpenAIAccountPriorityMode
 }
 
 // ==================== Account & Proxy Types ====================
@@ -1096,6 +1100,7 @@ export interface Account {
   proxy?: Proxy
   group_ids?: number[] // Groups this account belongs to
   groups?: Group[] // Preloaded group objects
+  account_groups?: AccountGroup[]
 
   // Rate limit & scheduling fields
   schedulable: boolean
@@ -1172,6 +1177,15 @@ export interface Account {
   parent_privacy_mode?: string
   parent_subscription_expires_at?: string
   parent_chatgpt_account_id?: string
+}
+
+export interface AccountGroup {
+  account_id: number
+  group_id: number
+  priority: number
+  created_at?: string
+  account?: Account
+  group?: Group
 }
 
 export interface AccountSchedulerGroupScore {

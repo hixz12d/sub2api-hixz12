@@ -29,17 +29,18 @@ func profitAuthTestAPIKey() *APIKey {
 			Concurrency: 5,
 		},
 		Group: &Group{
-			ID:                   groupID,
-			Name:                 "VIP-roundtrip",
-			Platform:             PlatformOpenAI,
-			Status:               StatusActive,
-			Hydrated:             true,
-			RateMultiplier:       0.06,
-			SubscriptionType:     SubscriptionTypeStandard,
-			PeakRateEnabled:      false,
-			ProfitControlEnabled: true,
-			ProfitMinMargin:      0.2,
-			ProfitSafetyBuffer:   0.05,
+			ID:                        groupID,
+			Name:                      "VIP-roundtrip",
+			Platform:                  PlatformOpenAI,
+			OpenAIAccountPriorityMode: OpenAIAccountPriorityModeBinding,
+			Status:                    StatusActive,
+			Hydrated:                  true,
+			RateMultiplier:            0.06,
+			SubscriptionType:          SubscriptionTypeStandard,
+			PeakRateEnabled:           false,
+			ProfitControlEnabled:      true,
+			ProfitMinMargin:           0.2,
+			ProfitSafetyBuffer:        0.05,
 		},
 	}
 }
@@ -53,7 +54,7 @@ func TestAPIKeyAuthSnapshotProfitControlRoundtrip(t *testing.T) {
 	snapshot := svc.snapshotFromAPIKey(context.Background(), apiKey)
 	require.NotNil(t, snapshot)
 	require.Equal(t, apiKeyAuthSnapshotVersion, snapshot.Version)
-	require.Equal(t, 18, snapshot.Version, "v18 起认证快照携带利润控制字段")
+	require.Equal(t, 19, snapshot.Version, "v19 认证快照继续携带利润控制字段")
 
 	// 模拟 L2 缓存的完整 JSON 往返（与 apiKeyCache.SetAuthCache/GetAuthCache 同构）。
 	payload, err := json.Marshal(&APIKeyAuthCacheEntry{Snapshot: snapshot})
@@ -67,6 +68,7 @@ func TestAPIKeyAuthSnapshotProfitControlRoundtrip(t *testing.T) {
 	require.NotNil(t, materialized.Group)
 	require.True(t, materialized.Group.Hydrated)
 	require.True(t, materialized.Group.ProfitControlEnabled)
+	require.Equal(t, OpenAIAccountPriorityModeBinding, materialized.Group.OpenAIAccountPriorityMode)
 	require.InDelta(t, 0.2, materialized.Group.ProfitMinMargin, 1e-12)
 	require.InDelta(t, 0.05, materialized.Group.ProfitSafetyBuffer, 1e-12)
 	require.InDelta(t, 0.06, materialized.Group.RateMultiplier, 1e-12)

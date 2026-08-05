@@ -83,6 +83,7 @@ func cloneGroupForDuplicate(source *Group, operationID string) *Group {
 		Name:                            duplicateGroupName(source.Name, 1),
 		Description:                     source.Description,
 		Platform:                        source.Platform,
+		OpenAIAccountPriorityMode:       source.OpenAIAccountPriorityMode,
 		RateMultiplier:                  source.RateMultiplier,
 		PeakRateEnabled:                 source.PeakRateEnabled,
 		PeakStart:                       source.PeakStart,

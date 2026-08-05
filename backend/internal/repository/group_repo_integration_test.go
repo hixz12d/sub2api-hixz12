@@ -153,6 +153,93 @@ func (s *GroupRepoSuite) TestCreateFromSourcePreservesPriorityAndFiltersIneligib
 	s.Require().Equal(1, outboxCount)
 }
 
+func (s *GroupRepoSuite) TestUpdateAccountGroupPrioritiesIsAtomicAndPublishesOutbox() {
+	group := &service.Group{
+		Name:                      "binding-priority",
+		Platform:                  service.PlatformOpenAI,
+		OpenAIAccountPriorityMode: service.OpenAIAccountPriorityModeBinding,
+		RateMultiplier:            1,
+		Status:                    service.StatusActive,
+		SubscriptionType:          service.SubscriptionTypeStandard,
+	}
+	s.Require().NoError(s.repo.Create(s.ctx, group))
+
+	insertAccount := func(name string) int64 {
+		var id int64
+		s.Require().NoError(scanSingleRow(
+			s.ctx,
+			s.tx,
+			"INSERT INTO accounts (name, platform, type) VALUES ($1, $2, $3) RETURNING id",
+			[]any{name, service.PlatformOpenAI, service.AccountTypeOAuth},
+			&id,
+		))
+		return id
+	}
+	firstID := insertAccount("priority-first")
+	secondID := insertAccount("priority-second")
+	for _, binding := range []struct {
+		accountID int64
+		priority  int
+	}{{firstID, 10}, {secondID, 20}} {
+		_, err := s.tx.ExecContext(
+			s.ctx,
+			"INSERT INTO account_groups (account_id, group_id, priority, created_at) VALUES ($1, $2, $3, NOW())",
+			binding.accountID,
+			group.ID,
+			binding.priority,
+		)
+		s.Require().NoError(err)
+	}
+
+	_, err := s.repo.UpdateAccountGroupPriorities(s.ctx, group.ID, []service.AccountGroupPriorityUpdate{
+		{AccountID: firstID, Priority: 1, ExpectedPriority: 10},
+		{AccountID: secondID, Priority: 50, ExpectedPriority: 20},
+	})
+	s.Require().NoError(err)
+
+	assertPriority := func(accountID int64, want int) {
+		var got int
+		s.Require().NoError(scanSingleRow(
+			s.ctx,
+			s.tx,
+			"SELECT priority FROM account_groups WHERE account_id = $1 AND group_id = $2",
+			[]any{accountID, group.ID},
+			&got,
+		))
+		s.Equal(want, got)
+	}
+	assertPriority(firstID, 1)
+	assertPriority(secondID, 50)
+
+	var outboxCount int
+	s.Require().NoError(scanSingleRow(
+		s.ctx,
+		s.tx,
+		"SELECT COUNT(*) FROM scheduler_outbox WHERE group_id = $1 OR account_id IN ($2, $3)",
+		[]any{group.ID, firstID, secondID},
+		&outboxCount,
+	))
+	s.Equal(3, outboxCount, "two account events plus the deduplicated group change")
+
+	_, err = s.repo.UpdateAccountGroupPriorities(s.ctx, group.ID, []service.AccountGroupPriorityUpdate{
+		{AccountID: firstID, Priority: 2, ExpectedPriority: 1},
+		{AccountID: secondID, Priority: 3, ExpectedPriority: 999},
+	})
+	s.Require().ErrorIs(err, service.ErrAccountGroupPriorityConflict)
+	assertPriority(firstID, 1)
+	assertPriority(secondID, 50)
+
+	var outboxCountAfterConflict int
+	s.Require().NoError(scanSingleRow(
+		s.ctx,
+		s.tx,
+		"SELECT COUNT(*) FROM scheduler_outbox WHERE group_id = $1 OR account_id IN ($2, $3)",
+		[]any{group.ID, firstID, secondID},
+		&outboxCountAfterConflict,
+	))
+	s.Equal(outboxCount, outboxCountAfterConflict, "stale updates must roll back without publishing events")
+}
+
 func (s *GroupRepoSuite) TestGetByID_NotFound() {
 	_, err := s.repo.GetByID(s.ctx, 999999)
 	s.Require().Error(err, "expected error for non-existent ID")

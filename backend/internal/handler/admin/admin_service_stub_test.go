@@ -371,6 +371,10 @@ func (s *stubAdminService) UpdateGroup(ctx context.Context, id int64, input *ser
 	return &group, nil
 }
 
+func (s *stubAdminService) UpdateGroupAccountPriorities(_ context.Context, _ int64, updates []service.AccountGroupPriorityUpdate) ([]service.AccountGroupPriorityUpdate, error) {
+	return updates, nil
+}
+
 func (s *stubAdminService) DeleteGroup(ctx context.Context, id int64) error {
 	return nil
 }

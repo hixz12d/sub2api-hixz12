@@ -332,6 +332,7 @@ func registerGroupRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		groups.POST("", h.Admin.Group.Create)
 		groups.POST("/:id/duplicate", h.Admin.Group.Duplicate)
 		groups.PUT("/:id", h.Admin.Group.Update)
+		groups.PATCH("/:id/account-priorities", h.Admin.Group.UpdateAccountPriorities)
 		groups.DELETE("/:id", h.Admin.Group.Delete)
 		groups.GET("/:id/stats", h.Admin.Group.GetStats)
 		groups.GET("/:id/rate-multipliers", h.Admin.Group.GetGroupRateMultipliers)

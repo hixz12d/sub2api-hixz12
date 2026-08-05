@@ -59,6 +59,7 @@ type APIKeyAuthGroupSnapshot struct {
 	ID                              int64    `json:"id"`
 	Name                            string   `json:"name"`
 	Platform                        string   `json:"platform"`
+	OpenAIAccountPriorityMode       string   `json:"openai_account_priority_mode"`
 	IsExclusive                     bool     `json:"is_exclusive"`
 	Status                          string   `json:"status"`
 	SubscriptionType                string   `json:"subscription_type"`

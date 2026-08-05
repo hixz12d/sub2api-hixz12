@@ -96,15 +96,16 @@ func NewGroupHandler(adminService service.AdminService, dashboardService *servic
 
 // CreateGroupRequest represents create group request
 type CreateGroupRequest struct {
-	Name             string             `json:"name" binding:"required"`
-	Description      string             `json:"description"`
-	Platform         string             `json:"platform" binding:"omitempty,oneof=anthropic openai gemini antigravity grok composite"`
-	RateMultiplier   float64            `json:"rate_multiplier"`
-	IsExclusive      bool               `json:"is_exclusive"`
-	SubscriptionType string             `json:"subscription_type" binding:"omitempty,oneof=standard subscription"`
-	DailyLimitUSD    optionalLimitField `json:"daily_limit_usd"`
-	WeeklyLimitUSD   optionalLimitField `json:"weekly_limit_usd"`
-	MonthlyLimitUSD  optionalLimitField `json:"monthly_limit_usd"`
+	Name                      string             `json:"name" binding:"required"`
+	Description               string             `json:"description"`
+	Platform                  string             `json:"platform" binding:"omitempty,oneof=anthropic openai gemini antigravity grok composite"`
+	OpenAIAccountPriorityMode string             `json:"openai_account_priority_mode" binding:"omitempty,oneof=global binding"`
+	RateMultiplier            float64            `json:"rate_multiplier"`
+	IsExclusive               bool               `json:"is_exclusive"`
+	SubscriptionType          string             `json:"subscription_type" binding:"omitempty,oneof=standard subscription"`
+	DailyLimitUSD             optionalLimitField `json:"daily_limit_usd"`
+	WeeklyLimitUSD            optionalLimitField `json:"weekly_limit_usd"`
+	MonthlyLimitUSD           optionalLimitField `json:"monthly_limit_usd"`
 	// 图片生成计费配置（antigravity 和 gemini 平台使用，负数表示清除配置）
 	AllowImageGeneration            bool     `json:"allow_image_generation"`
 	AllowBatchImageGeneration       bool     `json:"allow_batch_image_generation"`
@@ -157,16 +158,17 @@ type CreateGroupRequest struct {
 
 // UpdateGroupRequest represents update group request
 type UpdateGroupRequest struct {
-	Name             string             `json:"name"`
-	Description      *string            `json:"description"`
-	Platform         string             `json:"platform" binding:"omitempty,oneof=anthropic openai gemini antigravity grok composite"`
-	RateMultiplier   *float64           `json:"rate_multiplier"`
-	IsExclusive      *bool              `json:"is_exclusive"`
-	Status           string             `json:"status" binding:"omitempty,oneof=active inactive"`
-	SubscriptionType string             `json:"subscription_type" binding:"omitempty,oneof=standard subscription"`
-	DailyLimitUSD    optionalLimitField `json:"daily_limit_usd"`
-	WeeklyLimitUSD   optionalLimitField `json:"weekly_limit_usd"`
-	MonthlyLimitUSD  optionalLimitField `json:"monthly_limit_usd"`
+	Name                      string             `json:"name"`
+	Description               *string            `json:"description"`
+	Platform                  string             `json:"platform" binding:"omitempty,oneof=anthropic openai gemini antigravity grok composite"`
+	OpenAIAccountPriorityMode *string            `json:"openai_account_priority_mode" binding:"omitempty,oneof=global binding"`
+	RateMultiplier            *float64           `json:"rate_multiplier"`
+	IsExclusive               *bool              `json:"is_exclusive"`
+	Status                    string             `json:"status" binding:"omitempty,oneof=active inactive"`
+	SubscriptionType          string             `json:"subscription_type" binding:"omitempty,oneof=standard subscription"`
+	DailyLimitUSD             optionalLimitField `json:"daily_limit_usd"`
+	WeeklyLimitUSD            optionalLimitField `json:"weekly_limit_usd"`
+	MonthlyLimitUSD           optionalLimitField `json:"monthly_limit_usd"`
 	// 图片生成计费配置（antigravity 和 gemini 平台使用，负数表示清除配置）
 	AllowImageGeneration            *bool    `json:"allow_image_generation"`
 	AllowBatchImageGeneration       *bool    `json:"allow_batch_image_generation"`
@@ -215,6 +217,10 @@ type UpdateGroupRequest struct {
 	ReasoningEffortMappings *[]service.ReasoningEffortMapping `json:"reasoning_effort_mappings"`
 	// 从指定分组复制账号（同步操作：先清空当前分组的账号绑定，再绑定源分组的账号）
 	CopyAccountsFromGroupIDs []int64 `json:"copy_accounts_from_group_ids"`
+}
+
+type UpdateGroupAccountPrioritiesRequest struct {
+	Items []service.AccountGroupPriorityUpdate `json:"items" binding:"required,min=1,max=500,dive"`
 }
 
 type CompositeRouteRequest struct {
@@ -492,6 +498,7 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		Name:                            req.Name,
 		Description:                     req.Description,
 		Platform:                        req.Platform,
+		OpenAIAccountPriorityMode:       req.OpenAIAccountPriorityMode,
 		RateMultiplier:                  req.RateMultiplier,
 		IsExclusive:                     req.IsExclusive,
 		SubscriptionType:                req.SubscriptionType,
@@ -613,6 +620,7 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		Name:                            req.Name,
 		Description:                     req.Description,
 		Platform:                        req.Platform,
+		OpenAIAccountPriorityMode:       req.OpenAIAccountPriorityMode,
 		RateMultiplier:                  req.RateMultiplier,
 		IsExclusive:                     req.IsExclusive,
 		Status:                          req.Status,
@@ -667,6 +675,26 @@ func (h *GroupHandler) Update(c *gin.Context) {
 	}
 
 	response.Success(c, dto.GroupFromServiceAdmin(group))
+}
+
+// UpdateAccountPriorities atomically updates account_groups.priority for this group.
+// PATCH /api/v1/admin/groups/:id/account-priorities
+func (h *GroupHandler) UpdateAccountPriorities(c *gin.Context) {
+	groupID, ok := parsePositiveIDParam(c, "id")
+	if !ok {
+		return
+	}
+	var req UpdateGroupAccountPrioritiesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	items, err := h.adminService.UpdateGroupAccountPriorities(c.Request.Context(), groupID, req.Items)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"items": items})
 }
 
 // Delete handles deleting a group

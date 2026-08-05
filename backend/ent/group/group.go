@@ -44,6 +44,8 @@ const (
 	FieldDuplicateOperationID = "duplicate_operation_id"
 	// FieldPlatform holds the string denoting the platform field in the database.
 	FieldPlatform = "platform"
+	// FieldOpenaiAccountPriorityMode holds the string denoting the openai_account_priority_mode field in the database.
+	FieldOpenaiAccountPriorityMode = "openai_account_priority_mode"
 	// FieldSubscriptionType holds the string denoting the subscription_type field in the database.
 	FieldSubscriptionType = "subscription_type"
 	// FieldDailyLimitUsd holds the string denoting the daily_limit_usd field in the database.
@@ -215,6 +217,7 @@ var Columns = []string{
 	FieldStatus,
 	FieldDuplicateOperationID,
 	FieldPlatform,
+	FieldOpenaiAccountPriorityMode,
 	FieldSubscriptionType,
 	FieldDailyLimitUsd,
 	FieldWeeklyLimitUsd,
@@ -319,6 +322,10 @@ var (
 	DefaultPlatform string
 	// PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
 	PlatformValidator func(string) error
+	// DefaultOpenaiAccountPriorityMode holds the default value on creation for the "openai_account_priority_mode" field.
+	DefaultOpenaiAccountPriorityMode string
+	// OpenaiAccountPriorityModeValidator is a validator for the "openai_account_priority_mode" field. It is called by the builders before save.
+	OpenaiAccountPriorityModeValidator func(string) error
 	// DefaultSubscriptionType holds the default value on creation for the "subscription_type" field.
 	DefaultSubscriptionType string
 	// SubscriptionTypeValidator is a validator for the "subscription_type" field. It is called by the builders before save.
@@ -459,6 +466,11 @@ func ByDuplicateOperationID(opts ...sql.OrderTermOption) OrderOption {
 // ByPlatform orders the results by the platform field.
 func ByPlatform(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldPlatform, opts...).ToFunc()
+}
+
+// ByOpenaiAccountPriorityMode orders the results by the openai_account_priority_mode field.
+func ByOpenaiAccountPriorityMode(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldOpenaiAccountPriorityMode, opts...).ToFunc()
 }
 
 // BySubscriptionType orders the results by the subscription_type field.

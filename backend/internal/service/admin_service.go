@@ -47,6 +47,7 @@ type AdminService interface {
 	// It never creates a group.
 	RecoverDuplicateGroup(ctx context.Context, id int64, actorScope, operationKey string) (*Group, error)
 	UpdateGroup(ctx context.Context, id int64, input *UpdateGroupInput) (*Group, error)
+	UpdateGroupAccountPriorities(ctx context.Context, groupID int64, updates []AccountGroupPriorityUpdate) ([]AccountGroupPriorityUpdate, error)
 	DeleteGroup(ctx context.Context, id int64) error
 	ListCompositeRoutes(ctx context.Context, groupID int64) ([]CompositeModelRoute, error)
 	CreateCompositeRoute(ctx context.Context, groupID int64, input CompositeRouteInput) (*CompositeModelRoute, error)
@@ -209,15 +210,16 @@ type AdminBoundAuthIdentityChannel struct {
 }
 
 type CreateGroupInput struct {
-	Name             string
-	Description      string
-	Platform         string
-	RateMultiplier   float64
-	IsExclusive      bool
-	SubscriptionType string   // standard/subscription
-	DailyLimitUSD    *float64 // 日限额 (USD)
-	WeeklyLimitUSD   *float64 // 周限额 (USD)
-	MonthlyLimitUSD  *float64 // 月限额 (USD)
+	Name                      string
+	Description               string
+	Platform                  string
+	OpenAIAccountPriorityMode string
+	RateMultiplier            float64
+	IsExclusive               bool
+	SubscriptionType          string   // standard/subscription
+	DailyLimitUSD             *float64 // 日限额 (USD)
+	WeeklyLimitUSD            *float64 // 周限额 (USD)
+	MonthlyLimitUSD           *float64 // 月限额 (USD)
 	// 图片生成计费配置（仅 antigravity 平台使用）
 	AllowImageGeneration         bool
 	AllowBatchImageGeneration    bool
@@ -273,16 +275,17 @@ type CreateGroupInput struct {
 }
 
 type UpdateGroupInput struct {
-	Name             string
-	Description      *string
-	Platform         string
-	RateMultiplier   *float64 // 使用指针以支持设置为0
-	IsExclusive      *bool
-	Status           string
-	SubscriptionType string   // standard/subscription
-	DailyLimitUSD    *float64 // 日限额 (USD)
-	WeeklyLimitUSD   *float64 // 周限额 (USD)
-	MonthlyLimitUSD  *float64 // 月限额 (USD)
+	Name                      string
+	Description               *string
+	Platform                  string
+	OpenAIAccountPriorityMode *string
+	RateMultiplier            *float64 // 使用指针以支持设置为0
+	IsExclusive               *bool
+	Status                    string
+	SubscriptionType          string   // standard/subscription
+	DailyLimitUSD             *float64 // 日限额 (USD)
+	WeeklyLimitUSD            *float64 // 周限额 (USD)
+	MonthlyLimitUSD           *float64 // 月限额 (USD)
 	// 图片生成计费配置（仅 antigravity 平台使用）
 	AllowImageGeneration         *bool
 	AllowBatchImageGeneration    *bool
@@ -625,6 +628,7 @@ type adminServiceImpl struct {
 	userRepo             UserRepository
 	groupRepo            GroupRepository
 	groupDuplicateRepo   GroupDuplicateRepository
+	groupPriorityRepo    AccountGroupPriorityRepository
 	accountRepo          AccountRepository
 	accountDuplicateRepo AccountDuplicateRepository
 	accountBillingRepo   AccountBillingSettingsRepository
@@ -684,6 +688,7 @@ func NewAdminService(
 		userRepo:             userRepo,
 		groupRepo:            groupRepo,
 		groupDuplicateRepo:   groupRepo,
+		groupPriorityRepo:    groupRepo,
 		accountRepo:          accountRepo,
 		accountDuplicateRepo: accountRepo,
 		accountBillingRepo:   accountRepo,

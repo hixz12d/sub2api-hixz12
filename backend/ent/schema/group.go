@@ -77,6 +77,10 @@ func (Group) Fields() []ent.Field {
 		field.String("platform").
 			MaxLen(50).
 			Default(domain.PlatformAnthropic),
+		field.String("openai_account_priority_mode").
+			MaxLen(20).
+			Default("global").
+			Comment("OpenAI 账号优先级来源：global=账号全局优先级，binding=当前分组绑定优先级"),
 		field.String("subscription_type").
 			MaxLen(20).
 			Default(domain.SubscriptionTypeStandard),

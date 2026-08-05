@@ -2604,6 +2604,34 @@
         data-tour="account-form-groups"
       />
 
+      <div
+        v-if="!authStore.isSimpleMode && account?.platform === 'openai' && selectedPriorityGroups.length > 0"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <label class="input-label">{{ t('admin.accounts.groupPriorityTitle') }}</label>
+        <p class="input-hint mb-3">{{ t('admin.accounts.groupPriorityHint') }}</p>
+        <div class="space-y-2">
+          <div
+            v-for="group in selectedPriorityGroups"
+            :key="group.id"
+            class="grid grid-cols-[minmax(0,1fr)_7rem] items-center gap-3"
+          >
+            <span class="truncate text-sm text-gray-700 dark:text-gray-300" :title="group.name">
+              {{ group.name }}
+            </span>
+            <input
+              v-model.number="groupPriorityDraft[group.id]"
+              type="number"
+              min="1"
+              max="1000000"
+              step="1"
+              class="input"
+              :aria-label="t('admin.accounts.groupPriorityLabel', { group: group.name })"
+            />
+          </div>
+        </div>
+      </div>
+
     </form>
 
     <template #footer>
@@ -3228,6 +3256,31 @@ const form = reactive({
   expires_at: null as number | null
 })
 
+const groupPriorityDraft = reactive<Record<number, number>>({})
+
+  const selectedPriorityGroups = computed(() => {
+  const selected = new Set(form.group_ids)
+  return props.groups.filter((group) => selected.has(group.id) && group.platform === 'openai')
+})
+
+  const accountGroupPriorityMap = (account: Account | null | undefined): Map<number, number> => {
+  const priorities = new Map<number, number>()
+  for (const membership of account?.account_groups ?? []) {
+    priorities.set(membership.group_id, membership.priority)
+  }
+  return priorities
+}
+
+    const resetGroupPriorityDraft = (account: Account) => {
+  for (const key of Object.keys(groupPriorityDraft)) {
+    delete groupPriorityDraft[Number(key)]
+  }
+  const priorities = accountGroupPriorityMap(account)
+  for (const groupID of account.group_ids ?? []) {
+    groupPriorityDraft[groupID] = priorities.get(groupID) ?? 50
+  }
+}
+
 const handleUpstreamBillingRateSyncChange = (enabled: boolean) => {
   upstreamBillingRateSyncEnabled.value = enabled
   if (enabled) {
@@ -3330,6 +3383,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     ? newAccount.status
     : 'active'
   form.group_ids = newAccount.group_ids || []
+  resetGroupPriorityDraft(newAccount)
   form.expires_at = newAccount.expires_at ?? null
 
   // Load intercept warmup requests setting (applies to all account types)
@@ -3666,6 +3720,17 @@ watch(
     }
   },
   { immediate: true }
+)
+
+watch(
+  () => form.group_ids.slice(),
+  (groupIDs) => {
+    for (const groupID of groupIDs) {
+      if (groupPriorityDraft[groupID] === undefined) {
+        groupPriorityDraft[groupID] = 50
+      }
+    }
+  }
 )
 
 // Model mapping helpers
@@ -4094,7 +4159,31 @@ const handleClose = () => {
 const submitUpdateAccount = async (accountID: number, updatePayload: Record<string, unknown>) => {
   submitting.value = true
   try {
-    const updatedAccount = await adminAPI.accounts.update(accountID, withAntigravityConfirmFlag(updatePayload))
+    let updatedAccount = await adminAPI.accounts.update(accountID, withAntigravityConfirmFlag(updatePayload))
+    if (updatedAccount.platform === 'openai') {
+      const currentPriorities = accountGroupPriorityMap(updatedAccount)
+      const originalPriorities = accountGroupPriorityMap(props.account)
+      for (const group of selectedPriorityGroups.value) {
+        const expectedPriority = currentPriorities.get(group.id) ?? originalPriorities.get(group.id) ?? 50
+        const draftPriority = Number(groupPriorityDraft[group.id] ?? expectedPriority)
+        const priority = Number.isInteger(draftPriority) && draftPriority > 0 && draftPriority <= 1_000_000
+          ? draftPriority
+          : expectedPriority
+        if (priority === expectedPriority) continue
+        const memberships = await adminAPI.groups.updateAccountPriorities(group.id, [{
+          account_id: updatedAccount.id,
+          priority,
+          expected_priority: expectedPriority
+        }])
+        updatedAccount = {
+          ...updatedAccount,
+          account_groups: [
+            ...(updatedAccount.account_groups ?? []).filter((membership) => membership.group_id !== group.id),
+            ...memberships
+          ]
+        }
+      }
+    }
     appStore.showSuccess(t('admin.accounts.accountUpdated'))
     emit('updated', updatedAccount)
     handleClose()

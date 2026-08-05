@@ -217,6 +217,20 @@ func (_c *GroupCreate) SetNillablePlatform(v *string) *GroupCreate {
 	return _c
 }
 
+// SetOpenaiAccountPriorityMode sets the "openai_account_priority_mode" field.
+func (_c *GroupCreate) SetOpenaiAccountPriorityMode(v string) *GroupCreate {
+	_c.mutation.SetOpenaiAccountPriorityMode(v)
+	return _c
+}
+
+// SetNillableOpenaiAccountPriorityMode sets the "openai_account_priority_mode" field if the given value is not nil.
+func (_c *GroupCreate) SetNillableOpenaiAccountPriorityMode(v *string) *GroupCreate {
+	if v != nil {
+		_c.SetOpenaiAccountPriorityMode(*v)
+	}
+	return _c
+}
+
 // SetSubscriptionType sets the "subscription_type" field.
 func (_c *GroupCreate) SetSubscriptionType(v string) *GroupCreate {
 	_c.mutation.SetSubscriptionType(v)
@@ -940,6 +954,10 @@ func (_c *GroupCreate) defaults() error {
 		v := group.DefaultPlatform
 		_c.mutation.SetPlatform(v)
 	}
+	if _, ok := _c.mutation.OpenaiAccountPriorityMode(); !ok {
+		v := group.DefaultOpenaiAccountPriorityMode
+		_c.mutation.SetOpenaiAccountPriorityMode(v)
+	}
 	if _, ok := _c.mutation.SubscriptionType(); !ok {
 		v := group.DefaultSubscriptionType
 		_c.mutation.SetSubscriptionType(v)
@@ -1118,6 +1136,14 @@ func (_c *GroupCreate) check() error {
 	if v, ok := _c.mutation.Platform(); ok {
 		if err := group.PlatformValidator(v); err != nil {
 			return &ValidationError{Name: "platform", err: fmt.Errorf(`ent: validator failed for field "Group.platform": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.OpenaiAccountPriorityMode(); !ok {
+		return &ValidationError{Name: "openai_account_priority_mode", err: errors.New(`ent: missing required field "Group.openai_account_priority_mode"`)}
+	}
+	if v, ok := _c.mutation.OpenaiAccountPriorityMode(); ok {
+		if err := group.OpenaiAccountPriorityModeValidator(v); err != nil {
+			return &ValidationError{Name: "openai_account_priority_mode", err: fmt.Errorf(`ent: validator failed for field "Group.openai_account_priority_mode": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.SubscriptionType(); !ok {
@@ -1301,6 +1327,10 @@ func (_c *GroupCreate) createSpec() (*Group, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.Platform(); ok {
 		_spec.SetField(group.FieldPlatform, field.TypeString, value)
 		_node.Platform = value
+	}
+	if value, ok := _c.mutation.OpenaiAccountPriorityMode(); ok {
+		_spec.SetField(group.FieldOpenaiAccountPriorityMode, field.TypeString, value)
+		_node.OpenaiAccountPriorityMode = value
 	}
 	if value, ok := _c.mutation.SubscriptionType(); ok {
 		_spec.SetField(group.FieldSubscriptionType, field.TypeString, value)
@@ -1787,6 +1817,18 @@ func (u *GroupUpsert) SetPlatform(v string) *GroupUpsert {
 // UpdatePlatform sets the "platform" field to the value that was provided on create.
 func (u *GroupUpsert) UpdatePlatform() *GroupUpsert {
 	u.SetExcluded(group.FieldPlatform)
+	return u
+}
+
+// SetOpenaiAccountPriorityMode sets the "openai_account_priority_mode" field.
+func (u *GroupUpsert) SetOpenaiAccountPriorityMode(v string) *GroupUpsert {
+	u.Set(group.FieldOpenaiAccountPriorityMode, v)
+	return u
+}
+
+// UpdateOpenaiAccountPriorityMode sets the "openai_account_priority_mode" field to the value that was provided on create.
+func (u *GroupUpsert) UpdateOpenaiAccountPriorityMode() *GroupUpsert {
+	u.SetExcluded(group.FieldOpenaiAccountPriorityMode)
 	return u
 }
 
@@ -2727,6 +2769,20 @@ func (u *GroupUpsertOne) SetPlatform(v string) *GroupUpsertOne {
 func (u *GroupUpsertOne) UpdatePlatform() *GroupUpsertOne {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdatePlatform()
+	})
+}
+
+// SetOpenaiAccountPriorityMode sets the "openai_account_priority_mode" field.
+func (u *GroupUpsertOne) SetOpenaiAccountPriorityMode(v string) *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetOpenaiAccountPriorityMode(v)
+	})
+}
+
+// UpdateOpenaiAccountPriorityMode sets the "openai_account_priority_mode" field to the value that was provided on create.
+func (u *GroupUpsertOne) UpdateOpenaiAccountPriorityMode() *GroupUpsertOne {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateOpenaiAccountPriorityMode()
 	})
 }
 
@@ -3949,6 +4005,20 @@ func (u *GroupUpsertBulk) SetPlatform(v string) *GroupUpsertBulk {
 func (u *GroupUpsertBulk) UpdatePlatform() *GroupUpsertBulk {
 	return u.Update(func(s *GroupUpsert) {
 		s.UpdatePlatform()
+	})
+}
+
+// SetOpenaiAccountPriorityMode sets the "openai_account_priority_mode" field.
+func (u *GroupUpsertBulk) SetOpenaiAccountPriorityMode(v string) *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.SetOpenaiAccountPriorityMode(v)
+	})
+}
+
+// UpdateOpenaiAccountPriorityMode sets the "openai_account_priority_mode" field to the value that was provided on create.
+func (u *GroupUpsertBulk) UpdateOpenaiAccountPriorityMode() *GroupUpsertBulk {
+	return u.Update(func(s *GroupUpsert) {
+		s.UpdateOpenaiAccountPriorityMode()
 	})
 }
 

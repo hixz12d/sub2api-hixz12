@@ -905,6 +905,12 @@ export default {
         privacySetOnlyEnabled: '已启用 — Privacy 未设置的账号将被排除',
         disabled: '未启用'
       },
+      accountPriorityMode: {
+        label: 'OpenAI 分组内账号优先级',
+        global: '沿用账号全局优先级',
+        binding: '按本分组绑定优先级',
+        hint: '绑定模式会先耗尽较小优先级层，再进入下一层；现有分组默认保持全局模式。'
+      },
       enterGroupName: '请输入分组名称',
       optionalDescription: '可选描述',
       platformHint: '选择此分组关联的平台',

@@ -1717,6 +1717,23 @@
             {{ t("admin.groups.accountFilters.title") }}
           </h4>
 
+          <div v-if="createForm.platform === 'openai'">
+            <label class="input-label">
+              {{ t("admin.groups.accountPriorityMode.label") }}
+            </label>
+            <select v-model="createForm.openai_account_priority_mode" class="input">
+              <option value="global">
+                {{ t("admin.groups.accountPriorityMode.global") }}
+              </option>
+              <option value="binding">
+                {{ t("admin.groups.accountPriorityMode.binding") }}
+              </option>
+            </select>
+            <p class="input-hint">
+              {{ t("admin.groups.accountPriorityMode.hint") }}
+            </p>
+          </div>
+
           <!-- require_oauth_only toggle -->
           <div class="flex items-center justify-between">
             <div>
@@ -3318,6 +3335,23 @@
             {{ t("admin.groups.accountFilters.title") }}
           </h4>
 
+          <div v-if="editForm.platform === 'openai'">
+            <label class="input-label">
+              {{ t("admin.groups.accountPriorityMode.label") }}
+            </label>
+            <select v-model="editForm.openai_account_priority_mode" class="input">
+              <option value="global">
+                {{ t("admin.groups.accountPriorityMode.global") }}
+              </option>
+              <option value="binding">
+                {{ t("admin.groups.accountPriorityMode.binding") }}
+              </option>
+            </select>
+            <p class="input-hint">
+              {{ t("admin.groups.accountPriorityMode.hint") }}
+            </p>
+          </div>
+
           <!-- require_oauth_only toggle -->
           <div class="flex items-center justify-between">
             <div>
@@ -4743,6 +4777,7 @@ const createForm = reactive({
   // 账号过滤控制（OpenAI/Antigravity 平台）
   require_oauth_only: false,
   require_privacy_set: false,
+  openai_account_priority_mode: "global" as "global" | "binding",
   // 模型路由开关
   model_routing_enabled: false,
   // 支持的模型系列（仅 antigravity 平台）
@@ -5098,6 +5133,7 @@ const editForm = reactive({
   // 账号过滤控制（OpenAI/Antigravity 平台）
   require_oauth_only: false,
   require_privacy_set: false,
+  openai_account_priority_mode: "global" as "global" | "binding",
   // 模型路由开关
   model_routing_enabled: false,
   // 支持的模型系列（仅 antigravity 平台）
@@ -5537,6 +5573,7 @@ const closeCreateModal = () => {
   createForm.allow_live = false;
   createForm.require_oauth_only = false;
   createForm.require_privacy_set = false;
+  createForm.openai_account_priority_mode = "global";
   createForm.supported_model_scopes = ["claude", "gemini_text", "gemini_image"];
   createForm.mcp_xml_inject = true;
   createForm.copy_accounts_from_group_ids = [];
@@ -5763,6 +5800,8 @@ const handleEdit = async (group: AdminGroup) => {
     messagesDispatchFormState.exact_model_mappings;
   editForm.require_oauth_only = group.require_oauth_only ?? false;
   editForm.require_privacy_set = group.require_privacy_set ?? false;
+  editForm.openai_account_priority_mode =
+    group.openai_account_priority_mode ?? "global";
   editForm.model_routing_enabled = group.model_routing_enabled || false;
   editForm.supported_model_scopes = group.supported_model_scopes || [
     "claude",
@@ -6234,6 +6273,7 @@ watch(
     if (newVal !== "openai") {
       resetMessagesDispatchFormState(createForm);
       createForm.allow_live = false;
+      createForm.openai_account_priority_mode = "global";
     }
     if (!isProfitControlPlatform(newVal)) {
       createForm.profit_control_enabled = false;
@@ -6282,6 +6322,7 @@ watch(
     if (newVal !== "openai") {
       resetMessagesDispatchFormState(editForm);
       editForm.allow_live = false;
+      editForm.openai_account_priority_mode = "global";
     }
     if (!isProfitControlPlatform(newVal)) {
       editForm.profit_control_enabled = false;

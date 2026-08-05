@@ -739,6 +739,9 @@ func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID 
 		_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 		return nil
 	}
+	if !s.isOpenAIStickyBindingPriorityCurrent(ctx, groupID, platform, account, nil, requestedModel, excludedIDs, requireCompact, requiredCapability) {
+		return nil
+	}
 
 	// 刷新会话 TTL 并返回账号
 	// Refresh session TTL and return account
@@ -755,6 +758,10 @@ func (s *OpenAIGatewayService) tryStickySessionHit(ctx context.Context, groupID 
 // (only meaningful when requireCompact=true).
 func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *int64, platform string, accounts []Account, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, requiredCapability OpenAIEndpointCapability, preferLowUpstreamRate bool) (*Account, bool) {
 	platform = normalizeOpenAICompatiblePlatform(platform)
+	priorityMode, err := s.resolveOpenAIAccountPriorityMode(ctx, groupID)
+	if err != nil {
+		return nil, false
+	}
 	compactBlocked := false
 	needsUpstreamCheck := s.needsUpstreamChannelRestrictionCheck(ctx, groupID)
 	eligible := make([]*Account, 0, len(accounts))
@@ -775,6 +782,9 @@ func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *i
 		}
 		fresh = s.recheckSelectedOpenAIAccountFromDB(ctx, fresh, groupID, platform, requestedModel, false, requiredCapability)
 		if fresh == nil {
+			continue
+		}
+		if _, ok := openAIAccountSchedulingPriority(fresh, groupID, priorityMode); !ok {
 			continue
 		}
 		if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel, requireCompact) {
@@ -802,6 +812,16 @@ func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *i
 	}
 	sort.SliceStable(eligible, func(i, j int) bool {
 		a, b := eligible[i], eligible[j]
+		if priorityMode == OpenAIAccountPriorityModeBinding {
+			aPriority, aOK := openAIAccountBindingPriority(a, groupID)
+			bPriority, bOK := openAIAccountBindingPriority(b, groupID)
+			if aOK != bOK {
+				return aOK
+			}
+			if aPriority != bPriority {
+				return aPriority < bPriority
+			}
+		}
 		if requireCompact && compactTiers[a.ID] != compactTiers[b.ID] {
 			return compactTiers[a.ID] > compactTiers[b.ID]
 		}
@@ -857,6 +877,10 @@ func (s *OpenAIGatewayService) SelectAccountWithLoadAwareness(ctx context.Contex
 
 func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Context, groupID *int64, platform string, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, requiredCapability OpenAIEndpointCapability, useUpstreamTokenCost bool) (*AccountSelectionResult, error) {
 	platform = normalizeOpenAICompatiblePlatform(platform)
+	priorityMode, priorityModeErr := s.resolveOpenAIAccountPriorityMode(ctx, groupID)
+	if priorityModeErr != nil {
+		return nil, priorityModeErr
+	}
 	if s.checkChannelPricingRestriction(ctx, groupID, requestedModel) {
 		slog.Warn("channel pricing restriction blocked request",
 			"group_id", derefGroupID(groupID),
@@ -933,6 +957,9 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 					} else if !s.openAIAccountMatchesSchedulingGroup(account, groupID) {
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
+					} else if priorityMode == OpenAIAccountPriorityModeBinding &&
+						!s.isOpenAIStickyBindingPriorityCurrent(ctx, groupID, platform, account, accounts, requestedModel, excludedIDs, requireCompact, requiredCapability) {
+						// Keep the sticky record, but let the recovered higher tier select first.
 					} else if s.isOpenAIAccountRequestRuntimeBlocked(account, requestedModel) {
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 					} else if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, account, requestedModel, requireCompact) {
@@ -1002,6 +1029,9 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, acc, requestedModel, requireCompact) {
 			continue
 		}
+		if _, ok := openAIAccountSchedulingPriority(acc, groupID, priorityMode); !ok {
+			continue
+		}
 		baseCandidateCount++
 		candidates = append(candidates, acc)
 	}
@@ -1043,6 +1073,13 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 
 		sort.SliceStable(available, func(i, j int) bool {
 			a, b := available[i], available[j]
+			if priorityMode == OpenAIAccountPriorityModeBinding {
+				aPriority, _ := openAIAccountBindingPriority(a.account, groupID)
+				bPriority, _ := openAIAccountBindingPriority(b.account, groupID)
+				if aPriority != bPriority {
+					return aPriority < bPriority
+				}
+			}
 			if a.account.Priority != b.account.Priority {
 				return a.account.Priority < b.account.Priority
 			}
@@ -1063,25 +1100,55 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		shuffleWithinSortGroups(available)
 		if rateOrder.enabled {
 			sort.SliceStable(available, func(i, j int) bool {
+				if priorityMode == OpenAIAccountPriorityModeBinding {
+					aPriority, _ := openAIAccountBindingPriority(available[i].account, groupID)
+					bPriority, _ := openAIAccountBindingPriority(available[j].account, groupID)
+					if aPriority != bPriority {
+						return aPriority < bPriority
+					}
+				}
 				return rateOrder.compare(available[i].account, available[j].account) < 0
 			})
 		}
 
 		selectionOrder := make([]accountWithLoad, 0, len(available))
 		if requireCompact {
-			appendTier := func(out []accountWithLoad, tier int) []accountWithLoad {
+			appendTier := func(out []accountWithLoad, bindingPriority *int, compactTier int) []accountWithLoad {
 				for _, item := range available {
-					if openAICompactSupportTier(item.account) == tier {
+					if bindingPriority != nil {
+						priority, _ := openAIAccountBindingPriority(item.account, groupID)
+						if priority != *bindingPriority {
+							continue
+						}
+					}
+					if openAICompactSupportTier(item.account) == compactTier {
 						out = append(out, item)
 					}
 				}
 				return out
 			}
-			selectionOrder = appendTier(selectionOrder, 2)
-			selectionOrder = appendTier(selectionOrder, 1)
-			// tier 0 候选作为兜底追加：DB recheck 时若发现 cache tier 0 实际
-			// 已升级为 1/2（探测刚跑完，cache 尚未刷新），仍可正常命中。
-			selectionOrder = appendTier(selectionOrder, 0)
+			if priorityMode == OpenAIAccountPriorityModeBinding {
+				prioritySet := make(map[int]struct{})
+				for _, item := range available {
+					priority, _ := openAIAccountBindingPriority(item.account, groupID)
+					prioritySet[priority] = struct{}{}
+				}
+				priorities := make([]int, 0, len(prioritySet))
+				for priority := range prioritySet {
+					priorities = append(priorities, priority)
+				}
+				sort.Ints(priorities)
+				for _, priority := range priorities {
+					p := priority
+					selectionOrder = appendTier(selectionOrder, &p, 2)
+					selectionOrder = appendTier(selectionOrder, &p, 1)
+					selectionOrder = appendTier(selectionOrder, &p, 0)
+				}
+			} else {
+				selectionOrder = appendTier(selectionOrder, nil, 2)
+				selectionOrder = appendTier(selectionOrder, nil, 1)
+				selectionOrder = appendTier(selectionOrder, nil, 0)
+			}
 		} else {
 			selectionOrder = append(selectionOrder, available...)
 		}
@@ -1116,14 +1183,25 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	loadMap, err := s.concurrencyService.GetAccountsLoadBatch(ctx, accountLoads)
 	if err != nil {
 		ordered := append([]*Account(nil), candidates...)
-		sortAccountsByPriorityAndLastUsed(ordered, false)
+		if priorityMode == OpenAIAccountPriorityModeBinding {
+			sortOpenAIAccountsBySchedulingPriorityAndLastUsed(ordered, groupID, priorityMode)
+		} else {
+			sortAccountsByPriorityAndLastUsed(ordered, false)
+		}
 		if rateOrder.enabled {
 			sort.SliceStable(ordered, func(i, j int) bool {
+				if priorityMode == OpenAIAccountPriorityModeBinding {
+					leftPriority, _ := openAIAccountBindingPriority(ordered[i], groupID)
+					rightPriority, _ := openAIAccountBindingPriority(ordered[j], groupID)
+					if leftPriority != rightPriority {
+						return leftPriority < rightPriority
+					}
+				}
 				return rateOrder.compare(ordered[i], ordered[j]) < 0
 			})
 		}
 		if requireCompact {
-			ordered = prioritizeOpenAICompactAccounts(ordered)
+			ordered = prioritizeOpenAICompactAccountsForScheduling(ordered, groupID, priorityMode)
 		}
 		for _, acc := range ordered {
 			fresh := s.resolveFreshSchedulableOpenAIAccount(ctx, acc, platform, requestedModel, false, requiredCapability)
@@ -1166,14 +1244,25 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 	}
 
 	// ============ Layer 3: Fallback wait ============
-	sortAccountsByPriorityAndLastUsed(candidates, false)
+	if priorityMode == OpenAIAccountPriorityModeBinding {
+		sortOpenAIAccountsBySchedulingPriorityAndLastUsed(candidates, groupID, priorityMode)
+	} else {
+		sortAccountsByPriorityAndLastUsed(candidates, false)
+	}
 	if rateOrder.enabled {
 		sort.SliceStable(candidates, func(i, j int) bool {
+			if priorityMode == OpenAIAccountPriorityModeBinding {
+				leftPriority, _ := openAIAccountBindingPriority(candidates[i], groupID)
+				rightPriority, _ := openAIAccountBindingPriority(candidates[j], groupID)
+				if leftPriority != rightPriority {
+					return leftPriority < rightPriority
+				}
+			}
 			return rateOrder.compare(candidates[i], candidates[j]) < 0
 		})
 	}
 	if requireCompact {
-		candidates = prioritizeOpenAICompactAccounts(candidates)
+		candidates = prioritizeOpenAICompactAccountsForScheduling(candidates, groupID, priorityMode)
 	}
 	for _, acc := range candidates {
 		fresh := s.resolveFreshSchedulableOpenAIAccount(ctx, acc, platform, requestedModel, false, requiredCapability)

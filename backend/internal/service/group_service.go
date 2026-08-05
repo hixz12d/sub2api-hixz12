@@ -9,8 +9,9 @@ import (
 )
 
 var (
-	ErrGroupNotFound = infraerrors.NotFound("GROUP_NOT_FOUND", "group not found")
-	ErrGroupExists   = infraerrors.Conflict("GROUP_EXISTS", "group name already exists")
+	ErrGroupNotFound                = infraerrors.NotFound("GROUP_NOT_FOUND", "group not found")
+	ErrGroupExists                  = infraerrors.Conflict("GROUP_EXISTS", "group name already exists")
+	ErrAccountGroupPriorityConflict = infraerrors.Conflict("ACCOUNT_GROUP_PRIORITY_CONFLICT", "account group priority changed or membership no longer exists")
 )
 
 type GroupRepository interface {
@@ -46,11 +47,22 @@ type GroupDuplicateRepository interface {
 	CreateFromSource(ctx context.Context, group *Group, sourceGroupID int64) error
 }
 
+type AccountGroupPriorityUpdate struct {
+	AccountID        int64 `json:"account_id"`
+	ExpectedPriority int   `json:"expected_priority"`
+	Priority         int   `json:"priority"`
+}
+
+type AccountGroupPriorityRepository interface {
+	UpdateAccountGroupPriorities(ctx context.Context, groupID int64, updates []AccountGroupPriorityUpdate) ([]AccountGroupPriorityUpdate, error)
+}
+
 // AdminGroupRepository makes the group-duplication write capability an explicit
 // admin-service dependency without widening gateway-only group test doubles.
 type AdminGroupRepository interface {
 	GroupRepository
 	GroupDuplicateRepository
+	AccountGroupPriorityRepository
 }
 
 // GroupSortOrderUpdate 分组排序更新

@@ -832,6 +832,12 @@ export default {
         privacySetOnlyEnabled: 'Enabled — accounts with unset Privacy will be excluded',
         disabled: 'Disabled'
       },
+      accountPriorityMode: {
+        label: 'OpenAI group account priority',
+        global: 'Use global account priority',
+        binding: 'Use group binding priority',
+        hint: 'Binding mode exhausts lower-numbered tiers before trying the next tier. Existing groups remain in global mode by default.'
+      },
       form: {
         name: 'Name',
         description: 'Description',

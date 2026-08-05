@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -301,6 +302,10 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	}
 
 	platform := NormalizeGroupPlatform(input.Platform)
+	if err := ValidateOpenAIAccountPriorityMode(platform, input.OpenAIAccountPriorityMode); err != nil {
+		return nil, infraerrors.Newf(http.StatusBadRequest, "INVALID_OPENAI_ACCOUNT_PRIORITY_MODE", "%v", err)
+	}
+	openAIAccountPriorityMode := NormalizeOpenAIAccountPriorityMode(platform, input.OpenAIAccountPriorityMode)
 	maxReasoningEffort, err := normalizeMaxReasoningEffortForPlatform(platform, input.MaxReasoningEffort)
 	if err != nil {
 		return nil, infraerrors.Newf(http.StatusBadRequest, "INVALID_MAX_REASONING_EFFORT", "%v", err)
@@ -448,6 +453,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		Name:                            input.Name,
 		Description:                     input.Description,
 		Platform:                        platform,
+		OpenAIAccountPriorityMode:       openAIAccountPriorityMode,
 		RateMultiplier:                  input.RateMultiplier,
 		IsExclusive:                     input.IsExclusive,
 		Status:                          StatusActive,
@@ -635,6 +641,13 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	if input.Platform != "" {
 		group.Platform = input.Platform
 	}
+	if input.OpenAIAccountPriorityMode != nil {
+		if err := ValidateOpenAIAccountPriorityMode(group.Platform, *input.OpenAIAccountPriorityMode); err != nil {
+			return nil, infraerrors.Newf(http.StatusBadRequest, "INVALID_OPENAI_ACCOUNT_PRIORITY_MODE", "%v", err)
+		}
+		group.OpenAIAccountPriorityMode = *input.OpenAIAccountPriorityMode
+	}
+	group.OpenAIAccountPriorityMode = NormalizeOpenAIAccountPriorityMode(group.Platform, group.OpenAIAccountPriorityMode)
 	if input.RateMultiplier != nil {
 		if *input.RateMultiplier <= 0 {
 			return nil, errors.New("rate_multiplier must be > 0")
@@ -893,10 +906,7 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 			return nil, fmt.Errorf("failed to get accounts from source groups: %w", err)
 		}
 
-		// 先清空当前分组的所有账号绑定
-		if _, err := s.groupRepo.DeleteAccountGroupsByGroupID(ctx, id); err != nil {
-			return nil, fmt.Errorf("failed to clear existing account bindings: %w", err)
-		}
+		// The repository performs a priority-preserving atomic replacement after filtering.
 
 		// require_oauth_only: 过滤掉 apikey 类型账号
 		if group.RequireOAuthOnly && groupSupportsOAuthOnlyFilter(group.Platform) && len(accountIDsToCopy) > 0 {
@@ -919,15 +929,40 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 			accountIDsToCopy = filtered
 		}
 
-		// 再绑定源分组的账号
-		if len(accountIDsToCopy) > 0 {
-			if err := s.groupRepo.BindAccountsToGroup(ctx, id, accountIDsToCopy); err != nil {
-				return nil, fmt.Errorf("failed to bind accounts to group: %w", err)
-			}
+		if err := s.groupRepo.BindAccountsToGroup(ctx, id, accountIDsToCopy); err != nil {
+			return nil, fmt.Errorf("failed to replace account bindings for group: %w", err)
 		}
 	}
 
 	return group, nil
+}
+
+func (s *adminServiceImpl) UpdateGroupAccountPriorities(ctx context.Context, groupID int64, updates []AccountGroupPriorityUpdate) ([]AccountGroupPriorityUpdate, error) {
+	group, err := s.groupRepo.GetByIDLite(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	if group.Platform != PlatformOpenAI {
+		return nil, infraerrors.Newf(http.StatusBadRequest, "OPENAI_ACCOUNT_PRIORITY_MODE_UNSUPPORTED", "group %d is not an OpenAI group", groupID)
+	}
+	if len(updates) == 0 || len(updates) > 500 {
+		return nil, infraerrors.Newf(http.StatusBadRequest, "INVALID_ACCOUNT_GROUP_PRIORITIES", "account priority updates must contain between 1 and 500 items")
+	}
+	if s.groupPriorityRepo == nil {
+		return nil, errors.New("account group priority repository is unavailable")
+	}
+
+	normalized := append([]AccountGroupPriorityUpdate(nil), updates...)
+	sort.Slice(normalized, func(i, j int) bool { return normalized[i].AccountID < normalized[j].AccountID })
+	for i, update := range normalized {
+		if update.AccountID <= 0 || update.ExpectedPriority < 1 || update.Priority < 1 || update.Priority > 1_000_000 {
+			return nil, infraerrors.Newf(http.StatusBadRequest, "INVALID_ACCOUNT_GROUP_PRIORITY", "account_id and priorities must be positive; priority must not exceed 1000000")
+		}
+		if i > 0 && normalized[i-1].AccountID == update.AccountID {
+			return nil, infraerrors.Newf(http.StatusBadRequest, "DUPLICATE_ACCOUNT_GROUP_PRIORITY", "account %d appears more than once", update.AccountID)
+		}
+	}
+	return s.groupPriorityRepo.UpdateAccountGroupPriorities(ctx, groupID, normalized)
 }
 
 func (s *adminServiceImpl) DeleteGroup(ctx context.Context, id int64) error {

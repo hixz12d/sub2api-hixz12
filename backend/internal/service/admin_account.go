@@ -179,8 +179,8 @@ func duplicateAccountGroups(source *Account) ([]AccountGroup, []int64) {
 
 	groups := make([]AccountGroup, 0, len(source.GroupIDs))
 	groupIDs := append([]int64(nil), source.GroupIDs...)
-	for i, groupID := range groupIDs {
-		groups = append(groups, AccountGroup{GroupID: groupID, Priority: i + 1})
+	for _, groupID := range groupIDs {
+		groups = append(groups, AccountGroup{GroupID: groupID, Priority: 50})
 	}
 	return groups, groupIDs
 }
@@ -1350,7 +1350,8 @@ func (s *adminServiceImpl) CreateShadow(ctx context.Context, parentID int64, opt
 	// 组时该组的 spark 请求也能选到影子;G1 决策);母无分组再回落 openai-default(F4)。
 	// 显式指定 GroupIDs 时,与 UpdateAccount 对齐先校验存在性(创建前),避免建出影子后再因无效组
 	// 失败而留下孤儿影子(一母一影唯一索引会挡住重试)——外审 C/P1。
-	groupIDs := opts.GroupIDs
+	inheritParentBindings := len(opts.GroupIDs) == 0 && len(parent.GroupIDs) > 0
+	groupIDs := append([]int64(nil), opts.GroupIDs...)
 	if len(groupIDs) > 0 {
 		if s.groupRepo != nil {
 			if err := s.validateGroupIDsExist(ctx, groupIDs); err != nil {
@@ -1369,6 +1370,21 @@ func (s *adminServiceImpl) CreateShadow(ctx context.Context, parentID int64, opt
 				}
 			}
 		}
+	}
+
+	bindingPriorityByGroup := make(map[int64]int, len(parent.AccountGroups))
+	if inheritParentBindings {
+		for _, binding := range parent.AccountGroups {
+			bindingPriorityByGroup[binding.GroupID] = binding.Priority
+		}
+	}
+	accountGroups := make([]AccountGroup, 0, len(groupIDs))
+	for _, groupID := range groupIDs {
+		priority := 50
+		if inheritedPriority, ok := bindingPriorityByGroup[groupID]; ok && inheritedPriority > 0 {
+			priority = inheritedPriority
+		}
+		accountGroups = append(accountGroups, AccountGroup{GroupID: groupID, Priority: priority})
 	}
 
 	// 4. 构造影子账号（安全不变量：Credentials 恒不含 auth token，仅含 model_mapping）。
@@ -1411,29 +1427,23 @@ func (s *adminServiceImpl) CreateShadow(ctx context.Context, parentID int64, opt
 		},
 	}
 
-	// 5. 持久化（Create 填充 shadow.ID）。并发竞态:预查(步骤2)放行后另一请求抢先建成,本次会撞
-	// 一母一影唯一索引。复查确认确为"已存在"竞态时返回结构化 409 而非裸 500——外审 A/P1。
-	if err := s.accountRepo.Create(ctx, shadow); err != nil {
+	// 5. Persist the shadow and its exact group bindings atomically. Inherited
+	// memberships keep the parent's priorities; explicit/default memberships use 50.
+	shadow.GroupIDs = append([]int64(nil), groupIDs...)
+	shadow.AccountGroups = append([]AccountGroup(nil), accountGroups...)
+	creator := s.accountDuplicateRepo
+	if creator == nil {
+		creator, _ = s.accountRepo.(AccountDuplicateRepository)
+	}
+	if creator == nil {
+		return nil, errors.New("atomic account group creator is unavailable")
+	}
+	if err := creator.CreateWithAccountGroups(ctx, shadow, accountGroups); err != nil {
 		if existing, qerr := s.accountRepo.ListShadowsByParent(ctx, parentID); qerr == nil && len(existing) > 0 {
 			return nil, infraerrors.New(http.StatusConflict, "SPARK_SHADOW_ALREADY_EXISTS",
 				"parent account already has a spark shadow account")
 		}
 		return nil, fmt.Errorf("create spark shadow: %w", err)
-	}
-
-	// 6. 绑定分组。注意:create+bind 非单一 DB 事务(通用 Create 走 r.client、outbox 走 r.sql,
-	// 无现成共享事务路径),故绑组失败时做 best-effort 补偿删除刚建的影子,避免半成品影子(否则
-	// 一母一影唯一索引会挡住重试)——外审 C/P1。补偿删除用 detached ctx,即便请求 ctx 已取消/超时
-	// 仍能完成清理(外审第4轮);进程崩溃这种极端仍可能残留,属已知权衡。
-	if len(groupIDs) > 0 {
-		if err := s.accountRepo.BindGroups(ctx, shadow.ID, groupIDs); err != nil {
-			if delErr := s.accountRepo.Delete(context.WithoutCancel(ctx), shadow.ID); delErr != nil {
-				slog.Error("spark_shadow_bind_groups_rollback_failed",
-					"shadow_id", shadow.ID, "parent_id", parentID, "delete_err", delErr)
-			}
-			return nil, fmt.Errorf("bind groups for spark shadow: %w", err)
-		}
-		shadow.GroupIDs = groupIDs
 	}
 
 	return shadow, nil

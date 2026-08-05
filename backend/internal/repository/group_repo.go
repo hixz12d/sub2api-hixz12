@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	dbaccountgroup "github.com/Wei-Shaw/sub2api/ent/accountgroup"
 	"github.com/Wei-Shaw/sub2api/ent/group"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -60,6 +61,7 @@ func createGroupRecord(ctx context.Context, client *dbent.Client, groupIn *servi
 		SetName(groupIn.Name).
 		SetDescription(groupIn.Description).
 		SetPlatform(groupIn.Platform).
+		SetOpenaiAccountPriorityMode(groupIn.OpenAIAccountPriorityMode).
 		SetRateMultiplier(groupIn.RateMultiplier).
 		SetSortOrder(groupIn.SortOrder).
 		SetIsExclusive(groupIn.IsExclusive).
@@ -233,6 +235,7 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 		SetName(groupIn.Name).
 		SetDescription(groupIn.Description).
 		SetPlatform(groupIn.Platform).
+		SetOpenaiAccountPriorityMode(groupIn.OpenAIAccountPriorityMode).
 		SetRateMultiplier(groupIn.RateMultiplier).
 		SetIsExclusive(groupIn.IsExclusive).
 		SetStatus(groupIn.Status).
@@ -967,30 +970,175 @@ func (r *groupRepository) GetAccountIDsByGroupIDs(ctx context.Context, groupIDs 
 	return accountIDs, nil
 }
 
-// BindAccountsToGroup 将多个账号绑定到指定分组（批量插入，忽略已存在的绑定）
-func (r *groupRepository) BindAccountsToGroup(ctx context.Context, groupID int64, accountIDs []int64) error {
-	if len(accountIDs) == 0 {
-		return nil
+func (r *groupRepository) UpdateAccountGroupPriorities(ctx context.Context, groupID int64, updates []service.AccountGroupPriorityUpdate) ([]service.AccountGroupPriorityUpdate, error) {
+	if len(updates) == 0 {
+		return []service.AccountGroupPriorityUpdate{}, nil
 	}
 
-	// 使用 INSERT ... ON CONFLICT DO NOTHING 忽略已存在的绑定
-	_, err := r.sql.ExecContext(
-		ctx,
-		`INSERT INTO account_groups (account_id, group_id, priority, created_at)
-		 SELECT unnest($1::bigint[]), $2, 50, NOW()
-		 ON CONFLICT (account_id, group_id) DO NOTHING`,
-		pq.Array(accountIDs),
-		groupID,
-	)
+	tx, err := r.client.Tx(ctx)
+	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
+		return nil, err
+	}
+	var txClient *dbent.Client
+	if err == nil {
+		defer func() { _ = tx.Rollback() }()
+		txClient = tx.Client()
+	} else {
+		txClient = r.client
+	}
+
+	accountIDs := make([]int64, 0, len(updates))
+	for _, update := range updates {
+		accountIDs = append(accountIDs, update.AccountID)
+	}
+	bindings, err := txClient.AccountGroup.Query().
+		Where(
+			dbaccountgroup.GroupIDEQ(groupID),
+			dbaccountgroup.AccountIDIn(accountIDs...),
+		).
+		ForUpdate().
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	current := make(map[int64]int, len(bindings))
+	for _, binding := range bindings {
+		current[binding.AccountID] = binding.Priority
+	}
+	for _, update := range updates {
+		priority, ok := current[update.AccountID]
+		if !ok || priority != update.ExpectedPriority {
+			return nil, service.ErrAccountGroupPriorityConflict
+		}
+	}
+
+	for _, update := range updates {
+		if update.Priority == update.ExpectedPriority {
+			continue
+		}
+		affected, err := txClient.AccountGroup.Update().
+			Where(
+				dbaccountgroup.GroupIDEQ(groupID),
+				dbaccountgroup.AccountIDEQ(update.AccountID),
+				dbaccountgroup.PriorityEQ(update.ExpectedPriority),
+			).
+			SetPriority(update.Priority).
+			Save(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if affected != 1 {
+			return nil, service.ErrAccountGroupPriorityConflict
+		}
+		payload := buildSchedulerGroupPayload([]int64{groupID})
+		accountID := update.AccountID
+		if err := enqueueSchedulerOutbox(ctx, txClient, service.SchedulerOutboxEventAccountGroupsChanged, &accountID, nil, payload); err != nil {
+			return nil, err
+		}
+	}
+	if err := enqueueSchedulerOutbox(ctx, txClient, service.SchedulerOutboxEventGroupChanged, nil, &groupID, nil); err != nil {
+		return nil, err
+	}
+	if tx != nil {
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+	}
+	return updates, nil
+}
+
+// BindAccountsToGroup 将多个账号绑定到指定分组（批量插入，忽略已存在的绑定）
+func (r *groupRepository) BindAccountsToGroup(ctx context.Context, groupID int64, accountIDs []int64) error {
+	// This operation replaces the group's membership while preserving priorities
+	// for retained rows and assigning the neutral default to newly added rows.
+	targetSet := make(map[int64]struct{}, len(accountIDs))
+	targetIDs := make([]int64, 0, len(accountIDs))
+	for _, accountID := range accountIDs {
+		if accountID <= 0 {
+			return fmt.Errorf("account id must be positive: %d", accountID)
+		}
+		if _, seen := targetSet[accountID]; seen {
+			continue
+		}
+		targetSet[accountID] = struct{}{}
+		targetIDs = append(targetIDs, accountID)
+	}
+	sort.Slice(targetIDs, func(i, j int) bool { return targetIDs[i] < targetIDs[j] })
+
+	tx, err := r.client.Tx(ctx)
+	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
+		return err
+	}
+	var txClient *dbent.Client
+	if err == nil {
+		defer func() { _ = tx.Rollback() }()
+		txClient = tx.Client()
+	} else {
+		txClient = r.client
+	}
+
+	existing, err := txClient.AccountGroup.Query().
+		Where(dbaccountgroup.GroupIDEQ(groupID)).
+		ForUpdate().
+		All(ctx)
 	if err != nil {
 		return err
 	}
-
-	// 发送调度器事件
-	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventGroupChanged, nil, &groupID, nil); err != nil {
-		logger.LegacyPrintf("repository.group", "[SchedulerOutbox] enqueue bind accounts to group failed: group=%d err=%v", groupID, err)
+	existingSet := make(map[int64]struct{}, len(existing))
+	affectedSet := make(map[int64]struct{}, len(existing)+len(targetIDs))
+	removeIDs := make([]int64, 0)
+	for _, binding := range existing {
+		existingSet[binding.AccountID] = struct{}{}
+		affectedSet[binding.AccountID] = struct{}{}
+		if _, keep := targetSet[binding.AccountID]; !keep {
+			removeIDs = append(removeIDs, binding.AccountID)
+		}
+	}
+	if len(removeIDs) > 0 {
+		if _, err := txClient.AccountGroup.Delete().Where(
+			dbaccountgroup.GroupIDEQ(groupID),
+			dbaccountgroup.AccountIDIn(removeIDs...),
+		).Exec(ctx); err != nil {
+			return err
+		}
 	}
 
+	builders := make([]*dbent.AccountGroupCreate, 0)
+	for _, accountID := range targetIDs {
+		affectedSet[accountID] = struct{}{}
+		if _, retained := existingSet[accountID]; retained {
+			continue
+		}
+		builders = append(builders, txClient.AccountGroup.Create().
+			SetAccountID(accountID).
+			SetGroupID(groupID).
+			SetPriority(50),
+		)
+	}
+	if len(builders) > 0 {
+		if _, err := txClient.AccountGroup.CreateBulk(builders...).Save(ctx); err != nil {
+			return err
+		}
+	}
+
+	affectedIDs := make([]int64, 0, len(affectedSet))
+	for accountID := range affectedSet {
+		affectedIDs = append(affectedIDs, accountID)
+	}
+	sort.Slice(affectedIDs, func(i, j int) bool { return affectedIDs[i] < affectedIDs[j] })
+	payload := buildSchedulerGroupPayload([]int64{groupID})
+	for _, accountID := range affectedIDs {
+		id := accountID
+		if err := enqueueSchedulerOutbox(ctx, txClient, service.SchedulerOutboxEventAccountGroupsChanged, &id, nil, payload); err != nil {
+			return err
+		}
+	}
+	if err := enqueueSchedulerOutbox(ctx, txClient, service.SchedulerOutboxEventGroupChanged, nil, &groupID, nil); err != nil {
+		return err
+	}
+	if tx != nil {
+		return tx.Commit()
+	}
 	return nil
 }
 

@@ -13,7 +13,8 @@ import type {
   CompositeRouteDecision,
   CreateGroupRequest,
   UpdateGroupRequest,
-  PaginatedResponse
+  PaginatedResponse,
+  AccountGroup
 } from '@/types'
 
 export interface LiveCapability {
@@ -217,6 +218,23 @@ export async function duplicate(id: number): Promise<AdminGroup> {
  */
 export async function update(id: number, updates: UpdateGroupRequest): Promise<AdminGroup> {
   const { data } = await apiClient.put<AdminGroup>(`/admin/groups/${id}`, updates)
+  return data
+}
+
+export interface AccountPriorityMutation {
+  account_id: number
+  priority: number
+  expected_priority: number
+}
+
+export async function updateAccountPriorities(
+  id: number,
+  mutations: AccountPriorityMutation[]
+): Promise<AccountGroup[]> {
+  const { data } = await apiClient.patch<AccountGroup[]>(
+    `/admin/groups/${id}/account-priorities`,
+    { items: mutations }
+  )
   return data
 }
 
@@ -484,6 +502,7 @@ export const groupsAPI = {
   create,
   duplicate,
   update,
+  updateAccountPriorities,
   delete: deleteGroup,
   toggleStatus,
   getStats,

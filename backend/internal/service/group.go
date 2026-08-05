@@ -15,12 +15,18 @@ type OpenAIMessagesDispatchModelConfig = domain.OpenAIMessagesDispatchModelConfi
 type GroupModelsListConfig = domain.GroupModelsListConfig
 type ReasoningEffortMapping = domain.ReasoningEffortMapping
 
+const (
+	OpenAIAccountPriorityModeGlobal  = "global"
+	OpenAIAccountPriorityModeBinding = "binding"
+)
+
 type Group struct {
-	ID             int64
-	Name           string
-	Description    string
-	Platform       string
-	RateMultiplier float64
+	ID                        int64
+	Name                      string
+	Description               string
+	Platform                  string
+	OpenAIAccountPriorityMode string
+	RateMultiplier            float64
 	// 高峰时段倍率：peak_rate_enabled 为 true 且当前时刻处于 [PeakStart, PeakEnd) 时，
 	// token 计费倍率额外乘以 PeakRateMultiplier。详见 PeakMultiplierAt。
 	PeakRateEnabled    bool
@@ -119,6 +125,32 @@ type Group struct {
 
 func (g *Group) IsActive() bool {
 	return g.Status == StatusActive
+}
+
+func (g *Group) UsesOpenAIAccountBindingPriority() bool {
+	return g != nil && g.Platform == PlatformOpenAI && g.OpenAIAccountPriorityMode == OpenAIAccountPriorityModeBinding
+}
+
+func NormalizeOpenAIAccountPriorityMode(platform, mode string) string {
+	if platform != PlatformOpenAI {
+		return OpenAIAccountPriorityModeGlobal
+	}
+	mode = strings.TrimSpace(strings.ToLower(mode))
+	if mode == OpenAIAccountPriorityModeBinding {
+		return mode
+	}
+	return OpenAIAccountPriorityModeGlobal
+}
+
+func ValidateOpenAIAccountPriorityMode(platform, mode string) error {
+	mode = strings.TrimSpace(strings.ToLower(mode))
+	if mode == "" || mode == OpenAIAccountPriorityModeGlobal {
+		return nil
+	}
+	if platform == PlatformOpenAI && mode == OpenAIAccountPriorityModeBinding {
+		return nil
+	}
+	return fmt.Errorf("invalid OpenAI account priority mode %q for platform %q", mode, platform)
 }
 
 func (g *Group) IsSubscriptionType() bool {

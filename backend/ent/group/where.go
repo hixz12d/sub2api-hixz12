@@ -125,6 +125,11 @@ func Platform(v string) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldPlatform, v))
 }
 
+// OpenaiAccountPriorityMode applies equality check predicate on the "openai_account_priority_mode" field. It's identical to OpenaiAccountPriorityModeEQ.
+func OpenaiAccountPriorityMode(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldOpenaiAccountPriorityMode, v))
+}
+
 // SubscriptionType applies equality check predicate on the "subscription_type" field. It's identical to SubscriptionTypeEQ.
 func SubscriptionType(v string) predicate.Group {
 	return predicate.Group(sql.FieldEQ(FieldSubscriptionType, v))
@@ -1008,6 +1013,71 @@ func PlatformEqualFold(v string) predicate.Group {
 // PlatformContainsFold applies the ContainsFold predicate on the "platform" field.
 func PlatformContainsFold(v string) predicate.Group {
 	return predicate.Group(sql.FieldContainsFold(FieldPlatform, v))
+}
+
+// OpenaiAccountPriorityModeEQ applies the EQ predicate on the "openai_account_priority_mode" field.
+func OpenaiAccountPriorityModeEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldEQ(FieldOpenaiAccountPriorityMode, v))
+}
+
+// OpenaiAccountPriorityModeNEQ applies the NEQ predicate on the "openai_account_priority_mode" field.
+func OpenaiAccountPriorityModeNEQ(v string) predicate.Group {
+	return predicate.Group(sql.FieldNEQ(FieldOpenaiAccountPriorityMode, v))
+}
+
+// OpenaiAccountPriorityModeIn applies the In predicate on the "openai_account_priority_mode" field.
+func OpenaiAccountPriorityModeIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldIn(FieldOpenaiAccountPriorityMode, vs...))
+}
+
+// OpenaiAccountPriorityModeNotIn applies the NotIn predicate on the "openai_account_priority_mode" field.
+func OpenaiAccountPriorityModeNotIn(vs ...string) predicate.Group {
+	return predicate.Group(sql.FieldNotIn(FieldOpenaiAccountPriorityMode, vs...))
+}
+
+// OpenaiAccountPriorityModeGT applies the GT predicate on the "openai_account_priority_mode" field.
+func OpenaiAccountPriorityModeGT(v string) predicate.Group {
+	return predicate.Group(sql.FieldGT(FieldOpenaiAccountPriorityMode, v))
+}
+
+// OpenaiAccountPriorityModeGTE applies the GTE predicate on the "openai_account_priority_mode" field.
+func OpenaiAccountPriorityModeGTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldGTE(FieldOpenaiAccountPriorityMode, v))
+}
+
+// OpenaiAccountPriorityModeLT applies the LT predicate on the "openai_account_priority_mode" field.
+func OpenaiAccountPriorityModeLT(v string) predicate.Group {
+	return predicate.Group(sql.FieldLT(FieldOpenaiAccountPriorityMode, v))
+}
+
+// OpenaiAccountPriorityModeLTE applies the LTE predicate on the "openai_account_priority_mode" field.
+func OpenaiAccountPriorityModeLTE(v string) predicate.Group {
+	return predicate.Group(sql.FieldLTE(FieldOpenaiAccountPriorityMode, v))
+}
+
+// OpenaiAccountPriorityModeContains applies the Contains predicate on the "openai_account_priority_mode" field.
+func OpenaiAccountPriorityModeContains(v string) predicate.Group {
+	return predicate.Group(sql.FieldContains(FieldOpenaiAccountPriorityMode, v))
+}
+
+// OpenaiAccountPriorityModeHasPrefix applies the HasPrefix predicate on the "openai_account_priority_mode" field.
+func OpenaiAccountPriorityModeHasPrefix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasPrefix(FieldOpenaiAccountPriorityMode, v))
+}
+
+// OpenaiAccountPriorityModeHasSuffix applies the HasSuffix predicate on the "openai_account_priority_mode" field.
+func OpenaiAccountPriorityModeHasSuffix(v string) predicate.Group {
+	return predicate.Group(sql.FieldHasSuffix(FieldOpenaiAccountPriorityMode, v))
+}
+
+// OpenaiAccountPriorityModeEqualFold applies the EqualFold predicate on the "openai_account_priority_mode" field.
+func OpenaiAccountPriorityModeEqualFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldEqualFold(FieldOpenaiAccountPriorityMode, v))
+}
+
+// OpenaiAccountPriorityModeContainsFold applies the ContainsFold predicate on the "openai_account_priority_mode" field.
+func OpenaiAccountPriorityModeContainsFold(v string) predicate.Group {
+	return predicate.Group(sql.FieldContainsFold(FieldOpenaiAccountPriorityMode, v))
 }
 
 // SubscriptionTypeEQ applies the EQ predicate on the "subscription_type" field.
