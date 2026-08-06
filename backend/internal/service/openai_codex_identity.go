@@ -213,3 +213,17 @@ func pairCodexIdentityHeaders(h http.Header) {
 		h.Set("version", codexCLIVersion)
 	}
 }
+
+// resolveAgentRegistrationUA 为 agent task 注册选择最终 User-Agent。
+// 优先使用账号级自定义 UA（若为合法 Codex 官方 UA）；否则回退为全局默认。
+func resolveAgentRegistrationUA(account *Account) string {
+	if account != nil {
+		customUA := strings.TrimSpace(account.GetOpenAIUserAgent())
+		if customUA != "" {
+			if _, pairedUA, ok := openai.PairCodexClientIdentity(customUA); ok {
+				return pairedUA
+			}
+		}
+	}
+	return codexCLIUserAgent
+}

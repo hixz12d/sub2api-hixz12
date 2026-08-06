@@ -184,6 +184,10 @@ func (a *Account) ApplyHeaderOverrides(h http.Header) {
 	// 全量 EqualFold 扫描兜底删除任意 casing 的既有键：透传链路可能保留客户端
 	// 原始 casing，非 canonical/wire casing 的键 deleteHeaderAllForms 覆盖不到。
 	for name, value := range overrides {
+		// 跳过 Codex/OpenAI 协议关键头，防止账号配置破坏 UA 伪装与身份收口逻辑。
+		if isOpenAIProtectedHeaderOverrideName(name) {
+			continue
+		}
 		for existing := range h {
 			if strings.EqualFold(existing, name) {
 				delete(h, existing)
@@ -191,6 +195,18 @@ func (a *Account) ApplyHeaderOverrides(h http.Header) {
 		}
 		h[resolveWireCasing(name)] = []string{value}
 	}
+}
+
+// isOpenAIProtectedHeaderOverrideName 报告给定（已小写化）头名称是否为受保护的
+// OpenAI/Codex 协议头，不允许通过账号配置覆写。
+// name 参数应已为小写；调用方 GetHeaderOverrides 返回的 key 已统一小写。
+func isOpenAIProtectedHeaderOverrideName(name string) bool {
+	switch name {
+	case "user-agent", "originator", "version", "openai-beta",
+		"session_id", "conversation_id":
+		return true
+	}
+	return strings.HasPrefix(name, "x-codex-")
 }
 
 // NormalizeHeaderOverrideCredentials 校验并原地规范化 credentials 中的请求头覆写字段。
