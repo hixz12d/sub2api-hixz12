@@ -446,6 +446,121 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabledUsesLega
 	require.False(t, decision.StickyPreviousHit)
 }
 
+func TestOpenAIGatewayService_SelectAccountWithLoadAwareness_LegacyStickyFullUsesModelCompatibleOverflow(t *testing.T) {
+	for _, loadBatchEnabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("load_batch_%t", loadBatchEnabled), func(t *testing.T) {
+			groupID := int64(101071)
+			const sessionHash = "legacy-sticky-luna-overflow"
+			sticky := Account{
+				ID: 35901, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+				Status: StatusActive, Schedulable: true, Concurrency: 1,
+				AccountGroups: []AccountGroup{{AccountID: 35901, GroupID: groupID, Priority: 2}}, GroupIDs: []int64{groupID},
+				Credentials: map[string]any{"model_mapping": map[string]any{"gpt-5.6-luna": "gpt-5.6-luna"}},
+			}
+			unsupportedPool := Account{
+				ID: 35902, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+				Status: StatusActive, Schedulable: true, Concurrency: 1,
+				AccountGroups: []AccountGroup{{AccountID: 35902, GroupID: groupID, Priority: 1}}, GroupIDs: []int64{groupID},
+				Credentials: map[string]any{"model_mapping": map[string]any{"gpt-5.6-terra": "gpt-5.6-terra"}},
+			}
+			compatibleOverflow := Account{
+				ID: 35903, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+				Status: StatusActive, Schedulable: true, Concurrency: 1,
+				AccountGroups: []AccountGroup{{AccountID: 35903, GroupID: groupID, Priority: 3}}, GroupIDs: []int64{groupID},
+				Credentials: map[string]any{"model_mapping": map[string]any{"gpt-5.6-luna": "gpt-5.6-luna"}},
+			}
+			acquiredIDs := []int64{}
+			cache := &schedulerTestGatewayCache{sessionBindings: map[string]int64{"openai:" + sessionHash: sticky.ID}}
+			cfg := &config.Config{}
+			cfg.Gateway.Scheduling.LoadBatchEnabled = loadBatchEnabled
+			cfg.Gateway.Scheduling.StickySessionMaxWaiting = 3
+			cfg.Gateway.Scheduling.StickySessionWaitTimeout = 45 * time.Second
+			cfg.Gateway.Scheduling.FallbackMaxWaiting = 100
+			cfg.Gateway.Scheduling.FallbackWaitTimeout = 30 * time.Second
+			svc := &OpenAIGatewayService{
+				accountRepo: schedulerGroupAwareOpenAIAccountRepo{schedulerTestOpenAIAccountRepo{accounts: []Account{
+					sticky, unsupportedPool, compatibleOverflow,
+				}}},
+				cache: cache,
+				cfg:   cfg,
+				concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{
+					acquireResults: map[int64]bool{sticky.ID: false, compatibleOverflow.ID: true},
+					acquiredIDs:    &acquiredIDs,
+				}),
+			}
+
+			selection, err := svc.SelectAccountWithLoadAwareness(
+				bindingPriorityTestContext(groupID), &groupID, sessionHash, "gpt-5.6-luna", nil,
+			)
+
+			require.NoError(t, err)
+			require.NotNil(t, selection)
+			require.Equal(t, compatibleOverflow.ID, selection.Account.ID)
+			require.True(t, selection.Acquired)
+			require.Nil(t, selection.WaitPlan)
+			require.True(t, selection.PreserveStickyBinding)
+			require.Equal(t, []int64{sticky.ID, compatibleOverflow.ID}, acquiredIDs)
+			require.Equal(t, sticky.ID, cache.sessionBindings["openai:"+sessionHash])
+			if selection.ReleaseFunc != nil {
+				selection.ReleaseFunc()
+			}
+		})
+	}
+}
+
+func TestOpenAIGatewayService_SelectAccountWithLoadAwareness_LegacyStickyWaitsOnlyAfterOverflowIsFull(t *testing.T) {
+	for _, loadBatchEnabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("load_batch_%t", loadBatchEnabled), func(t *testing.T) {
+			groupID := int64(101072)
+			const sessionHash = "legacy-sticky-all-full"
+			sticky := Account{
+				ID: 35911, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+				Status: StatusActive, Schedulable: true, Concurrency: 1,
+				AccountGroups: []AccountGroup{{AccountID: 35911, GroupID: groupID, Priority: 1}}, GroupIDs: []int64{groupID},
+				Credentials: map[string]any{"model_mapping": map[string]any{"gpt-5.6-terra": "gpt-5.6-terra"}},
+			}
+			overflow := Account{
+				ID: 35912, Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+				Status: StatusActive, Schedulable: true, Concurrency: 1,
+				AccountGroups: []AccountGroup{{AccountID: 35912, GroupID: groupID, Priority: 2}}, GroupIDs: []int64{groupID},
+				Credentials: map[string]any{"model_mapping": map[string]any{"gpt-5.6-terra": "gpt-5.6-terra"}},
+			}
+			acquiredIDs := []int64{}
+			cache := &schedulerTestGatewayCache{sessionBindings: map[string]int64{"openai:" + sessionHash: sticky.ID}}
+			cfg := &config.Config{}
+			cfg.Gateway.Scheduling.LoadBatchEnabled = loadBatchEnabled
+			cfg.Gateway.Scheduling.StickySessionMaxWaiting = 3
+			cfg.Gateway.Scheduling.StickySessionWaitTimeout = 45 * time.Second
+			cfg.Gateway.Scheduling.FallbackMaxWaiting = 100
+			cfg.Gateway.Scheduling.FallbackWaitTimeout = 30 * time.Second
+			svc := &OpenAIGatewayService{
+				accountRepo: schedulerGroupAwareOpenAIAccountRepo{schedulerTestOpenAIAccountRepo{accounts: []Account{sticky, overflow}}},
+				cache:       cache,
+				cfg:         cfg,
+				concurrencyService: NewConcurrencyService(schedulerTestConcurrencyCache{
+					acquireResults: map[int64]bool{sticky.ID: false, overflow.ID: false},
+					waitCounts:     map[int64]int{sticky.ID: 0},
+					acquiredIDs:    &acquiredIDs,
+				}),
+			}
+
+			selection, err := svc.SelectAccountWithLoadAwareness(
+				bindingPriorityTestContext(groupID), &groupID, sessionHash, "gpt-5.6-terra", nil,
+			)
+
+			require.NoError(t, err)
+			require.NotNil(t, selection)
+			require.Equal(t, sticky.ID, selection.Account.ID)
+			require.False(t, selection.Acquired)
+			require.NotNil(t, selection.WaitPlan)
+			require.Equal(t, sticky.ID, selection.WaitPlan.AccountID)
+			require.Equal(t, cfg.Gateway.Scheduling.StickySessionWaitTimeout, selection.WaitPlan.Timeout)
+			require.Equal(t, []int64{sticky.ID, overflow.ID}, acquiredIDs)
+			require.Equal(t, sticky.ID, cache.sessionBindings["openai:"+sessionHash])
+		})
+	}
+}
+
 func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabled_RequiredWSV2_SkipsHTTPOnlyAccount(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()
 

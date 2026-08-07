@@ -6,6 +6,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -875,6 +876,69 @@ func (s *OpenAIGatewayService) SelectAccountWithLoadAwareness(ctx context.Contex
 	return s.selectAccountWithLoadAwareness(ctx, groupID, PlatformOpenAI, sessionHash, requestedModel, excludedIDs, false, "", true)
 }
 
+// tryAcquireLegacyStickyOverflow tries every other eligible account immediately
+// before a full sticky account is allowed to queue. The original sticky binding
+// remains authoritative so a temporary capacity spill does not move the session.
+func (s *OpenAIGatewayService) tryAcquireLegacyStickyOverflow(
+	ctx context.Context,
+	groupID *int64,
+	platform string,
+	sessionHash string,
+	stickyAccountID int64,
+	requestedModel string,
+	excludedIDs map[int64]struct{},
+	requireCompact bool,
+	requiredCapability OpenAIEndpointCapability,
+	preferLowUpstreamRate bool,
+) (*AccountSelectionResult, error) {
+	if s.concurrencyService == nil || stickyAccountID <= 0 {
+		return nil, nil
+	}
+
+	overflowExcludedIDs := cloneExcludedAccountIDs(excludedIDs)
+	if overflowExcludedIDs == nil {
+		overflowExcludedIDs = make(map[int64]struct{})
+	}
+	overflowExcludedIDs[stickyAccountID] = struct{}{}
+
+	for {
+		account, err := s.selectAccountForModelWithExclusions(
+			ctx,
+			groupID,
+			platform,
+			"",
+			requestedModel,
+			overflowExcludedIDs,
+			requireCompact,
+			0,
+			requiredCapability,
+			preferLowUpstreamRate,
+		)
+		if err != nil {
+			if errors.Is(err, ErrNoAvailableAccounts) || errors.Is(err, ErrNoAvailableCompactAccounts) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		if account == nil {
+			return nil, nil
+		}
+		overflowExcludedIDs[account.ID] = struct{}{}
+
+		result, acquireErr := s.tryAcquireAccountSlot(ctx, account.ID, account.Concurrency)
+		if acquireErr != nil || result == nil || !result.Acquired {
+			continue
+		}
+		selection, selectErr := s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
+		if selectErr != nil {
+			return nil, selectErr
+		}
+		selection.PreserveStickyBinding = true
+		_ = s.refreshStickySessionTTL(ctx, groupID, sessionHash, openaiStickySessionTTL)
+		return selection, nil
+	}
+}
+
 func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Context, groupID *int64, platform string, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, requiredCapability OpenAIEndpointCapability, useUpstreamTokenCost bool) (*AccountSelectionResult, error) {
 	platform = normalizeOpenAICompatiblePlatform(platform)
 	priorityMode, priorityModeErr := s.resolveOpenAIAccountPriorityMode(ctx, groupID)
@@ -905,6 +969,18 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		result, err := s.tryAcquireAccountSlot(ctx, account.ID, account.Concurrency)
 		if err == nil && result != nil && result.Acquired {
 			return s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
+		}
+		if stickyAccountID > 0 && stickyAccountID == account.ID {
+			overflow, overflowErr := s.tryAcquireLegacyStickyOverflow(
+				ctx, groupID, platform, sessionHash, stickyAccountID, requestedModel,
+				excludedIDs, requireCompact, requiredCapability, preferLowUpstreamRate,
+			)
+			if overflowErr != nil {
+				return nil, overflowErr
+			}
+			if overflow != nil {
+				return overflow, nil
+			}
 		}
 		if stickyAccountID > 0 && stickyAccountID == account.ID && s.concurrencyService != nil {
 			waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, account.ID)
@@ -977,6 +1053,16 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 							return selection, nil
 						}
 
+						overflow, overflowErr := s.tryAcquireLegacyStickyOverflow(
+							ctx, groupID, platform, sessionHash, accountID, requestedModel,
+							excludedIDs, requireCompact, requiredCapability, preferLowUpstreamRate,
+						)
+						if overflowErr != nil {
+							return nil, overflowErr
+						}
+						if overflow != nil {
+							return overflow, nil
+						}
 						waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, accountID)
 						if waitingCount < cfg.StickySessionMaxWaiting {
 							return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
