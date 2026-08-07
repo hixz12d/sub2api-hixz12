@@ -184,8 +184,8 @@ func (a *Account) ApplyHeaderOverrides(h http.Header) {
 	// 全量 EqualFold 扫描兜底删除任意 casing 的既有键：透传链路可能保留客户端
 	// 原始 casing，非 canonical/wire casing 的键 deleteHeaderAllForms 覆盖不到。
 	for name, value := range overrides {
-		// 跳过 Codex/OpenAI 协议关键头，防止账号配置破坏 UA 伪装与身份收口逻辑。
-		if isOpenAIProtectedHeaderOverrideName(name) {
+		// 仅 OpenAI 出站身份头由统一收口逻辑管理；其他平台仍可覆写同名的普通头。
+		if a.Platform == PlatformOpenAI && isOpenAIProtectedHeaderOverrideName(name) {
 			continue
 		}
 		for existing := range h {
