@@ -1051,6 +1051,28 @@ func isOpenAIHTTP2CompatibilityError(err error) bool {
 	return false
 }
 
+func isOpenAIHTTP2StreamFailure(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || isUpstreamTimeoutError(err) {
+		return false
+	}
+	if isOpenAIHTTP2CompatibilityError(err) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	for _, marker := range []string{
+		"unexpected eof",
+		"http2: client connection lost",
+		"connection reset",
+		"connection closed",
+		"stream ended before terminal event",
+	} {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func isUpstreamTimeoutError(err error) bool {
 	if err == nil {
 		return false
@@ -1082,6 +1104,29 @@ func isUpstreamTimeoutError(err error) bool {
 }
 
 func (s *httpUpstreamService) recordOpenAIHTTP2Failure(profile service.HTTPUpstreamProfile, protocolMode, proxyKey string, err error) {
+	s.recordOpenAIHTTP2FailureWithMatcher(profile, protocolMode, proxyKey, err, isOpenAIHTTP2CompatibilityError)
+}
+
+// RecordOpenAIHTTP2StreamFailure feeds post-response stream failures into the
+// existing proxy-scoped H2 fallback state. The current protocol mode is checked
+// before recording so an already-fallbacked H1 request cannot keep extending H2
+// quarantine.
+func (s *httpUpstreamService) RecordOpenAIHTTP2StreamFailure(proxyURL string, err error) {
+	if err == nil {
+		return
+	}
+	proxyKey, parsedProxy, normalizeErr := normalizeProxyURL(proxyURL)
+	if normalizeErr != nil {
+		return
+	}
+	protocolMode := s.resolveProtocolMode(service.HTTPUpstreamProfileOpenAI, proxyKey, parsedProxy)
+	if protocolMode != upstreamProtocolModeOpenAIH2 {
+		return
+	}
+	s.recordOpenAIHTTP2FailureWithMatcher(service.HTTPUpstreamProfileOpenAI, protocolMode, proxyKey, err, isOpenAIHTTP2StreamFailure)
+}
+
+func (s *httpUpstreamService) recordOpenAIHTTP2FailureWithMatcher(profile service.HTTPUpstreamProfile, protocolMode, proxyKey string, err error, matches func(error) bool) {
 	if profile != service.HTTPUpstreamProfileOpenAI || protocolMode != upstreamProtocolModeOpenAIH2 {
 		return
 	}
@@ -1089,7 +1134,7 @@ func (s *httpUpstreamService) recordOpenAIHTTP2Failure(profile service.HTTPUpstr
 	if !settings.enabled || !settings.allowProxyFallbackToHTTP1 {
 		return
 	}
-	if !isHTTPProxyKey(proxyKey) || !isOpenAIHTTP2CompatibilityError(err) {
+	if !isHTTPProxyKey(proxyKey) || !matches(err) {
 		return
 	}
 	state := s.getOrCreateOpenAIHTTP2FallbackState(proxyKey)

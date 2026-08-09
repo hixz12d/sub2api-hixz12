@@ -730,6 +730,27 @@ func (s *HTTPUpstreamSuite) TestOpenAIHTTP2ProxyCompatibilityErrorActivatesFallb
 	require.Equal(s.T(), upstreamProtocolModeOpenAIH1Fallback, entry.protocolMode)
 }
 
+func (s *HTTPUpstreamSuite) TestOpenAIHTTP2StreamUnexpectedEOFFeedsFallback() {
+	s.cfg.Gateway = config.GatewayConfig{
+		OpenAIHTTP2: config.GatewayOpenAIHTTP2Config{
+			Enabled:                   true,
+			AllowProxyFallbackToHTTP1: true,
+			FallbackErrorThreshold:    1,
+			FallbackWindowSeconds:     60,
+			FallbackTTLSeconds:        600,
+		},
+	}
+	svc := s.newService()
+	proxyURL := "http://proxy.local:8080"
+
+	svc.RecordOpenAIHTTP2StreamFailure(proxyURL, io.ErrUnexpectedEOF)
+
+	require.True(s.T(), svc.isOpenAIHTTP2FallbackActive(proxyURL))
+	entry, err := svc.getClientEntry(proxyURL, 1, 1, service.HTTPUpstreamProfileOpenAI, false, false)
+	require.NoError(s.T(), err)
+	require.Equal(s.T(), upstreamProtocolModeOpenAIH1Fallback, entry.protocolMode)
+}
+
 // TestNormalizeProxyURL_Canonicalizes 测试代理 URL 规范化
 // 验证等价地址能够映射到同一缓存键
 func (s *HTTPUpstreamSuite) TestNormalizeProxyURL_Canonicalizes() {

@@ -300,12 +300,16 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			s.clearOpenAIProxyStreamDisconnect(account)
 		}
 		if !sawTerminalEvent && !openAIStreamClientOutputStarted(c, clientOutputStarted, attemptWriterSizeBefore, downstreamKeepaliveBytes) && !eventShouldFlush {
-			return resultWithUsage(), newPreOutputFailoverError(nil, "OpenAI stream ended before a terminal event")
+			streamErr := errors.New("stream ended before terminal event")
+			s.recordOpenAIHTTP2StreamFailure(ctx, streamErr)
+			return resultWithUsage(), newPreOutputFailoverError(nil, streamErr.Error())
 		}
 		flushPending("Client disconnected during final flush, returning collected usage")
 		if !sawTerminalEvent {
 			if openAIStreamClientOutputStarted(c, clientOutputStarted, attemptWriterSizeBefore, downstreamKeepaliveBytes) && !clientDisconnected {
-				s.recordOpenAIProxyStreamDisconnect(account, errors.New("stream ended before terminal event"), upstreamRequestID)
+				streamErr := errors.New("stream ended before terminal event")
+				s.recordOpenAIHTTP2StreamFailure(ctx, streamErr)
+				s.recordOpenAIProxyStreamDisconnect(account, streamErr, upstreamRequestID)
 			}
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
 		}
@@ -363,12 +367,14 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			if errText := strings.TrimSpace(scanErr.Error()); errText != "" {
 				msg += ": " + errText
 			}
+			s.recordOpenAIHTTP2StreamFailure(ctx, scanErr)
 			return resultWithUsage(), newPreOutputFailoverError(nil, msg), true
 		}
 		// 客户端已断开时，上游出错仅影响体验，不影响计费；返回已收集 usage
 		if clientDisconnected {
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete after disconnect: %w", scanErr), true
 		}
+		s.recordOpenAIHTTP2StreamFailure(ctx, scanErr)
 		s.recordOpenAIProxyStreamDisconnect(account, scanErr, upstreamRequestID)
 		flushPending("Client disconnected while flushing output before stream-read failure")
 		return resultWithUsage(), NewOpenAIUpstreamStreamReadError(scanErr), true
