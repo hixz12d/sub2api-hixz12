@@ -67,9 +67,10 @@ type openAIWSAcquireRequest struct {
 	// HeadersFactory is evaluated inside dialConn. It exists so credentials
 	// whose authorization is per-dial (Agent Identity) are never cached in
 	// lastAcquire or delayed prewarm state.
-	HeadersFactory  func(context.Context, http.Header) (http.Header, error)
-	ProxyURL        string
-	PreferredConnID string
+	HeadersFactory   func(context.Context, http.Header) (http.Header, error)
+	ProxyURL         string
+	PreferredConnID  string
+	SessionScopeHash string
 	// ForceNewConn: 强制本次获取新连接（避免复用导致连接内续链状态互相污染）。
 	ForceNewConn bool
 	// ForcePreferredConn: 强制本次只使用 PreferredConnID，禁止漂移到其它连接。
@@ -77,7 +78,8 @@ type openAIWSAcquireRequest struct {
 }
 
 type openAIWSHandshakeCompatibilityKey struct {
-	betaFeatures string
+	betaFeatures     string
+	sessionScopeHash string
 }
 
 type openAIWSConnLease struct {
@@ -855,7 +857,7 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 
 retryAcquire:
 	accountID := req.Account.ID
-	compatibility := normalizeOpenAIWSHandshakeCompatibility(req.Headers)
+	compatibility := normalizeOpenAIWSHandshakeCompatibility(req.Headers, req.SessionScopeHash)
 	routingAffinity := normalizeOpenAIWSRoutingAffinity(req.Headers)
 	effectiveMaxConns := p.effectiveMaxConnsByAccount(req.Account)
 	if effectiveMaxConns <= 0 {
@@ -990,6 +992,10 @@ retryAcquire:
 			}
 		}
 
+		if preferredConnID != "" {
+			goto skipReusablePool
+		}
+
 		// A routing hint is advisory at WebSocket dial time. Prefer a pooled
 		// connection whose handshake used the same hint, but do not make that
 		// preference a continuation compatibility requirement.
@@ -1043,7 +1049,9 @@ retryAcquire:
 		}
 	}
 
-	if !req.ForceNewConn && len(ap.conns)+ap.creating >= effectiveMaxConns {
+skipReusablePool:
+	forceNewForSafety := req.ForceNewConn || preferredConnID != ""
+	if !forceNewForSafety && len(ap.conns)+ap.creating >= effectiveMaxConns {
 		affine := p.pickLeastBusyConnWithRoutingAffinityLocked(ap, compatibility, routingAffinity)
 		if idle := p.pickOldestIdleConnWithoutHandshakeCompatibilityOrRoutingAffinityLocked(ap, compatibility, routingAffinity); idle != nil {
 			delete(ap.conns, idle.id)
@@ -1080,7 +1088,7 @@ retryAcquire:
 		}
 	}
 
-	if req.ForceNewConn && len(ap.conns)+ap.creating >= effectiveMaxConns {
+	if forceNewForSafety && len(ap.conns)+ap.creating >= effectiveMaxConns {
 		if idle := p.pickOldestIdleConnLocked(ap); idle != nil {
 			delete(ap.conns, idle.id)
 			evicted = append(evicted, idle)
@@ -1142,7 +1150,7 @@ retryAcquire:
 		return lease, nil
 	}
 
-	if req.ForceNewConn {
+	if forceNewForSafety {
 		p.recordConnPickDuration(time.Since(pickStartedAt))
 		ap.mu.Unlock()
 		closeOpenAIWSConns(evicted)
@@ -1800,7 +1808,7 @@ func (p *openAIWSConnPool) dialConn(ctx context.Context, req openAIWSAcquireRequ
 	}
 	id := p.nextConnID(req.Account.ID)
 	pooledConn := newOpenAIWSConn(id, req.Account.ID, conn, handshakeHeaders)
-	pooledConn.handshakeCompatibility = normalizeOpenAIWSHandshakeCompatibility(req.Headers)
+	pooledConn.handshakeCompatibility = normalizeOpenAIWSHandshakeCompatibility(req.Headers, req.SessionScopeHash)
 	pooledConn.routingAffinity = normalizeOpenAIWSRoutingAffinity(req.Headers)
 	return pooledConn, nil
 }
@@ -1983,7 +1991,7 @@ func cloneOpenAIWSAcquireRequestPtr(req *openAIWSAcquireRequest) *openAIWSAcquir
 func sameOpenAIWSPrewarmTarget(a, b openAIWSAcquireRequest) bool {
 	return stringsTrim(a.WSURL) == stringsTrim(b.WSURL) &&
 		stringsTrim(a.ProxyURL) == stringsTrim(b.ProxyURL) &&
-		normalizeOpenAIWSHandshakeCompatibility(a.Headers) == normalizeOpenAIWSHandshakeCompatibility(b.Headers)
+		normalizeOpenAIWSHandshakeCompatibility(a.Headers, a.SessionScopeHash) == normalizeOpenAIWSHandshakeCompatibility(b.Headers, b.SessionScopeHash)
 }
 
 func normalizeOpenAIWSBetaFeatures(headers http.Header) string {
@@ -2011,9 +2019,14 @@ func normalizeOpenAIWSBetaFeatures(headers http.Header) string {
 	return strings.Join(normalized, ",")
 }
 
-func normalizeOpenAIWSHandshakeCompatibility(headers http.Header) openAIWSHandshakeCompatibilityKey {
+func normalizeOpenAIWSHandshakeCompatibility(headers http.Header, sessionScopeHash ...string) openAIWSHandshakeCompatibilityKey {
+	scope := ""
+	if len(sessionScopeHash) > 0 {
+		scope = stringsTrim(sessionScopeHash[0])
+	}
 	return openAIWSHandshakeCompatibilityKey{
-		betaFeatures: normalizeOpenAIWSBetaFeatures(headers),
+		betaFeatures:     normalizeOpenAIWSBetaFeatures(headers),
+		sessionScopeHash: scope,
 	}
 }
 

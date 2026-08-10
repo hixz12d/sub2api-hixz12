@@ -673,10 +673,10 @@ func TestOpenAIGatewayService_Forward_WSv2_PoolReuseNotOneToOne(t *testing.T) {
 		require.True(t, strings.HasPrefix(result.RequestID, "resp_reuse_"))
 	}
 
-	// 条件式 MarkBroken：正常终端事件退出后连接归还复用，不再无条件销毁。
-	require.Equal(t, int64(1), upgradeCount.Load(), "正常完成后连接应归还复用，不应每次新建")
+	// 缺少可靠 session scope 的两个独立 ingress 必须 fail closed，不复用有状态连接。
+	require.Equal(t, int64(2), upgradeCount.Load())
 	metrics := svc.SnapshotOpenAIWSPoolMetrics()
-	require.GreaterOrEqual(t, metrics.AcquireReuseTotal, int64(1))
+	require.Zero(t, metrics.AcquireReuseTotal)
 	require.GreaterOrEqual(t, metrics.ConnPickTotal, int64(1))
 }
 
@@ -1631,7 +1631,7 @@ func TestOpenAIGatewayService_Forward_WSv2StoreFalseDisableForceNewConnAllowsReu
 	result2, err := svc.Forward(context.Background(), c2, account, body)
 	require.NoError(t, err)
 	require.NotNil(t, result2)
-	require.Equal(t, int64(1), upgradeCount.Load(), "关闭强制新连后，不同 session(store=false) 可复用连接")
+	require.Equal(t, int64(2), upgradeCount.Load(), "不同 session scope 不得因关闭 force-new 策略而共享连接")
 }
 
 func TestOpenAIGatewayService_Forward_WSv2ReadTimeoutAppliesPerRead(t *testing.T) {

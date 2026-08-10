@@ -455,10 +455,17 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	groupID := getOpenAIGroupIDFromContext(c)
 	storeDisabledConnMode := s.openAIWSStoreDisabledConnMode()
 	sessionHash := ""
+	sessionScopeHash := ""
+	stateOwner := openAIWSStateOwner{}
 	preferredConnID := ""
 	storeDisabled := false
 	refreshIngressRouteState := func(payload openAIWSClientPayload) {
 		sessionHash = s.GenerateSessionHash(c, payload.rawForHash)
+		if sessionScopeHash == "" {
+			sessionScopeHash = openAIWSSessionScopeForIngress(sessionHash)
+		}
+		stateOwner, _ = openAIWSStateOwnerForRequest(ctx, c, account.ID, sessionScopeHash)
+		ctx = context.WithValue(ctx, openAIWSStateOwnerKey, stateOwner)
 		if turnState == "" && stateStore != nil && sessionHash != "" {
 			if savedTurnState, ok := stateStore.GetSessionTurnState(groupID, sessionHash); ok {
 				turnState = savedTurnState
@@ -467,7 +474,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 
 		preferredConnID = ""
 		if stateStore != nil && payload.previousResponseID != "" {
-			if connID, ok := stateStore.GetResponseConn(payload.previousResponseID); ok {
+			if connID, ok := getOpenAIWSResponseConn(ctx, stateStore, payload.previousResponseID, stateOwner); ok {
 				preferredConnID = connID
 			}
 		}
@@ -596,7 +603,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			responseID := strings.TrimSpace(result.RequestID)
 			if responseID != "" && stateStore != nil {
 				ttl := s.openAIWSResponseStickyTTL()
-				logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, stateStore.BindResponseAccount(ctx, groupID, responseID, account.ID, ttl))
+				logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, bindOpenAIWSResponseAccount(ctx, stateStore, groupID, responseID, account.ID, ttl))
 			}
 			nextClientMessage, readErr := readClientMessage()
 			if readErr != nil {
@@ -638,9 +645,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		return fmt.Errorf("build ws headers: %w", buildHdrErr)
 	}
 	baseAcquireReq := openAIWSAcquireRequest{
-		Account: account,
-		WSURL:   wsURL,
-		Headers: wsHeaders,
+		Account:          account,
+		WSURL:            wsURL,
+		Headers:          wsHeaders,
+		SessionScopeHash: sessionScopeHash,
 		HeadersFactory: func(factoryCtx context.Context, headers http.Header) (http.Header, error) {
 			return s.refreshOpenAIAgentIdentityHeaders(factoryCtx, account, headers)
 		},
@@ -689,7 +697,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			"ingress_ws_continuation_probe account_id=%d turn=%d previous_response_id=%s previous_response_id_kind=%s preferred_conn_id=%s session_hash=%s header_session_id=%s header_conversation_id=%s has_turn_state=%v turn_state_len=%d has_prompt_cache_key=%v store_disabled=%v",
 			account.ID,
 			1,
-			truncateOpenAIWSLogValue(firstPayload.previousResponseID, openAIWSIDValueMaxLen),
+			openAIWSStateIDDigest(firstPayload.previousResponseID),
 			normalizeOpenAIWSLogValue(firstPreviousResponseIDKind),
 			truncateOpenAIWSLogValue(preferredConnID, openAIWSIDValueMaxLen),
 			truncateOpenAIWSLogValue(sessionHash, 12),
@@ -904,9 +912,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 						errCode,
 						errType,
 						errMessage,
-						truncateOpenAIWSLogValue(turnPreviousResponseID, openAIWSIDValueMaxLen),
+						openAIWSStateIDDigest(turnPreviousResponseID),
 						normalizeOpenAIWSLogValue(turnPreviousResponseIDKind),
-						truncateOpenAIWSLogValue(responseID, openAIWSIDValueMaxLen),
+						openAIWSStateIDDigest(responseID),
 						turnStoreDisabled,
 						turnPromptCacheKey != "",
 					)
@@ -921,9 +929,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 						errCode,
 						errType,
 						errMessage,
-						truncateOpenAIWSLogValue(turnPreviousResponseID, openAIWSIDValueMaxLen),
+						openAIWSStateIDDigest(turnPreviousResponseID),
 						normalizeOpenAIWSLogValue(turnPreviousResponseIDKind),
-						truncateOpenAIWSLogValue(responseID, openAIWSIDValueMaxLen),
+						openAIWSStateIDDigest(responseID),
 						turnStoreDisabled,
 						turnPromptCacheKey != "",
 					)
@@ -1031,7 +1039,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 						account.ID,
 						turn,
 						truncateOpenAIWSLogValue(lease.ConnID(), openAIWSIDValueMaxLen),
-						truncateOpenAIWSLogValue(responseID, openAIWSIDValueMaxLen),
+						openAIWSStateIDDigest(responseID),
 						time.Since(turnStart).Milliseconds(),
 						eventCount,
 						tokenEventCount,
@@ -1301,7 +1309,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					turn,
 					truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
 					truncateOpenAIWSLogValue(setPrevErr.Error(), openAIWSLogValueMaxLen),
-					truncateOpenAIWSLogValue(expectedPrev, openAIWSIDValueMaxLen),
+					openAIWSStateIDDigest(expectedPrev),
 				)
 			} else {
 				currentPayload = updatedPayload
@@ -1312,7 +1320,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					account.ID,
 					turn,
 					truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
-					truncateOpenAIWSLogValue(expectedPrev, openAIWSIDValueMaxLen),
+					openAIWSStateIDDigest(expectedPrev),
 				)
 			}
 		}
@@ -1366,8 +1374,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
 					normalizeOpenAIWSLogValue(strictReason),
 					truncateOpenAIWSLogValue(strictErr.Error(), openAIWSLogValueMaxLen),
-					truncateOpenAIWSLogValue(currentPreviousResponseID, openAIWSIDValueMaxLen),
-					truncateOpenAIWSLogValue(expectedPrev, openAIWSIDValueMaxLen),
+					openAIWSStateIDDigest(currentPreviousResponseID),
+					openAIWSStateIDDigest(expectedPrev),
 					hasFunctionCallOutput,
 				)
 			} else if !shouldKeepPreviousResponseID {
@@ -1384,8 +1392,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 						truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
 						normalizeOpenAIWSLogValue(strictReason),
 						normalizeOpenAIWSLogValue(dropReason),
-						truncateOpenAIWSLogValue(currentPreviousResponseID, openAIWSIDValueMaxLen),
-						truncateOpenAIWSLogValue(expectedPrev, openAIWSIDValueMaxLen),
+						openAIWSStateIDDigest(currentPreviousResponseID),
+						openAIWSStateIDDigest(expectedPrev),
 						hasFunctionCallOutput,
 					)
 				} else {
@@ -1401,8 +1409,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 							turn,
 							truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
 							normalizeOpenAIWSLogValue(strictReason),
-							truncateOpenAIWSLogValue(currentPreviousResponseID, openAIWSIDValueMaxLen),
-							truncateOpenAIWSLogValue(expectedPrev, openAIWSIDValueMaxLen),
+							openAIWSStateIDDigest(currentPreviousResponseID),
+							openAIWSStateIDDigest(expectedPrev),
 							truncateOpenAIWSLogValue(setInputErr.Error(), openAIWSLogValueMaxLen),
 							hasFunctionCallOutput,
 						)
@@ -1415,8 +1423,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 							turn,
 							truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
 							normalizeOpenAIWSLogValue(strictReason),
-							truncateOpenAIWSLogValue(currentPreviousResponseID, openAIWSIDValueMaxLen),
-							truncateOpenAIWSLogValue(expectedPrev, openAIWSIDValueMaxLen),
+							openAIWSStateIDDigest(currentPreviousResponseID),
+							openAIWSStateIDDigest(expectedPrev),
 							hasFunctionCallOutput,
 						)
 						currentPreviousResponseID = ""
@@ -1474,7 +1482,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 								turn,
 								truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
 								normalizeOpenAIWSLogValue(reason),
-								truncateOpenAIWSLogValue(currentPreviousResponseID, openAIWSIDValueMaxLen),
+								openAIWSStateIDDigest(currentPreviousResponseID),
 							)
 						} else {
 							updatedWithInput, setInputErr := setOpenAIWSPayloadInputSequence(
@@ -1488,7 +1496,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 									account.ID,
 									turn,
 									truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
-									truncateOpenAIWSLogValue(currentPreviousResponseID, openAIWSIDValueMaxLen),
+									openAIWSStateIDDigest(currentPreviousResponseID),
 									truncateOpenAIWSLogValue(setInputErr.Error(), openAIWSLogValueMaxLen),
 								)
 							} else {
@@ -1497,7 +1505,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 									account.ID,
 									turn,
 									truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
-									truncateOpenAIWSLogValue(currentPreviousResponseID, openAIWSIDValueMaxLen),
+									openAIWSStateIDDigest(currentPreviousResponseID),
 									hasFCOutput,
 									hasReplayToolContext,
 								)
@@ -1521,7 +1529,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 							turn,
 							truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
 							reason,
-							truncateOpenAIWSLogValue(currentPreviousResponseID, openAIWSIDValueMaxLen),
+							openAIWSStateIDDigest(currentPreviousResponseID),
 							hasReplayToolContext,
 						)
 					}
@@ -1554,9 +1562,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				account.ID,
 				turn,
 				truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
-				truncateOpenAIWSLogValue(currentPreviousResponseID, openAIWSIDValueMaxLen),
+				openAIWSStateIDDigest(currentPreviousResponseID),
 				normalizeOpenAIWSLogValue(currentPreviousResponseIDKind),
-				truncateOpenAIWSLogValue(expectedPrev, openAIWSIDValueMaxLen),
+				openAIWSStateIDDigest(expectedPrev),
 				chainedFromLast,
 				truncateOpenAIWSLogValue(preferredConnID, openAIWSIDValueMaxLen),
 				openAIWSHeaderValueForLog(baseAcquireReq.Headers, "session_id"),
@@ -1622,8 +1630,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 
 		if responseID != "" && stateStore != nil {
 			ttl := s.openAIWSResponseStickyTTL()
-			logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, stateStore.BindResponseAccount(ctx, groupID, responseID, account.ID, ttl))
-			stateStore.BindResponseConn(responseID, connID, ttl)
+			logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, bindOpenAIWSResponseAccount(ctx, stateStore, groupID, responseID, account.ID, ttl))
+			bindOpenAIWSResponseConn(ctx, stateStore, responseID, stateOwner, connID, ttl)
 		}
 		if stateStore != nil && storeDisabled && sessionHash != "" {
 			stateStore.BindSessionConn(groupID, sessionHash, connID, s.openAIWSSessionStickyTTL())
@@ -1686,16 +1694,16 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				turn,
 				turn+1,
 				truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
-				truncateOpenAIWSLogValue(nextPayload.previousResponseID, openAIWSIDValueMaxLen),
+				openAIWSStateIDDigest(nextPayload.previousResponseID),
 				normalizeOpenAIWSLogValue(nextPreviousResponseIDKind),
-				truncateOpenAIWSLogValue(expectedPrev, openAIWSIDValueMaxLen),
+				openAIWSStateIDDigest(expectedPrev),
 				chainedFromLast,
 				nextPayload.promptCacheKey != "",
 				storeDisabled,
 			)
 		}
 		if stateStore != nil && nextPayload.previousResponseID != "" {
-			if stickyConnID, ok := stateStore.GetResponseConn(nextPayload.previousResponseID); ok {
+			if stickyConnID, ok := getOpenAIWSResponseConn(ctx, stateStore, nextPayload.previousResponseID, stateOwner); ok {
 				if sessionConnID != "" && stickyConnID != "" && stickyConnID != sessionConnID {
 					logOpenAIWSModeInfo(
 						"ingress_ws_keep_session_conn account_id=%d turn=%d conn_id=%s sticky_conn_id=%s previous_response_id=%s",
@@ -1703,7 +1711,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 						turn,
 						truncateOpenAIWSLogValue(sessionConnID, openAIWSIDValueMaxLen),
 						truncateOpenAIWSLogValue(stickyConnID, openAIWSIDValueMaxLen),
-						truncateOpenAIWSLogValue(nextPayload.previousResponseID, openAIWSIDValueMaxLen),
+						openAIWSStateIDDigest(nextPayload.previousResponseID),
 					)
 				} else {
 					preferredConnID = stickyConnID
