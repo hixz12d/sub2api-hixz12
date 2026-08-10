@@ -268,6 +268,11 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 // 返回是否应该停止该账号的调度
 func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) (shouldDisable bool) {
 	ctx = withTempUnschedulableModel(ctx, requestedModel)
+	if account.Platform == PlatformOpenAI && account.Type == AccountTypeOAuth && statusCode == http.StatusForbidden &&
+		IsOpenAIOAuthAuthorizedAPIKeyGroupsError("", responseBody) {
+		slog.Warn("openai_oauth_authorized_api_key_groups_request_scoped", "account_id", account.ID)
+		return false
+	}
 	customErrorCodesEnabled := account.IsCustomErrorCodesEnabled()
 
 	// 池模式默认不标记本地账号状态；但管理员显式配置的临时不可调度规则优先。
@@ -914,6 +919,11 @@ func (s *RateLimitService) handle403(ctx context.Context, account *Account, upst
 }
 
 func (s *RateLimitService) handleOpenAI403(ctx context.Context, account *Account, upstreamMsg string, responseBody []byte) (shouldDisable bool) {
+	if account != nil && account.Type == AccountTypeOAuth && IsOpenAIOAuthAuthorizedAPIKeyGroupsError(upstreamMsg, responseBody) {
+		slog.Warn("openai_oauth_authorized_api_key_groups_restriction", "account_id", account.ID)
+		return false
+	}
+
 	msg := buildForbiddenErrorMessage(
 		"Access forbidden (403):",
 		upstreamMsg,

@@ -493,6 +493,10 @@ func shouldFailoverOpenAIPassthroughResponse(account *Account, statusCode int, r
 	if isOpenAIContextWindowError("", responseBody) {
 		return false
 	}
+	if account != nil && account.Type == AccountTypeOAuth && statusCode == http.StatusForbidden &&
+		IsOpenAIOAuthAuthorizedAPIKeyGroupsError("", responseBody) {
+		return true
+	}
 	if isOpenAIRequestBodyTooLargeError(statusCode, "", responseBody) {
 		return true
 	}
@@ -985,6 +989,9 @@ func applyOpenAIStreamFailedErrorPassthroughRule(
 }
 
 func openAIStreamFailedEventShouldFailover(payload []byte, message string) bool {
+	if IsOpenAIOAuthAuthorizedAPIKeyGroupsError(message, payload) {
+		return true
+	}
 	if isOpenAIContextWindowError(message, payload) {
 		return false
 	}
@@ -1157,6 +1164,9 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverError(
 	})
 	maxAccountSwitches := 0
 	failureReason := GatewayFailureReason("")
+	if IsOpenAIOAuthAuthorizedAPIKeyGroupsError(message, payload) {
+		failureReason = openAIOAuthAuthorizedAPIKeyGroupsReason
+	}
 	if len(payload) > 0 && openAIStreamFailedEventShouldFailover(payload, message) {
 		// A streamed terminal failure may already have consumed the full prompt.
 		// Permit one alternate account, not the handler's broader generic budget.
