@@ -14,10 +14,12 @@ func TestOpenAIOAuthService_ValidateCodexPersonalAccessToken(t *testing.T) {
 	var gotAuthorization string
 	var gotOriginator string
 	var gotUserAgent string
+	var gotVersion string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuthorization = r.Header.Get("authorization")
 		gotOriginator = r.Header.Get("originator")
 		gotUserAgent = r.Header.Get("user-agent")
+		gotVersion = r.Header.Get("version")
 		w.Header().Set("content-type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"email":"user@example.com",
@@ -40,7 +42,8 @@ func TestOpenAIOAuthService_ValidateCodexPersonalAccessToken(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "Bearer at-test-token", gotAuthorization)
 	require.Equal(t, openai.CodexDefaultOriginator, gotOriginator)
-	require.Equal(t, codexCLIUserAgent, gotUserAgent)
+	require.Equal(t, DefaultOpenAICodexUserAgent, gotUserAgent)
+	require.Equal(t, DefaultOpenAICodexVersion, gotVersion)
 	require.Equal(t, OpenAIAuthModePersonalAccessToken, info.AuthMode)
 	require.Equal(t, "user@example.com", info.Email)
 	require.Equal(t, "user-123", info.ChatGPTUserID)

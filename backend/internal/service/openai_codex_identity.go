@@ -98,32 +98,18 @@ type codexOutboundIdentity struct {
 	version    string
 }
 
-// resolveCodexOutboundIdentity 由候选 User-Agent 推导自洽的出站身份。
-// candidateUA 为空时使用规范 User-Agent；推导不出官方身份时整体回退为规范 TUI 身份。
-//
-// 候选 UA（面板 / 账号级的管理员显式配置）只贡献客户端名与 OS / 架构 / 终端指纹，
-// 其自带的版本段一律用当前生效版本重建：一条填写于某个历史版本的 UA 否则会把出站身份
-// 永久钉死在陈旧版本上，绕过版本自动同步，落回上游优先降载的那一侧。
-// 需要固定版本请填「Codex 客户端版本号」并关闭自动同步。
+// resolveCodexOutboundIdentity is the compatibility adapter used by the
+// request-local Codex header helpers. The shared OpenAI outbound profile owns
+// candidate precedence and version pairing; this adapter preserves the legacy
+// private return type used by existing gateway code and tests.
 func resolveCodexOutboundIdentity(candidateUA string) codexOutboundIdentity {
 	canonical := codexCanonicalUserAgent()
-	ua := strings.TrimSpace(candidateUA)
-	if ua == "" {
-		ua = canonical
+	identity := resolveOpenAIOutboundIdentityWithVersion(candidateUA, canonical, codexClientVersionFromUA(canonical))
+	return codexOutboundIdentity{
+		userAgent:  identity.UserAgent,
+		originator: identity.Originator,
+		version:    identity.Version,
 	}
-	originator, pairedUA, ok := openai.PairCodexClientIdentity(ua)
-	if !ok {
-		if originator, pairedUA, ok = openai.PairCodexClientIdentity(canonical); !ok {
-			originator, pairedUA = openai.CodexDefaultOriginator, codexCLIUserAgent
-		}
-	}
-	// 生效版本只有一个来源：规范身份（面板版本号 → 自动同步值 → 内置常量，见
-	// SettingService.GetOpenAICodexClientVersion）。UA 与 version 头由此同源派生。
-	version := codexClientVersionFromUA(canonical)
-	if rebuilt := openai.SetCodexUserAgentVersion(pairedUA, version); rebuilt != "" {
-		pairedUA = rebuilt
-	}
-	return codexOutboundIdentity{userAgent: pairedUA, originator: originator, version: version}
 }
 
 // codexClientVersionFromUA 取 UA 的版本段作为生效版本；
@@ -212,18 +198,4 @@ func pairCodexIdentityHeaders(h http.Header) {
 	if v := strings.TrimSpace(h.Get("version")); v != "" && CompareVersions(v, codexUpstreamMinVersion) < 0 {
 		h.Set("version", codexCLIVersion)
 	}
-}
-
-// resolveAgentRegistrationUA 为 agent task 注册选择最终 User-Agent。
-// 优先使用账号级自定义 UA（若为合法 Codex 官方 UA）；否则回退为全局默认。
-func resolveAgentRegistrationUA(account *Account) string {
-	if account != nil {
-		customUA := strings.TrimSpace(account.GetOpenAIUserAgent())
-		if customUA != "" {
-			if _, pairedUA, ok := openai.PairCodexClientIdentity(customUA); ok {
-				return pairedUA
-			}
-		}
-	}
-	return codexCLIUserAgent
 }

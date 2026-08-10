@@ -23,6 +23,10 @@ import (
 	"golang.org/x/net/http2"
 )
 
+const codexModelsCustomAccountUserAgent = "codex-tui/9.9.9 (Mac OS X 14.0; arm64) iTerm (codex-tui; 9.9.9)"
+
+const codexModelsCustomAccountCurrentUserAgent = "codex-tui/" + codexCLIVersion + " (Mac OS X 14.0; arm64) iTerm (codex-tui; " + codexCLIVersion + ")"
+
 type codexModelsHTTPUpstreamStub struct {
 	do func(req *http.Request, proxyURL string, accountID int64, accountConcurrency int) (*http.Response, error)
 }
@@ -160,10 +164,12 @@ func newCodexModelsTestAccount() *Account {
 func TestFetchCodexModelsManifestPassthrough(t *testing.T) {
 	manifestBody := `{"models":[{"slug":"gpt-5.5","display_name":"GPT-5.5"}]}`
 
-	var gotAuth, gotAccountID, gotOriginator, gotClientVersion string
+	var gotAuth, gotAccountID, gotOriginator, gotClientVersion, gotUserAgent, gotVersion string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		gotAccountID = r.Header.Get("chatgpt-account-id")
+		gotUserAgent = r.Header.Get("User-Agent")
+		gotVersion = r.Header.Get("Version")
 		gotOriginator = r.Header.Get("Originator")
 		gotClientVersion = r.URL.Query().Get("client_version")
 		w.Header().Set("ETag", `W/"abc123"`)
@@ -197,7 +203,13 @@ func TestFetchCodexModelsManifestPassthrough(t *testing.T) {
 	if gotOriginator != openai.CodexDefaultOriginator {
 		t.Errorf("originator header: got %q", gotOriginator)
 	}
-	if gotClientVersion != "0.137.0" {
+	if gotUserAgent != DefaultOpenAICodexUserAgent {
+		t.Errorf("user-agent header: got %q", gotUserAgent)
+	}
+	if gotVersion != codexCLIVersion {
+		t.Errorf("version header: got %q", gotVersion)
+	}
+	if gotClientVersion != codexCLIVersion {
 		t.Errorf("client_version query: got %q", gotClientVersion)
 	}
 }
@@ -426,9 +438,11 @@ func TestFetchCodexModelsManifestAPIKeyCustomUpstream(t *testing.T) {
 	}}
 
 	s := newCodexModelsAPIKeyTestService(upstream)
+	account := newCodexModelsAPIKeyTestAccount("https://upstream.example/v1")
+	account.Credentials["user_agent"] = codexModelsCustomAccountUserAgent
 	manifest, err := s.FetchCodexModelsManifest(
 		context.Background(),
-		newCodexModelsAPIKeyTestAccount("https://upstream.example/v1"),
+		account,
 		"0.144.0",
 		"",
 	)
@@ -442,19 +456,19 @@ func TestFetchCodexModelsManifestAPIKeyCustomUpstream(t *testing.T) {
 	if gotRequest.Method != http.MethodGet {
 		t.Errorf("method: got %q", gotRequest.Method)
 	}
-	if gotRequest.URL.String() != "https://upstream.example/v1/models?client_version=0.144.0" {
+	if gotRequest.URL.String() != "https://upstream.example/v1/models?client_version="+codexCLIVersion {
 		t.Errorf("request URL: got %q", gotRequest.URL.String())
 	}
 	if gotRequest.Header.Get("Authorization") != "Bearer sk-upstream" {
 		t.Errorf("authorization header: got %q", gotRequest.Header.Get("Authorization"))
 	}
-	if gotRequest.Header.Get("Originator") != openai.CodexDefaultOriginator {
+	if gotRequest.Header.Get("Originator") != "" {
 		t.Errorf("originator header: got %q", gotRequest.Header.Get("Originator"))
 	}
-	if gotRequest.Header.Get("Version") != "0.144.0" {
+	if gotRequest.Header.Get("Version") != "" {
 		t.Errorf("version header: got %q", gotRequest.Header.Get("Version"))
 	}
-	if gotRequest.Header.Get("User-Agent") != codexCLIUserAgent {
+	if gotRequest.Header.Get("User-Agent") != codexModelsCustomAccountCurrentUserAgent {
 		t.Errorf("user-agent header: got %q", gotRequest.Header.Get("User-Agent"))
 	}
 	if gotRequest.Header.Get("chatgpt-account-id") != "" {
@@ -896,7 +910,9 @@ func TestFetchCodexModelsManifestAPIKeyCacheKeyIsolatesRequestIdentity(t *testin
 
 	differentUpstream := newCodexModelsAPIKeyTestAccount("https://other-upstream.example")
 	fetch(differentUpstream, "0.144.0")
-	fetch(base, "0.145.0")
+	differentIdentity := newCodexModelsAPIKeyTestAccount("https://upstream.example")
+	differentIdentity.Credentials["user_agent"] = codexModelsCustomAccountUserAgent
+	fetch(differentIdentity, "0.144.0")
 
 	differentHeaders := newCodexModelsAPIKeyTestAccount("https://upstream.example")
 	differentHeaders.Credentials[credKeyHeaderOverrideEnabled] = true
@@ -1213,7 +1229,7 @@ func TestFetchCodexModelsManifestAPIKeyPreservesBaseURLQuery(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchCodexModelsManifest returned error: %v", err)
 	}
-	if gotURL != "https://upstream.example/v1/models?client_version=0.144.0&tenant=acme" {
+	if gotURL != "https://upstream.example/v1/models?client_version="+codexCLIVersion+"&tenant=acme" {
 		t.Errorf("request URL: got %q", gotURL)
 	}
 }

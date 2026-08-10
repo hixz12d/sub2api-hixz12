@@ -18,7 +18,6 @@ import (
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"golang.org/x/net/http2"
 	"golang.org/x/sync/singleflight"
 )
@@ -240,11 +239,9 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 	if err != nil {
 		return nil, infraerrors.Newf(http.StatusInternalServerError, "OPENAI_CODEX_MODELS_CREDENTIALS_FAILED", "resolve credential account: %v", err)
 	}
-
-	clientVersion = strings.TrimSpace(clientVersion)
-	if clientVersion == "" {
-		clientVersion = openAICodexProbeVersion
-	}
+	identity := s.resolveOpenAIOutboundIdentity(ctx, credAccount)
+	// Keep the manifest URL, User-Agent, Originator, and Version on one identity.
+	clientVersion = identity.Version
 
 	requestEndpoint := chatgptCodexModelsURL
 	authToken := ""
@@ -305,9 +302,7 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 		setOpenAIChatGPTAccountHeaders(headers, credAccount)
 	}
 	headers.Set("Accept", "application/json")
-	headers.Set("Originator", openai.CodexDefaultOriginator)
-	headers.Set("Version", clientVersion)
-	headers.Set("User-Agent", codexCLIUserAgent)
+	applyResolvedOpenAIOutboundIdentity(headers, identity, !useAPIKeyUpstream)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -348,6 +343,7 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 		}
 	}
 	setOpenAIChatGPTAccountHeaders(request.headers, credAccount)
+	applyResolvedOpenAIOutboundIdentity(request.headers, identity, !useAPIKeyUpstream)
 	return s.fetchCodexModelsManifestUpstream(ctx, request, ifNoneMatch)
 }
 

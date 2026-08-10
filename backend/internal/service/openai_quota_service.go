@@ -482,6 +482,7 @@ func (s *OpenAIQuotaService) buildCodexQuotaHeaders(ctx context.Context, account
 			return nil, "", fmt.Errorf("agent identity shadow credentials are unavailable")
 		}
 	}
+	applyResolvedOpenAIOutboundIdentityToMap(ctx, account, headers)
 	if !account.IsOpenAIAgentIdentity() {
 		return headers, "", nil
 	}
