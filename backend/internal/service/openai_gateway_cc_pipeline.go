@@ -207,7 +207,7 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 			}
 		}
 	}
-	if userAgent != "" {
+	if userAgent != "" && account.Platform != PlatformOpenAI {
 		upstreamReq.Header.Set("user-agent", userAgent)
 	}
 

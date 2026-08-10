@@ -269,12 +269,15 @@ func TestFetchCodexModelsManifestAgentIdentityRecoversInvalidTaskOnce(t *testing
 			"agent_private_key":  privateKey,
 			"task_id":            "task-models-old",
 			"chatgpt_account_id": "acc-agent-recovery",
+			"user_agent":         "codex_vscode/0.151.0 (Windows 11; x86_64) vscode",
 		},
 	}
 	repo := &stubQuotaAccountRepo{accounts: map[int64]*Account{account.ID: account}}
+	expectedIdentity := resolveOpenAIOutboundIdentityWithPolicy(context.Background(), account, repo, nil, false, "")
 	modelsCalls := 0
 	registerCalls := 0
 	var assertions []string
+	var identityHeaders []http.Header
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "application/json")
 		if strings.Contains(r.URL.Path, "/task/register") {
@@ -284,6 +287,7 @@ func TestFetchCodexModelsManifestAgentIdentityRecoversInvalidTaskOnce(t *testing
 		}
 		modelsCalls++
 		assertions = append(assertions, r.Header.Get("Authorization"))
+		identityHeaders = append(identityHeaders, r.Header.Clone())
 		if modelsCalls == 1 {
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(`{"error":{"code":"invalid_task_id"}}`))
@@ -309,6 +313,12 @@ func TestFetchCodexModelsManifestAgentIdentityRecoversInvalidTaskOnce(t *testing
 	require.Len(t, assertions, 2)
 	require.Equal(t, "task-models-old", decodeAgentAssertionTask(t, assertions[0]))
 	require.Equal(t, "task-models-new", decodeAgentAssertionTask(t, assertions[1]))
+	require.Len(t, identityHeaders, 2)
+	for _, headers := range identityHeaders {
+		require.Equal(t, expectedIdentity.UserAgent, headers.Get("User-Agent"))
+		require.Equal(t, expectedIdentity.Originator, headers.Get("Originator"))
+		require.Equal(t, expectedIdentity.Version, headers.Get("Version"))
+	}
 }
 
 func TestFetchCodexModelsManifestAgentIdentityRedactsUpstreamErrors(t *testing.T) {

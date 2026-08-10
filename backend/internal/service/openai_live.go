@@ -146,7 +146,7 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 	excluded := make(map[int64]struct{})
 	// Live 按通话时长计费，不属于 token 利润门的语义范围：显式豁免，避免
 	// 防御性装门按文本 D 过滤 Live 账号池且门与计费时刻不同源。
-	ctx = WithOpenAIProfitControlSuppressed(ctx)
+	baseCtx := WithOpenAIProfitControlSuppressed(ctx)
 	var lastErr error
 	for attempt := 0; attempt <= 3; attempt++ {
 		selection, _, selectErr := s.SelectAccountWithSchedulerForCapability(
@@ -176,10 +176,11 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 		}
 
 		account := selection.Account
-		ctx = s.snapshotOpenAIOutboundIdentity(ctx, account, identity.UserAgent)
+		attemptCtx := withoutOpenAIOutboundIdentitySnapshot(baseCtx)
+		attemptCtx = s.snapshotOpenAIOutboundIdentity(attemptCtx, account, identity.UserAgent)
 		leaseID := generateRequestID()
 		acquired, acquireErr := liveCache.AcquireLiveLease(
-			ctx,
+			attemptCtx,
 			account.ID,
 			account.Concurrency,
 			identity.UserID,
@@ -196,7 +197,8 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 			return nil, ErrLiveConcurrencyFull
 		}
 
-		created, createErr := s.createUpstreamLiveCall(ctx, account, request, attestation)
+		outboundIdentity, _ := openAIOutboundIdentityFromContext(attemptCtx)
+		created, createErr := s.createUpstreamLiveCall(attemptCtx, account, request, attestation)
 		selection.ReleaseFunc()
 		if createErr != nil {
 			s.releaseLiveLease(account.ID, identity.UserID, identity.APIKeyID, leaseID)
@@ -227,12 +229,13 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 			ExpiresAt:             now.Add(s.liveMaxSessionDuration()),
 			Controller:            LiveControllerPending,
 			UserAgent:             identity.UserAgent,
+			OutboundUserAgent:     outboundIdentity.UserAgent,
 			IPAddress:             identity.IPAddress,
 			InboundEndpoint:       identity.InboundEndpoint,
 			AttestationCiphertext: attestationCiphertext,
 		}
 		mappingTTL := s.liveMaxSessionDuration() + 5*time.Minute
-		if saveErr := store.SaveLiveCall(ctx, record, mappingTTL); saveErr != nil {
+		if saveErr := store.SaveLiveCall(attemptCtx, record, mappingTTL); saveErr != nil {
 			s.releaseLiveLease(account.ID, identity.UserID, identity.APIKeyID, leaseID)
 			return nil, fmt.Errorf("save live call mapping: %w", saveErr)
 		}
@@ -419,7 +422,13 @@ func (s *OpenAIGatewayService) liveSidebandHeaders(
 	record *LiveCallRecord,
 ) (http.Header, error) {
 	if record != nil {
-		if identity, ok := validOpenAIOutboundIdentity(record.UserAgent); ok {
+		outboundUserAgent := strings.TrimSpace(record.OutboundUserAgent)
+		if outboundUserAgent == "" {
+			// Records written before the dedicated field was introduced used
+			// UserAgent for this purpose when it happened to be an official UA.
+			outboundUserAgent = record.UserAgent
+		}
+		if identity, ok := validOpenAIOutboundIdentity(outboundUserAgent); ok {
 			ctx = withOpenAIOutboundIdentitySnapshot(ctx, identity)
 		}
 	}

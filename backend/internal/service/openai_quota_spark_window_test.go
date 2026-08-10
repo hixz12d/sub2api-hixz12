@@ -204,21 +204,27 @@ func TestResetCreditAgentIdentityUsesAssertionAndRecoversInvalidTaskOnce(t *test
 			"agent_private_key":  base64.StdEncoding.EncodeToString(der),
 			"task_id":            "task-reset-old",
 			"chatgpt_account_id": "account-reset-recovery",
+			"user_agent":         "codex_vscode/0.151.0 (Windows 11; x86_64) vscode",
 		},
 	}
 	repo := &stubQuotaAccountRepo{accounts: map[int64]*Account{account.ID: account}}
+	expectedIdentity := resolveOpenAIOutboundIdentityWithPolicy(context.Background(), account, repo, nil, false, "")
 	resetCalls := 0
 	registerCalls := 0
 	var assertions []string
+	var quotaIdentityHeaders []http.Header
+	var registrationIdentityHeaders http.Header
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "application/json")
 		if strings.Contains(r.URL.Path, "/task/register") {
 			registerCalls++
+			registrationIdentityHeaders = r.Header.Clone()
 			_, _ = w.Write([]byte(`{"task_id":"task-reset-new"}`))
 			return
 		}
 		resetCalls++
 		assertions = append(assertions, r.Header.Get("authorization"))
+		quotaIdentityHeaders = append(quotaIdentityHeaders, r.Header.Clone())
 		require.Equal(t, "account-reset-recovery", r.Header.Get("chatgpt-account-id"))
 		if resetCalls == 1 {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -248,6 +254,12 @@ func TestResetCreditAgentIdentityUsesAssertionAndRecoversInvalidTaskOnce(t *test
 	require.NotEqual(t, assertions[0], assertions[1])
 	require.Equal(t, "task-reset-new", account.GetCredential("task_id"))
 	require.Equal(t, []int64{account.ID}, invalidator.accountIDs)
+	require.Len(t, quotaIdentityHeaders, 2)
+	for _, headers := range append(quotaIdentityHeaders, registrationIdentityHeaders) {
+		require.Equal(t, expectedIdentity.UserAgent, headers.Get("User-Agent"))
+		require.Equal(t, expectedIdentity.Originator, headers.Get("Originator"))
+		require.Equal(t, expectedIdentity.Version, headers.Get("Version"))
+	}
 }
 
 func TestResetCreditAgentIdentityReusesConcurrentlyRecoveredTask(t *testing.T) {

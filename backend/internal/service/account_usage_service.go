@@ -837,6 +837,8 @@ func (s *AccountUsageService) probeOpenAICodexSnapshot(ctx context.Context, acco
 		return nil, fmt.Errorf("marshal openai probe payload: %w", err)
 	}
 
+	identity := resolveOpenAIOutboundIdentityWithPolicy(ctx, account, s.accountRepo, nil, false, "")
+	ctx = withOpenAIOutboundIdentitySnapshot(ctx, identity)
 	reqCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, chatgptCodexURL, bytes.NewReader(payloadBytes))
@@ -861,7 +863,7 @@ func (s *AccountUsageService) probeOpenAICodexSnapshot(ctx context.Context, acco
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("OpenAI-Beta", "responses=experimental")
 	setOpenAIChatGPTAccountHeaders(req.Header, account)
-	applyResolvedOpenAIOutboundIdentity(req.Header, resolveOpenAIOutboundIdentityFromSettings(reqCtx, account, nil), true)
+	applyResolvedOpenAIOutboundIdentityWithPolicy(req.Header, identity, openAIOutboundOAuthPolicy)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {

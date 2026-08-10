@@ -54,6 +54,15 @@ func withOpenAIOutboundIdentitySnapshot(ctx context.Context, identity openAIOutb
 	return context.WithValue(ctx, openAIOutboundIdentitySnapshotKey{}, identity)
 }
 
+// withoutOpenAIOutboundIdentitySnapshot starts a new account attempt while
+// retaining cancellation, tracing, and other request-local values.
+func withoutOpenAIOutboundIdentitySnapshot(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, openAIOutboundIdentitySnapshotKey{}, nil)
+}
+
 // resolveOpenAIOutboundIdentityFromSettings is the single source of truth for
 // selecting an outbound OpenAI identity. A valid account identity wins over
 // the global identity, followed by the compiled-in default. The selected
@@ -311,11 +320,13 @@ func applyResolvedOpenAIOutboundIdentityToMap(ctx context.Context, account *Acco
 }
 
 func (s *adminServiceImpl) resolveOpenAIOutboundIdentity(ctx context.Context, account *Account) openAIOutboundIdentity {
+	var accountRepo AccountRepository
 	var settingService *SettingService
 	if s != nil {
+		accountRepo = s.accountRepo
 		settingService = s.settingService
 	}
-	return resolveOpenAIOutboundIdentityFromSettings(ctx, account, settingService)
+	return resolveOpenAIOutboundIdentityWithPolicy(ctx, account, accountRepo, settingService, false, "")
 }
 
 func (s *TokenRefreshService) resolveOpenAIOutboundIdentity(ctx context.Context, account *Account) openAIOutboundIdentity {

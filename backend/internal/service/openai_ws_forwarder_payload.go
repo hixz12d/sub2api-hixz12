@@ -127,7 +127,6 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 		if err := resolveAndSetOpenAIChatGPTAccountHeaders(ctx, s.accountRepo, headers, account); err != nil {
 			return nil, sessionResolution, fmt.Errorf("resolve chatgpt account headers: %w", err)
 		}
-		headers.Set("originator", resolveOpenAIUpstreamOriginator(c, isCodexCLI))
 	}
 
 	betaValue := openAIWSBetaV2Value

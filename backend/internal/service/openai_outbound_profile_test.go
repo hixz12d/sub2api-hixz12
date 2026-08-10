@@ -173,3 +173,28 @@ func TestApplyResolvedOpenAIOutboundIdentityPolicies(t *testing.T) {
 	require.Equal(t, "codex_cli_rs", headers.Get("Originator"))
 	require.Equal(t, "0.144.1", headers.Get("Version"))
 }
+
+func TestWithoutOpenAIOutboundIdentitySnapshotIsolatesLiveAccountAttempts(t *testing.T) {
+	type markerKey struct{}
+	baseCtx := context.WithValue(context.Background(), markerKey{}, "request-value")
+	first := resolveOpenAIOutboundIdentityWithVersion(
+		"codex_vscode/0.150.0 (Windows 11; x86_64) vscode",
+		testOutboundCodexUserAgent,
+		"0.150.0",
+	)
+	second := resolveOpenAIOutboundIdentityWithVersion(
+		"codex-tui/0.151.0 (Mac OS X 15.0; arm64) iTerm",
+		testOutboundCodexUserAgent,
+		"0.151.0",
+	)
+
+	firstAttempt := withOpenAIOutboundIdentitySnapshot(baseCtx, first)
+	secondAttempt := withoutOpenAIOutboundIdentitySnapshot(firstAttempt)
+	secondAttempt = withOpenAIOutboundIdentitySnapshot(secondAttempt, second)
+
+	got, ok := openAIOutboundIdentityFromContext(secondAttempt)
+	require.True(t, ok)
+	require.Equal(t, second, got)
+	require.NotEqual(t, first, got)
+	require.Equal(t, "request-value", secondAttempt.Value(markerKey{}))
+}

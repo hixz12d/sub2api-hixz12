@@ -239,6 +239,7 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 	if err != nil {
 		return nil, infraerrors.Newf(http.StatusInternalServerError, "OPENAI_CODEX_MODELS_CREDENTIALS_FAILED", "resolve credential account: %v", err)
 	}
+	ctx = s.snapshotOpenAIOutboundIdentity(ctx, credAccount, "")
 	identity := s.resolveOpenAIOutboundIdentity(ctx, credAccount)
 	// Keep the manifest URL, User-Agent, Originator, and Version on one identity.
 	clientVersion = identity.Version

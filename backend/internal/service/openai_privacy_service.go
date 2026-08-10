@@ -35,11 +35,11 @@ func shouldSkipOpenAIPrivacyEnsure(extra map[string]any) bool {
 	return mode != PrivacyModeFailed && mode != PrivacyModeCFBlocked
 }
 
-func resolveOpenAIPrivacyIdentity(identities []openAIOutboundIdentity) openAIOutboundIdentity {
+func resolveOpenAIPrivacyIdentity(ctx context.Context, identities []openAIOutboundIdentity) openAIOutboundIdentity {
 	if len(identities) > 0 {
 		return identities[0]
 	}
-	return resolveOpenAIOutboundIdentityFromSettings(context.Background(), nil, nil)
+	return resolveOpenAIOutboundIdentityFromSettings(ctx, nil, nil)
 }
 
 // disableOpenAITraining calls ChatGPT settings API to turn off "Improve the model for everyone".
@@ -57,7 +57,7 @@ func disableOpenAITraining(ctx context.Context, clientFactory PrivacyClientFacto
 		slog.Warn("openai_privacy_client_error", "error", err.Error())
 		return PrivacyModeFailed
 	}
-	identity := resolveOpenAIPrivacyIdentity(identities)
+	identity := resolveOpenAIPrivacyIdentity(ctx, identities)
 
 	resp, err := client.R().
 		SetContext(ctx).
@@ -127,7 +127,7 @@ func fetchChatGPTAccountInfo(ctx context.Context, clientFactory PrivacyClientFac
 		return nil
 	}
 
-	identity := resolveOpenAIPrivacyIdentity(identities)
+	identity := resolveOpenAIPrivacyIdentity(ctx, identities)
 	var result map[string]any
 	resp, err := client.R().
 		SetContext(ctx).
@@ -239,7 +239,7 @@ func fetchChatGPTSubscriptionExpiresAt(ctx context.Context, clientFactory Privac
 		slog.Debug("chatgpt_subscription_client_error", "error", err.Error())
 		return ""
 	}
-	identity := resolveOpenAIPrivacyIdentity(identities)
+	identity := resolveOpenAIPrivacyIdentity(ctx, identities)
 
 	var result struct {
 		PlanType    string `json:"plan_type"`

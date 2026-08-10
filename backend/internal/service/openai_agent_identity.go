@@ -206,8 +206,8 @@ func registerAgentIdentityTask(ctx context.Context, account *Account) (string, e
 		return "", errors.New("failed to build agent task registration request")
 	}
 	req.Header.Set("Content-Type", "application/json")
-	identity := resolveOpenAIOutboundIdentityFromSettings(ctx, account, nil)
-	applyResolvedOpenAIOutboundIdentity(req.Header, identity, true)
+	identity := resolveOpenAIOutboundIdentityWithPolicy(ctx, account, nil, nil, false, req.Header.Get("User-Agent"))
+	applyResolvedOpenAIOutboundIdentityWithPolicy(req.Header, identity, openAIOutboundOAuthPolicy)
 	req.Header.Set("Accept", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
