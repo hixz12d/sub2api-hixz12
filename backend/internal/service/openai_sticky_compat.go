@@ -133,6 +133,9 @@ func (s *OpenAIGatewayService) getStickySessionAccountID(ctx context.Context, gr
 	if err == nil && accountID > 0 {
 		return accountID, nil
 	}
+	if strings.HasPrefix(sessionHash, "oas-session-v2:") {
+		return accountID, err
+	}
 	if !s.openAISessionHashReadOldFallbackEnabled() {
 		return accountID, err
 	}
@@ -164,6 +167,10 @@ func (s *OpenAIGatewayService) setStickySessionAccountID(ctx context.Context, gr
 		return err
 	}
 
+	if strings.HasPrefix(sessionHash, "oas-session-v2:") {
+		return nil
+	}
+
 	if !s.openAISessionHashDualWriteOldEnabled() {
 		return nil
 	}
@@ -188,6 +195,9 @@ func (s *OpenAIGatewayService) refreshStickySessionTTL(ctx context.Context, grou
 	}
 
 	err := s.cache.RefreshSessionTTL(ctx, derefGroupID(groupID), primaryKey, ttl)
+	if strings.HasPrefix(sessionHash, "oas-session-v2:") {
+		return err
+	}
 	if !s.openAISessionHashReadOldFallbackEnabled() && !s.openAISessionHashDualWriteOldEnabled() {
 		return err
 	}
@@ -209,6 +219,9 @@ func (s *OpenAIGatewayService) deleteStickySessionAccountID(ctx context.Context,
 	}
 
 	err := s.cache.DeleteSessionAccountID(ctx, derefGroupID(groupID), primaryKey)
+	if strings.HasPrefix(sessionHash, "oas-session-v2:") {
+		return err
+	}
 	if !s.openAISessionHashReadOldFallbackEnabled() && !s.openAISessionHashDualWriteOldEnabled() {
 		return err
 	}

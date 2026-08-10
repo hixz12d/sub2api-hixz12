@@ -114,9 +114,12 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	sessionHash := s.GenerateSessionHash(c, nil)
 	if sessionHash == "" {
 		var legacySessionHash string
-		sessionHash, legacySessionHash = openAIWSSessionHashesFromID(promptCacheKey)
+		sessionHash, legacySessionHash = deriveOpenAISessionHashesForContext(c, promptCacheKey)
 		attachOpenAILegacySessionHashToGin(c, legacySessionHash)
 	}
+	sessionScopeHash := openAIWSSessionScopeForIngress(sessionHash)
+	owner, _ := openAIWSStateOwnerForRequest(ctx, c, account.ID, sessionScopeHash)
+	ctx = context.WithValue(ctx, openAIWSStateOwnerKey, owner)
 	if turnState == "" && stateStore != nil && sessionHash != "" {
 		if savedTurnState, ok := stateStore.GetSessionTurnState(groupID, sessionHash); ok {
 			turnState = savedTurnState
@@ -124,7 +127,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	}
 	preferredConnID := ""
 	if stateStore != nil && previousResponseID != "" {
-		if connID, ok := stateStore.GetResponseConn(previousResponseID); ok {
+		if connID, ok := getOpenAIWSResponseConn(ctx, stateStore, previousResponseID, owner); ok {
 			preferredConnID = connID
 		}
 	}
@@ -195,8 +198,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		HeadersFactory: func(factoryCtx context.Context, headers http.Header) (http.Header, error) {
 			return s.refreshOpenAIAgentIdentityHeaders(factoryCtx, account, headers)
 		},
-		PreferredConnID: preferredConnID,
-		ForceNewConn:    forceNewConn,
+		PreferredConnID:  preferredConnID,
+		SessionScopeHash: sessionScopeHash,
+		ForceNewConn:     forceNewConn,
 		ProxyURL: func() string {
 			if account.ProxyID != nil && account.Proxy != nil {
 				return account.Proxy.URL()
@@ -270,7 +274,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			account.ID,
 			account.Type,
 			truncateOpenAIWSLogValue(connID, openAIWSIDValueMaxLen),
-			truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
+			openAIWSStateIDDigest(previousResponseID),
 			normalizeOpenAIWSLogValue(previousResponseIDKind),
 			truncateOpenAIWSLogValue(preferredConnID, openAIWSIDValueMaxLen),
 			lease.Reused(),
@@ -343,7 +347,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			connID,
 			reqStream,
 			resolvePayloadBytes(),
-			truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
+			openAIWSStateIDDigest(previousResponseID),
 		)
 	}
 
@@ -617,9 +621,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 					account.ID,
 					account.Type,
 					connID,
-					truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
+					openAIWSStateIDDigest(previousResponseID),
 					normalizeOpenAIWSLogValue(previousResponseIDKind),
-					truncateOpenAIWSLogValue(responseID, openAIWSIDValueMaxLen),
+					openAIWSStateIDDigest(responseID),
 					eventCount,
 					reqStream,
 					storeDisabled,
@@ -732,8 +736,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 
 	if responseID != "" && stateStore != nil {
 		ttl := s.openAIWSResponseStickyTTL()
-		logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, stateStore.BindResponseAccount(ctx, groupID, responseID, account.ID, ttl))
-		stateStore.BindResponseConn(responseID, lease.ConnID(), ttl)
+		logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, bindOpenAIWSResponseAccount(ctx, stateStore, groupID, responseID, account.ID, ttl))
+		bindOpenAIWSResponseConn(ctx, stateStore, responseID, owner, lease.ConnID(), ttl)
 	}
 	if stateStore != nil && storeDisabled && sessionHash != "" {
 		stateStore.BindSessionConn(groupID, sessionHash, lease.ConnID(), s.openAIWSSessionStickyTTL())

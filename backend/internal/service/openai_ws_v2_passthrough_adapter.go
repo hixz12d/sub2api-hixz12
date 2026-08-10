@@ -692,7 +692,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 		"relay_start account_id=%d model=%s previous_response_id=%s first_message_type=%s first_message_bytes=%d",
 		account.ID,
 		truncateOpenAIWSLogValue(requestModel, openAIWSLogValueMaxLen),
-		truncateOpenAIWSLogValue(requestPreviousResponseID, openAIWSIDValueMaxLen),
+		openAIWSStateIDDigest(requestPreviousResponseID),
 		openaiwsv2RelayMessageTypeName(coderws.MessageText),
 		len(firstClientMessage),
 	)

@@ -405,7 +405,8 @@ func TestOpenAIGatewayService_ClientSessionHeaderPriority(t *testing.T) {
 	body := []byte(`{"prompt_cache_key":"body-session"}`)
 	for _, header := range headers {
 		require.Equal(t, header.value, svc.ExtractSessionID(c, body), header.name)
-		require.Equal(t, fmt.Sprintf("%016x", xxhash.Sum64String(header.value)), svc.GenerateExplicitSessionHash(c, body), header.name)
+		expectedHash, _ := deriveOpenAISessionHashesForContext(c, header.value)
+		require.Equal(t, expectedHash, svc.GenerateExplicitSessionHash(c, body), header.name)
 		if header.name != grokConversationIDHeader {
 			require.Equal(t, header.value, explicitOpenAISessionID(c, body), header.name)
 		}
@@ -507,7 +508,10 @@ func TestOpenAIGatewayService_BindHTTPResponseAccount(t *testing.T) {
 	account := &Account{ID: 37001, Platform: PlatformOpenAI, Type: AccountTypeAPIKey}
 	svc.bindHTTPResponseAccount(context.Background(), c, account, "resp_http_001")
 
-	got, err := svc.getOpenAIWSStateStore().GetResponseAccount(context.Background(), groupID, "resp_http_001")
+	ownerCtx := WithOpenAIWSRequestOwner(context.Background(), c)
+	owner, ok := openAIWSStateOwnerFromContext(ownerCtx)
+	require.True(t, ok)
+	got, err := svc.getOpenAIWSStateStore().GetResponseAccountOwned(ownerCtx, groupID, "resp_http_001", owner)
 	require.NoError(t, err)
 	require.Equal(t, account.ID, got)
 }
