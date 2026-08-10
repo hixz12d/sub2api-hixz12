@@ -128,27 +128,7 @@ func (s *openaiOAuthService) refreshTokenWithClientIDAndIdentity(ctx context.Con
 }
 
 func resolveOpenAIOAuthIdentity(userAgent, _ string, version string) (string, string, string) {
-	if originator, pairedUserAgent, ok := openai.PairCodexClientIdentity(strings.TrimSpace(userAgent)); ok {
-		resolvedVersion := service.NormalizeCodexClientVersion(version)
-		if resolvedVersion == "" {
-			resolvedVersion = service.NormalizeCodexClientVersion(openai.CodexUserAgentVersion(pairedUserAgent))
-		}
-		if resolvedVersion != "" && service.CompareVersions(resolvedVersion, service.OpenAICodexUpstreamMinVersion) >= 0 {
-			if rebuilt := openai.SetCodexUserAgentVersion(pairedUserAgent, resolvedVersion); rebuilt != "" {
-				pairedUserAgent = rebuilt
-			}
-			return pairedUserAgent, originator, resolvedVersion
-		}
-	}
-	defaultOriginator, defaultUserAgent, ok := openai.PairCodexClientIdentity(service.DefaultOpenAICodexUserAgent)
-	if !ok {
-		return service.DefaultOpenAICodexUserAgent, openai.CodexDefaultOriginator, service.DefaultOpenAICodexVersion
-	}
-	defaultVersion := service.NormalizeCodexClientVersion(openai.CodexUserAgentVersion(defaultUserAgent))
-	if defaultVersion == "" {
-		defaultVersion = service.DefaultOpenAICodexVersion
-	}
-	return defaultUserAgent, defaultOriginator, defaultVersion
+	return service.ResolveOpenAIOAuthIdentity(userAgent, version)
 }
 
 func createOpenAIReqClient(proxyURL string) (*req.Client, error) {

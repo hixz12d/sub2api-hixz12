@@ -37,6 +37,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	reqStream bool,
 	startTime time.Time,
 ) (*OpenAIForwardResult, error) {
+	ctx = s.snapshotOpenAIOutboundIdentity(ctx, account, c.GetHeader("User-Agent"))
 	upstreamPassthroughModel := ""
 	if isOpenAIResponsesCompactPath(c) {
 		compactMappedModel := resolveOpenAICompactForwardModel(account, reqModel)
@@ -451,8 +452,13 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 
 	// Apply account overrides before the shared final identity stage.
 	account.ApplyHeaderOverrides(req.Header)
-	useCodexIdentity := account.Type == AccountTypeOAuth
-	s.applyOpenAIOutboundIdentity(ctx, account, req.Header, useCodexIdentity)
+	policy := openAIOutboundAPIKeyPolicy
+	if account.Type == AccountTypeOAuth {
+		policy = openAIOutboundOAuthPolicy
+	} else if isOpenAIResponsesCompactPath(c) {
+		policy = openAIOutboundAPIKeyCodexVersionPolicy
+	}
+	s.applyOpenAIOutboundIdentityPolicy(ctx, account, req.Header, policy)
 	setOpenAICodexRoutingHintFromBody(req.Header, account, body)
 	logOpenAIRoutingDiagnosticsFromBody(ctx, account, "http_passthrough", req.Header, body, "not_applicable")
 

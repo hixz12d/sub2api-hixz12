@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
@@ -104,7 +105,71 @@ func TestApplyResolvedOpenAIOutboundIdentity(t *testing.T) {
 
 	t.Run("compact request keeps version synchronized", func(t *testing.T) {
 		headers := http.Header{"Version": {"0.1.0"}}
-		applyResolvedOpenAIOutboundIdentity(headers, identity, false)
+		applyResolvedOpenAIOutboundIdentityWithPolicy(headers, identity, openAIOutboundAPIKeyCodexVersionPolicy)
 		require.Equal(t, "0.144.1", headers.Get("Version"))
 	})
+}
+
+func TestOpenAIOutboundIdentitySnapshotAndEnforcement(t *testing.T) {
+	original := codexIdentityEnforcement.Load()
+	t.Cleanup(func() { codexIdentityEnforcement.Store(original) })
+
+	inbound := "codex_cli_rs/0.155.0 (Ubuntu 22.4.0; x86_64) xterm"
+	codexIdentityEnforcement.Store(false)
+	compat := resolveOpenAIOutboundIdentityWithPolicy(context.Background(), nil, nil, nil, false, inbound)
+	require.Equal(t, inbound, compat.UserAgent)
+	require.Equal(t, "codex_cli_rs", compat.Originator)
+
+	codexIdentityEnforcement.Store(true)
+	enforced := resolveOpenAIOutboundIdentityWithPolicy(context.Background(), nil, nil, nil, false, inbound)
+	require.NotEqual(t, inbound, enforced.UserAgent)
+	require.Equal(t, enforced.Version, openai.CodexUserAgentVersion(enforced.UserAgent))
+
+	ctx := withOpenAIOutboundIdentitySnapshot(context.Background(), compat)
+	codexIdentityEnforcement.Store(true)
+	snapshot := resolveOpenAIOutboundIdentityWithPolicy(ctx, nil, nil, nil, false, "different/0.160.0")
+	require.Equal(t, compat, snapshot)
+}
+
+func TestResolveOpenAIOutboundIdentityInheritsCredentialParent(t *testing.T) {
+	parentID := int64(501)
+	parent := &Account{
+		ID:       parentID,
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Credentials: map[string]any{
+			"user_agent": "codex_vscode/0.144.1 (Windows 11; x86_64) vscode",
+		},
+	}
+	shadow := &Account{
+		ID:              502,
+		Platform:        PlatformOpenAI,
+		Type:            AccountTypeOAuth,
+		ParentAccountID: &parentID,
+		QuotaDimension:  QuotaDimensionSpark,
+	}
+	repo := &stubOpenAIAccountRepo{accounts: []Account{*parent}}
+
+	identity := resolveOpenAIOutboundIdentityWithPolicy(context.Background(), shadow, repo, nil, false, "")
+	require.Equal(t, "codex_vscode", identity.Originator)
+	require.Contains(t, identity.UserAgent, "codex_vscode/")
+	require.Equal(t, identity.Version, openai.CodexUserAgentVersion(identity.UserAgent))
+}
+
+func TestApplyResolvedOpenAIOutboundIdentityPolicies(t *testing.T) {
+	identity := resolveOpenAIOutboundIdentityCandidates("", testOutboundCodexUserAgent)
+	headers := http.Header{
+		"User-Agent": {"client/0.1"},
+		"Originator": {"client-controlled"},
+		"Version":    {"0.1.0"},
+	}
+	applyResolvedOpenAIOutboundIdentityWithPolicy(headers, identity, openAIOutboundAPIKeyPolicy)
+	require.Equal(t, testOutboundCodexUserAgent, headers.Get("User-Agent"))
+	require.Empty(t, headers.Get("Originator"))
+	require.Empty(t, headers.Get("Version"))
+
+	headers.Set("Originator", "client-controlled")
+	applyResolvedOpenAIOutboundIdentityWithPolicy(headers, identity, openAIOutboundOAuthPolicy)
+	require.Equal(t, "codex_cli_rs", headers.Get("Originator"))
+	require.Equal(t, "0.144.1", headers.Get("Version"))
 }

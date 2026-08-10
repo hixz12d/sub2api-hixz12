@@ -19,6 +19,7 @@ import (
 
 // Forward forwards request to OpenAI API
 func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (*OpenAIForwardResult, error) {
+	ctx = s.snapshotOpenAIOutboundIdentity(ctx, account, c.GetHeader("User-Agent"))
 	beginUpstreamResponseModelObservation(c)
 	clearGrokResponsesClientToolMapping(c)
 	clearOpenAIResponsesNamespaceNames(c)
@@ -1121,8 +1122,13 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// Apply account overrides before the final identity stage. Protected OpenAI
 	// identity/session headers are excluded by ApplyHeaderOverrides.
 	account.ApplyHeaderOverrides(req.Header)
-	useCodexIdentity := account.Type == AccountTypeOAuth
-	s.applyOpenAIOutboundIdentity(ctx, account, req.Header, useCodexIdentity)
+	policy := openAIOutboundAPIKeyPolicy
+	if account.Type == AccountTypeOAuth {
+		policy = openAIOutboundOAuthPolicy
+	} else if isOpenAIResponsesCompactPath(c) {
+		policy = openAIOutboundAPIKeyCodexVersionPolicy
+	}
+	s.applyOpenAIOutboundIdentityPolicy(ctx, account, req.Header, policy)
 	setOpenAICodexRoutingHintFromBody(req.Header, account, body)
 	logOpenAIRoutingDiagnosticsFromBody(ctx, account, "http", req.Header, body, "not_applicable")
 

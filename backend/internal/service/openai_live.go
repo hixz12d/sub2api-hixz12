@@ -176,6 +176,7 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 		}
 
 		account := selection.Account
+		ctx = s.snapshotOpenAIOutboundIdentity(ctx, account, identity.UserAgent)
 		leaseID := generateRequestID()
 		acquired, acquireErr := liveCache.AcquireLiveLease(
 			ctx,
@@ -302,7 +303,7 @@ func (s *OpenAIGatewayService) createUpstreamLiveCall(
 	upstreamReq.Header.Set("Content-Type", "application/json")
 	upstreamReq.Header.Set("Accept", "application/sdp")
 	upstreamReq.Header.Set(liveAttestationHeader, attestation)
-	applyLiveUpstreamIdentityHeaders(upstreamReq.Header)
+	s.applyLiveUpstreamIdentityHeaders(ctx, account, upstreamReq.Header)
 
 	resp, err := s.httpUpstream.Do(upstreamReq, resolveAccountProxyURL(account), account.ID, account.Concurrency)
 	if err != nil {
@@ -399,17 +400,16 @@ func liveCallIDFromLocation(location string) (string, error) {
 	return callID, nil
 }
 
-func applyLiveUpstreamIdentityHeaders(headers http.Header) {
+func (s *OpenAIGatewayService) applyLiveUpstreamIdentityHeaders(ctx context.Context, account *Account, headers http.Header) {
 	headers.Set("OpenAI-Alpha", "quicksilver=v2")
-	ensureCodexIdentityHeaders(headers)
-	enforceCodexIdentityHeaders(headers)
+	s.applyOpenAIOutboundIdentityPolicy(ctx, account, headers, openAIOutboundOAuthPolicy)
 	if strings.TrimSpace(headers.Get("session-id")) == "" {
 		headers.Set("session-id", uuid.NewString())
 	}
 	if strings.TrimSpace(headers.Get("thread-id")) == "" {
 		headers.Set("thread-id", uuid.NewString())
 	}
-	// Realtime/Live 不使用 Responses 的实验头。
+	// Realtime/Live does not use the Responses experimental header.
 	headers.Del("OpenAI-Beta")
 }
 
@@ -418,6 +418,11 @@ func (s *OpenAIGatewayService) liveSidebandHeaders(
 	account *Account,
 	record *LiveCallRecord,
 ) (http.Header, error) {
+	if record != nil {
+		if identity, ok := validOpenAIOutboundIdentity(record.UserAgent); ok {
+			ctx = withOpenAIOutboundIdentitySnapshot(ctx, identity)
+		}
+	}
 	token, _, err := s.GetAccessToken(ctx, account)
 	if err != nil {
 		return nil, err
@@ -434,7 +439,7 @@ func (s *OpenAIGatewayService) liveSidebandHeaders(
 		return nil, err
 	}
 	headers.Set(liveAttestationHeader, attestation)
-	applyLiveUpstreamIdentityHeaders(headers)
+	s.applyLiveUpstreamIdentityHeaders(ctx, account, headers)
 	return headers, nil
 }
 

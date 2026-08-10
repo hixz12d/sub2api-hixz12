@@ -142,7 +142,20 @@ func NewOpenAIQuotaService(
 // QueryUsage fetches the latest rate-limit/usage snapshot for the given OpenAI
 // OAuth account. Returns infraerrors so the handler layer can map them to
 // stable error codes / HTTP statuses.
+func (s *OpenAIQuotaService) snapshotOutboundIdentity(ctx context.Context, accountID int64) context.Context {
+	if _, ok := openAIOutboundIdentityFromContext(ctx); ok || s == nil || s.accountRepo == nil {
+		return ctx
+	}
+	account, err := s.accountRepo.GetByID(ctx, accountID)
+	if err != nil || account == nil {
+		return ctx
+	}
+	identity := resolveOpenAIOutboundIdentityWithPolicy(ctx, account, s.accountRepo, nil, false, "")
+	return withOpenAIOutboundIdentitySnapshot(ctx, identity)
+}
+
 func (s *OpenAIQuotaService) QueryUsage(ctx context.Context, accountID int64) (*OpenAIQuotaUsage, error) {
+	ctx = s.snapshotOutboundIdentity(ctx, accountID)
 	accessToken, chatGPTAccountID, proxyURL, fedRAMP, err := s.prepareUpstreamCall(ctx, accountID)
 	if err != nil {
 		return nil, err
@@ -291,6 +304,7 @@ func (s *OpenAIQuotaService) ResetCredit(ctx context.Context, accountID int64) (
 			return nil, ErrSparkShadowResetNotSupported
 		}
 	}
+	ctx = s.snapshotOutboundIdentity(ctx, accountID)
 
 	accessToken, chatGPTAccountID, proxyURL, fedRAMP, err := s.prepareUpstreamCall(ctx, accountID)
 	if err != nil {
@@ -520,7 +534,6 @@ func buildCodexCommonHeaders(accessToken, chatGPTAccountID string, fedRAMP bool)
 		"chatgpt-account-id": chatGPTAccountID,
 		"openai-beta":        openaiQuotaCodexBeta,
 		"oai-language":       openaiQuotaCodexLanguageTag,
-		"originator":         openaiQuotaCodexOriginator,
 		"accept":             "application/json",
 		"sec-fetch-site":     openaiQuotaSecFetchSite,
 		"sec-fetch-mode":     openaiQuotaSecFetchMode,

@@ -601,6 +601,8 @@ func (s *AccountTestService) testBedrockAccountConnection(c *gin.Context, ctx co
 // testOpenAIAccountConnection tests an OpenAI account's connection
 func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account *Account, modelID string, prompt string, mode string) error {
 	ctx := c.Request.Context()
+	identity := resolveOpenAIOutboundIdentityWithPolicy(ctx, account, s.accountRepo, s.settingService, s.cfg != nil && s.cfg.Gateway.ForceCodexCLI, c.GetHeader("User-Agent"))
+	ctx = withOpenAIOutboundIdentitySnapshot(ctx, identity)
 	mode = normalizeAccountTestMode(mode)
 
 	// Default to openai.DefaultTestModel for OpenAI testing
@@ -735,8 +737,15 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
 	credentialAccount.ApplyHeaderOverrides(req.Header)
-	identity := resolveOpenAIOutboundIdentityFromSettings(ctx, credentialAccount, nil)
-	applyResolvedOpenAIOutboundIdentity(req.Header, identity, isOAuth)
+	identity, ok := openAIOutboundIdentityFromContext(ctx)
+	if !ok {
+		identity = resolveOpenAIOutboundIdentityWithPolicy(ctx, credentialAccount, s.accountRepo, s.settingService, s.cfg != nil && s.cfg.Gateway.ForceCodexCLI, req.Header.Get("User-Agent"))
+	}
+	policy := openAIOutboundAPIKeyPolicy
+	if isOAuth {
+		policy = openAIOutboundOAuthPolicy
+	}
+	applyResolvedOpenAIOutboundIdentityWithPolicy(req.Header, identity, policy)
 
 	// Get proxy URL
 	proxyURL := ""
@@ -1916,6 +1925,8 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 	authToken string,
 ) error {
 	ctx := c.Request.Context()
+	snapshotIdentity := resolveOpenAIOutboundIdentityWithPolicy(ctx, account, s.accountRepo, s.settingService, s.cfg != nil && s.cfg.Gateway.ForceCodexCLI, c.GetHeader("User-Agent"))
+	ctx = withOpenAIOutboundIdentitySnapshot(ctx, snapshotIdentity)
 	apiURL := buildOpenAIChatCompletionsURL(normalizedBaseURL)
 
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
@@ -1941,6 +1952,11 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
 	account.ApplyHeaderOverrides(req.Header)
+	identity, ok := openAIOutboundIdentityFromContext(ctx)
+	if !ok {
+		identity = resolveOpenAIOutboundIdentityWithPolicy(ctx, account, s.accountRepo, s.settingService, s.cfg != nil && s.cfg.Gateway.ForceCodexCLI, req.Header.Get("User-Agent"))
+	}
+	applyResolvedOpenAIOutboundIdentityWithPolicy(req.Header, identity, openAIOutboundAPIKeyPolicy)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -1972,6 +1988,8 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 // resulting capability state on the account.
 func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account *Account, testModelID string) error {
 	ctx := c.Request.Context()
+	snapshotIdentity := resolveOpenAIOutboundIdentityWithPolicy(ctx, account, s.accountRepo, s.settingService, s.cfg != nil && s.cfg.Gateway.ForceCodexCLI, c.GetHeader("User-Agent"))
+	ctx = withOpenAIOutboundIdentitySnapshot(ctx, snapshotIdentity)
 	credentialAccount := account
 	if account.IsShadow() {
 		resolved, err := resolveCredentialAccount(ctx, s.accountRepo, account)
@@ -2057,6 +2075,15 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
 	account.ApplyHeaderOverrides(req.Header)
+	identity, ok := openAIOutboundIdentityFromContext(ctx)
+	if !ok {
+		identity = resolveOpenAIOutboundIdentityWithPolicy(ctx, account, s.accountRepo, s.settingService, s.cfg != nil && s.cfg.Gateway.ForceCodexCLI, req.Header.Get("User-Agent"))
+	}
+	policy := openAIOutboundAPIKeyCodexVersionPolicy
+	if isOAuth {
+		policy = openAIOutboundOAuthPolicy
+	}
+	applyResolvedOpenAIOutboundIdentityWithPolicy(req.Header, identity, policy)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -2825,6 +2852,11 @@ func (s *AccountTestService) testOpenAIImageAPIKey(c *gin.Context, ctx context.C
 
 	// 账号级请求头覆写：测试请求与真实转发保持一致的最终头
 	account.ApplyHeaderOverrides(req.Header)
+	identity, ok := openAIOutboundIdentityFromContext(ctx)
+	if !ok {
+		identity = resolveOpenAIOutboundIdentityWithPolicy(ctx, account, s.accountRepo, s.settingService, s.cfg != nil && s.cfg.Gateway.ForceCodexCLI, req.Header.Get("User-Agent"))
+	}
+	applyResolvedOpenAIOutboundIdentityWithPolicy(req.Header, identity, openAIOutboundAPIKeyPolicy)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {

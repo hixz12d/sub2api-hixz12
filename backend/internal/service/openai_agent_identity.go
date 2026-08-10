@@ -438,7 +438,14 @@ func (s *OpenAIGatewayService) refreshOpenAIAgentIdentityHeaders(ctx context.Con
 		return nil, err
 	}
 	refreshed.Set("Authorization", authHeaders.Get("Authorization"))
-	applyResolvedOpenAIOutboundIdentity(refreshed, resolveOpenAIOutboundIdentityFromSettings(ctx, credAccount, nil), true)
+	identity, ok := openAIOutboundIdentityFromContext(ctx)
+	if !ok {
+		identity, ok = validOpenAIOutboundIdentity(headers.Get("User-Agent"))
+	}
+	if !ok {
+		identity = s.resolveOpenAIOutboundIdentity(ctx, credAccount)
+	}
+	applyResolvedOpenAIOutboundIdentityWithPolicy(refreshed, identity, openAIOutboundOAuthPolicy)
 	return refreshed, nil
 }
 

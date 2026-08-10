@@ -556,6 +556,7 @@ func (s *OpenAIGatewayService) ForwardImages(
 	parsed *OpenAIImagesRequest,
 	channelMappedModel string,
 ) (*OpenAIForwardResult, error) {
+	ctx = s.snapshotOpenAIOutboundIdentity(ctx, account, c.GetHeader("User-Agent"))
 	if parsed == nil {
 		return nil, fmt.Errorf("parsed images request is required")
 	}
@@ -780,15 +781,16 @@ func (s *OpenAIGatewayService) buildOpenAIImagesRequest(
 			req.Header.Add(key, value)
 		}
 	}
-	customUA := account.GetOpenAIUserAgent()
-	if customUA != "" {
-		req.Header.Set("User-Agent", customUA)
-	}
 	if strings.TrimSpace(contentType) != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-	// 账号级请求头覆写（仅 openai api_key 账号启用时生效；OAuth 路径 no-op）
+	// 账号级请求头覆写必须先于统一身份收口。
 	account.ApplyHeaderOverrides(req.Header)
+	policy := openAIOutboundOAuthPolicy
+	if account.Type == AccountTypeAPIKey {
+		policy = openAIOutboundAPIKeyPolicy
+	}
+	s.applyOpenAIOutboundIdentityPolicy(ctx, account, req.Header, policy)
 	return req, nil
 }
 

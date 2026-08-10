@@ -217,9 +217,15 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 		}
 		applyGrokCacheHeaders(upstreamReq.Header, grokCacheIdentity)
 	}
-	// 账号级请求头覆写：放在所有内置默认头（含 Grok CLI 身份头）之后应用，
-	// 使配置值获得除共享传输层强制头之外的最高优先级。
+	// 账号级请求头覆写必须先于 OpenAI 统一身份收口。
 	account.ApplyHeaderOverrides(upstreamReq.Header)
+	if account.Platform == PlatformOpenAI {
+		policy := openAIOutboundAPIKeyPolicy
+		if account.Type == AccountTypeOAuth {
+			policy = openAIOutboundOAuthPolicy
+		}
+		s.applyOpenAIOutboundIdentityPolicy(ctx, account, upstreamReq.Header, policy)
+	}
 
 	proxyURL := ""
 	if account.Proxy != nil {

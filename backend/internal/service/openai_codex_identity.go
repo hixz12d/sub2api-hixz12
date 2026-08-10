@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"net/http"
 	"regexp"
 	"strings"
@@ -128,16 +129,8 @@ func ensureCodexIdentityHeaders(h http.Header) {
 	if h == nil {
 		return
 	}
-	identity := resolveCodexOutboundIdentity("")
-	if strings.TrimSpace(h.Get("user-agent")) == "" {
-		h.Set("user-agent", identity.userAgent)
-	}
-	if strings.TrimSpace(h.Get("originator")) == "" {
-		h.Set("originator", identity.originator)
-	}
-	if strings.TrimSpace(h.Get("version")) == "" {
-		h.Set("version", identity.version)
-	}
+	identity := resolveOpenAIOutboundIdentityWithPolicy(context.Background(), nil, nil, nil, false, h.Get("User-Agent"))
+	applyResolvedOpenAIOutboundIdentityWithPolicy(h, identity, openAIOutboundOAuthPolicy)
 	h.Set("OpenAI-Beta", "responses=experimental")
 }
 
@@ -174,28 +167,20 @@ func enforceCodexIdentityHeadersWithUA(h http.Header, overrideUA string) {
 	if h == nil || h.Get("originator") == "" {
 		return
 	}
-	if !codexIdentityEnforcement.Load() {
-		pairCodexIdentityHeaders(h)
-		return
+	var account *Account
+	if accountUA := strings.TrimSpace(overrideUA); accountUA != "" {
+		account = &Account{Platform: PlatformOpenAI, Credentials: map[string]any{"user_agent": accountUA}}
 	}
-	identity := resolveCodexOutboundIdentity(overrideUA)
-	h.Set("user-agent", identity.userAgent)
-	h.Set("originator", identity.originator)
-	h.Set("version", identity.version)
+	identity := resolveOpenAIOutboundIdentityWithPolicy(context.Background(), account, nil, nil, false, h.Get("User-Agent"))
+	applyResolvedOpenAIOutboundIdentityWithPolicy(h, identity, openAIOutboundOAuthPolicy)
 }
 
 // pairCodexIdentityHeaders 是关闭强制统一后的兜底收口：保留客户端真实身份，
 // 仅保证 originator 与最终 User-Agent 首段配套、version 不低于上游门槛（issue #3901）。
 func pairCodexIdentityHeaders(h http.Header) {
-	originator, pairedUA, ok := openai.PairCodexClientIdentity(h.Get("user-agent"))
-	if !ok {
-		identity := resolveCodexOutboundIdentity("")
-		originator, pairedUA = identity.originator, identity.userAgent
-		h.Set("version", identity.version)
+	if h == nil {
+		return
 	}
-	h.Set("user-agent", pairedUA)
-	h.Set("originator", originator)
-	if v := strings.TrimSpace(h.Get("version")); v != "" && CompareVersions(v, codexUpstreamMinVersion) < 0 {
-		h.Set("version", codexCLIVersion)
-	}
+	identity := resolveOpenAIOutboundIdentityWithPolicy(context.Background(), nil, nil, nil, false, h.Get("User-Agent"))
+	applyResolvedOpenAIOutboundIdentityWithPolicy(h, identity, openAIOutboundOAuthPolicy)
 }

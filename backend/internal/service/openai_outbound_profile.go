@@ -20,46 +20,119 @@ type openAIOutboundIdentity struct {
 	Version    string
 }
 
+type openAIOutboundEndpointPolicy struct {
+	UseCodexIdentity bool
+	RequireVersion   bool
+}
+
+var (
+	openAIOutboundOAuthPolicy              = openAIOutboundEndpointPolicy{UseCodexIdentity: true, RequireVersion: true}
+	openAIOutboundAPIKeyPolicy             = openAIOutboundEndpointPolicy{}
+	openAIOutboundAPIKeyCodexVersionPolicy = openAIOutboundEndpointPolicy{RequireVersion: true}
+)
+
+type openAIOutboundIdentitySnapshotKey struct{}
+
+func openAIOutboundIdentityFromContext(ctx context.Context) (openAIOutboundIdentity, bool) {
+	if ctx == nil {
+		return openAIOutboundIdentity{}, false
+	}
+	identity, ok := ctx.Value(openAIOutboundIdentitySnapshotKey{}).(openAIOutboundIdentity)
+	return identity, ok && identity.UserAgent != "" && identity.Version != ""
+}
+
+func withOpenAIOutboundIdentitySnapshot(ctx context.Context, identity openAIOutboundIdentity) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, ok := openAIOutboundIdentityFromContext(ctx); ok {
+		return ctx
+	}
+	if identity.UserAgent == "" || identity.Version == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, openAIOutboundIdentitySnapshotKey{}, identity)
+}
+
 // resolveOpenAIOutboundIdentityFromSettings is the single source of truth for
 // selecting an outbound OpenAI identity. A valid account identity wins over
 // the global identity, followed by the compiled-in default. The selected
 // client family and platform fingerprint are preserved while its version is
 // synchronized with the currently effective version setting.
 func resolveOpenAIOutboundIdentityFromSettings(ctx context.Context, account *Account, settingService *SettingService) openAIOutboundIdentity {
+	return resolveOpenAIOutboundIdentityWithPolicy(ctx, account, nil, settingService, false, "")
+}
+
+func resolveOpenAIOutboundIdentityWithPolicy(
+	ctx context.Context,
+	account *Account,
+	accountRepo AccountRepository,
+	settingService *SettingService,
+	forceCodexCLI bool,
+	inboundUserAgent string,
+) openAIOutboundIdentity {
+	if identity, ok := openAIOutboundIdentityFromContext(ctx); ok {
+		return identity
+	}
+	if account != nil && account.IsCredentialShadow() && accountRepo != nil {
+		if credentialAccount, err := resolveCredentialAccount(ctx, accountRepo, account); err == nil && credentialAccount != nil {
+			account = credentialAccount
+		} else {
+			account = nil
+		}
+	}
 	accountUA := ""
 	if account != nil {
 		accountUA = account.GetOpenAIUserAgent()
 	}
-
-	// The gateway installs a cached canonical resolver during wiring. Using it
-	// here keeps helper services on the same global identity without requiring
-	// every service to own a SettingService field.
 	systemUA := codexCanonicalUserAgent()
-	version := codexClientVersionFromUA(systemUA)
 	if settingService != nil {
-		systemUA = settingService.GetOpenAICodexUserAgent(ctx)
-		version = settingService.GetOpenAICodexClientVersion(ctx)
+		systemUA = settingService.GetOpenAICodexCanonicalUserAgent(ctx)
 	}
-	return resolveOpenAIOutboundIdentityWithVersion(accountUA, systemUA, version)
+	if forceCodexCLI {
+		return resolveOpenAIOutboundIdentityWithVersion("", codexCLIUserAgent, codexCLIVersion)
+	}
+	if !codexIdentityEnforcement.Load() && strings.TrimSpace(accountUA) == "" {
+		if identity, ok := validOpenAIOutboundIdentity(inboundUserAgent); ok {
+			version := identity.Version
+			if CompareVersions(version, codexUpstreamMinVersion) < 0 {
+				version = codexCLIVersion
+			}
+			return resolveOpenAIOutboundIdentityWithVersion(inboundUserAgent, inboundUserAgent, version)
+		}
+	}
+	return resolveOpenAIOutboundIdentityWithVersion(accountUA, systemUA, codexClientVersionFromUA(systemUA))
 }
 
 // resolveOpenAIOutboundIdentity resolves shadow accounts to their credential
 // owner before selecting the account-level identity. ForceCodexCLI remains a
 // local compatibility switch and deliberately wins over account/global UA.
 func (s *OpenAIGatewayService) resolveOpenAIOutboundIdentity(ctx context.Context, account *Account) openAIOutboundIdentity {
-	if s != nil && s.cfg != nil && s.cfg.Gateway.ForceCodexCLI {
-		return resolveOpenAIOutboundIdentityWithVersion("", codexCLIUserAgent, codexCLIVersion)
-	}
-	if account != nil && account.IsCredentialShadow() && s != nil && s.accountRepo != nil {
-		if credentialAccount, err := resolveCredentialAccount(ctx, s.accountRepo, account); err == nil && credentialAccount != nil {
-			account = credentialAccount
-		}
-	}
+	var accountRepo AccountRepository
 	var settingService *SettingService
-	if s != nil && account != nil && account.Type == AccountTypeOAuth {
+	forceCodexCLI := false
+	if s != nil {
+		accountRepo = s.accountRepo
 		settingService = s.settingService
+		forceCodexCLI = s.cfg != nil && s.cfg.Gateway.ForceCodexCLI
 	}
-	return resolveOpenAIOutboundIdentityFromSettings(ctx, account, settingService)
+	return resolveOpenAIOutboundIdentityWithPolicy(ctx, account, accountRepo, settingService, forceCodexCLI, "")
+}
+
+func (s *OpenAIGatewayService) snapshotOpenAIOutboundIdentity(ctx context.Context, account *Account, inboundUserAgent string) context.Context {
+	if _, ok := openAIOutboundIdentityFromContext(ctx); ok {
+		return ctx
+	}
+	var accountRepo AccountRepository
+	var settingService *SettingService
+	forceCodexCLI := false
+	if s != nil {
+		accountRepo = s.accountRepo
+		settingService = s.settingService
+		forceCodexCLI = s.cfg != nil && s.cfg.Gateway.ForceCodexCLI
+	}
+	identity := resolveOpenAIOutboundIdentityWithPolicy(ctx, account, accountRepo, settingService, forceCodexCLI, inboundUserAgent)
+	return withOpenAIOutboundIdentitySnapshot(ctx, identity)
 }
 
 // NormalizeOpenAIAccountUserAgent validates and canonicalizes an optional
@@ -143,7 +216,7 @@ func validOpenAIOutboundIdentity(userAgent string) (openAIOutboundIdentity, bool
 	if !ok {
 		return openAIOutboundIdentity{}, false
 	}
-	version := openAIOutboundIdentityVersion(pairedUserAgent)
+	version := NormalizeCodexClientVersion(openai.CodexUserAgentVersion(pairedUserAgent))
 	if version == "" {
 		return openAIOutboundIdentity{}, false
 	}
@@ -165,25 +238,51 @@ func openAIOutboundIdentityVersion(userAgent string) string {
 // applyOpenAIOutboundIdentity is the final identity stage for an OpenAI
 // request. Header overrides and inbound headers must run before this stage.
 func (s *OpenAIGatewayService) applyOpenAIOutboundIdentity(ctx context.Context, account *Account, headers http.Header, useCodexIdentity bool) {
+	policy := openAIOutboundAPIKeyPolicy
+	if useCodexIdentity {
+		policy = openAIOutboundOAuthPolicy
+	}
+	s.applyOpenAIOutboundIdentityPolicy(ctx, account, headers, policy)
+}
+
+func (s *OpenAIGatewayService) applyOpenAIOutboundIdentityPolicy(ctx context.Context, account *Account, headers http.Header, policy openAIOutboundEndpointPolicy) {
 	if headers == nil {
 		return
 	}
-	identity := resolveOpenAIOutboundIdentityFromSettings(ctx, account, nil)
-	if s != nil {
-		identity = s.resolveOpenAIOutboundIdentity(ctx, account)
+	identity, ok := openAIOutboundIdentityFromContext(ctx)
+	if !ok {
+		var settingService *SettingService
+		var accountRepo AccountRepository
+		forceCodexCLI := false
+		if s != nil {
+			settingService = s.settingService
+			accountRepo = s.accountRepo
+			forceCodexCLI = s.cfg != nil && s.cfg.Gateway.ForceCodexCLI
+		}
+		identity = resolveOpenAIOutboundIdentityWithPolicy(ctx, account, accountRepo, settingService, forceCodexCLI, headers.Get("User-Agent"))
 	}
-	applyResolvedOpenAIOutboundIdentity(headers, identity, useCodexIdentity)
+	applyResolvedOpenAIOutboundIdentityWithPolicy(headers, identity, policy)
 }
 
 func applyResolvedOpenAIOutboundIdentity(headers http.Header, identity openAIOutboundIdentity, useCodexIdentity bool) {
+	policy := openAIOutboundAPIKeyPolicy
+	if useCodexIdentity {
+		policy = openAIOutboundOAuthPolicy
+	}
+	applyResolvedOpenAIOutboundIdentityWithPolicy(headers, identity, policy)
+}
+
+func applyResolvedOpenAIOutboundIdentityWithPolicy(headers http.Header, identity openAIOutboundIdentity, policy openAIOutboundEndpointPolicy) {
 	if headers == nil {
 		return
 	}
 	headers.Set("User-Agent", identity.UserAgent)
-	if useCodexIdentity || headers.Get("Version") != "" {
+	if policy.RequireVersion {
 		headers.Set("Version", identity.Version)
+	} else {
+		headers.Del("Version")
 	}
-	if !useCodexIdentity {
+	if !policy.UseCodexIdentity {
 		headers.Del("Originator")
 		return
 	}
@@ -202,7 +301,10 @@ func applyResolvedOpenAIOutboundIdentityToMap(ctx context.Context, account *Acco
 			delete(headers, key)
 		}
 	}
-	identity := resolveOpenAIOutboundIdentityFromSettings(ctx, account, nil)
+	identity, ok := openAIOutboundIdentityFromContext(ctx)
+	if !ok {
+		identity = resolveOpenAIOutboundIdentityWithPolicy(ctx, account, nil, nil, false, "")
+	}
 	headers["User-Agent"] = identity.UserAgent
 	headers["Originator"] = identity.Originator
 	headers["Version"] = identity.Version
@@ -217,7 +319,22 @@ func (s *adminServiceImpl) resolveOpenAIOutboundIdentity(ctx context.Context, ac
 }
 
 func (s *TokenRefreshService) resolveOpenAIOutboundIdentity(ctx context.Context, account *Account) openAIOutboundIdentity {
-	return resolveOpenAIOutboundIdentityFromSettings(ctx, account, nil)
+	var accountRepo AccountRepository
+	if s != nil {
+		accountRepo = s.accountRepo
+	}
+	return resolveOpenAIOutboundIdentityWithPolicy(ctx, account, accountRepo, nil, false, "")
+}
+
+// ResolveOpenAIOAuthIdentity normalizes a repository OAuth client's identity
+// through the same policy primitives used by gateway requests.
+func ResolveOpenAIOAuthIdentity(userAgent, version string) (string, string, string) {
+	resolvedVersion := NormalizeCodexClientVersion(version)
+	if resolvedVersion == "" {
+		resolvedVersion = codexClientVersionFromUA(userAgent)
+	}
+	identity := resolveOpenAIOutboundIdentityWithVersion(userAgent, codexCanonicalUserAgent(), resolvedVersion)
+	return identity.UserAgent, identity.Originator, identity.Version
 }
 
 // OpenAICodexUpstreamMinVersion exposes the lower bound for repository-level

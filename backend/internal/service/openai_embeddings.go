@@ -24,6 +24,7 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 	body []byte,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
+	ctx = s.snapshotOpenAIOutboundIdentity(ctx, account, c.GetHeader("User-Agent"))
 	startTime := time.Now()
 
 	originalModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
@@ -78,12 +79,9 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 			}
 		}
 	}
-	if customUA := account.GetOpenAIUserAgent(); customUA != "" {
-		upstreamReq.Header.Set("user-agent", customUA)
-	}
-
-	// 账号级请求头覆写（仅 openai api_key 账号启用时生效）
+	// 账号级请求头覆写必须先于统一身份收口。
 	account.ApplyHeaderOverrides(upstreamReq.Header)
+	s.applyOpenAIOutboundIdentityPolicy(ctx, account, upstreamReq.Header, openAIOutboundAPIKeyPolicy)
 
 	proxyURL := ""
 	if account.Proxy != nil {

@@ -34,6 +34,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	promptCacheKey string,
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
+	ctx = s.snapshotOpenAIOutboundIdentity(ctx, account, c.GetHeader("User-Agent"))
 	beginUpstreamResponseModelObservation(c)
 
 	// 入口分流：APIKey 账号 + 上游不支持 Responses API → 走 CC 直转（与
@@ -327,8 +328,8 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		// buildUpstreamRequest 保留 Messages bridge 的 body/session 兼容行为，并会先
 		// 清除身份头。真正发送前恢复完整 Codex 身份，避免 ChatGPT Codex 上游因缺失
 		// originator/OpenAI-Beta 返回 404（issue #3901）。
-		ensureCodexIdentityHeaders(upstreamReq.Header)
-		enforceCodexIdentityHeaders(upstreamReq.Header)
+		upstreamReq.Header.Set("OpenAI-Beta", "responses=experimental")
+		s.applyOpenAIOutboundIdentityPolicy(ctx, account, upstreamReq.Header, openAIOutboundOAuthPolicy)
 		logger.L().Debug("openai messages: upstream identity restored",
 			zap.Int64("account_id", account.ID),
 			zap.String("upstream_model", upstreamModel),

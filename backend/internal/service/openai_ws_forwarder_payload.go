@@ -139,8 +139,11 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	// Apply account overrides before the shared final identity stage. The
 	// identity resolver intentionally ignores inbound client User-Agent values.
 	account.ApplyHeaderOverrides(headers)
-	useCodexIdentity := account != nil && account.Type == AccountTypeOAuth
-	s.applyOpenAIOutboundIdentity(ctx, account, headers, useCodexIdentity)
+	policy := openAIOutboundAPIKeyPolicy
+	if account != nil && account.Type == AccountTypeOAuth {
+		policy = openAIOutboundOAuthPolicy
+	}
+	s.applyOpenAIOutboundIdentityPolicy(ctx, account, headers, policy)
 	setOpenAICodexRoutingHint(headers, account, routingModel, routingServiceTier)
 	logOpenAIRoutingDiagnostics(
 		ctx,

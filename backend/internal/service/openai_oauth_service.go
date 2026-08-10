@@ -220,8 +220,11 @@ func (s *OpenAIOAuthService) RefreshToken(ctx context.Context, refreshToken stri
 }
 
 // RefreshTokenWithClientID refreshes an OpenAI OAuth token with optional client_id.
-func (s *OpenAIOAuthService) RefreshTokenWithClientID(ctx context.Context, refreshToken string, proxyURL string, clientID string) (*OpenAITokenInfo, error) {
+func (s *OpenAIOAuthService) RefreshTokenWithClientID(ctx context.Context, refreshToken string, proxyURL string, clientID string, identities ...openAIOutboundIdentity) (*OpenAITokenInfo, error) {
 	identity := resolveOpenAIOutboundIdentityFromSettings(ctx, nil, nil)
+	if len(identities) > 0 {
+		identity = identities[0]
+	}
 	var tokenResp *openai.TokenResponse
 	var err error
 	if identityClient, ok := s.oauthClient.(OpenAIOAuthIdentityClient); ok {
@@ -376,7 +379,8 @@ func (s *OpenAIOAuthService) RefreshAccountToken(ctx context.Context, account *A
 	}
 
 	clientID := account.GetCredential("client_id")
-	return s.RefreshTokenWithClientID(ctx, refreshToken, proxyURL, clientID)
+	identity := resolveOpenAIOutboundIdentityFromSettings(ctx, account, nil)
+	return s.RefreshTokenWithClientID(ctx, refreshToken, proxyURL, clientID, identity)
 }
 
 // BuildAccountCredentials builds credentials map from token info
