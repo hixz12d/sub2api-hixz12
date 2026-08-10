@@ -232,18 +232,6 @@ func validOpenAIOutboundIdentity(userAgent string) (openAIOutboundIdentity, bool
 	return openAIOutboundIdentity{UserAgent: pairedUserAgent, Originator: originator, Version: version}, true
 }
 
-func openAIOutboundIdentityVersion(userAgent string) string {
-	_, suffix, ok := strings.Cut(strings.TrimSpace(userAgent), "/")
-	if !ok {
-		return ""
-	}
-	version := strings.Fields(suffix)
-	if len(version) == 0 {
-		return ""
-	}
-	return version[0]
-}
-
 // applyOpenAIOutboundIdentity is the final identity stage for an OpenAI
 // request. Header overrides and inbound headers must run before this stage.
 func (s *OpenAIGatewayService) applyOpenAIOutboundIdentity(ctx context.Context, account *Account, headers http.Header, useCodexIdentity bool) {

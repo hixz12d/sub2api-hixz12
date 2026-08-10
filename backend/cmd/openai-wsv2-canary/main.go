@@ -110,7 +110,7 @@ func run(parent context.Context, opts options, output io.Writer) error {
 		}
 		return fmt.Errorf("websocket handshake: %w", err)
 	}
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 	conn.SetReadLimit(4 << 20)
 
 	clientRequestID := strings.TrimSpace(resp.Header.Get("X-Client-Request-ID"))
@@ -150,7 +150,7 @@ func run(parent context.Context, opts options, output io.Writer) error {
 			responseID = event.Response.ID
 		}
 		if event.Type == "response.output_text.delta" {
-			text.WriteString(event.Delta)
+			_, _ = text.WriteString(event.Delta)
 		}
 
 		switch event.Type {

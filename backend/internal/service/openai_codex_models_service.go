@@ -231,7 +231,7 @@ func (c *codexModelsManifestCache) set(key string, manifest *CodexModelsManifest
 // After validating the stable top-level envelope, OAuth response bodies are
 // passed through verbatim. Custom API key manifests receive only the narrowly
 // scoped compatibility adjustments required by custom-provider Codex clients.
-func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, account *Account, clientVersion, ifNoneMatch string) (*CodexModelsManifest, error) {
+func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, account *Account, _ string, ifNoneMatch string) (*CodexModelsManifest, error) {
 	if account == nil {
 		return nil, infraerrors.New(http.StatusInternalServerError, "OPENAI_CODEX_MODELS_ACCOUNT_REQUIRED", "account is required")
 	}
@@ -242,7 +242,7 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 	ctx = s.snapshotOpenAIOutboundIdentity(ctx, credAccount, "")
 	identity := s.resolveOpenAIOutboundIdentity(ctx, credAccount)
 	// Keep the manifest URL, User-Agent, Originator, and Version on one identity.
-	clientVersion = identity.Version
+	clientVersion := identity.Version
 
 	requestEndpoint := chatgptCodexModelsURL
 	authToken := ""

@@ -25,7 +25,7 @@ func TestRunCompletesAndReportsCorrelation(t *testing.T) {
 		w.Header().Set("X-Client-Request-ID", clientRequestID)
 		conn, err := websocket.Accept(w, r, nil)
 		require.NoError(t, err)
-		defer conn.CloseNow()
+		defer func() { _ = conn.CloseNow() }()
 
 		_, payload, err := conn.Read(r.Context())
 		require.NoError(t, err)

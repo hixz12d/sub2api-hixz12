@@ -90,29 +90,6 @@ func codexCanonicalUserAgent() string {
 	return codexCLIUserAgent
 }
 
-// codexOutboundIdentity 出站身份三元组，三者必须同源自洽：
-// originator 与 User-Agent 首段配套（否则上游 404，issue #3901），
-// version 等于 User-Agent 的版本段且不低于上游门槛。
-type codexOutboundIdentity struct {
-	userAgent  string
-	originator string
-	version    string
-}
-
-// resolveCodexOutboundIdentity is the compatibility adapter used by the
-// request-local Codex header helpers. The shared OpenAI outbound profile owns
-// candidate precedence and version pairing; this adapter preserves the legacy
-// private return type used by existing gateway code and tests.
-func resolveCodexOutboundIdentity(candidateUA string) codexOutboundIdentity {
-	canonical := codexCanonicalUserAgent()
-	identity := resolveOpenAIOutboundIdentityWithVersion(candidateUA, canonical, codexClientVersionFromUA(canonical))
-	return codexOutboundIdentity{
-		userAgent:  identity.UserAgent,
-		originator: identity.Originator,
-		version:    identity.Version,
-	}
-}
-
 // codexClientVersionFromUA 取 UA 的版本段作为生效版本；
 // 非法或低于上游门槛（低于则上游 404，issue #3901）时回退编译期常量。
 func codexClientVersionFromUA(ua string) string {
@@ -172,15 +149,5 @@ func enforceCodexIdentityHeadersWithUA(h http.Header, overrideUA string) {
 		account = &Account{Platform: PlatformOpenAI, Credentials: map[string]any{"user_agent": accountUA}}
 	}
 	identity := resolveOpenAIOutboundIdentityWithPolicy(context.Background(), account, nil, nil, false, h.Get("User-Agent"))
-	applyResolvedOpenAIOutboundIdentityWithPolicy(h, identity, openAIOutboundOAuthPolicy)
-}
-
-// pairCodexIdentityHeaders 是关闭强制统一后的兜底收口：保留客户端真实身份，
-// 仅保证 originator 与最终 User-Agent 首段配套、version 不低于上游门槛（issue #3901）。
-func pairCodexIdentityHeaders(h http.Header) {
-	if h == nil {
-		return
-	}
-	identity := resolveOpenAIOutboundIdentityWithPolicy(context.Background(), nil, nil, nil, false, h.Get("User-Agent"))
 	applyResolvedOpenAIOutboundIdentityWithPolicy(h, identity, openAIOutboundOAuthPolicy)
 }
