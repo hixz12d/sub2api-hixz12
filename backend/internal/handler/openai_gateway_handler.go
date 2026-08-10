@@ -685,6 +685,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					if failoverErr.ShouldReportAccountScheduleFailure() {
 						h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), false, nil)
 					}
+					if h.gatewayService.ClearOpenAIOAuthRestrictedStickySession(c.Request.Context(), apiKey.GroupID, attemptSessionHash, account, failoverErr) {
+						reqLog.Warn("openai.oauth_authorized_group_sticky_cleared", zap.Int64("account_id", account.ID))
+					}
 					if !failoverErr.ShouldRetryNextAccount() {
 						h.handleFailoverExhausted(c, failoverErr, streamStarted)
 						return
@@ -1262,6 +1265,9 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 					}
 					if failoverErr.ShouldReportAccountScheduleFailure() {
 						h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(currentRoutingModel), false, nil)
+					}
+					if h.gatewayService.ClearOpenAIOAuthRestrictedStickySession(c.Request.Context(), apiKey.GroupID, sessionHash, account, failoverErr) {
+						reqLog.Warn("openai_messages.oauth_authorized_group_sticky_cleared", zap.Int64("account_id", account.ID))
 					}
 					if !failoverErr.ShouldRetryNextAccount() {
 						h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
@@ -1940,6 +1946,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		}
 		if failoverErr.ShouldReportAccountScheduleFailure() {
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), false, nil)
+		}
+		if h.gatewayService.ClearOpenAIOAuthRestrictedStickySession(ctx, apiKey.GroupID, sessionHash, account, failoverErr) {
+			reqLog.Warn("openai.websocket_oauth_authorized_group_sticky_cleared", zap.Int64("account_id", account.ID))
 		}
 		releaseAccountSlot()
 		if !failoverErr.ShouldRetryNextAccount() {

@@ -219,3 +219,30 @@ func (s *OpenAIGatewayService) deleteStickySessionAccountID(ctx context.Context,
 	}
 	return err
 }
+
+// ClearOpenAIOAuthRestrictedStickySession clears only the sticky binding affected
+// by the account-specific authorized-group restriction. It intentionally leaves
+// the account schedulable for other groups and users.
+func (s *OpenAIGatewayService) ClearOpenAIOAuthRestrictedStickySession(
+	ctx context.Context,
+	groupID *int64,
+	sessionHash string,
+	account *Account,
+	failoverErr *UpstreamFailoverError,
+) bool {
+	if !isOpenAIOAuthAccount(account) || failoverErr == nil {
+		return false
+	}
+	if failoverErr.Reason != openAIOAuthAuthorizedAPIKeyGroupsReason &&
+		!IsOpenAIOAuthAuthorizedAPIKeyGroupsError("", failoverErr.ResponseBody) {
+		return false
+	}
+	_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
+	return true
+}
+
+// ClearOpenAIStickySession removes the account binding for a request session
+// after an upstream restriction that is specific to the selected account.
+func (s *OpenAIGatewayService) ClearOpenAIStickySession(ctx context.Context, groupID *int64, sessionHash string) error {
+	return s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
+}

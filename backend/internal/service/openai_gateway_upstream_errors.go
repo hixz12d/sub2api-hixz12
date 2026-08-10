@@ -17,6 +17,45 @@ import (
 	"go.uber.org/zap"
 )
 
+const openAIOAuthAuthorizedAPIKeyGroupsMessage = "this openai oauth account is restricted to authorized api key groups"
+const openAIOAuthAuthorizedAPIKeyGroupsReason = GatewayFailureReason("openai_oauth_authorized_api_key_groups")
+
+func normalizeOpenAIErrorText(value string) string {
+	return strings.Join(strings.Fields(strings.ToLower(strings.TrimSpace(value))), " ")
+}
+
+// IsOpenAIOAuthAuthorizedAPIKeyGroupsError recognizes the upstream restriction
+// without treating ordinary OpenAI permission errors as account failures.
+func IsOpenAIOAuthAuthorizedAPIKeyGroupsError(upstreamMsg string, responseBody []byte) bool {
+	messageCandidates := []string{upstreamMsg}
+	for _, path := range []string{"response.error.message", "error.message", "message"} {
+		if value := strings.TrimSpace(gjson.GetBytes(responseBody, path).String()); value != "" {
+			messageCandidates = append(messageCandidates, value)
+		}
+	}
+	matched := false
+	for _, candidate := range messageCandidates {
+		if strings.Contains(normalizeOpenAIErrorText(candidate), openAIOAuthAuthorizedAPIKeyGroupsMessage) {
+			matched = true
+			break
+		}
+	}
+	if !matched {
+		return false
+	}
+
+	hasType := false
+	for _, path := range []string{"response.error.type", "error.type", "type"} {
+		if value := normalizeOpenAIErrorText(gjson.GetBytes(responseBody, path).String()); value != "" {
+			hasType = true
+			if value == "permission_error" {
+				return true
+			}
+		}
+	}
+	return !hasType
+}
+
 func logOpenAIInstructionsRequiredDebug(
 	ctx context.Context,
 	c *gin.Context,
@@ -224,6 +263,9 @@ func (s *OpenAIGatewayService) shouldFailoverUpstreamError(statusCode int) bool 
 }
 
 func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(statusCode int, upstreamMsg string, upstreamBody []byte) bool {
+	if statusCode == http.StatusForbidden && IsOpenAIOAuthAuthorizedAPIKeyGroupsError(upstreamMsg, upstreamBody) {
+		return true
+	}
 	if isOpenAIContextWindowError(upstreamMsg, upstreamBody) {
 		return false
 	}
