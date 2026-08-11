@@ -228,9 +228,9 @@ func TestOpenAIStreamingPassthroughClientDisconnectStillDrainsTerminalUsage(t *t
 	require.Equal(t, 4, result.usage.OutputTokens)
 }
 
-func TestOpenAIStreamingPassthroughScannerErrorFlushesWrittenResidual(t *testing.T) {
+func TestOpenAIStreamingPassthroughHTTP2ErrorFlushesResidualAndReturnsSanitizedDetails(t *testing.T) {
 	upstream := []byte(`data: {"type":"response.output_text.delta","delta":"partial"}`)
-	readErr := errors.New("upstream read failed")
+	readErr := errors.New("stream error: stream ID 87; INTERNAL_ERROR; received from peer")
 
 	_, recorder, writer, err := runPassthroughFlushTest(t, &passthroughFlushTestErrorBody{
 		payload: upstream,
@@ -238,9 +238,15 @@ func TestOpenAIStreamingPassthroughScannerErrorFlushesWrittenResidual(t *testing
 	}, -1)
 
 	require.ErrorIs(t, err, readErr)
+	code, message, ok := OpenAIUpstreamStreamReadErrorDetails(err)
+	require.True(t, ok)
+	require.Equal(t, OpenAIUpstreamHTTP2StreamErrorCode, code)
+	require.Equal(t, "Upstream HTTP/2 stream failed", message)
 	wantBody := string(upstream) + "\n"
 	require.Equal(t, wantBody, recorder.Body.String())
 	require.Equal(t, []int{len(wantBody)}, writer.flushBodyLengths)
+	require.NotContains(t, recorder.Body.String(), "stream ID")
+	require.NotContains(t, recorder.Body.String(), "INTERNAL_ERROR")
 }
 
 func TestOpenAIStreamingPassthroughNamespaceRestoreErrorFlushesWrittenResidualOnce(t *testing.T) {

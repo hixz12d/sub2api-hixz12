@@ -22,3 +22,10 @@ type HTTPUpstream interface {
 	// 支持按账号绑定的数据库 profile 或内置默认 profile。
 	DoWithTLS(req *http.Request, proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile) (*http.Response, error)
 }
+
+// OpenAIHTTP2StreamFailureReporter receives OpenAI stream read failures after the upstream response is established.
+// It is intentionally optional so non-repository HTTPUpstream test doubles and
+// alternate transports do not need to implement the adaptive fallback hook.
+type OpenAIHTTP2StreamFailureReporter interface {
+	RecordOpenAIHTTP2StreamFailure(proxyURL string, err error)
+}

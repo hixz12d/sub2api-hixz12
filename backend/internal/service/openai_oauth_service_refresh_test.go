@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -60,6 +61,54 @@ func TestOpenAIOAuthService_RefreshAccountToken_NoRefreshTokenUsesExistingAccess
 	require.Equal(t, "client-id-1", info.ClientID)
 	require.Zero(t, atomic.LoadInt32(&client.refreshCalls), "existing access token should be reused without calling refresh")
 	require.Positive(t, atomic.LoadInt32(&privacyClientCalls), "existing access token should still run enrichment")
+}
+
+func TestOpenAIOAuthServiceEnrichmentReusesSnapshotIdentity(t *testing.T) {
+	identity := resolveOpenAIOutboundIdentityWithVersion(
+		"codex_vscode/0.151.0 (Windows 11; x86_64) vscode",
+		testOutboundCodexUserAgent,
+		"0.151.0",
+	)
+	var requests []http.Header
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.Header.Clone())
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			_, _ = w.Write([]byte(`{"accounts":{}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	targetURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	svc := NewOpenAIOAuthService(nil, nil)
+	defer svc.Stop()
+	svc.SetPrivacyClientFactory(func(string) (*req.Client, error) {
+		client := req.C().WrapRoundTripFunc(func(rt req.RoundTripper) req.RoundTripFunc {
+			return func(r *req.Request) (*req.Response, error) {
+				r.URL.Scheme = targetURL.Scheme
+				r.URL.Host = targetURL.Host
+				return rt.RoundTrip(r)
+			}
+		})
+		return client, nil
+	})
+
+	ctx := withOpenAIOutboundIdentitySnapshot(context.Background(), identity)
+	tokenInfo := &OpenAITokenInfo{
+		AccessToken:           "oauth-access-token",
+		SubscriptionExpiresAt: "2027-01-01T00:00:00Z",
+	}
+	svc.enrichTokenInfo(ctx, tokenInfo, "")
+
+	require.Len(t, requests, 2)
+	for _, headers := range requests {
+		require.Equal(t, identity.UserAgent, headers.Get("User-Agent"))
+		require.Equal(t, identity.Originator, headers.Get("Originator"))
+		require.Equal(t, identity.Version, headers.Get("Version"))
+	}
 }
 
 func TestOpenAIOAuthService_RefreshAccountToken_PATIgnoresStaleRefreshToken(t *testing.T) {

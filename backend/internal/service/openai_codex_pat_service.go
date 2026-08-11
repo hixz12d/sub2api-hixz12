@@ -58,8 +58,8 @@ func (s *OpenAIOAuthService) ValidateCodexPersonalAccessToken(ctx context.Contex
 	}
 	req.Header.Set("authorization", "Bearer "+accessToken)
 	req.Header.Set("accept", "application/json")
-	req.Header.Set("originator", "codex_cli_rs")
-	req.Header.Set("user-agent", codexCLIUserAgent)
+	identity := resolveOpenAIOutboundIdentityWithPolicy(ctx, nil, nil, nil, false, req.Header.Get("User-Agent"))
+	applyResolvedOpenAIOutboundIdentityWithPolicy(req.Header, identity, openAIOutboundOAuthPolicy)
 
 	resp, err := client.Do(req)
 	if err != nil {

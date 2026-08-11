@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -300,10 +301,11 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		return nil, errors.New("rate_multiplier must be > 0")
 	}
 
-	platform := input.Platform
-	if platform == "" {
-		platform = PlatformAnthropic
+	platform := NormalizeGroupPlatform(input.Platform)
+	if err := ValidateOpenAIAccountPriorityMode(platform, input.OpenAIAccountPriorityMode); err != nil {
+		return nil, infraerrors.Newf(http.StatusBadRequest, "INVALID_OPENAI_ACCOUNT_PRIORITY_MODE", "%v", err)
 	}
+	openAIAccountPriorityMode := NormalizeOpenAIAccountPriorityMode(platform, input.OpenAIAccountPriorityMode)
 	maxReasoningEffort, err := normalizeMaxReasoningEffortForPlatform(platform, input.MaxReasoningEffort)
 	if err != nil {
 		return nil, infraerrors.Newf(http.StatusBadRequest, "INVALID_MAX_REASONING_EFFORT", "%v", err)
@@ -331,6 +333,10 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	videoPrice720P := normalizePrice(input.VideoPrice720P)
 	videoPrice1080P := normalizePrice(input.VideoPrice1080P)
 	webSearchPricePerCall := normalizePrice(input.WebSearchPricePerCall)
+	searchPricePer1k := normalizePrice(input.SearchPricePer1k)
+	audioRealtimePricePerMin := normalizePrice(input.AudioRealtimePricePerMin)
+	audioTTSPricePerMillionChars := normalizePrice(input.AudioTTSPricePerMillionChars)
+	audioSTTPricePerHour := normalizePrice(input.AudioSTTPricePerHour)
 	imageRateMultiplier := 1.0
 	if input.ImageRateMultiplier != nil {
 		if *input.ImageRateMultiplier < 0 {
@@ -372,6 +378,20 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	// 先归一化（非订阅分组清空高峰配置、清洗停用状态下的脏字段）再校验，与 UpdateGroup 同一收口。
 	peakRateEnabled, peakStart, peakEnd, peakRateMultiplier := NormalizePeakRateConfig(subscriptionType, input.PeakRateEnabled, input.PeakStart, input.PeakEnd, peakRateMultiplier)
 	if err := ValidatePeakRateConfig(subscriptionType, peakRateEnabled, peakStart, peakEnd, peakRateMultiplier); err != nil {
+		return nil, err
+	}
+
+	profitMinMargin := 0.0
+	if input.ProfitMinMargin != nil {
+		profitMinMargin = *input.ProfitMinMargin
+	}
+	profitSafetyBuffer := 0.0
+	if input.ProfitSafetyBuffer != nil {
+		profitSafetyBuffer = *input.ProfitSafetyBuffer
+	}
+	// 利润控制与高峰倍率同一收口顺序：先按平台归一化（不支持的平台重置），再校验。
+	profitControlEnabled, profitMinMargin, profitSafetyBuffer := NormalizeProfitControlConfig(platform, input.ProfitControlEnabled, profitMinMargin, profitSafetyBuffer)
+	if err := ValidateProfitControlConfig(platform, profitControlEnabled, profitMinMargin, profitSafetyBuffer); err != nil {
 		return nil, err
 	}
 
@@ -437,6 +457,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		Name:                            input.Name,
 		Description:                     input.Description,
 		Platform:                        platform,
+		OpenAIAccountPriorityMode:       openAIAccountPriorityMode,
 		RateMultiplier:                  input.RateMultiplier,
 		IsExclusive:                     input.IsExclusive,
 		Status:                          StatusActive,
@@ -456,13 +477,21 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		PeakStart:                       peakStart,
 		PeakEnd:                         peakEnd,
 		PeakRateMultiplier:              peakRateMultiplier,
+		ProfitControlEnabled:            profitControlEnabled,
+		ProfitMinMargin:                 profitMinMargin,
+		ProfitSafetyBuffer:              profitSafetyBuffer,
 		ImagePrice1K:                    imagePrice1K,
 		ImagePrice2K:                    imagePrice2K,
 		ImagePrice4K:                    imagePrice4K,
 		VideoPrice480P:                  videoPrice480P,
 		VideoPrice720P:                  videoPrice720P,
 		VideoPrice1080P:                 videoPrice1080P,
+		VideoModelPrices:                NormalizeVideoModelPrices(input.VideoModelPrices),
 		WebSearchPricePerCall:           webSearchPricePerCall,
+		SearchPricePer1k:                searchPricePer1k,
+		AudioRealtimePricePerMin:        audioRealtimePricePerMin,
+		AudioTTSPricePerMillionChars:    audioTTSPricePerMillionChars,
+		AudioSTTPricePerHour:            audioSTTPricePerHour,
 		ClaudeCodeOnly:                  input.ClaudeCodeOnly,
 		FallbackGroupID:                 input.FallbackGroupID,
 		FallbackGroupIDOnInvalidRequest: fallbackOnInvalidRequest,
@@ -621,6 +650,13 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	if input.Platform != "" {
 		group.Platform = input.Platform
 	}
+	if input.OpenAIAccountPriorityMode != nil {
+		if err := ValidateOpenAIAccountPriorityMode(group.Platform, *input.OpenAIAccountPriorityMode); err != nil {
+			return nil, infraerrors.Newf(http.StatusBadRequest, "INVALID_OPENAI_ACCOUNT_PRIORITY_MODE", "%v", err)
+		}
+		group.OpenAIAccountPriorityMode = *input.OpenAIAccountPriorityMode
+	}
+	group.OpenAIAccountPriorityMode = NormalizeOpenAIAccountPriorityMode(group.Platform, group.OpenAIAccountPriorityMode)
 	if input.RateMultiplier != nil {
 		if *input.RateMultiplier <= 0 {
 			return nil, errors.New("rate_multiplier must be > 0")
@@ -708,6 +744,21 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	if err := ValidatePeakRateConfig(group.SubscriptionType, group.PeakRateEnabled, group.PeakStart, group.PeakEnd, group.PeakRateMultiplier); err != nil {
 		return nil, err
 	}
+	if input.ProfitControlEnabled != nil {
+		group.ProfitControlEnabled = *input.ProfitControlEnabled
+	}
+	if input.ProfitMinMargin != nil {
+		group.ProfitMinMargin = *input.ProfitMinMargin
+	}
+	if input.ProfitSafetyBuffer != nil {
+		group.ProfitSafetyBuffer = *input.ProfitSafetyBuffer
+	}
+	// 利润控制与高峰同一收口：按合并后的最终平台归一化（转到不支持平台时静默重置），
+	// 再对合并后的最终配置统一校验，防止部分字段更新拼出非法组合入库。
+	group.ProfitControlEnabled, group.ProfitMinMargin, group.ProfitSafetyBuffer = NormalizeProfitControlConfig(group.Platform, group.ProfitControlEnabled, group.ProfitMinMargin, group.ProfitSafetyBuffer)
+	if err := ValidateProfitControlConfig(group.Platform, group.ProfitControlEnabled, group.ProfitMinMargin, group.ProfitSafetyBuffer); err != nil {
+		return nil, err
+	}
 	if input.ImagePrice1K != nil {
 		group.ImagePrice1K = normalizePrice(input.ImagePrice1K)
 	}
@@ -726,8 +777,24 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	if input.VideoPrice1080P != nil {
 		group.VideoPrice1080P = normalizePrice(input.VideoPrice1080P)
 	}
+	// nil = leave unchanged; empty map = clear per-model prices.
+	if input.VideoModelPrices != nil {
+		group.VideoModelPrices = NormalizeVideoModelPrices(input.VideoModelPrices)
+	}
 	if input.WebSearchPricePerCall != nil {
 		group.WebSearchPricePerCall = normalizePrice(input.WebSearchPricePerCall)
+	}
+	if input.SearchPricePer1k != nil {
+		group.SearchPricePer1k = normalizePrice(input.SearchPricePer1k)
+	}
+	if input.AudioRealtimePricePerMin != nil {
+		group.AudioRealtimePricePerMin = normalizePrice(input.AudioRealtimePricePerMin)
+	}
+	if input.AudioTTSPricePerMillionChars != nil {
+		group.AudioTTSPricePerMillionChars = normalizePrice(input.AudioTTSPricePerMillionChars)
+	}
+	if input.AudioSTTPricePerHour != nil {
+		group.AudioSTTPricePerHour = normalizePrice(input.AudioSTTPricePerHour)
 	}
 
 	// Claude Code 客户端限制
@@ -822,32 +889,20 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	sanitizeGroupReasoningEffortPolicy(group)
 
-	if err := s.groupRepo.Update(ctx, group); err != nil {
-		return nil, err
-	}
-
-	if s.authCacheInvalidator != nil {
-		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, id)
-	}
-
-	// 如果指定了复制账号的源分组，同步绑定（替换当前分组的账号）
-	if len(input.CopyAccountsFromGroupIDs) > 0 {
-		// 去重源分组 IDs
+	copyAccounts := len(input.CopyAccountsFromGroupIDs) > 0
+	var accountIDsToCopy []int64
+	if copyAccounts {
 		seen := make(map[int64]struct{})
 		uniqueSourceGroupIDs := make([]int64, 0, len(input.CopyAccountsFromGroupIDs))
 		for _, srcGroupID := range input.CopyAccountsFromGroupIDs {
-			// 校验：源分组不能是自身
 			if srcGroupID == id {
 				return nil, fmt.Errorf("cannot copy accounts from self")
 			}
-			// 去重
 			if _, exists := seen[srcGroupID]; !exists {
 				seen[srcGroupID] = struct{}{}
 				uniqueSourceGroupIDs = append(uniqueSourceGroupIDs, srcGroupID)
 			}
 		}
-
-		// 校验源分组的平台是否与当前分组一致
 		for _, srcGroupID := range uniqueSourceGroupIDs {
 			srcGroup, err := s.groupRepo.GetByIDLite(ctx, srcGroupID)
 			if err != nil {
@@ -858,18 +913,11 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 			}
 		}
 
-		// 获取所有源分组的账号（去重）
-		accountIDsToCopy, err := s.groupRepo.GetAccountIDsByGroupIDs(ctx, uniqueSourceGroupIDs)
+		var err error
+		accountIDsToCopy, err = s.groupRepo.GetAccountIDsByGroupIDs(ctx, uniqueSourceGroupIDs)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get accounts from source groups: %w", err)
 		}
-
-		// 先清空当前分组的所有账号绑定
-		if _, err := s.groupRepo.DeleteAccountGroupsByGroupID(ctx, id); err != nil {
-			return nil, fmt.Errorf("failed to clear existing account bindings: %w", err)
-		}
-
-		// require_oauth_only: 过滤掉 apikey 类型账号
 		if group.RequireOAuthOnly && groupSupportsOAuthOnlyFilter(group.Platform) && len(accountIDsToCopy) > 0 {
 			accounts, err := s.accountRepo.GetByIDs(ctx, accountIDsToCopy)
 			if err != nil {
@@ -881,24 +929,86 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 					oauthIDs[acc.ID] = struct{}{}
 				}
 			}
-			var filtered []int64
-			for _, aid := range accountIDsToCopy {
-				if _, ok := oauthIDs[aid]; ok {
-					filtered = append(filtered, aid)
+			filtered := make([]int64, 0, len(accountIDsToCopy))
+			for _, accountID := range accountIDsToCopy {
+				if _, ok := oauthIDs[accountID]; ok {
+					filtered = append(filtered, accountID)
 				}
 			}
 			accountIDsToCopy = filtered
 		}
+	}
 
-		// 再绑定源分组的账号
-		if len(accountIDsToCopy) > 0 {
-			if err := s.groupRepo.BindAccountsToGroup(ctx, id, accountIDsToCopy); err != nil {
-				return nil, fmt.Errorf("failed to bind accounts to group: %w", err)
+	persist := func(opCtx context.Context) error {
+		if err := s.groupRepo.Update(opCtx, group); err != nil {
+			return err
+		}
+		if copyAccounts {
+			if err := s.groupRepo.BindAccountsToGroup(opCtx, id, accountIDsToCopy); err != nil {
+				return fmt.Errorf("failed to replace account bindings for group: %w", err)
 			}
 		}
+		return nil
+	}
+
+	if copyAccounts {
+		if s.runInTransaction != nil {
+			if err := s.runInTransaction(ctx, persist); err != nil {
+				return nil, err
+			}
+		} else {
+			if s.entClient == nil {
+				return nil, errors.New("ent client is required for atomic group and account binding updates")
+			}
+			tx, err := s.entClient.Tx(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("begin group update transaction: %w", err)
+			}
+			defer func() { _ = tx.Rollback() }()
+			if err := persist(dbent.NewTxContext(ctx, tx)); err != nil {
+				return nil, err
+			}
+			if err := tx.Commit(); err != nil {
+				return nil, fmt.Errorf("commit group update transaction: %w", err)
+			}
+		}
+	} else if err := persist(ctx); err != nil {
+		return nil, err
+	}
+
+	if s.authCacheInvalidator != nil {
+		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, id)
 	}
 
 	return group, nil
+}
+
+func (s *adminServiceImpl) UpdateGroupAccountPriorities(ctx context.Context, groupID int64, updates []AccountGroupPriorityUpdate) ([]AccountGroupPriorityUpdate, error) {
+	group, err := s.groupRepo.GetByIDLite(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	if group.Platform != PlatformOpenAI {
+		return nil, infraerrors.Newf(http.StatusBadRequest, "OPENAI_ACCOUNT_PRIORITY_MODE_UNSUPPORTED", "group %d is not an OpenAI group", groupID)
+	}
+	if len(updates) == 0 || len(updates) > 500 {
+		return nil, infraerrors.Newf(http.StatusBadRequest, "INVALID_ACCOUNT_GROUP_PRIORITIES", "account priority updates must contain between 1 and 500 items")
+	}
+	if s.groupPriorityRepo == nil {
+		return nil, errors.New("account group priority repository is unavailable")
+	}
+
+	normalized := append([]AccountGroupPriorityUpdate(nil), updates...)
+	sort.Slice(normalized, func(i, j int) bool { return normalized[i].AccountID < normalized[j].AccountID })
+	for i, update := range normalized {
+		if update.AccountID <= 0 || update.ExpectedPriority < 1 || update.Priority < 1 || update.Priority > 1_000_000 {
+			return nil, infraerrors.Newf(http.StatusBadRequest, "INVALID_ACCOUNT_GROUP_PRIORITY", "account_id and priorities must be positive; priority must not exceed 1000000")
+		}
+		if i > 0 && normalized[i-1].AccountID == update.AccountID {
+			return nil, infraerrors.Newf(http.StatusBadRequest, "DUPLICATE_ACCOUNT_GROUP_PRIORITY", "account %d appears more than once", update.AccountID)
+		}
+	}
+	return s.groupPriorityRepo.UpdateAccountGroupPriorities(ctx, groupID, normalized)
 }
 
 func (s *adminServiceImpl) DeleteGroup(ctx context.Context, id int64) error {
@@ -1010,31 +1120,93 @@ func (s *adminServiceImpl) UpdateGroupSortOrders(ctx context.Context, updates []
 	return s.groupRepo.UpdateSortOrders(ctx, updates)
 }
 
+// AdminUpdateGroupOpenAIAccountPriorityModeWithExpected atomically changes only
+// the OpenAI scheduling mode when both the mode and group snapshot are unchanged.
+func (s *adminServiceImpl) AdminUpdateGroupOpenAIAccountPriorityModeWithExpected(ctx context.Context, groupID int64, mode, expectedMode string, expectedUpdatedAt time.Time) (*Group, error) {
+	mode = strings.TrimSpace(strings.ToLower(mode))
+	expectedMode = strings.TrimSpace(strings.ToLower(expectedMode))
+	if mode != OpenAIAccountPriorityModeGlobal && mode != OpenAIAccountPriorityModeBinding {
+		return nil, infraerrors.BadRequest("INVALID_OPENAI_ACCOUNT_PRIORITY_MODE", "mode must be global or binding")
+	}
+	if expectedMode != OpenAIAccountPriorityModeGlobal && expectedMode != OpenAIAccountPriorityModeBinding {
+		return nil, infraerrors.BadRequest("INVALID_EXPECTED_OPENAI_ACCOUNT_PRIORITY_MODE", "expected_mode must be global or binding")
+	}
+	if expectedUpdatedAt.IsZero() {
+		return nil, infraerrors.BadRequest("INVALID_EXPECTED_UPDATED_AT", "expected_updated_at is required")
+	}
+	group, err := s.groupRepo.GetByID(ctx, groupID)
+	if err != nil {
+		return nil, err
+	}
+	if group.Platform != PlatformOpenAI {
+		return nil, infraerrors.BadRequest("GROUP_PLATFORM_NOT_OPENAI", "group priority mode is available only for OpenAI groups")
+	}
+	if group.OpenAIAccountPriorityMode != expectedMode || !group.UpdatedAt.Equal(expectedUpdatedAt) {
+		return nil, ErrGroupPriorityModeConflict
+	}
+	repo, ok := s.groupRepo.(GroupPriorityModeCASRepository)
+	if !ok {
+		return nil, infraerrors.InternalServer("GROUP_PRIORITY_MODE_CAS_UNAVAILABLE", "guarded group priority mode update is not supported")
+	}
+	group.OpenAIAccountPriorityMode = mode
+	if err := repo.UpdateOpenAIAccountPriorityModeIfCurrent(ctx, group, expectedMode); err != nil {
+		return nil, fmt.Errorf("update group priority mode: %w", err)
+	}
+	if s.authCacheInvalidator != nil {
+		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, groupID)
+	}
+	return group, nil
+}
+
 // AdminUpdateAPIKeyGroupID 管理员修改 API Key 分组绑定
 // groupID: nil=不修改, 指向0=解绑, 指向正整数=绑定到目标分组
+// AdminUpdateAPIKeyGroupID 管理员修改 API Key 分组绑定。
+// groupID: nil=不修改, 指向0=解绑, 指向正整数=绑定到目标分组。
 func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID int64, groupID *int64) (*AdminUpdateAPIKeyGroupIDResult, error) {
+	return s.adminUpdateAPIKeyGroupID(ctx, keyID, groupID, nil, nil)
+}
+
+// AdminUpdateAPIKeyGroupIDWithExpected is the guarded form used by migration
+// tooling. expectedGroupID=0 means the key must currently be unbound.
+func (s *adminServiceImpl) AdminUpdateAPIKeyGroupIDWithExpected(ctx context.Context, keyID int64, groupID, expectedGroupID *int64, expectedUpdatedAt *time.Time) (*AdminUpdateAPIKeyGroupIDResult, error) {
+	if expectedGroupID != nil && *expectedGroupID < 0 {
+		return nil, infraerrors.BadRequest("INVALID_EXPECTED_GROUP_ID", "expected_group_id must be non-negative")
+	}
+	if expectedUpdatedAt != nil && expectedUpdatedAt.IsZero() {
+		return nil, infraerrors.BadRequest("INVALID_EXPECTED_UPDATED_AT", "expected_updated_at must be a non-zero timestamp")
+	}
+	return s.adminUpdateAPIKeyGroupID(ctx, keyID, groupID, expectedGroupID, expectedUpdatedAt)
+}
+
+func (s *adminServiceImpl) adminUpdateAPIKeyGroupID(ctx context.Context, keyID int64, groupID, expectedGroupID *int64, expectedUpdatedAt *time.Time) (*AdminUpdateAPIKeyGroupIDResult, error) {
 	apiKey, err := s.apiKeyRepo.GetByID(ctx, keyID)
 	if err != nil {
 		return nil, err
 	}
-
-	if groupID == nil {
-		// nil 表示不修改，直接返回
-		return &AdminUpdateAPIKeyGroupIDResult{APIKey: apiKey}, nil
+	if expectedUpdatedAt != nil && !apiKey.UpdatedAt.Equal(*expectedUpdatedAt) {
+		return nil, ErrAPIKeyGroupConflict
 	}
 
+	if expectedGroupID != nil {
+		matches := (*expectedGroupID == 0 && apiKey.GroupID == nil) ||
+			(*expectedGroupID > 0 && apiKey.GroupID != nil && *apiKey.GroupID == *expectedGroupID)
+		if !matches {
+			return nil, ErrAPIKeyGroupConflict
+		}
+	}
+	if groupID == nil {
+		return &AdminUpdateAPIKeyGroupIDResult{APIKey: apiKey}, nil
+	}
 	if *groupID < 0 {
 		return nil, infraerrors.BadRequest("INVALID_GROUP_ID", "group_id must be non-negative")
 	}
 
 	result := &AdminUpdateAPIKeyGroupIDResult{}
-
 	if *groupID == 0 {
-		// 0 表示解绑分组（不修改 user_allowed_groups，避免影响用户其他 Key）
+		// 0 表示解绑分组（不修改 user_allowed_groups，避免影响用户其他 Key）。
 		apiKey.GroupID = nil
 		apiKey.Group = nil
 	} else {
-		// 验证目标分组存在且状态为 active
 		group, err := s.groupRepo.GetByID(ctx, *groupID)
 		if err != nil {
 			return nil, err
@@ -1042,7 +1214,6 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 		if group.Status != StatusActive {
 			return nil, infraerrors.BadRequest("GROUP_NOT_ACTIVE", "target group is not active")
 		}
-		// 订阅类型分组：用户须持有该分组的有效订阅才可绑定
 		if group.IsSubscriptionType() {
 			if s.userSubRepo == nil {
 				return nil, infraerrors.InternalServer("SUBSCRIPTION_REPOSITORY_UNAVAILABLE", "subscription repository is not configured")
@@ -1054,63 +1225,76 @@ func (s *adminServiceImpl) AdminUpdateAPIKeyGroupID(ctx context.Context, keyID i
 				return nil, err
 			}
 		}
-
 		gid := *groupID
 		apiKey.GroupID = &gid
 		apiKey.Group = group
 
-		// 专属标准分组：使用事务保证「添加分组权限」与「更新 API Key」的原子性
 		if group.IsExclusive && !group.IsSubscriptionType() {
-			opCtx := ctx
-			var tx *dbent.Tx
-			if s.entClient == nil {
-				logger.LegacyPrintf("service.admin", "Warning: entClient is nil, skipping transaction protection for exclusive group binding")
-			} else {
-				var txErr error
-				tx, txErr = s.entClient.Tx(ctx)
+			if s.userRepo == nil {
+				return nil, infraerrors.InternalServer("USER_REPOSITORY_UNAVAILABLE", "user repository is not configured")
+			}
+			casRepo, guarded := s.apiKeyRepo.(APIKeyGroupCASRepository)
+			if expectedGroupID != nil && !guarded {
+				return nil, infraerrors.InternalServer("API_KEY_GROUP_CAS_UNAVAILABLE", "guarded group binding is not supported")
+			}
+			if s.entClient != nil {
+				tx, txErr := s.entClient.Tx(ctx)
 				if txErr != nil {
 					return nil, fmt.Errorf("begin transaction: %w", txErr)
 				}
 				defer func() { _ = tx.Rollback() }()
-				opCtx = dbent.NewTxContext(ctx, tx)
-			}
-
-			if addErr := s.userRepo.AddGroupToAllowedGroups(opCtx, apiKey.UserID, gid); addErr != nil {
-				return nil, fmt.Errorf("add group to user allowed groups: %w", addErr)
-			}
-			if err := s.apiKeyRepo.Update(opCtx, apiKey, APIKeyUpdateFields{GroupID: true}); err != nil {
-				return nil, fmt.Errorf("update api key: %w", err)
-			}
-			if tx != nil {
+				opCtx := dbent.NewTxContext(ctx, tx)
+				if addErr := s.userRepo.AddGroupToAllowedGroups(opCtx, apiKey.UserID, gid); addErr != nil {
+					return nil, fmt.Errorf("add group to user allowed groups: %w", addErr)
+				}
+				if expectedGroupID != nil {
+					if err := casRepo.UpdateGroupIDIfCurrent(opCtx, apiKey, *expectedGroupID); err != nil {
+						return nil, fmt.Errorf("update api key: %w", err)
+					}
+				} else if err := s.apiKeyRepo.Update(opCtx, apiKey, APIKeyUpdateFields{GroupID: true}); err != nil {
+					return nil, fmt.Errorf("update api key: %w", err)
+				}
 				if err := tx.Commit(); err != nil {
 					return nil, fmt.Errorf("commit transaction: %w", err)
 				}
-			}
 
+				result.AutoGrantedGroupAccess = true
+				result.GrantedGroupID = &gid
+				result.GrantedGroupName = group.Name
+				if s.authCacheInvalidator != nil {
+					s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, apiKey.Key)
+				}
+				result.APIKey = apiKey
+				return result, nil
+			}
+			if expectedGroupID != nil {
+				return nil, infraerrors.InternalServer("GROUP_BINDING_TRANSACTION_UNAVAILABLE", "guarded exclusive group binding requires a transaction")
+			}
+			// Preserve the legacy non-guarded behavior for test doubles and rolling
+			// upgrades. Production wiring supplies entClient and uses the atomic path.
+			if addErr := s.userRepo.AddGroupToAllowedGroups(ctx, apiKey.UserID, gid); addErr != nil {
+				return nil, fmt.Errorf("add group to user allowed groups: %w", addErr)
+			}
 			result.AutoGrantedGroupAccess = true
 			result.GrantedGroupID = &gid
 			result.GrantedGroupName = group.Name
-
-			// 失效认证缓存（在事务提交后执行）
-			if s.authCacheInvalidator != nil {
-				s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, apiKey.Key)
-			}
-
-			result.APIKey = apiKey
-			return result, nil
 		}
 	}
 
-	// 非专属分组 / 解绑：无需事务，单步更新即可
-	if err := s.apiKeyRepo.Update(ctx, apiKey, APIKeyUpdateFields{GroupID: true}); err != nil {
+	if expectedGroupID != nil {
+		casRepo, guarded := s.apiKeyRepo.(APIKeyGroupCASRepository)
+		if !guarded {
+			return nil, infraerrors.InternalServer("API_KEY_GROUP_CAS_UNAVAILABLE", "guarded group binding is not supported")
+		}
+		if err := casRepo.UpdateGroupIDIfCurrent(ctx, apiKey, *expectedGroupID); err != nil {
+			return nil, fmt.Errorf("update api key: %w", err)
+		}
+	} else if err := s.apiKeyRepo.Update(ctx, apiKey, APIKeyUpdateFields{GroupID: true}); err != nil {
 		return nil, fmt.Errorf("update api key: %w", err)
 	}
-
-	// 失效认证缓存
 	if s.authCacheInvalidator != nil {
 		s.authCacheInvalidator.InvalidateAuthCacheByKey(ctx, apiKey.Key)
 	}
-
 	result.APIKey = apiKey
 	return result, nil
 }

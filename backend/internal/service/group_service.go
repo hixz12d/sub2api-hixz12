@@ -9,8 +9,10 @@ import (
 )
 
 var (
-	ErrGroupNotFound = infraerrors.NotFound("GROUP_NOT_FOUND", "group not found")
-	ErrGroupExists   = infraerrors.Conflict("GROUP_EXISTS", "group name already exists")
+	ErrGroupNotFound                = infraerrors.NotFound("GROUP_NOT_FOUND", "group not found")
+	ErrGroupExists                  = infraerrors.Conflict("GROUP_EXISTS", "group name already exists")
+	ErrAccountGroupPriorityConflict = infraerrors.Conflict("ACCOUNT_GROUP_PRIORITY_CONFLICT", "account group priority changed or membership no longer exists")
+	ErrGroupPriorityModeConflict    = infraerrors.Conflict("GROUP_PRIORITY_MODE_CONFLICT", "group priority mode changed concurrently")
 )
 
 type GroupRepository interface {
@@ -37,6 +39,12 @@ type GroupRepository interface {
 	UpdateSortOrders(ctx context.Context, updates []GroupSortOrderUpdate) error
 }
 
+// GroupPriorityModeCASRepository supports guarded mode-only updates without
+// widening the legacy GroupRepository contract used by existing integrations.
+type GroupPriorityModeCASRepository interface {
+	UpdateOpenAIAccountPriorityModeIfCurrent(ctx context.Context, group *Group, expectedMode string) error
+}
+
 type GroupDuplicateRepository interface {
 	// FindByDuplicateOperationID performs the read-only recovery lookup used
 	// after an ambiguous idempotency-store failure.
@@ -46,11 +54,22 @@ type GroupDuplicateRepository interface {
 	CreateFromSource(ctx context.Context, group *Group, sourceGroupID int64) error
 }
 
+type AccountGroupPriorityUpdate struct {
+	AccountID        int64 `json:"account_id"`
+	ExpectedPriority int   `json:"expected_priority"`
+	Priority         int   `json:"priority"`
+}
+
+type AccountGroupPriorityRepository interface {
+	UpdateAccountGroupPriorities(ctx context.Context, groupID int64, updates []AccountGroupPriorityUpdate) ([]AccountGroupPriorityUpdate, error)
+}
+
 // AdminGroupRepository makes the group-duplication write capability an explicit
 // admin-service dependency without widening gateway-only group test doubles.
 type AdminGroupRepository interface {
 	GroupRepository
 	GroupDuplicateRepository
+	AccountGroupPriorityRepository
 }
 
 // GroupSortOrderUpdate 分组排序更新

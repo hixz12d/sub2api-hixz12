@@ -138,6 +138,10 @@ func TestCreateUpstreamLiveCallPreservesSession(t *testing.T) {
 	require.NotEmpty(t, upstream.request.Header.Get("Session-Id"))
 	require.NotEmpty(t, upstream.request.Header.Get("Thread-Id"))
 	require.Empty(t, upstream.request.Header.Get("OpenAI-Beta"))
+	expectedIdentity := resolveOpenAIOutboundIdentityFromSettings(context.Background(), account, nil)
+	require.Equal(t, expectedIdentity.UserAgent, upstream.request.Header.Get("User-Agent"))
+	require.Equal(t, expectedIdentity.Originator, upstream.request.Header.Get("Originator"))
+	require.Equal(t, expectedIdentity.Version, upstream.request.Header.Get("Version"))
 	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(upstream.request.Context()))
 	require.True(t, HTTPUpstreamRedirectsDisabled(upstream.request.Context()))
 }

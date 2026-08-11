@@ -158,6 +158,36 @@ func TestApplyHeaderOverrides(t *testing.T) {
 	require.Equal(t, 1, count)
 }
 
+func TestApplyHeaderOverridesProtectsOpenAIIdentityHeaders(t *testing.T) {
+	acc := headerOverrideTestAccount(PlatformOpenAI, AccountTypeAPIKey, map[string]any{
+		credKeyHeaderOverrideEnabled: true,
+		credKeyHeaderOverrides: map[string]any{
+			"user-agent":        "forged-agent/1.0",
+			"originator":        "forged-originator",
+			"version":           "0.0.1",
+			"openai-beta":       "forged-beta",
+			"x-codex-window-id": "forged-window",
+			"x-custom":          "custom-value",
+		},
+	})
+
+	h := http.Header{}
+	h.Set("User-Agent", "codex_cli_rs/0.146.0")
+	h.Set("Originator", "codex_cli_rs")
+	h.Set("Version", "0.146.0")
+	h.Set("OpenAI-Beta", "responses=experimental")
+	h.Set("X-Codex-Window-ID", "real-window")
+
+	acc.ApplyHeaderOverrides(h)
+
+	require.Equal(t, "codex_cli_rs/0.146.0", h.Get("User-Agent"))
+	require.Equal(t, "codex_cli_rs", h.Get("Originator"))
+	require.Equal(t, "0.146.0", h.Get("Version"))
+	require.Equal(t, "responses=experimental", h.Get("OpenAI-Beta"))
+	require.Equal(t, "real-window", h.Get("X-Codex-Window-ID"))
+	require.Equal(t, "custom-value", getHeaderRaw(h, "x-custom"))
+}
+
 func TestApplyHeaderOverridesNoOpPaths(t *testing.T) {
 	baseline := func() http.Header {
 		h := http.Header{}

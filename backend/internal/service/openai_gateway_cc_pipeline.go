@@ -89,6 +89,16 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 	upstreamModel string,
 ) *UpstreamFailoverError {
 	shouldFailover := s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody)
+	if c == nil && shouldFailover && !s.shouldFailoverUpstreamError(resp.StatusCode) && !isOpenAIRequestBodyTooLargeError(resp.StatusCode, upstreamMsg, respBody) {
+		// Message-only transient classification is request handling policy. Without a
+		// response context there is no safe failover chain to own the retry.
+		return nil
+	}
+	tempUnscheduled := false
+	if c != nil && account != nil && account.Platform != PlatformGrok && !shouldFailover && !IsResponseCommitted(c) && s.rateLimitService != nil {
+		tempUnscheduled = s.rateLimitService.CheckErrorPolicy(ctx, account, resp.StatusCode, respBody, upstreamModel) == ErrorPolicyTempUnscheduled
+		shouldFailover = tempUnscheduled
+	}
 	if account != nil && account.Platform == PlatformGrok {
 		shouldFailover = s.shouldFailoverGrokUpstreamError(resp.StatusCode, respBody)
 	}
@@ -116,8 +126,8 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 		Message:            upstreamMsg,
 		Detail:             upstreamDetail,
 	})
-	shouldDisable := false
-	if account.Platform != PlatformGrok {
+	shouldDisable := tempUnscheduled
+	if account.Platform != PlatformGrok && !tempUnscheduled {
 		shouldDisable = s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, respBody, upstreamModel)
 	}
 	return newOpenAIUpstreamFailoverError(
@@ -197,7 +207,7 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 			}
 		}
 	}
-	if userAgent != "" {
+	if userAgent != "" && account.Platform != PlatformOpenAI {
 		upstreamReq.Header.Set("user-agent", userAgent)
 	}
 
@@ -207,9 +217,15 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 		}
 		applyGrokCacheHeaders(upstreamReq.Header, grokCacheIdentity)
 	}
-	// 账号级请求头覆写：放在所有内置默认头（含 Grok CLI 身份头）之后应用，
-	// 使配置值获得除共享传输层强制头之外的最高优先级。
+	// 账号级请求头覆写必须先于 OpenAI 统一身份收口。
 	account.ApplyHeaderOverrides(upstreamReq.Header)
+	if account.Platform == PlatformOpenAI {
+		policy := openAIOutboundAPIKeyPolicy
+		if account.Type == AccountTypeOAuth {
+			policy = openAIOutboundOAuthPolicy
+		}
+		s.applyOpenAIOutboundIdentityPolicy(ctx, account, upstreamReq.Header, policy)
+	}
 
 	proxyURL := ""
 	if account.Proxy != nil {

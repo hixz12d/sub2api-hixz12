@@ -134,6 +134,8 @@ type apiKeyRepoStubForGroupUpdate struct {
 	key       *APIKey
 	getErr    error
 	updateErr error
+	casErr    error
+	casCalls  int
 	updated   *APIKey // captures what was passed to Update
 }
 
@@ -147,6 +149,19 @@ func (s *apiKeyRepoStubForGroupUpdate) GetByID(_ context.Context, _ int64) (*API
 func (s *apiKeyRepoStubForGroupUpdate) Update(_ context.Context, key *APIKey, _ APIKeyUpdateFields) error {
 	if s.updateErr != nil {
 		return s.updateErr
+	}
+	clone := *key
+	s.updated = &clone
+	return nil
+}
+
+func (s *apiKeyRepoStubForGroupUpdate) UpdateGroupIDIfCurrent(_ context.Context, key *APIKey, expectedGroupID int64) error {
+	s.casCalls++
+	if s.casErr != nil {
+		return s.casErr
+	}
+	if (expectedGroupID == 0 && s.key.GroupID != nil) || (expectedGroupID > 0 && (s.key.GroupID == nil || *s.key.GroupID != expectedGroupID)) {
+		return ErrAPIKeyGroupConflict
 	}
 	clone := *key
 	s.updated = &clone
@@ -411,6 +426,65 @@ func TestAdminService_AdminUpdateAPIKeyGroupID_NegativeGroupID(t *testing.T) {
 	_, err := svc.AdminUpdateAPIKeyGroupID(context.Background(), 1, int64Ptr(-5))
 	require.Error(t, err)
 	require.Equal(t, "INVALID_GROUP_ID", infraerrors.Reason(err))
+}
+
+func TestAdminService_AdminUpdateAPIKeyGroupIDWithExpected_MatchesAndUsesCAS(t *testing.T) {
+	existing := &APIKey{ID: 1, UserID: 42, Key: "sk-test", GroupID: int64Ptr(5)}
+	apiKeyRepo := &apiKeyRepoStubForGroupUpdate{key: existing}
+	groupRepo := &groupRepoStubForGroupUpdate{group: &Group{ID: 10, Name: "Target", Status: StatusActive}}
+	cache := &authCacheInvalidatorStub{}
+	svc := &adminServiceImpl{apiKeyRepo: apiKeyRepo, groupRepo: groupRepo, authCacheInvalidator: cache}
+
+	got, err := svc.AdminUpdateAPIKeyGroupIDWithExpected(context.Background(), 1, int64Ptr(10), int64Ptr(5), nil)
+	require.NoError(t, err)
+	require.Equal(t, 1, apiKeyRepo.casCalls)
+	require.NotNil(t, got.APIKey.GroupID)
+	require.Equal(t, int64(10), *got.APIKey.GroupID)
+	require.NotEmpty(t, cache.keys)
+}
+
+func TestAdminService_AdminUpdateAPIKeyGroupIDWithExpected_RejectsSnapshotDrift(t *testing.T) {
+	existing := &APIKey{ID: 1, UserID: 42, Key: "sk-test", GroupID: int64Ptr(5)}
+	apiKeyRepo := &apiKeyRepoStubForGroupUpdate{key: existing}
+	svc := &adminServiceImpl{apiKeyRepo: apiKeyRepo}
+
+	_, err := svc.AdminUpdateAPIKeyGroupIDWithExpected(context.Background(), 1, int64Ptr(10), int64Ptr(6), nil)
+	require.ErrorIs(t, err, ErrAPIKeyGroupConflict)
+	require.Zero(t, apiKeyRepo.casCalls)
+	require.Nil(t, apiKeyRepo.updated)
+}
+
+func TestAdminService_AdminUpdateAPIKeyGroupIDWithExpected_RejectsUpdatedAtDrift(t *testing.T) {
+	updatedAt := time.Now().UTC()
+	expectedUpdatedAt := updatedAt.Add(-time.Second)
+	existing := &APIKey{ID: 1, UserID: 42, Key: "sk-test", GroupID: int64Ptr(5), UpdatedAt: updatedAt}
+	apiKeyRepo := &apiKeyRepoStubForGroupUpdate{key: existing}
+	svc := &adminServiceImpl{apiKeyRepo: apiKeyRepo}
+
+	_, err := svc.AdminUpdateAPIKeyGroupIDWithExpected(
+		context.Background(), 1, int64Ptr(10), int64Ptr(5), &expectedUpdatedAt,
+	)
+
+	require.ErrorIs(t, err, ErrAPIKeyGroupConflict)
+	require.Zero(t, apiKeyRepo.casCalls)
+}
+
+func TestAdminService_AdminUpdateAPIKeyGroupIDWithExpected_RejectsCASFailureWithoutCacheInvalidation(t *testing.T) {
+	existing := &APIKey{ID: 1, UserID: 42, Key: "sk-test", GroupID: int64Ptr(5)}
+	apiKeyRepo := &apiKeyRepoStubForGroupUpdate{key: existing, casErr: ErrAPIKeyGroupConflict}
+	groupRepo := &groupRepoStubForGroupUpdate{group: &Group{ID: 10, Name: "Target", Status: StatusActive}}
+	cache := &authCacheInvalidatorStub{}
+	svc := &adminServiceImpl{apiKeyRepo: apiKeyRepo, groupRepo: groupRepo, authCacheInvalidator: cache}
+
+	_, err := svc.AdminUpdateAPIKeyGroupIDWithExpected(context.Background(), 1, int64Ptr(10), int64Ptr(5), nil)
+	require.ErrorIs(t, err, ErrAPIKeyGroupConflict)
+	require.Empty(t, cache.keys)
+}
+
+func TestAdminService_AdminUpdateAPIKeyGroupIDWithExpected_RejectsNegativeExpected(t *testing.T) {
+	svc := &adminServiceImpl{}
+	_, err := svc.AdminUpdateAPIKeyGroupIDWithExpected(context.Background(), 1, int64Ptr(10), int64Ptr(-1), nil)
+	require.Equal(t, "INVALID_EXPECTED_GROUP_ID", infraerrors.Reason(err))
 }
 
 func TestAdminService_AdminUpdateAPIKeyGroupID_PointerIsolation(t *testing.T) {

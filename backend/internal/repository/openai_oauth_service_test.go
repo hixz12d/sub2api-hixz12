@@ -184,6 +184,28 @@ func (s *OpenAIOAuthServiceSuite) TestRefreshToken_UseProvidedClientID() {
 	require.Equal(s.T(), []string{customClientID}, seenClientIDs)
 }
 
+func (s *OpenAIOAuthServiceSuite) TestExchangeAndRefreshIdentityHeadersStayPaired() {
+	const userAgent = "codex_vscode/0.151.0 (Windows 11; x86_64) vscode"
+	var received []http.Header
+	s.setupServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received = append(received, r.Header.Clone())
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"access_token":"at","refresh_token":"rt","token_type":"bearer","expires_in":3600}`)
+	}))
+
+	_, err := s.svc.ExchangeCodeWithIdentity(s.ctx, "code", "verifier", openai.DefaultRedirectURI, "", openai.ClientID, userAgent, "mismatched", "0.151.0")
+	require.NoError(s.T(), err)
+	_, err = s.svc.RefreshTokenWithClientIDAndIdentity(s.ctx, "refresh", "", openai.ClientID, userAgent, "mismatched", "0.151.0")
+	require.NoError(s.T(), err)
+
+	require.Len(s.T(), received, 2)
+	for _, headers := range received {
+		require.Equal(s.T(), userAgent, headers.Get("User-Agent"))
+		require.Equal(s.T(), "codex_vscode", headers.Get("Originator"))
+		require.Equal(s.T(), "0.151.0", headers.Get("Version"))
+	}
+}
+
 func (s *OpenAIOAuthServiceSuite) TestNonSuccessStatus_IncludesBody() {
 	s.setupServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)

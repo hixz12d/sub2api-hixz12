@@ -35,9 +35,16 @@ func shouldSkipOpenAIPrivacyEnsure(extra map[string]any) bool {
 	return mode != PrivacyModeFailed && mode != PrivacyModeCFBlocked
 }
 
+func resolveOpenAIPrivacyIdentity(ctx context.Context, identities []openAIOutboundIdentity) openAIOutboundIdentity {
+	if len(identities) > 0 {
+		return identities[0]
+	}
+	return resolveOpenAIOutboundIdentityFromSettings(ctx, nil, nil)
+}
+
 // disableOpenAITraining calls ChatGPT settings API to turn off "Improve the model for everyone".
 // Returns privacy_mode value: "training_off" on success, "cf_blocked" / "failed" on failure.
-func disableOpenAITraining(ctx context.Context, clientFactory PrivacyClientFactory, accessToken, proxyURL string) string {
+func disableOpenAITraining(ctx context.Context, clientFactory PrivacyClientFactory, accessToken, proxyURL string, identities ...openAIOutboundIdentity) string {
 	if accessToken == "" || clientFactory == nil {
 		return ""
 	}
@@ -50,10 +57,14 @@ func disableOpenAITraining(ctx context.Context, clientFactory PrivacyClientFacto
 		slog.Warn("openai_privacy_client_error", "error", err.Error())
 		return PrivacyModeFailed
 	}
+	identity := resolveOpenAIPrivacyIdentity(ctx, identities)
 
 	resp, err := client.R().
 		SetContext(ctx).
 		SetHeader("Authorization", "Bearer "+accessToken).
+		SetHeader("User-Agent", identity.UserAgent).
+		SetHeader("Originator", identity.Originator).
+		SetHeader("Version", identity.Version).
 		SetHeader("Origin", "https://chatgpt.com").
 		SetHeader("Referer", "https://chatgpt.com/").
 		SetHeader("Accept", "application/json").
@@ -102,7 +113,7 @@ var (
 // Used as fallback when id_token doesn't contain these fields (e.g., Mobile RT).
 // orgID is used to match the correct account when multiple accounts exist (e.g., personal + team).
 // Returns nil on any failure (best-effort, non-blocking).
-func fetchChatGPTAccountInfo(ctx context.Context, clientFactory PrivacyClientFactory, accessToken, proxyURL, orgID string) *ChatGPTAccountInfo {
+func fetchChatGPTAccountInfo(ctx context.Context, clientFactory PrivacyClientFactory, accessToken, proxyURL, orgID string, identities ...openAIOutboundIdentity) *ChatGPTAccountInfo {
 	if accessToken == "" || clientFactory == nil {
 		return nil
 	}
@@ -116,10 +127,14 @@ func fetchChatGPTAccountInfo(ctx context.Context, clientFactory PrivacyClientFac
 		return nil
 	}
 
+	identity := resolveOpenAIPrivacyIdentity(ctx, identities)
 	var result map[string]any
 	resp, err := client.R().
 		SetContext(ctx).
 		SetHeader("Authorization", "Bearer "+accessToken).
+		SetHeader("User-Agent", identity.UserAgent).
+		SetHeader("Originator", identity.Originator).
+		SetHeader("Version", identity.Version).
 		SetHeader("Origin", "https://chatgpt.com").
 		SetHeader("Referer", "https://chatgpt.com/").
 		SetHeader("Accept", "application/json").
@@ -210,7 +225,7 @@ func fetchChatGPTAccountInfo(ctx context.Context, clientFactory PrivacyClientFac
 // fetchChatGPTSubscriptionExpiresAt reads the lightweight subscription endpoint used by
 // ChatGPT/Codex clients. Some Plus accounts no longer expose entitlement.expires_at in
 // accounts/check, but this endpoint still returns active_until.
-func fetchChatGPTSubscriptionExpiresAt(ctx context.Context, clientFactory PrivacyClientFactory, accessToken, proxyURL, accountID string) string {
+func fetchChatGPTSubscriptionExpiresAt(ctx context.Context, clientFactory PrivacyClientFactory, accessToken, proxyURL, accountID string, identities ...openAIOutboundIdentity) string {
 	accountID = strings.TrimSpace(accountID)
 	if accessToken == "" || accountID == "" || clientFactory == nil {
 		return ""
@@ -224,6 +239,7 @@ func fetchChatGPTSubscriptionExpiresAt(ctx context.Context, clientFactory Privac
 		slog.Debug("chatgpt_subscription_client_error", "error", err.Error())
 		return ""
 	}
+	identity := resolveOpenAIPrivacyIdentity(ctx, identities)
 
 	var result struct {
 		PlanType    string `json:"plan_type"`
@@ -234,6 +250,9 @@ func fetchChatGPTSubscriptionExpiresAt(ctx context.Context, clientFactory Privac
 	resp, err := client.R().
 		SetContext(ctx).
 		SetHeader("Authorization", "Bearer "+accessToken).
+		SetHeader("User-Agent", identity.UserAgent).
+		SetHeader("Originator", identity.Originator).
+		SetHeader("Version", identity.Version).
 		SetHeader("Origin", "https://chatgpt.com").
 		SetHeader("Referer", "https://chatgpt.com/").
 		SetHeader("Accept", "application/json").

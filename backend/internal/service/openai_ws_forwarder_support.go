@@ -56,7 +56,7 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 			"prewarm_skip account_id=%d conn_id=%s reason=has_previous_response_id previous_response_id=%s",
 			account.ID,
 			connID,
-			truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen),
+			openAIWSStateIDDigest(previousResponseID),
 		)
 		return nil
 	}
@@ -165,14 +165,16 @@ func (s *OpenAIGatewayService) performOpenAIWSGeneratePrewarm(
 	lease.MarkPrewarmed()
 	if prewarmResponseID != "" && stateStore != nil {
 		ttl := s.openAIWSResponseStickyTTL()
-		logOpenAIWSBindResponseAccountWarn(groupID, account.ID, prewarmResponseID, stateStore.BindResponseAccount(ctx, groupID, prewarmResponseID, account.ID, ttl))
-		stateStore.BindResponseConn(prewarmResponseID, lease.ConnID(), ttl)
+		owner, _ := openAIWSStateOwnerFromContext(ctx)
+		owner.AccountID = account.ID
+		logOpenAIWSBindResponseAccountWarn(groupID, account.ID, prewarmResponseID, bindOpenAIWSResponseAccount(ctx, stateStore, groupID, prewarmResponseID, account.ID, ttl))
+		bindOpenAIWSResponseConn(ctx, stateStore, prewarmResponseID, owner, lease.ConnID(), ttl)
 	}
 	logOpenAIWSModeInfo(
 		"prewarm_done account_id=%d conn_id=%s response_id=%s events=%d terminal_events=%d duration_ms=%d",
 		account.ID,
 		connID,
-		truncateOpenAIWSLogValue(prewarmResponseID, openAIWSIDValueMaxLen),
+		openAIWSStateIDDigest(prewarmResponseID),
 		prewarmEventCount,
 		prewarmTerminalCount,
 		time.Since(prewarmStart).Milliseconds(),
@@ -384,6 +386,9 @@ func (s *OpenAIGatewayService) SelectAccountByPreviousResponseID(
 	excludedIDs map[int64]struct{},
 	requireCompact bool,
 ) (*AccountSelectionResult, error) {
+	// 分组利润控制：公共入口装门，保证不经 selectAccountWithScheduler
+	// 的调用方也无法绕过利润准入（scheduler 内部路径已在唯一调度入口装门）。
+	ctx = s.withOpenAIProfitControlGate(ctx, groupID)
 	return s.selectAccountByPreviousResponseIDForCapability(ctx, groupID, previousResponseID, requestedModel, excludedIDs, "", requireCompact)
 }
 
@@ -410,18 +415,18 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapability(
 			derefGroupID(groupID),
 			accountID,
 			responseID,
-			store.BindResponseAccount(ctx, derefGroupID(groupID), responseID, accountID, s.openAIWSResponseStickyTTL()),
+			bindOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID, accountID, s.openAIWSResponseStickyTTL()),
 		)
-		return &AccountSelectionResult{
+		return attachSelectionProfitGate(ctx, &AccountSelectionResult{
 			Account:     account,
 			Acquired:    true,
 			ReleaseFunc: result.ReleaseFunc,
-		}, nil
+		}), nil
 	}
 
 	cfg := s.schedulingConfig()
 	if s.concurrencyService != nil {
-		return &AccountSelectionResult{
+		return attachSelectionProfitGate(ctx, &AccountSelectionResult{
 			Account: account,
 			WaitPlan: &AccountWaitPlan{
 				AccountID:      accountID,
@@ -429,7 +434,7 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapability(
 				Timeout:        cfg.StickySessionWaitTimeout,
 				MaxWaiting:     cfg.StickySessionMaxWaiting,
 			},
-		}, nil
+		}), nil
 	}
 	return nil, nil
 }
@@ -468,7 +473,7 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 		return 0, nil, "", nil
 	}
 
-	accountID, err := store.GetResponseAccount(ctx, derefGroupID(groupID), responseID)
+	accountID, err := getOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
 	if err != nil || accountID <= 0 {
 		return 0, nil, "", nil
 	}
@@ -480,7 +485,7 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 
 	account, err := s.getSchedulableAccount(ctx, accountID)
 	if err != nil || account == nil {
-		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
+		_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
 		return 0, nil, "", nil
 	}
 	// 非 WSv2 场景（如 force_http/全局关闭）不应使用 previous_response_id 粘连，
@@ -489,11 +494,11 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 		return 0, nil, "", nil
 	}
 	if shouldClearStickySession(account, requestedModel) || !account.IsOpenAI() || !account.IsSchedulable() {
-		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
+		_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
 		return 0, nil, "", nil
 	}
 	if !parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {
-		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
+		_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
 		return 0, nil, "", nil
 	}
 	if requestedModel != "" && !account.IsModelSupported(requestedModel) {
@@ -509,18 +514,24 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 	if paused, _ := shouldAutoPauseOpenAIAccountByQuota(ctx, account); paused {
 		return 0, nil, "", nil
 	}
+	// 分组利润控制：与 quota auto-pause 同语义——利润不合格是暂时
+	// 状态（上游倍率/高峰随时间变化），只跳过本次复用、落回普通调度，不删除
+	// 绑定（倍率恢复后可继续按 previous_response_id 粘连）。
+	if vetoed, _ := openAIProfitControlVetoReason(ctx, account); vetoed {
+		return 0, nil, "", nil
+	}
 	if s.schedulerSnapshot != nil && s.accountRepo != nil {
 		latest, latestErr := s.accountRepo.GetByID(ctx, account.ID)
 		if latestErr != nil || latest == nil {
-			_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
+			_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
 			return 0, nil, "", nil
 		}
 		if shouldClearStickySession(latest, requestedModel) || !latest.IsOpenAI() || !latest.IsSchedulable() {
-			_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
+			_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
 			return 0, nil, "", nil
 		}
 		if !parentHealthyForShadow(latest, s.parentAccountLookup(ctx)) {
-			_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
+			_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
 			return 0, nil, "", nil
 		}
 		if requestedModel != "" && !latest.IsModelSupported(requestedModel) {
@@ -532,14 +543,18 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 		if paused, _ := shouldAutoPauseOpenAIAccountByQuota(ctx, latest); paused {
 			return 0, nil, "", nil
 		}
+		// 利润门对最新账号状态复检一次，语义同上：跳过复用、不删绑定。
+		if vetoed, _ := openAIProfitControlVetoReason(ctx, latest); vetoed {
+			return 0, nil, "", nil
+		}
 		if s.isOpenAIAccountRequestRuntimeBlocked(latest, requestedModel) {
-			_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
+			_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
 			return 0, nil, "", nil
 		}
 		account = latest
 	}
 	if requireCompact && openAICompactSupportTier(account) == 0 {
-		_ = store.DeleteResponseAccount(ctx, derefGroupID(groupID), responseID)
+		_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
 		return 0, nil, "", nil
 	}
 	return accountID, account, responseID, store

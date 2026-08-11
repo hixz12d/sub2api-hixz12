@@ -171,6 +171,7 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 				group.FieldID,
 				group.FieldName,
 				group.FieldPlatform,
+				group.FieldOpenaiAccountPriorityMode,
 				group.FieldIsExclusive,
 				group.FieldStatus,
 				group.FieldSubscriptionType,
@@ -190,7 +191,12 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 				group.FieldVideoPrice480p,
 				group.FieldVideoPrice720p,
 				group.FieldVideoPrice1080p,
+				group.FieldVideoModelPrices,
 				group.FieldWebSearchPricePerCall,
+				group.FieldSearchPricePer1k,
+				group.FieldAudioRealtimePricePerMin,
+				group.FieldAudioTtsPricePerMillionChars,
+				group.FieldAudioSttPricePerHour,
 				group.FieldClaudeCodeOnly,
 				group.FieldFallbackGroupID,
 				group.FieldFallbackGroupIDOnInvalidRequest,
@@ -210,6 +216,12 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 				group.FieldPeakStart,
 				group.FieldPeakEnd,
 				group.FieldPeakRateMultiplier,
+				// 分组利润控制：认证快照是调度门 enable 判定的直接来源，
+				// 漏选会让门静默失效；新增快照分组字段时必须同步本投影，
+				// 集成测试对账兜底。
+				group.FieldProfitControlEnabled,
+				group.FieldProfitMinMargin,
+				group.FieldProfitSafetyBuffer,
 			)
 		}).
 		Only(ctx)
@@ -320,6 +332,38 @@ func (r *apiKeyRepository) Update(ctx context.Context, key *service.APIKey, fiel
 	}
 
 	// 使用同一时间戳回填，避免并发删除导致二次查询失败。
+	key.UpdatedAt = now
+	return nil
+}
+
+// UpdateGroupIDIfCurrent changes only the group when the key is still bound to
+// the expected group. expectedGroupID=0 represents an unbound key.
+func (r *apiKeyRepository) UpdateGroupIDIfCurrent(ctx context.Context, key *service.APIKey, expectedGroupID int64) error {
+	client := clientFromContext(ctx, r.client)
+	builder := client.APIKey.Update().
+		Where(apikey.IDEQ(key.ID), apikey.DeletedAtIsNil())
+	if !key.UpdatedAt.IsZero() {
+		builder = builder.Where(apikey.UpdatedAtEQ(key.UpdatedAt))
+	}
+	if expectedGroupID == 0 {
+		builder = builder.Where(apikey.GroupIDIsNil())
+	} else {
+		builder = builder.Where(apikey.GroupIDEQ(expectedGroupID))
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	builder = builder.SetUpdatedAt(now)
+	if key.GroupID == nil {
+		builder = builder.ClearGroupID()
+	} else {
+		builder = builder.SetGroupID(*key.GroupID)
+	}
+	affected, err := builder.Save(ctx)
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return service.ErrAPIKeyGroupConflict
+	}
 	key.UpdatedAt = now
 	return nil
 }
@@ -940,6 +984,7 @@ func groupEntityToService(g *dbent.Group) *service.Group {
 		Name:                            g.Name,
 		Description:                     derefString(g.Description),
 		Platform:                        g.Platform,
+		OpenAIAccountPriorityMode:       g.OpenaiAccountPriorityMode,
 		RateMultiplier:                  g.RateMultiplier,
 		IsExclusive:                     g.IsExclusive,
 		Status:                          g.Status,
@@ -963,7 +1008,12 @@ func groupEntityToService(g *dbent.Group) *service.Group {
 		VideoPrice480P:                  g.VideoPrice480p,
 		VideoPrice720P:                  g.VideoPrice720p,
 		VideoPrice1080P:                 g.VideoPrice1080p,
+		VideoModelPrices:                service.NormalizeVideoModelPrices(g.VideoModelPrices),
 		WebSearchPricePerCall:           g.WebSearchPricePerCall,
+		SearchPricePer1k:                g.SearchPricePer1k,
+		AudioRealtimePricePerMin:        g.AudioRealtimePricePerMin,
+		AudioTTSPricePerMillionChars:    g.AudioTtsPricePerMillionChars,
+		AudioSTTPricePerHour:            g.AudioSttPricePerHour,
 		DefaultValidityDays:             g.DefaultValidityDays,
 		ClaudeCodeOnly:                  g.ClaudeCodeOnly,
 		FallbackGroupID:                 g.FallbackGroupID,
@@ -987,6 +1037,9 @@ func groupEntityToService(g *dbent.Group) *service.Group {
 		PeakStart:                       g.PeakStart,
 		PeakEnd:                         g.PeakEnd,
 		PeakRateMultiplier:              g.PeakRateMultiplier,
+		ProfitControlEnabled:            g.ProfitControlEnabled,
+		ProfitMinMargin:                 g.ProfitMinMargin,
+		ProfitSafetyBuffer:              g.ProfitSafetyBuffer,
 		CreatedAt:                       g.CreatedAt,
 		UpdatedAt:                       g.UpdatedAt,
 	}

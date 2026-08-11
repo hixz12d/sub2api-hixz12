@@ -231,7 +231,7 @@ func (c *codexModelsManifestCache) set(key string, manifest *CodexModelsManifest
 // After validating the stable top-level envelope, OAuth response bodies are
 // passed through verbatim. Custom API key manifests receive only the narrowly
 // scoped compatibility adjustments required by custom-provider Codex clients.
-func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, account *Account, clientVersion, ifNoneMatch string) (*CodexModelsManifest, error) {
+func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, account *Account, _ string, ifNoneMatch string) (*CodexModelsManifest, error) {
 	if account == nil {
 		return nil, infraerrors.New(http.StatusInternalServerError, "OPENAI_CODEX_MODELS_ACCOUNT_REQUIRED", "account is required")
 	}
@@ -239,11 +239,10 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 	if err != nil {
 		return nil, infraerrors.Newf(http.StatusInternalServerError, "OPENAI_CODEX_MODELS_CREDENTIALS_FAILED", "resolve credential account: %v", err)
 	}
-
-	clientVersion = strings.TrimSpace(clientVersion)
-	if clientVersion == "" {
-		clientVersion = openAICodexProbeVersion
-	}
+	ctx = s.snapshotOpenAIOutboundIdentity(ctx, credAccount, "")
+	identity := s.resolveOpenAIOutboundIdentity(ctx, credAccount)
+	// Keep the manifest URL, User-Agent, Originator, and Version on one identity.
+	clientVersion := identity.Version
 
 	requestEndpoint := chatgptCodexModelsURL
 	authToken := ""
@@ -304,9 +303,7 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 		setOpenAIChatGPTAccountHeaders(headers, credAccount)
 	}
 	headers.Set("Accept", "application/json")
-	headers.Set("Originator", "codex_cli_rs")
-	headers.Set("Version", clientVersion)
-	headers.Set("User-Agent", codexCLIUserAgent)
+	applyResolvedOpenAIOutboundIdentity(headers, identity, !useAPIKeyUpstream)
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {
@@ -347,6 +344,7 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 		}
 	}
 	setOpenAIChatGPTAccountHeaders(request.headers, credAccount)
+	applyResolvedOpenAIOutboundIdentity(request.headers, identity, !useAPIKeyUpstream)
 	return s.fetchCodexModelsManifestUpstream(ctx, request, ifNoneMatch)
 }
 

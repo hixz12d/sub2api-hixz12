@@ -2,6 +2,7 @@ package admin
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -24,8 +25,10 @@ func NewAdminAPIKeyHandler(adminService service.AdminService) *AdminAPIKeyHandle
 
 // AdminUpdateAPIKeyGroupRequest represents the request to update an API key.
 type AdminUpdateAPIKeyGroupRequest struct {
-	GroupID             *int64 `json:"group_id"`               // nil=不修改, 0=解绑, >0=绑定到目标分组
-	ResetRateLimitUsage *bool  `json:"reset_rate_limit_usage"` // true=重置 5h/1d/7d 限速用量
+	GroupID             *int64     `json:"group_id"`               // nil=不修改, 0=解绑, >0=绑定到目标分组
+	ExpectedGroupID     *int64     `json:"expected_group_id"`      // nil=兼容旧式无条件更新, 0=期望未绑定, >0=期望当前分组
+	ExpectedUpdatedAt   *time.Time `json:"expected_updated_at"`    // optional immutable snapshot guard for migration tooling
+	ResetRateLimitUsage *bool      `json:"reset_rate_limit_usage"` // true=重置 5h/1d/7d 限速用量
 }
 
 // UpdateGroup handles updating an API key's admin-managed fields.
@@ -43,6 +46,23 @@ func (h *AdminAPIKeyHandler) UpdateGroup(c *gin.Context) {
 		return
 	}
 
+	if req.ExpectedGroupID != nil && req.GroupID == nil {
+		response.BadRequest(c, "expected_group_id requires group_id")
+		return
+	}
+	if req.ExpectedUpdatedAt != nil && req.ExpectedGroupID == nil {
+		response.BadRequest(c, "expected_updated_at requires expected_group_id")
+		return
+	}
+	if req.ExpectedGroupID != nil && *req.ExpectedGroupID < 0 {
+		response.BadRequest(c, "expected_group_id must be non-negative")
+		return
+	}
+	if req.ExpectedGroupID != nil && req.ResetRateLimitUsage != nil && *req.ResetRateLimitUsage {
+		response.BadRequest(c, "expected_group_id cannot be combined with reset_rate_limit_usage")
+		return
+	}
+
 	var resetKey *service.APIKey
 	if req.ResetRateLimitUsage != nil && *req.ResetRateLimitUsage {
 		resetKey, err = h.adminService.AdminResetAPIKeyRateLimitUsage(c.Request.Context(), keyID)
@@ -52,7 +72,12 @@ func (h *AdminAPIKeyHandler) UpdateGroup(c *gin.Context) {
 		}
 	}
 
-	result, err := h.adminService.AdminUpdateAPIKeyGroupID(c.Request.Context(), keyID, req.GroupID)
+	var result *service.AdminUpdateAPIKeyGroupIDResult
+	if req.ExpectedGroupID != nil {
+		result, err = h.adminService.AdminUpdateAPIKeyGroupIDWithExpected(c.Request.Context(), keyID, req.GroupID, req.ExpectedGroupID, req.ExpectedUpdatedAt)
+	} else {
+		result, err = h.adminService.AdminUpdateAPIKeyGroupID(c.Request.Context(), keyID, req.GroupID)
+	}
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

@@ -206,6 +206,8 @@ func registerAgentIdentityTask(ctx context.Context, account *Account) (string, e
 		return "", errors.New("failed to build agent task registration request")
 	}
 	req.Header.Set("Content-Type", "application/json")
+	identity := resolveOpenAIOutboundIdentityWithPolicy(ctx, account, nil, nil, false, req.Header.Get("User-Agent"))
+	applyResolvedOpenAIOutboundIdentityWithPolicy(req.Header, identity, openAIOutboundOAuthPolicy)
 	req.Header.Set("Accept", "application/json")
 	resp, err := client.Do(req)
 	if err != nil {
@@ -436,6 +438,14 @@ func (s *OpenAIGatewayService) refreshOpenAIAgentIdentityHeaders(ctx context.Con
 		return nil, err
 	}
 	refreshed.Set("Authorization", authHeaders.Get("Authorization"))
+	identity, ok := openAIOutboundIdentityFromContext(ctx)
+	if !ok {
+		identity, ok = validOpenAIOutboundIdentity(headers.Get("User-Agent"))
+	}
+	if !ok {
+		identity = s.resolveOpenAIOutboundIdentity(ctx, credAccount)
+	}
+	applyResolvedOpenAIOutboundIdentityWithPolicy(refreshed, identity, openAIOutboundOAuthPolicy)
 	return refreshed, nil
 }
 

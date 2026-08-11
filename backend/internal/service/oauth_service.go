@@ -18,10 +18,21 @@ type OpenAIOAuthClient interface {
 	RefreshTokenWithClientID(ctx context.Context, refreshToken, proxyURL string, clientID string) (*openai.TokenResponse, error)
 }
 
+// OpenAIOAuthIdentityClient is an optional extension implemented by the
+// repository OAuth client. It keeps the legacy client interface compatible
+// while allowing token exchange/refresh to use the shared outbound identity.
+type OpenAIOAuthIdentityClient interface {
+	ExchangeCodeWithIdentity(ctx context.Context, code, codeVerifier, redirectURI, proxyURL, clientID, userAgent, originator, version string) (*openai.TokenResponse, error)
+	RefreshTokenWithClientIDAndIdentity(ctx context.Context, refreshToken, proxyURL, clientID, userAgent, originator, version string) (*openai.TokenResponse, error)
+}
+
 // GrokOAuthClient interface for xAI/Grok OAuth operations.
 type GrokOAuthClient interface {
 	ExchangeCode(ctx context.Context, code, codeVerifier, redirectURI, proxyURL, clientID string) (*xai.TokenResponse, error)
 	RefreshToken(ctx context.Context, refreshToken, proxyURL, clientID string) (*xai.TokenResponse, error)
+	// LoginWithPassword exchanges email/password for a short-lived Web SSO cookie.
+	// Callers must convert via ConvertSSOToBuild and must not persist password or raw SSO.
+	LoginWithPassword(ctx context.Context, email, password, proxyURL string) (*GrokPasswordLoginResult, error)
 	ConvertSSOToBuild(ctx context.Context, ssoToken, proxyURL string) (*xai.TokenResponse, error)
 }
 

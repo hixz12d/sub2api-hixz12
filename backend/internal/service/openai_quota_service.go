@@ -34,6 +34,7 @@ const (
 	openaiQuotaSecFetchSite     = "none"
 	openaiQuotaSecFetchMode     = "no-cors"
 	openaiQuotaSecFetchDest     = "empty"
+	openaiQuotaResetCreditsKey  = "codex_reset_credit_snapshot"
 )
 
 // OpenAIRateLimitWindow describes a single rate-limit window returned by
@@ -141,7 +142,20 @@ func NewOpenAIQuotaService(
 // QueryUsage fetches the latest rate-limit/usage snapshot for the given OpenAI
 // OAuth account. Returns infraerrors so the handler layer can map them to
 // stable error codes / HTTP statuses.
+func (s *OpenAIQuotaService) snapshotOutboundIdentity(ctx context.Context, accountID int64) context.Context {
+	if _, ok := openAIOutboundIdentityFromContext(ctx); ok || s == nil || s.accountRepo == nil {
+		return ctx
+	}
+	account, err := s.accountRepo.GetByID(ctx, accountID)
+	if err != nil || account == nil {
+		return ctx
+	}
+	identity := resolveOpenAIOutboundIdentityWithPolicy(ctx, account, s.accountRepo, nil, false, "")
+	return withOpenAIOutboundIdentitySnapshot(ctx, identity)
+}
+
 func (s *OpenAIQuotaService) QueryUsage(ctx context.Context, accountID int64) (*OpenAIQuotaUsage, error) {
+	ctx = s.snapshotOutboundIdentity(ctx, accountID)
 	accessToken, chatGPTAccountID, proxyURL, fedRAMP, err := s.prepareUpstreamCall(ctx, accountID)
 	if err != nil {
 		return nil, err
@@ -206,6 +220,37 @@ func (s *OpenAIQuotaService) QueryUsage(ctx context.Context, accountID int64) (*
 	return &payload, nil
 }
 
+// CacheResetCreditsSnapshot persists a complete reset-credit snapshot after an
+// explicit UI refresh. The snapshot is written to the account that was queried
+// (for a spark shadow that is the shadow row, even though the credits belong to
+// its parent) because it is a per-row display cache: each row caches exactly
+// what its own card renders, and shadows cannot consume credits anyway.
+//
+// Missing expiration details leave the old cache intact:
+// a snapshot claiming N>0 available credits without their expiration timestamps
+// cannot be aged out by readers, so it would keep showing (and offering to
+// consume) credits that already expired. Callers must treat this rejection as a
+// partial success — the upstream read itself is still valid.
+func (s *OpenAIQuotaService) CacheResetCreditsSnapshot(ctx context.Context, accountID int64, credits *OpenAIRateLimitResetCredits) error {
+	if credits == nil || (credits.AvailableCount > 0 && len(credits.Credits) == 0) {
+		return infraerrors.New(
+			http.StatusBadGateway,
+			"OPENAI_QUOTA_RESET_CREDITS_REFRESH_FAILED",
+			"failed to refresh reset-credit expiration details; cached data was preserved",
+		)
+	}
+	if err := s.accountRepo.UpdateExtra(ctx, accountID, map[string]any{
+		openaiQuotaResetCreditsKey: credits,
+	}); err != nil {
+		return infraerrors.New(
+			http.StatusInternalServerError,
+			"OPENAI_QUOTA_CACHE_WRITE_FAILED",
+			"failed to cache reset-credit details",
+		).WithCause(err)
+	}
+	return nil
+}
+
 func (s *OpenAIQuotaService) queryResetCreditDetails(ctx context.Context, client *req.Client, accessToken, chatGPTAccountID string, fedRAMP bool, accountID int64) *openAIRateLimitResetCreditDetails {
 	quotaHeaders, _, headerErr := s.buildCodexQuotaHeaders(ctx, accountID, accessToken, chatGPTAccountID, fedRAMP)
 	if headerErr != nil {
@@ -259,6 +304,7 @@ func (s *OpenAIQuotaService) ResetCredit(ctx context.Context, accountID int64) (
 			return nil, ErrSparkShadowResetNotSupported
 		}
 	}
+	ctx = s.snapshotOutboundIdentity(ctx, accountID)
 
 	accessToken, chatGPTAccountID, proxyURL, fedRAMP, err := s.prepareUpstreamCall(ctx, accountID)
 	if err != nil {
@@ -450,6 +496,7 @@ func (s *OpenAIQuotaService) buildCodexQuotaHeaders(ctx context.Context, account
 			return nil, "", fmt.Errorf("agent identity shadow credentials are unavailable")
 		}
 	}
+	applyResolvedOpenAIOutboundIdentityToMap(ctx, account, headers)
 	if !account.IsOpenAIAgentIdentity() {
 		return headers, "", nil
 	}
@@ -487,7 +534,6 @@ func buildCodexCommonHeaders(accessToken, chatGPTAccountID string, fedRAMP bool)
 		"chatgpt-account-id": chatGPTAccountID,
 		"openai-beta":        openaiQuotaCodexBeta,
 		"oai-language":       openaiQuotaCodexLanguageTag,
-		"originator":         openaiQuotaCodexOriginator,
 		"accept":             "application/json",
 		"sec-fetch-site":     openaiQuotaSecFetchSite,
 		"sec-fetch-mode":     openaiQuotaSecFetchMode,

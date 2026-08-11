@@ -54,7 +54,16 @@ func TestForwardAsAnthropic_ForceChatCompletionsPreservesFinalModelReasoningEffo
 		mapped     string
 		effortJSON string
 		wantEffort string
+		maxPolicy  string
 	}{
+		{
+			name:       "policy caps converted effort",
+			model:      "gpt-5.6-luna",
+			mapped:     "gpt-5.6-luna",
+			effortJSON: `,"output_config":{"effort":"max"}`,
+			wantEffort: "medium",
+			maxPolicy:  "medium",
+		},
 		{
 			name:       "GPT56 max",
 			model:      "luna",
@@ -103,7 +112,11 @@ func TestForwardAsAnthropic_ForceChatCompletionsPreservesFinalModelReasoningEffo
 			account.Credentials["model_mapping"] = map[string]any{tt.model: tt.mapped}
 
 			svc := &OpenAIGatewayService{cfg: rawChatCompletionsTestConfig(), httpUpstream: upstream}
-			result, err := svc.ForwardAsAnthropic(context.Background(), c, account, []byte(body), "", "")
+			ctx := context.Background()
+			if tt.maxPolicy != "" {
+				ctx = WithOpenAIReasoningEffortPolicy(ctx, tt.maxPolicy, nil)
+			}
+			result, err := svc.ForwardAsAnthropic(ctx, c, account, []byte(body), "", "")
 			require.NoError(t, err)
 			require.NotNil(t, result)
 			require.Equal(t, tt.mapped, gjson.GetBytes(upstream.lastBody, "model").String())
@@ -142,6 +155,10 @@ func TestForwardAsAnthropic_ForceChatCompletionsNonStreaming(t *testing.T) {
 	require.Equal(t, "hello", gjson.GetBytes(upstream.lastBody, "messages.0.content").String())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "input").Exists())
 	require.True(t, gjson.GetBytes(upstream.lastBody, "stream_options").Exists() == false)
+	expectedIdentity := resolveOpenAIOutboundIdentityFromSettings(context.Background(), forceChatMessagesFallbackAccount(), nil)
+	require.Equal(t, expectedIdentity.UserAgent, upstream.lastReq.Header.Get("User-Agent"))
+	require.Empty(t, upstream.lastReq.Header.Get("Originator"))
+	require.Empty(t, upstream.lastReq.Header.Get("Version"))
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Equal(t, "assistant", gjson.Get(rec.Body.String(), "role").String())
@@ -420,7 +437,7 @@ func TestForwardAsAnthropic_ForceChatCompletionsStreamReadErrorSkipsFinalize(t *
 func TestForwardAsAnthropic_ResponsesSupportedAccountStillUsesResponsesEndpoint(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	body := []byte(`{"model":"gpt-5.4","max_tokens":16,"messages":[{"role":"user","content":"hello"}],"stream":false}`)
+	body := []byte(`{"model":"gpt-5.4","max_tokens":16,"messages":[{"role":"user","content":"hello"}],"output_config":{"effort":"high"},"stream":false}`)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", bytes.NewReader(body))
@@ -449,16 +466,21 @@ func TestForwardAsAnthropic_ResponsesSupportedAccountStillUsesResponsesEndpoint(
 		openai_compat.ExtraKeyResponsesSupported: true,
 	}
 
-	result, err := svc.ForwardAsAnthropic(context.Background(), c, account, body, "", "")
+	ctx := WithOpenAIReasoningEffortPolicy(context.Background(), "medium", nil)
+	result, err := svc.ForwardAsAnthropic(ctx, c, account, body, "", "")
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.True(t, strings.HasSuffix(upstream.lastReq.URL.Path, "/responses"),
 		"responses-capable account must stay on /v1/responses, got %s", upstream.lastReq.URL.String())
 	require.True(t, gjson.GetBytes(upstream.lastBody, "input").Exists())
+	require.Equal(t, "medium", gjson.GetBytes(upstream.lastBody, "reasoning.effort").String())
+	require.NotNil(t, result.ReasoningEffort)
+	require.Equal(t, "medium", *result.ReasoningEffort)
 	require.False(t, gjson.GetBytes(upstream.lastBody, "messages").Exists())
-	require.Equal(t, "third-party-client/1.0.0", upstream.lastReq.Header.Get("User-Agent"))
-	require.Equal(t, "opencode", upstream.lastReq.Header.Get("originator"))
-	require.Empty(t, upstream.lastReq.Header.Get("version"))
+	expectedIdentity := resolveOpenAIOutboundIdentityFromSettings(context.Background(), account, nil)
+	require.Equal(t, expectedIdentity.UserAgent, upstream.lastReq.Header.Get("User-Agent"))
+	require.Empty(t, upstream.lastReq.Header.Get("Originator"))
+	require.Empty(t, upstream.lastReq.Header.Get("Version"))
 	require.Empty(t, upstream.lastReq.Header.Get("OpenAI-Beta"))
 	require.Equal(t, "ok", gjson.Get(rec.Body.String(), "content.0.text").String())
 }

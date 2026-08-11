@@ -17,6 +17,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	pkghttputil "github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	coderws "github.com/coder/websocket"
@@ -126,6 +127,33 @@ func TestOpenAIHandleStreamingAwareErrorWithCode_EmitsStableClassification(t *te
 	require.Equal(t, http.StatusBadGateway, streamErr.IntendedStatus)
 }
 
+func TestEnsureOpenAIStreamReadErrorResponse_ResponsesEmitsSingleSanitizedFailure(t *testing.T) {
+	c, w := newGinContextForEndpoint(t, EndpointResponses)
+	partial := "data: {\"type\":\"response.output_text.delta\",\"delta\":\"partial\"}\n\n"
+	_, err := c.Writer.WriteString(partial)
+	require.NoError(t, err)
+
+	streamErr := service.NewOpenAIUpstreamStreamReadError(
+		errors.New("stream error: stream ID 87; INTERNAL_ERROR; received from peer"),
+	)
+	h := &OpenAIGatewayHandler{}
+	require.True(t, h.ensureOpenAIStreamReadErrorResponse(c, streamErr, true))
+
+	body := w.Body.String()
+	require.True(t, strings.HasPrefix(body, partial))
+	require.Equal(t, 1, strings.Count(body, "event: response.failed\n"))
+	require.NotContains(t, body, `"type":"error"`)
+	require.NotContains(t, body, "sequence_number")
+	require.NotContains(t, body, "stream ID")
+	require.NotContains(t, body, "INTERNAL_ERROR")
+
+	terminalAt := strings.Index(body, "event: response.failed\n")
+	require.NotEqual(t, -1, terminalAt)
+	_, errObj := parseResponsesFailedSSE(t, body[terminalAt:])
+	require.Equal(t, service.OpenAIUpstreamHTTP2StreamErrorCode, errObj["code"])
+	require.Equal(t, "Upstream HTTP/2 stream failed", errObj["message"])
+}
+
 func TestOpenAIForwardSucceededForScheduling(t *testing.T) {
 	require.True(t, openAIForwardSucceededForScheduling(nil))
 	require.True(t, openAIForwardSucceededForScheduling(&service.OpenAIForwardResult{}))
@@ -137,6 +165,29 @@ func TestOpenAIForwardSucceededForScheduling(t *testing.T) {
 		OpenAIWSMode:          true,
 		UpstreamTerminalEvent: "response.failed",
 	}))
+}
+
+func TestOpenAIForwardErrorShouldAbortForClientDisconnectPreservesPartialImageResult(t *testing.T) {
+	newCanceledContext := func() (*gin.Context, *httptest.ResponseRecorder) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		c.Request = httptest.NewRequest(http.MethodPost, EndpointResponses, nil).WithContext(ctx)
+		return c, w
+	}
+
+	partialImageCtx, _ := newCanceledContext()
+	require.False(t, openAIForwardErrorShouldAbortForClientDisconnect(
+		partialImageCtx,
+		&service.OpenAIForwardResult{ImageCount: 1},
+	))
+	require.NotEqual(t, statusClientClosedRequest, partialImageCtx.Writer.Status())
+
+	noResultCtx, _ := newCanceledContext()
+	require.True(t, openAIForwardErrorShouldAbortForClientDisconnect(noResultCtx, nil))
+	require.Equal(t, statusClientClosedRequest, noResultCtx.Writer.Status())
 }
 
 func TestOpenAIResponsesRequiredCapability(t *testing.T) {
@@ -643,6 +694,9 @@ func TestResolveOpenAIMessagesDispatchMappedModel(t *testing.T) {
 	})
 
 	t.Run("grok_group_maps_claude_cli_model_to_grok_default", func(t *testing.T) {
+		original := xai.RuntimeModelMappingOptions()
+		t.Cleanup(func() { xai.SetRuntimeModelMappingOptions(original) })
+		xai.SetRuntimeModelMappingOptions(xai.ModelMappingOptions{EnableCrossClientMap: true})
 		apiKey := &service.APIKey{
 			Group: &service.Group{
 				Platform: service.PlatformGrok,

@@ -81,6 +81,7 @@ func (s *OpenAIGatewayService) ForwardCountTokensAsAnthropic(
 	body []byte,
 	defaultMappedModel string,
 ) error {
+	ctx = s.snapshotOpenAIOutboundIdentity(ctx, account, c.GetHeader("User-Agent"))
 	if account == nil {
 		writeAnthropicCountTokensError(c, http.StatusServiceUnavailable, "api_error", "No available OpenAI accounts")
 		return fmt.Errorf("count_tokens: missing account")
@@ -272,8 +273,13 @@ func (s *OpenAIGatewayService) buildInputTokensUpstreamRequest(
 		}
 	}
 
-	// 账号级请求头覆写（仅 openai api_key 账号启用时生效；OAuth 路径 no-op）
+	// 账号级请求头覆写必须先于统一身份收口。
 	account.ApplyHeaderOverrides(req.Header)
+	policy := openAIOutboundOAuthPolicy
+	if account.Type == AccountTypeAPIKey {
+		policy = openAIOutboundAPIKeyPolicy
+	}
+	s.applyOpenAIOutboundIdentityPolicy(ctx, account, req.Header, policy)
 
 	return req, nil
 }
@@ -345,10 +351,24 @@ func isOpenAIOAuthInputTokensUnsupported(statusCode int, body []byte) bool {
 		return true
 	}
 
+	// OAuth's platform endpoint can be blocked by an upstream proxy before it
+	// reaches the API and return an HTML 403 page without a structured error.
+	// Treat that endpoint-level response like the other unsupported cases so
+	// count_tokens remains a local, non-health-affecting convenience request.
+	if statusCode == http.StatusForbidden && isHTMLResponse(body) {
+		return true
+	}
+
 	return strings.Contains(msg, "input_tokens") &&
 		(strings.Contains(msg, "not found") ||
 			strings.Contains(msg, "not supported") ||
 			strings.Contains(msg, "unsupported"))
+}
+
+func isHTMLResponse(body []byte) bool {
+	trimmed := strings.TrimSpace(strings.ToLower(string(body)))
+	return strings.HasPrefix(trimmed, "<!doctype html") ||
+		strings.HasPrefix(trimmed, "<html")
 }
 
 func estimateOpenAIInputTokens(req openAIInputTokensCountRequest) (int, error) {

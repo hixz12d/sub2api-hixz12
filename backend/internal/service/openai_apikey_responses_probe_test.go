@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestProbeOpenAIAPIKeyResponsesSupportUsesCodexProbeHeaders(t *testing.T) {
+func TestProbeOpenAIAPIKeyResponsesSupportUsesAPIKeyIdentity(t *testing.T) {
 	updateCalls := make(chan map[string]any, 1)
 	account := Account{
 		ID:          96,
@@ -44,7 +44,9 @@ func TestProbeOpenAIAPIKeyResponsesSupportUsesCodexProbeHeaders(t *testing.T) {
 
 	require.NotNil(t, upstream.lastReq)
 	require.Equal(t, "https://compat-upstream.example/v1/responses", upstream.lastReq.URL.String())
-	requireOpenAICodexProbeHeaders(t, upstream.lastReq.Header)
+	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
+	require.Empty(t, upstream.lastReq.Header.Get("Originator"))
+	require.Empty(t, upstream.lastReq.Header.Get("Version"))
 	updates := <-updateCalls
 	require.Equal(t, true, updates[openai_compat.ExtraKeyResponsesSupported])
 }

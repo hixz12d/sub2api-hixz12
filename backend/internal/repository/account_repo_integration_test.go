@@ -714,10 +714,20 @@ func (s *AccountRepoSuite) TestGroupBinding_And_BindGroups() {
 	s.Require().NoError(err, "GetGroups after remove")
 	s.Require().Empty(groups, "expected 0 groups after remove")
 
+	s.Require().NoError(s.repo.AddToGroup(s.ctx, account.ID, g1.ID, 10), "re-add g1")
 	s.Require().NoError(s.repo.BindGroups(s.ctx, account.ID, []int64{g1.ID, g2.ID}), "BindGroups")
 	groups, err = s.repo.GetGroups(s.ctx, account.ID)
 	s.Require().NoError(err, "GetGroups after bind")
 	s.Require().Len(groups, 2, "expected 2 groups after bind")
+
+	bindings, err := s.client.AccountGroup.Query().
+		Where(accountgroup.AccountIDEQ(account.ID)).
+		Order(dbent.Asc(accountgroup.FieldGroupID)).
+		All(s.ctx)
+	s.Require().NoError(err)
+	s.Require().Len(bindings, 2)
+	s.Equal(10, bindings[0].Priority, "retained binding priority must survive account edits")
+	s.Equal(50, bindings[1].Priority, "new bindings use the neutral default")
 }
 
 func (s *AccountRepoSuite) TestBindGroups_EmptyList() {
