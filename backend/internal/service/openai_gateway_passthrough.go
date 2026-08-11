@@ -346,6 +346,18 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	body []byte,
 	token string,
 ) (*http.Request, error) {
+	accountIdentityPromptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
+	accountIdentitySessionID := resolveOpenAIWSSessionHeaders(c, accountIdentityPromptCacheKey).SessionID
+	if accountIdentitySessionID == "" && isOpenAIResponsesCompactPath(c) {
+		accountIdentitySessionID = resolveOpenAICompactSessionID(c)
+	}
+	if account.Type == AccountTypeOAuth {
+		accountScopedBody, identityErr := s.applyOpenAIAccountScopedBody(ctx, c, account, body, accountIdentitySessionID)
+		if identityErr != nil {
+			return nil, identityErr
+		}
+		body = accountScopedBody
+	}
 	targetURL := openaiPlatformAPIURL
 	switch account.Type {
 	case AccountTypeOAuth:
@@ -427,10 +439,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 			clientConversationID = promptCacheKey
 		}
 		if clientSessionID != "" {
-			req.Header.Set("session_id", isolateOpenAISessionID(apiKeyID, clientSessionID))
+			req.Header.Set("session_id", s.openAIOutboundSessionID(account, apiKeyID, clientSessionID))
 		}
 		if clientConversationID != "" {
-			req.Header.Set("conversation_id", isolateOpenAISessionID(apiKeyID, clientConversationID))
+			req.Header.Set("conversation_id", s.openAIOutboundSessionID(account, apiKeyID, clientConversationID))
 		}
 	} else if isOpenAIResponsesCompactPath(c) {
 		// 透传白名单会放行客户端的 Accept: text/event-stream；compact 上游是
@@ -452,6 +464,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		policy = openAIOutboundAPIKeyCodexVersionPolicy
 	}
 	s.applyOpenAIOutboundIdentityPolicy(ctx, account, req.Header, policy)
+	s.applyOpenAIAccountScopedHeaders(ctx, c, account, req.Header, accountIdentitySessionID)
 	setOpenAICodexRoutingHintFromBody(req.Header, account, body)
 	logOpenAIRoutingDiagnosticsFromBody(ctx, account, "http_passthrough", req.Header, body, "not_applicable")
 

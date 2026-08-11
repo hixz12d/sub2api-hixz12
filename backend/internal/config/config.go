@@ -879,6 +879,11 @@ const (
 	ImageConcurrencyOverflowModeWait   = "wait"
 )
 
+// GatewayOpenAIAccountScopedIdentityConfig controls account-scoped identity sent to OpenAI OAuth upstreams.
+type GatewayOpenAIAccountScopedIdentityConfig struct {
+	Enabled bool `mapstructure:"enabled"`
+}
+
 // GatewayConfig API网关相关配置
 type GatewayConfig struct {
 	// 等待上游响应头的超时时间（秒），0表示无超时
@@ -934,6 +939,9 @@ type GatewayConfig struct {
 	// OpenAICompactModel: /responses/compact 上游使用的模型。
 	// compact 端点支持模型滞后于普通 /responses 时，可用该配置降级规避上游错误。
 	OpenAICompactModel string `mapstructure:"openai_compact_model"`
+	// OpenAIAccountScopedIdentity isolates OAuth protocol identity by the selected upstream account.
+	// The account extra key openai_account_scoped_identity_enabled can override this for canary rollout.
+	OpenAIAccountScopedIdentity GatewayOpenAIAccountScopedIdentityConfig `mapstructure:"openai_account_scoped_identity"`
 	// OpenAIWS: OpenAI Responses WebSocket 配置（默认开启，可按需回滚到 HTTP）
 	OpenAIWS GatewayOpenAIWSConfig `mapstructure:"openai_ws"`
 	// Live: ChatGPT Frameless Live 会话配置。
@@ -2283,6 +2291,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.codex_image_generation_bridge_enabled", false)
 	viper.SetDefault("gateway.openai_passthrough_allow_timeout_headers", false)
 	viper.SetDefault("gateway.openai_compact_model", "gpt-5.4")
+	viper.SetDefault("gateway.openai_account_scoped_identity.enabled", false)
 	viper.SetDefault("gateway.live.max_session_duration_seconds", 3600)
 	// OpenAI Responses WebSocket（默认开启；可通过 force_http 紧急回滚）
 	viper.SetDefault("gateway.openai_ws.enabled", true)

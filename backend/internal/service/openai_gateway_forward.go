@@ -421,6 +421,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if codexResult.PromptCacheKey != "" {
 			promptCacheKey = codexResult.PromptCacheKey
 		}
+		if wsDecision.Transport == OpenAIUpstreamTransportResponsesWebsocketV2 {
+			sessionResolution := resolveOpenAIWSSessionHeaders(c, promptCacheKey)
+			if s.applyOpenAIAccountScopedClientMetadata(ctx, c, account, decoded, sessionResolution.SessionID) {
+				markDecodedModified()
+			}
+		}
 	}
 
 	if !SupportsVerbosity(upstreamModel) && gjson.GetBytes(body, "text.verbosity").Exists() {
@@ -1018,6 +1024,20 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 }
 
 func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Context, account *Account, body []byte, token string, isStream bool, promptCacheKey string, isCodexCLI bool) (*http.Request, error) {
+	accountIdentitySessionID := strings.TrimSpace(promptCacheKey)
+	if isOpenAIResponsesCompactPath(c) {
+		accountIdentitySessionID = resolveOpenAICompactSessionID(c)
+	}
+	if accountIdentitySessionID == "" {
+		accountIdentitySessionID = resolveOpenAIWSSessionHeaders(c, promptCacheKey).SessionID
+	}
+	if account.Type == AccountTypeOAuth {
+		accountScopedBody, identityErr := s.applyOpenAIAccountScopedBody(ctx, c, account, body, accountIdentitySessionID)
+		if identityErr != nil {
+			return nil, identityErr
+		}
+		body = accountScopedBody
+	}
 	// Determine target URL based on account type
 	var targetURL string
 	switch account.Type {
@@ -1092,12 +1112,12 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		if isOpenAIResponsesCompactPath(c) {
 			req.Header.Set("accept", "application/json")
 			compactSession := resolveOpenAICompactSessionID(c)
-			req.Header.Set("session_id", isolateOpenAISessionID(apiKeyID, compactSession))
+			req.Header.Set("session_id", s.openAIOutboundSessionID(account, apiKeyID, compactSession))
 		} else {
 			req.Header.Set("accept", "text/event-stream")
 		}
 		if promptCacheKey != "" {
-			isolated := isolateOpenAISessionID(apiKeyID, promptCacheKey)
+			isolated := s.openAIOutboundSessionID(account, apiKeyID, promptCacheKey)
 			req.Header.Set("session_id", isolated)
 			if !compatMessagesBridge || clientConversationID != "" {
 				req.Header.Set("conversation_id", isolated)
@@ -1124,6 +1144,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		policy = openAIOutboundAPIKeyCodexVersionPolicy
 	}
 	s.applyOpenAIOutboundIdentityPolicy(ctx, account, req.Header, policy)
+	s.applyOpenAIAccountScopedHeaders(ctx, c, account, req.Header, accountIdentitySessionID)
 	setOpenAICodexRoutingHintFromBody(req.Header, account, body)
 	logOpenAIRoutingDiagnosticsFromBody(ctx, account, "http", req.Header, body, "not_applicable")
 

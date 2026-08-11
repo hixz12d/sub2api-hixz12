@@ -103,10 +103,10 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	if account != nil && account.Type == AccountTypeOAuth {
 		apiKeyID := getAPIKeyIDFromContext(c)
 		if sessionResolution.SessionID != "" {
-			headers.Set("session_id", isolateOpenAISessionID(apiKeyID, sessionResolution.SessionID))
+			headers.Set("session_id", s.openAIOutboundSessionID(account, apiKeyID, sessionResolution.SessionID))
 		}
 		if sessionResolution.ConversationID != "" {
-			headers.Set("conversation_id", isolateOpenAISessionID(apiKeyID, sessionResolution.ConversationID))
+			headers.Set("conversation_id", s.openAIOutboundSessionID(account, apiKeyID, sessionResolution.ConversationID))
 		}
 	} else {
 		if sessionResolution.SessionID != "" {
@@ -143,6 +143,7 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 		policy = openAIOutboundOAuthPolicy
 	}
 	s.applyOpenAIOutboundIdentityPolicy(ctx, account, headers, policy)
+	s.applyOpenAIAccountScopedHeaders(ctx, c, account, headers, sessionResolution.SessionID)
 	setOpenAICodexRoutingHint(headers, account, routingModel, routingServiceTier)
 	logOpenAIRoutingDiagnostics(
 		ctx,
