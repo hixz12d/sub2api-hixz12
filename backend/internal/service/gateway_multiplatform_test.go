@@ -2348,7 +2348,7 @@ func TestGatewayService_SelectAccountWithLoadAwareness(t *testing.T) {
 		require.NotNil(t, result.Account)
 		require.Equal(t, int64(1), result.Account.ID)
 		require.Equal(t, 0, repo.getByIDCalls, "粘性命中不应调用GetByID")
-		require.Equal(t, 0, concurrencyCache.loadBatchCalls, "粘性命中应在负载批量查询前返回")
+		require.Equal(t, 1, concurrencyCache.loadBatchCalls, "粘性命中需要读取负载以判定软溢出")
 	})
 
 	t.Run("粘性账号不在候选集-回退负载感知选择", func(t *testing.T) {
@@ -2555,7 +2555,7 @@ func TestGatewayService_SelectAccountWithLoadAwareness(t *testing.T) {
 		require.NotNil(t, result)
 		require.NotNil(t, result.WaitPlan)
 		require.Equal(t, int64(1), result.Account.ID)
-		require.Equal(t, 0, concurrencyCache.loadBatchCalls)
+		require.Equal(t, 1, concurrencyCache.loadBatchCalls)
 	})
 
 	t.Run("负载批量查询失败-降级旧顺序选择", func(t *testing.T) {
@@ -2704,7 +2704,7 @@ func TestGatewayService_SelectAccountWithLoadAwareness(t *testing.T) {
 		require.NotNil(t, result)
 		require.NotNil(t, result.Account)
 		require.Equal(t, int64(1), result.Account.ID)
-		require.Equal(t, 0, concurrencyCache.loadBatchCalls)
+		require.Equal(t, 1, concurrencyCache.loadBatchCalls)
 	})
 
 	t.Run("模型路由-粘性账号缺失-清理并回退", func(t *testing.T) {

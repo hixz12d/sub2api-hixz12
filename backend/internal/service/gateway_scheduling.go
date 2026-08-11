@@ -130,6 +130,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 
 	var stickyAccountID int64
 	var stickySource string
+	preserveStickyBinding := false
 	if prefetch := prefetchedStickyAccountIDFromContext(ctx, groupID); prefetch > 0 {
 		stickyAccountID = prefetch
 		stickySource = "prefetch"
@@ -167,13 +168,30 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 		for k, v := range excludedIDs {
 			localExcluded[k] = v
 		}
+		softSpilloverFallbackExhausted := false
 
 		for {
 			account, err := s.SelectAccountForModelWithExclusions(ctx, groupID, sessionHash, requestedModel, localExcluded)
 			if err != nil {
+				if preserveStickyBinding {
+					delete(localExcluded, stickyAccountID)
+					preserveStickyBinding = false
+					softSpilloverFallbackExhausted = true
+					continue
+				}
 				return nil, err
 			}
 
+			if !softSpilloverFallbackExhausted && stickyAccountID > 0 && stickyAccountID == account.ID {
+				softSpillover, _ := fetchAccountSoftSpilloverState(
+					ctx, s.concurrencyService, account.ID, account.Concurrency, cfg.SoftSpilloverThresholdPercent,
+				)
+				if softSpillover {
+					localExcluded[account.ID] = struct{}{}
+					preserveStickyBinding = true
+					continue
+				}
+			}
 			result, err := s.tryAcquireAccountSlot(ctx, account.ID, account.Concurrency)
 			if err == nil && result.Acquired {
 				// 获取槽位后检查会话限制（使用 sessionHash 作为会话标识符）
@@ -182,7 +200,11 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 					localExcluded[account.ID] = struct{}{} // 排除此账号
 					continue                               // 重新选择
 				}
-				return s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil)
+				selection, selectErr := s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil)
+				if selection != nil {
+					selection.PreserveStickyBinding = preserveStickyBinding
+				}
+				return selection, selectErr
 			}
 
 			// 对于等待计划的情况，也需要先检查会话限制
@@ -354,46 +376,60 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 						rpmPass := gatePass && s.isAccountSchedulableForRPM(ctx, stickyAccount, true)
 
 						if rpmPass { // 粘性会话窗口费用+RPM 检查
-							result, err := s.tryAcquireAccountSlot(ctx, stickyAccountID, stickyAccount.Concurrency)
-							if err == nil && result.Acquired {
-								// 会话数量限制检查
-								if !s.checkAndRegisterSession(ctx, stickyAccount, sessionHash) {
-									result.ReleaseFunc() // 释放槽位
-									stickyCacheMissReason = "session_limit"
-									// 继续到负载感知选择
-								} else {
-									slog.Debug("sticky.layer1_5_hit",
-										"account_id", stickyAccountID,
-										"session", shortSessionHash(sessionHash),
-										"result", "slot_acquired",
-									)
-									if s.debugModelRoutingEnabled() {
-										logger.LegacyPrintf("service.gateway", "[ModelRoutingDebug] routed sticky hit: group_id=%v model=%s session=%s account=%d", derefGroupID(groupID), requestedModel, shortSessionHash(sessionHash), stickyAccountID)
-									}
-									return s.newSelectionResult(ctx, stickyAccount, true, result.ReleaseFunc, nil)
-								}
-							}
-
-							if stickyCacheMissReason == "" {
-								waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, stickyAccountID)
-								if waitingCount < cfg.StickySessionMaxWaiting {
-									// 会话数量限制检查（等待计划也需要占用会话配额）
+							softSpillover, load := fetchAccountSoftSpilloverState(
+								ctx, s.concurrencyService, stickyAccountID, stickyAccount.Concurrency, cfg.SoftSpilloverThresholdPercent,
+							)
+							if softSpillover {
+								preserveStickyBinding = true
+								stickyCacheMissReason = "soft_spillover"
+								slog.Debug("sticky_soft_spillover_triggered",
+									"account_id", stickyAccountID,
+									"current_concurrency", load.CurrentConcurrency,
+									"waiting_count", load.WaitingCount,
+									"max_concurrency", stickyAccount.Concurrency,
+								)
+							} else {
+								result, err := s.tryAcquireAccountSlot(ctx, stickyAccountID, stickyAccount.Concurrency)
+								if err == nil && result.Acquired {
+									// 会话数量限制检查
 									if !s.checkAndRegisterSession(ctx, stickyAccount, sessionHash) {
+										result.ReleaseFunc() // 释放槽位
 										stickyCacheMissReason = "session_limit"
-										// 会话限制已满，继续到负载感知选择
+										// 继续到负载感知选择
 									} else {
-										// 必须走 newSelectionResult 以 hydrate 账号凭证：
-										// 调度快照中的账号是精简版（OAuth token 等被剥离），
-										// 直接返回会导致后续转发缺少凭证而鉴权失败。
-										return s.newSelectionResult(ctx, stickyAccount, false, nil, &AccountWaitPlan{
-											AccountID:      stickyAccountID,
-											MaxConcurrency: stickyAccount.Concurrency,
-											Timeout:        cfg.StickySessionWaitTimeout,
-											MaxWaiting:     cfg.StickySessionMaxWaiting,
-										})
+										slog.Debug("sticky.layer1_5_hit",
+											"account_id", stickyAccountID,
+											"session", shortSessionHash(sessionHash),
+											"result", "slot_acquired",
+										)
+										if s.debugModelRoutingEnabled() {
+											logger.LegacyPrintf("service.gateway", "[ModelRoutingDebug] routed sticky hit: group_id=%v model=%s session=%s account=%d", derefGroupID(groupID), requestedModel, shortSessionHash(sessionHash), stickyAccountID)
+										}
+										return s.newSelectionResult(ctx, stickyAccount, true, result.ReleaseFunc, nil)
 									}
-								} else {
-									stickyCacheMissReason = "wait_queue_full"
+								}
+
+								if stickyCacheMissReason == "" {
+									waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, stickyAccountID)
+									if waitingCount < cfg.StickySessionMaxWaiting {
+										// 会话数量限制检查（等待计划也需要占用会话配额）
+										if !s.checkAndRegisterSession(ctx, stickyAccount, sessionHash) {
+											stickyCacheMissReason = "session_limit"
+											// 会话限制已满，继续到负载感知选择
+										} else {
+											// 必须走 newSelectionResult 以 hydrate 账号凭证：
+											// 调度快照中的账号是精简版（OAuth token 等被剥离），
+											// 直接返回会导致后续转发缺少凭证而鉴权失败。
+											return s.newSelectionResult(ctx, stickyAccount, false, nil, &AccountWaitPlan{
+												AccountID:      stickyAccountID,
+												MaxConcurrency: stickyAccount.Concurrency,
+												Timeout:        cfg.StickySessionWaitTimeout,
+												MaxWaiting:     cfg.StickySessionMaxWaiting,
+											})
+										}
+									} else {
+										stickyCacheMissReason = "wait_queue_full"
+									}
 								}
 							}
 							// 粘性账号槽位满且等待队列已满，继续使用负载感知选择
@@ -447,6 +483,11 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 				// 排序：优先级 > 负载率 > 最后使用时间
 				sort.SliceStable(routingAvailable, func(i, j int) bool {
 					a, b := routingAvailable[i], routingAvailable[j]
+					aSoft := accountLoadReachedSoftSpillover(a.loadInfo, a.account.Concurrency, cfg.SoftSpilloverThresholdPercent)
+					bSoft := accountLoadReachedSoftSpillover(b.loadInfo, b.account.Concurrency, cfg.SoftSpilloverThresholdPercent)
+					if aSoft != bSoft {
+						return !aSoft
+					}
 					if a.account.Priority != b.account.Priority {
 						return a.account.Priority < b.account.Priority
 					}
@@ -475,13 +516,17 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 							result.ReleaseFunc() // 释放槽位，继续尝试下一个账号
 							continue
 						}
-						if sessionHash != "" && s.cache != nil {
+						if sessionHash != "" && s.cache != nil && !preserveStickyBinding {
 							_ = s.bindGatewayStickySessionDuringSelection(ctx, groupID, sessionHash, item.account.ID)
 						}
 						if s.debugModelRoutingEnabled() {
 							logger.LegacyPrintf("service.gateway", "[ModelRoutingDebug] routed select: group_id=%v model=%s session=%s account=%d", derefGroupID(groupID), requestedModel, shortSessionHash(sessionHash), item.account.ID)
 						}
-						return s.newSelectionResult(ctx, item.account, true, result.ReleaseFunc, nil)
+						selection, selectErr := s.newSelectionResult(ctx, item.account, true, result.ReleaseFunc, nil)
+						if selection != nil {
+							selection.PreserveStickyBinding = preserveStickyBinding
+						}
+						return selection, selectErr
 					}
 				}
 
@@ -552,51 +597,64 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 				)
 
 				if !clearSticky && platformOK && profitOK && modelSupported && modelSchedulable && quotaOK && windowCostOK && rpmOK && schedulable {
-					result, err := s.tryAcquireAccountSlot(ctx, accountID, account.Concurrency)
-					if err == nil && result.Acquired {
-						// 会话数量限制检查
-						if !s.checkAndRegisterSession(ctx, account, sessionHash) {
-							result.ReleaseFunc() // 释放槽位，继续到 Layer 2
-							slog.Debug("sticky.layer1_5_no_routing_miss",
-								"account_id", accountID,
-								"reason", "session_limit",
-								"session", shortSessionHash(sessionHash),
-							)
-						} else {
-							slog.Debug("sticky.layer1_5_no_routing_hit",
-								"account_id", accountID,
-								"session", shortSessionHash(sessionHash),
-								"result", "slot_acquired",
-							)
-							if s.cache != nil {
-								_ = s.cache.RefreshSessionTTL(ctx, derefGroupID(groupID), sessionHash, stickySessionTTL)
-							}
-							return s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil)
-						}
-					} else {
-						slog.Debug("sticky.layer1_5_no_routing_slot_busy",
+					softSpillover, load := fetchAccountSoftSpilloverState(
+						ctx, s.concurrencyService, accountID, account.Concurrency, cfg.SoftSpilloverThresholdPercent,
+					)
+					if softSpillover {
+						preserveStickyBinding = true
+						slog.Debug("sticky_soft_spillover_triggered",
 							"account_id", accountID,
-							"session", shortSessionHash(sessionHash),
+							"current_concurrency", load.CurrentConcurrency,
+							"waiting_count", load.WaitingCount,
+							"max_concurrency", account.Concurrency,
 						)
-					}
-
-					waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, accountID)
-					if waitingCount < cfg.StickySessionMaxWaiting {
-						// 会话数量限制检查（等待计划也需要占用会话配额）
-						if !s.checkAndRegisterSession(ctx, account, sessionHash) {
-							// 会话限制已满，继续到 Layer 2
+					} else {
+						result, err := s.tryAcquireAccountSlot(ctx, accountID, account.Concurrency)
+						if err == nil && result.Acquired {
+							// 会话数量限制检查
+							if !s.checkAndRegisterSession(ctx, account, sessionHash) {
+								result.ReleaseFunc() // 释放槽位，继续到 Layer 2
+								slog.Debug("sticky.layer1_5_no_routing_miss",
+									"account_id", accountID,
+									"reason", "session_limit",
+									"session", shortSessionHash(sessionHash),
+								)
+							} else {
+								slog.Debug("sticky.layer1_5_no_routing_hit",
+									"account_id", accountID,
+									"session", shortSessionHash(sessionHash),
+									"result", "slot_acquired",
+								)
+								if s.cache != nil {
+									_ = s.cache.RefreshSessionTTL(ctx, derefGroupID(groupID), sessionHash, stickySessionTTL)
+								}
+								return s.newSelectionResult(ctx, account, true, result.ReleaseFunc, nil)
+							}
 						} else {
-							slog.Debug("sticky.layer1_5_no_routing_hit",
+							slog.Debug("sticky.layer1_5_no_routing_slot_busy",
 								"account_id", accountID,
 								"session", shortSessionHash(sessionHash),
-								"result", "wait_plan",
 							)
-							return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
-								AccountID:      accountID,
-								MaxConcurrency: account.Concurrency,
-								Timeout:        cfg.StickySessionWaitTimeout,
-								MaxWaiting:     cfg.StickySessionMaxWaiting,
-							})
+						}
+
+						waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, accountID)
+						if waitingCount < cfg.StickySessionMaxWaiting {
+							// 会话数量限制检查（等待计划也需要占用会话配额）
+							if !s.checkAndRegisterSession(ctx, account, sessionHash) {
+								// 会话限制已满，继续到 Layer 2
+							} else {
+								slog.Debug("sticky.layer1_5_no_routing_hit",
+									"account_id", accountID,
+									"session", shortSessionHash(sessionHash),
+									"result", "wait_plan",
+								)
+								return s.newSelectionResult(ctx, account, false, nil, &AccountWaitPlan{
+									AccountID:      accountID,
+									MaxConcurrency: account.Concurrency,
+									Timeout:        cfg.StickySessionWaitTimeout,
+									MaxWaiting:     cfg.StickySessionMaxWaiting,
+								})
+							}
 						}
 					}
 				} else if !clearSticky {
@@ -710,8 +768,18 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 
 		// 分层过滤选择：优先级 →（可选）最早重置 → 负载率 → LRU
 		for len(available) > 0 {
-			// 1. 取优先级最小的集合
-			candidates := filterByMinPriority(available)
+			// 1. 未达软阈值的账号跨优先级先用；全部达到阈值后再使用保留容量。
+			selectionPool := available
+			belowThreshold := make([]accountWithLoad, 0, len(available))
+			for _, item := range available {
+				if !accountLoadReachedSoftSpillover(item.loadInfo, item.account.Concurrency, cfg.SoftSpilloverThresholdPercent) {
+					belowThreshold = append(belowThreshold, item)
+				}
+			}
+			if len(belowThreshold) > 0 {
+				selectionPool = belowThreshold
+			}
+			candidates := filterByMinPriority(selectionPool)
 			// 2. （可选）use-it-or-lose-it：优先选用会话窗口最早重置的账号
 			if cfg.PreferSoonestReset {
 				candidates = filterBySoonestReset(candidates)
@@ -730,10 +798,14 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 				if !s.checkAndRegisterSession(ctx, selected.account, sessionHash) {
 					result.ReleaseFunc() // 释放槽位，继续尝试下一个账号
 				} else {
-					if sessionHash != "" && s.cache != nil {
+					if sessionHash != "" && s.cache != nil && !preserveStickyBinding {
 						_ = s.bindGatewayStickySessionDuringSelection(ctx, groupID, sessionHash, selected.account.ID)
 					}
-					return s.newSelectionResult(ctx, selected.account, true, result.ReleaseFunc, nil)
+					selection, selectErr := s.newSelectionResult(ctx, selected.account, true, result.ReleaseFunc, nil)
+					if selection != nil {
+						selection.PreserveStickyBinding = preserveStickyBinding
+					}
+					return selection, selectErr
 				}
 			}
 
@@ -797,12 +869,13 @@ func (s *GatewayService) schedulingConfig() config.GatewaySchedulingConfig {
 		return s.cfg.Gateway.Scheduling
 	}
 	return config.GatewaySchedulingConfig{
-		StickySessionMaxWaiting:  3,
-		StickySessionWaitTimeout: 45 * time.Second,
-		FallbackWaitTimeout:      30 * time.Second,
-		FallbackMaxWaiting:       100,
-		LoadBatchEnabled:         true,
-		SlotCleanupInterval:      30 * time.Second,
+		StickySessionMaxWaiting:       3,
+		StickySessionWaitTimeout:      45 * time.Second,
+		SoftSpilloverThresholdPercent: 80,
+		FallbackWaitTimeout:           30 * time.Second,
+		FallbackMaxWaiting:            100,
+		LoadBatchEnabled:              true,
+		SlotCleanupInterval:           30 * time.Second,
 	}
 }
 

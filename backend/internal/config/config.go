@@ -1365,6 +1365,9 @@ type GatewaySchedulingConfig struct {
 	// 粘性会话排队配置
 	StickySessionMaxWaiting  int           `mapstructure:"sticky_session_max_waiting"`
 	StickySessionWaitTimeout time.Duration `mapstructure:"sticky_session_wait_timeout"`
+	// SoftSpilloverThresholdPercent: 账号达到该负载百分比后，优先使用未达阈值的兼容账号。
+	// 100 表示仅在满载时溢出；临时溢出不会改写原粘性绑定。
+	SoftSpilloverThresholdPercent int `mapstructure:"soft_spillover_threshold_percent"`
 
 	// 兜底排队配置
 	FallbackWaitTimeout time.Duration `mapstructure:"fallback_wait_timeout"`
@@ -2380,6 +2383,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.max_line_size", 500*1024*1024)
 	viper.SetDefault("gateway.scheduling.sticky_session_max_waiting", 3)
 	viper.SetDefault("gateway.scheduling.sticky_session_wait_timeout", 120*time.Second)
+	viper.SetDefault("gateway.scheduling.soft_spillover_threshold_percent", 80)
 	viper.SetDefault("gateway.scheduling.fallback_wait_timeout", 30*time.Second)
 	viper.SetDefault("gateway.scheduling.fallback_max_waiting", 100)
 	viper.SetDefault("gateway.scheduling.fallback_selection_mode", "last_used")
@@ -3494,6 +3498,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.Scheduling.StickySessionWaitTimeout <= 0 {
 		return fmt.Errorf("gateway.scheduling.sticky_session_wait_timeout must be positive")
+	}
+	if c.Gateway.Scheduling.SoftSpilloverThresholdPercent < 1 || c.Gateway.Scheduling.SoftSpilloverThresholdPercent > 100 {
+		return fmt.Errorf("gateway.scheduling.soft_spillover_threshold_percent must be between 1-100")
 	}
 	if c.Gateway.Scheduling.FallbackWaitTimeout <= 0 {
 		return fmt.Errorf("gateway.scheduling.fallback_wait_timeout must be positive")

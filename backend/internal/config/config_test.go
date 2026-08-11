@@ -345,6 +345,9 @@ func TestLoadDefaultSchedulingConfig(t *testing.T) {
 	if cfg.Gateway.Scheduling.StickySessionMaxWaiting != 3 {
 		t.Fatalf("StickySessionMaxWaiting = %d, want 3", cfg.Gateway.Scheduling.StickySessionMaxWaiting)
 	}
+	if cfg.Gateway.Scheduling.SoftSpilloverThresholdPercent != 80 {
+		t.Fatalf("SoftSpilloverThresholdPercent = %d, want 80", cfg.Gateway.Scheduling.SoftSpilloverThresholdPercent)
+	}
 	if cfg.Gateway.Scheduling.StickySessionWaitTimeout != 120*time.Second {
 		t.Fatalf("StickySessionWaitTimeout = %v, want 120s", cfg.Gateway.Scheduling.StickySessionWaitTimeout)
 	}
@@ -2019,6 +2022,11 @@ func TestValidateConfigErrors(t *testing.T) {
 			name:    "gateway scheduling sticky waiting",
 			mutate:  func(c *Config) { c.Gateway.Scheduling.StickySessionMaxWaiting = 0 },
 			wantErr: "gateway.scheduling.sticky_session_max_waiting",
+		},
+		{
+			name:    "gateway scheduling soft spillover threshold",
+			mutate:  func(c *Config) { c.Gateway.Scheduling.SoftSpilloverThresholdPercent = 0 },
+			wantErr: "gateway.scheduling.soft_spillover_threshold_percent",
 		},
 		{
 			name:    "gateway scheduling load batch cache ttl",

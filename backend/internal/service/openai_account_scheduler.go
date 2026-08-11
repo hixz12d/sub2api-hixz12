@@ -612,6 +612,22 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		)
 		return nil, true, nil
 	}
+	softSpillover, load := fetchAccountSoftSpilloverState(
+		ctx,
+		s.service.concurrencyService,
+		accountID,
+		account.Concurrency,
+		s.service.schedulingConfig().SoftSpilloverThresholdPercent,
+	)
+	if softSpillover {
+		slog.Debug("sticky_soft_spillover_triggered",
+			"account_id", accountID,
+			"current_concurrency", load.CurrentConcurrency,
+			"waiting_count", load.WaitingCount,
+			"max_concurrency", account.Concurrency,
+		)
+		return nil, true, nil
+	}
 	result, acquireErr := s.service.tryAcquireAccountSlot(ctx, accountID, account.Concurrency)
 	if acquireErr == nil && result != nil && result.Acquired {
 		_ = s.service.refreshStickySessionTTL(ctx, req.GroupID, sessionHash, s.service.openAIWSSessionStickyTTL())
@@ -683,14 +699,15 @@ func (s *defaultOpenAIAccountScheduler) shouldEscapeStickyAccount(accountID int6
 }
 
 type openAIAccountCandidateScore struct {
-	account   *Account
-	loadInfo  *AccountLoadInfo
-	loadKnown bool
-	score     float64
-	priority  int
-	errorRate float64
-	ttft      float64
-	hasTTFT   bool
+	account       *Account
+	loadInfo      *AccountLoadInfo
+	loadKnown     bool
+	softSaturated bool
+	score         float64
+	priority      int
+	errorRate     float64
+	ttft          float64
+	hasTTFT       bool
 }
 
 type openAIAccountCandidateHeap []openAIAccountCandidateScore
@@ -725,6 +742,9 @@ func (h *openAIAccountCandidateHeap) Pop() any {
 }
 
 func isOpenAIAccountCandidateBetter(left openAIAccountCandidateScore, right openAIAccountCandidateScore) bool {
+	if left.softSaturated != right.softSaturated {
+		return !left.softSaturated
+	}
 	if left.score != right.score {
 		return left.score > right.score
 	}
@@ -909,14 +929,20 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAIAccountLoadPlan(
 		if !ok {
 			continue
 		}
+		softSaturated := loadKnown && accountLoadReachedSoftSpillover(
+			loadInfo,
+			account.Concurrency,
+			s.service.schedulingConfig().SoftSpilloverThresholdPercent,
+		)
 		allCandidates = append(allCandidates, openAIAccountCandidateScore{
-			account:   account,
-			loadInfo:  loadInfo,
-			loadKnown: loadKnown,
-			errorRate: errorRate,
-			ttft:      ttft,
-			hasTTFT:   hasTTFT,
-			priority:  priority,
+			account:       account,
+			loadInfo:      loadInfo,
+			loadKnown:     loadKnown,
+			softSaturated: softSaturated,
+			errorRate:     errorRate,
+			ttft:          ttft,
+			hasTTFT:       hasTTFT,
+			priority:      priority,
 		})
 	}
 
@@ -1094,7 +1120,6 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAISelectionOrder(
 	if req.PriorityMode != OpenAIAccountPriorityModeBinding {
 		return s.buildOpenAISelectionOrderWithinTier(req, plan)
 	}
-
 	prioritySet := make(map[int]struct{})
 	for _, candidate := range plan.allCandidates {
 		prioritySet[candidate.priority] = struct{}{}
@@ -1105,10 +1130,18 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAISelectionOrder(
 	}
 	sort.Ints(priorities)
 
-	filterCandidates := func(source []openAIAccountCandidateScore, priority int, subscription *bool) []openAIAccountCandidateScore {
+	filterCandidates := func(
+		source []openAIAccountCandidateScore,
+		softSaturated bool,
+		priority *int,
+		subscription *bool,
+	) []openAIAccountCandidateScore {
 		out := make([]openAIAccountCandidateScore, 0, len(source))
 		for _, candidate := range source {
-			if candidate.priority != priority || candidate.account == nil {
+			if candidate.account == nil || candidate.softSaturated != softSaturated {
+				continue
+			}
+			if priority != nil && candidate.priority != *priority {
 				continue
 			}
 			if subscription != nil && candidate.account.IsOpenAIChatGPTSubscription() != *subscription {
@@ -1118,29 +1151,33 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAISelectionOrder(
 		}
 		return out
 	}
-	buildTier := func(priority int, subscription *bool) []openAIAccountCandidateScore {
-		tierPlan := plan
-		tierPlan.allCandidates = filterCandidates(plan.allCandidates, priority, subscription)
-		tierPlan.candidates = filterCandidates(plan.candidates, priority, subscription)
-		tierPlan.staleSnapshotCompactRetry = filterCandidates(plan.staleSnapshotCompactRetry, priority, subscription)
-		tierPlan.candidateCount = len(tierPlan.candidates)
-		// Every candidate in a binding tier must be exhausted before the next tier.
-		tierPlan.includeOverflowFallback = true
-		if tierPlan.topK <= 0 {
-			tierPlan.topK = 1
+	buildSubset := func(softSaturated bool, priority *int, subscription *bool) []openAIAccountCandidateScore {
+		subset := plan
+		subset.allCandidates = filterCandidates(plan.allCandidates, softSaturated, priority, subscription)
+		subset.candidates = filterCandidates(plan.candidates, softSaturated, priority, subscription)
+		subset.staleSnapshotCompactRetry = filterCandidates(plan.staleSnapshotCompactRetry, softSaturated, priority, subscription)
+		subset.candidateCount = len(subset.candidates)
+		// Exhaust every account below the soft threshold before consuming the
+		// reserved capacity of an account that has already reached it.
+		subset.includeOverflowFallback = true
+		if subset.topK <= 0 {
+			subset.topK = 1
 		}
-		return s.buildOpenAISelectionOrderWithinTier(req, tierPlan)
+		return s.buildOpenAISelectionOrderWithinTier(req, subset)
 	}
 
 	ordered := make([]openAIAccountCandidateScore, 0, len(plan.allCandidates))
-	for _, priority := range priorities {
-		if req.SubscriptionPriority {
-			subscription, regular := true, false
-			ordered = append(ordered, buildTier(priority, &subscription)...)
-			ordered = append(ordered, buildTier(priority, &regular)...)
-			continue
+	for _, softSaturated := range []bool{false, true} {
+		for _, priority := range priorities {
+			p := priority
+			if req.SubscriptionPriority {
+				subscription, regular := true, false
+				ordered = append(ordered, buildSubset(softSaturated, &p, &subscription)...)
+				ordered = append(ordered, buildSubset(softSaturated, &p, &regular)...)
+				continue
+			}
+			ordered = append(ordered, buildSubset(softSaturated, &p, nil)...)
 		}
-		ordered = append(ordered, buildTier(priority, nil)...)
 	}
 	return ordered
 }
@@ -1148,9 +1185,44 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAISelectionOrderWithinTier(
 	req OpenAIAccountScheduleRequest,
 	plan openAIAccountLoadPlan,
 ) []openAIAccountCandidateScore {
-	buildSelectionOrder := func(pool []openAIAccountCandidateScore) []openAIAccountCandidateScore {
+	var buildSelectionOrder func([]openAIAccountCandidateScore) []openAIAccountCandidateScore
+	buildSelectionOrder = func(pool []openAIAccountCandidateScore) []openAIAccountCandidateScore {
 		if len(pool) == 0 || plan.topK <= 0 {
 			return nil
+		}
+		belowThreshold := make([]openAIAccountCandidateScore, 0, len(pool))
+		softSaturated := make([]openAIAccountCandidateScore, 0, len(pool))
+		for _, candidate := range pool {
+			if candidate.softSaturated {
+				softSaturated = append(softSaturated, candidate)
+			} else {
+				belowThreshold = append(belowThreshold, candidate)
+			}
+		}
+		if len(belowThreshold) > 0 && len(softSaturated) > 0 {
+			ordered := buildSelectionOrder(belowThreshold)
+			deferredTopK := plan.topK
+			if deferredTopK > len(softSaturated) {
+				deferredTopK = len(softSaturated)
+			}
+			deferred := selectTopKOpenAICandidates(softSaturated, deferredTopK)
+			if plan.includeOverflowFallback && deferredTopK < len(softSaturated) {
+				selected := make(map[int64]struct{}, len(deferred))
+				for _, candidate := range deferred {
+					selected[candidate.account.ID] = struct{}{}
+				}
+				overflow := make([]openAIAccountCandidateScore, 0, len(softSaturated)-len(deferred))
+				for _, candidate := range softSaturated {
+					if _, ok := selected[candidate.account.ID]; !ok {
+						overflow = append(overflow, candidate)
+					}
+				}
+				sort.Slice(overflow, func(i, j int) bool {
+					return isOpenAIAccountCandidateBetter(overflow[i], overflow[j])
+				})
+				deferred = append(deferred, overflow...)
+			}
+			return append(ordered, deferred...)
 		}
 		groupTopK := plan.topK
 		if groupTopK > len(pool) {
@@ -1164,7 +1236,7 @@ func (s *defaultOpenAIAccountScheduler) buildOpenAISelectionOrderWithinTier(
 					continue
 				}
 				for i, candidate := range ranked {
-					if candidate.account != nil && candidate.account.ID == stickyID {
+					if candidate.account != nil && candidate.account.ID == stickyID && !candidate.softSaturated {
 						primary = append([]openAIAccountCandidateScore{candidate}, ranked[:i]...)
 						primary = append(primary, ranked[i+1:]...)
 						break

@@ -1006,9 +1006,17 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		if err != nil {
 			return nil, err
 		}
-		result, err := s.tryAcquireAccountSlot(ctx, account.ID, account.Concurrency)
-		if err == nil && result != nil && result.Acquired {
-			return s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
+		softSpillover := false
+		if stickyAccountID > 0 && stickyAccountID == account.ID {
+			softSpillover, _ = fetchAccountSoftSpilloverState(
+				ctx, s.concurrencyService, account.ID, account.Concurrency, cfg.SoftSpilloverThresholdPercent,
+			)
+		}
+		if !softSpillover {
+			result, acquireErr := s.tryAcquireAccountSlot(ctx, account.ID, account.Concurrency)
+			if acquireErr == nil && result != nil && result.Acquired {
+				return s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
+			}
 		}
 		if stickyAccountID > 0 && stickyAccountID == account.ID {
 			overflow, overflowErr := s.tryAcquireLegacyStickyOverflow(
@@ -1020,6 +1028,12 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			}
 			if overflow != nil {
 				return overflow, nil
+			}
+		}
+		if softSpillover {
+			result, acquireErr := s.tryAcquireAccountSlot(ctx, account.ID, account.Concurrency)
+			if acquireErr == nil && result != nil && result.Acquired {
+				return s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
 			}
 		}
 		if stickyAccountID > 0 && stickyAccountID == account.ID && s.concurrencyService != nil {
@@ -1083,14 +1097,19 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 					} else if !parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {
 						_ = s.deleteStickySessionAccountID(ctx, groupID, sessionHash)
 					} else {
-						result, err := s.tryAcquireAccountSlot(ctx, accountID, account.Concurrency)
-						if err == nil && result != nil && result.Acquired {
-							selection, selectErr := s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
-							if selectErr != nil {
-								return nil, selectErr
+						softSpillover, _ := fetchAccountSoftSpilloverState(
+							ctx, s.concurrencyService, accountID, account.Concurrency, cfg.SoftSpilloverThresholdPercent,
+						)
+						if !softSpillover {
+							result, acquireErr := s.tryAcquireAccountSlot(ctx, accountID, account.Concurrency)
+							if acquireErr == nil && result != nil && result.Acquired {
+								selection, selectErr := s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
+								if selectErr != nil {
+									return nil, selectErr
+								}
+								_ = s.refreshStickySessionTTL(ctx, groupID, sessionHash, openaiStickySessionTTL)
+								return selection, nil
 							}
-							_ = s.refreshStickySessionTTL(ctx, groupID, sessionHash, openaiStickySessionTTL)
-							return selection, nil
 						}
 
 						overflow, overflowErr := s.tryAcquireLegacyStickyOverflow(
@@ -1102,6 +1121,17 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 						}
 						if overflow != nil {
 							return overflow, nil
+						}
+						if softSpillover {
+							result, acquireErr := s.tryAcquireAccountSlot(ctx, accountID, account.Concurrency)
+							if acquireErr == nil && result != nil && result.Acquired {
+								selection, selectErr := s.newAcquiredSelectionResult(ctx, account, result.ReleaseFunc)
+								if selectErr != nil {
+									return nil, selectErr
+								}
+								_ = s.refreshStickySessionTTL(ctx, groupID, sessionHash, openaiStickySessionTTL)
+								return selection, nil
+							}
 						}
 						waitingCount, _ := s.concurrencyService.GetAccountWaitingCount(ctx, accountID)
 						if waitingCount < cfg.StickySessionMaxWaiting {
@@ -1199,6 +1229,11 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 
 		sort.SliceStable(available, func(i, j int) bool {
 			a, b := available[i], available[j]
+			aSoft := accountLoadReachedSoftSpillover(a.loadInfo, a.account.Concurrency, cfg.SoftSpilloverThresholdPercent)
+			bSoft := accountLoadReachedSoftSpillover(b.loadInfo, b.account.Concurrency, cfg.SoftSpilloverThresholdPercent)
+			if aSoft != bSoft {
+				return !aSoft
+			}
 			if priorityMode == OpenAIAccountPriorityModeBinding {
 				aPriority, _ := openAIAccountBindingPriority(a.account, groupID)
 				bPriority, _ := openAIAccountBindingPriority(b.account, groupID)
@@ -1226,6 +1261,11 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 		shuffleOpenAIWithinSortGroups(available, groupID, priorityMode)
 		if rateOrder.enabled {
 			sort.SliceStable(available, func(i, j int) bool {
+				aSoft := accountLoadReachedSoftSpillover(available[i].loadInfo, available[i].account.Concurrency, cfg.SoftSpilloverThresholdPercent)
+				bSoft := accountLoadReachedSoftSpillover(available[j].loadInfo, available[j].account.Concurrency, cfg.SoftSpilloverThresholdPercent)
+				if aSoft != bSoft {
+					return !aSoft
+				}
 				if priorityMode == OpenAIAccountPriorityModeBinding {
 					aPriority, _ := openAIAccountBindingPriority(available[i].account, groupID)
 					bPriority, _ := openAIAccountBindingPriority(available[j].account, groupID)
@@ -1239,8 +1279,11 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 
 		selectionOrder := make([]accountWithLoad, 0, len(available))
 		if requireCompact {
-			appendTier := func(out []accountWithLoad, bindingPriority *int, compactTier int) []accountWithLoad {
+			appendTier := func(out []accountWithLoad, softSaturated bool, bindingPriority *int, compactTier int) []accountWithLoad {
 				for _, item := range available {
+					if accountLoadReachedSoftSpillover(item.loadInfo, item.account.Concurrency, cfg.SoftSpilloverThresholdPercent) != softSaturated {
+						continue
+					}
 					if bindingPriority != nil {
 						priority, _ := openAIAccountBindingPriority(item.account, groupID)
 						if priority != *bindingPriority {
@@ -1253,27 +1296,31 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 				}
 				return out
 			}
+			prioritySet := make(map[int]struct{})
 			if priorityMode == OpenAIAccountPriorityModeBinding {
-				prioritySet := make(map[int]struct{})
 				for _, item := range available {
 					priority, _ := openAIAccountBindingPriority(item.account, groupID)
 					prioritySet[priority] = struct{}{}
 				}
-				priorities := make([]int, 0, len(prioritySet))
-				for priority := range prioritySet {
-					priorities = append(priorities, priority)
+			}
+			priorities := make([]int, 0, len(prioritySet))
+			for priority := range prioritySet {
+				priorities = append(priorities, priority)
+			}
+			sort.Ints(priorities)
+			for _, softSaturated := range []bool{false, true} {
+				if priorityMode == OpenAIAccountPriorityModeBinding {
+					for _, priority := range priorities {
+						p := priority
+						selectionOrder = appendTier(selectionOrder, softSaturated, &p, 2)
+						selectionOrder = appendTier(selectionOrder, softSaturated, &p, 1)
+						selectionOrder = appendTier(selectionOrder, softSaturated, &p, 0)
+					}
+					continue
 				}
-				sort.Ints(priorities)
-				for _, priority := range priorities {
-					p := priority
-					selectionOrder = appendTier(selectionOrder, &p, 2)
-					selectionOrder = appendTier(selectionOrder, &p, 1)
-					selectionOrder = appendTier(selectionOrder, &p, 0)
-				}
-			} else {
-				selectionOrder = appendTier(selectionOrder, nil, 2)
-				selectionOrder = appendTier(selectionOrder, nil, 1)
-				selectionOrder = appendTier(selectionOrder, nil, 0)
+				selectionOrder = appendTier(selectionOrder, softSaturated, nil, 2)
+				selectionOrder = appendTier(selectionOrder, softSaturated, nil, 1)
+				selectionOrder = appendTier(selectionOrder, softSaturated, nil, 0)
 			}
 		} else {
 			selectionOrder = append(selectionOrder, available...)
@@ -1651,11 +1698,12 @@ func (s *OpenAIGatewayService) schedulingConfig() config.GatewaySchedulingConfig
 		return s.cfg.Gateway.Scheduling
 	}
 	return config.GatewaySchedulingConfig{
-		StickySessionMaxWaiting:  3,
-		StickySessionWaitTimeout: 45 * time.Second,
-		FallbackWaitTimeout:      30 * time.Second,
-		FallbackMaxWaiting:       100,
-		LoadBatchEnabled:         true,
-		SlotCleanupInterval:      30 * time.Second,
+		StickySessionMaxWaiting:       3,
+		StickySessionWaitTimeout:      45 * time.Second,
+		SoftSpilloverThresholdPercent: 80,
+		FallbackWaitTimeout:           30 * time.Second,
+		FallbackMaxWaiting:            100,
+		LoadBatchEnabled:              true,
+		SlotCleanupInterval:           30 * time.Second,
 	}
 }

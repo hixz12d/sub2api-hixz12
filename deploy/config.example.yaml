@@ -537,6 +537,10 @@ gateway:
     # Sticky session wait timeout (duration)
     # 粘性会话等待超时（时间段）
     sticky_session_wait_timeout: 120s
+    # Soft spillover threshold (1-100). At 80, a 5-slot account spills new work at 4/5.
+    # 软溢出阈值（1-100）：80 表示 5 并发账号到 4/5 后，新请求优先使用未达阈值的兼容账号。
+    # 临时溢出不改写原粘性绑定；设为 100 可恢复“满载才溢出”。
+    soft_spillover_threshold_percent: 80
     # Fallback wait timeout (duration)
     # 兜底排队等待超时（时间段）
     fallback_wait_timeout: 30s
