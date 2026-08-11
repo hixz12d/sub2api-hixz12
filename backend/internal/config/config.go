@@ -1368,6 +1368,12 @@ type GatewaySchedulingConfig struct {
 	// SoftSpilloverThresholdPercent: 账号达到该负载百分比后，优先使用未达阈值的兼容账号。
 	// 100 表示仅在满载时溢出；临时溢出不会改写原粘性绑定。
 	SoftSpilloverThresholdPercent int `mapstructure:"soft_spillover_threshold_percent"`
+	// OpenAI OAuth 外溢租约：grace 后新鲜复查，租约滑动续期，并在低水位回主。
+	SoftSpilloverGraceMS                int `mapstructure:"soft_spillover_grace_ms"`
+	SoftSpilloverLeaseTTLSeconds        int `mapstructure:"soft_spillover_lease_ttl_seconds"`
+	SoftSpilloverReturnThresholdPercent int `mapstructure:"soft_spillover_return_threshold_percent"`
+	SoftSpilloverMaxAccountsPerSession  int `mapstructure:"soft_spillover_max_accounts_per_session"`
+	SoftSpilloverMaxSwitchesPer10M      int `mapstructure:"soft_spillover_max_switches_per_10m"`
 
 	// 兜底排队配置
 	FallbackWaitTimeout time.Duration `mapstructure:"fallback_wait_timeout"`
@@ -2384,6 +2390,11 @@ func setDefaults() {
 	viper.SetDefault("gateway.scheduling.sticky_session_max_waiting", 3)
 	viper.SetDefault("gateway.scheduling.sticky_session_wait_timeout", 120*time.Second)
 	viper.SetDefault("gateway.scheduling.soft_spillover_threshold_percent", 80)
+	viper.SetDefault("gateway.scheduling.soft_spillover_grace_ms", 1000)
+	viper.SetDefault("gateway.scheduling.soft_spillover_lease_ttl_seconds", 600)
+	viper.SetDefault("gateway.scheduling.soft_spillover_return_threshold_percent", 50)
+	viper.SetDefault("gateway.scheduling.soft_spillover_max_accounts_per_session", 2)
+	viper.SetDefault("gateway.scheduling.soft_spillover_max_switches_per_10m", 1)
 	viper.SetDefault("gateway.scheduling.fallback_wait_timeout", 30*time.Second)
 	viper.SetDefault("gateway.scheduling.fallback_max_waiting", 100)
 	viper.SetDefault("gateway.scheduling.fallback_selection_mode", "last_used")
@@ -3501,6 +3512,21 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.Scheduling.SoftSpilloverThresholdPercent < 1 || c.Gateway.Scheduling.SoftSpilloverThresholdPercent > 100 {
 		return fmt.Errorf("gateway.scheduling.soft_spillover_threshold_percent must be between 1-100")
+	}
+	if c.Gateway.Scheduling.SoftSpilloverGraceMS < 1 || c.Gateway.Scheduling.SoftSpilloverGraceMS > 10000 {
+		return fmt.Errorf("gateway.scheduling.soft_spillover_grace_ms must be between 1-10000")
+	}
+	if c.Gateway.Scheduling.SoftSpilloverLeaseTTLSeconds < 1 || c.Gateway.Scheduling.SoftSpilloverLeaseTTLSeconds > 86400 {
+		return fmt.Errorf("gateway.scheduling.soft_spillover_lease_ttl_seconds must be between 1-86400")
+	}
+	if c.Gateway.Scheduling.SoftSpilloverReturnThresholdPercent < 1 || c.Gateway.Scheduling.SoftSpilloverReturnThresholdPercent >= c.Gateway.Scheduling.SoftSpilloverThresholdPercent {
+		return fmt.Errorf("gateway.scheduling.soft_spillover_return_threshold_percent must be between 1 and soft_spillover_threshold_percent-1")
+	}
+	if c.Gateway.Scheduling.SoftSpilloverMaxAccountsPerSession != 2 {
+		return fmt.Errorf("gateway.scheduling.soft_spillover_max_accounts_per_session must be 2")
+	}
+	if c.Gateway.Scheduling.SoftSpilloverMaxSwitchesPer10M != 1 {
+		return fmt.Errorf("gateway.scheduling.soft_spillover_max_switches_per_10m must be 1")
 	}
 	if c.Gateway.Scheduling.FallbackWaitTimeout <= 0 {
 		return fmt.Errorf("gateway.scheduling.fallback_wait_timeout must be positive")

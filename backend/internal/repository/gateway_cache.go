@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -64,6 +65,223 @@ func (c *gatewayCache) DeleteSessionAccountID(ctx context.Context, groupID int64
 	key := buildSessionKey(groupID, sessionHash)
 	return c.rdb.Del(ctx, key).Err()
 }
+
+const stickySpilloverPrefix = "sticky_spillover:"
+const stickySpilloverGuardPrefix = "sticky_spillover_guard:"
+
+var claimStickySpilloverScript = redis.NewScript(`
+	local lease = redis.call('GET', KEYS[1])
+	if lease then
+		return {'existing', lease}
+	end
+	local guard = redis.call('GET', KEYS[2])
+	if guard then
+		return {'budget_exhausted', guard}
+	end
+	redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
+	redis.call('SET', KEYS[2], ARGV[1], 'PX', ARGV[3])
+	return {'created', ARGV[1]}
+`)
+
+var restoreStickySpilloverScript = redis.NewScript(`
+	local lease = redis.call('GET', KEYS[1])
+	if lease then
+		return {0, lease}
+	end
+	local guard = redis.call('GET', KEYS[2])
+	if not guard then
+		return {0, ''}
+	end
+	local state = cjson.decode(guard)
+	if tostring(state.primary_account_id) ~= ARGV[1] or tostring(state.fallback_account_id) ~= ARGV[2] then
+		return {0, guard}
+	end
+	state.last_used_at = ARGV[3]
+	local payload = cjson.encode(state)
+	redis.call('SET', KEYS[1], payload, 'PX', ARGV[4])
+	redis.call('SET', KEYS[2], payload, 'PX', ARGV[5])
+	return {1, payload}
+`)
+
+var refreshStickySpilloverScript = redis.NewScript(`
+	local lease = redis.call('GET', KEYS[1])
+	if not lease then
+		return {0, ''}
+	end
+	local state = cjson.decode(lease)
+	if tostring(state.primary_account_id) ~= ARGV[1] or tostring(state.fallback_account_id) ~= ARGV[2] then
+		return {0, lease}
+	end
+	state.last_used_at = ARGV[3]
+	local payload = cjson.encode(state)
+	redis.call('SET', KEYS[1], payload, 'PX', ARGV[4])
+	redis.call('SET', KEYS[2], payload, 'PX', ARGV[5])
+	return {1, payload}
+`)
+
+var invalidateStickySpilloverScript = redis.NewScript(`
+	local lease = redis.call('GET', KEYS[1])
+	if not lease then
+		return 0
+	end
+	local state = cjson.decode(lease)
+	if tostring(state.primary_account_id) ~= ARGV[1] or tostring(state.fallback_account_id) ~= ARGV[2] then
+		return 0
+	end
+	return redis.call('DEL', KEYS[1])
+`)
+
+var clearStickySpilloverGuardScript = redis.NewScript(`
+	if redis.call('EXISTS', KEYS[1]) == 1 then
+		return 0
+	end
+	local guard = redis.call('GET', KEYS[2])
+	if not guard then
+		return 0
+	end
+	local state = cjson.decode(guard)
+	if tostring(state.primary_account_id) ~= ARGV[1] or tostring(state.fallback_account_id) ~= ARGV[2] then
+		return 0
+	end
+	return redis.call('DEL', KEYS[2])
+`)
+
+func buildStickySpilloverKeys(groupID int64, sessionHash string) (string, string) {
+	suffix := fmt.Sprintf("%d:%s", groupID, sessionHash)
+	return stickySpilloverPrefix + suffix, stickySpilloverGuardPrefix + suffix
+}
+
+func spilloverTTLMillis(ttl time.Duration) int64 {
+	millis := ttl.Milliseconds()
+	if millis < 1 {
+		return 1
+	}
+	return millis
+}
+
+func decodeStickySpilloverState(payload string) (*service.StickySpilloverState, error) {
+	if strings.TrimSpace(payload) == "" {
+		return nil, nil
+	}
+	var state service.StickySpilloverState
+	if err := json.Unmarshal([]byte(payload), &state); err != nil {
+		return nil, err
+	}
+	if state.PrimaryAccountID <= 0 || state.FallbackAccountID <= 0 || state.PrimaryAccountID == state.FallbackAccountID {
+		return nil, errors.New("invalid sticky spillover state")
+	}
+	return &state, nil
+}
+
+func (c *gatewayCache) GetStickySpillover(ctx context.Context, groupID int64, sessionHash string) (service.StickySpilloverSnapshot, error) {
+	leaseKey, guardKey := buildStickySpilloverKeys(groupID, sessionHash)
+	values, err := c.rdb.MGet(ctx, leaseKey, guardKey).Result()
+	if err != nil {
+		return service.StickySpilloverSnapshot{}, err
+	}
+	var snapshot service.StickySpilloverSnapshot
+	if len(values) > 0 && values[0] != nil {
+		snapshot.Lease, err = decodeStickySpilloverState(fmt.Sprint(values[0]))
+		if err != nil {
+			return service.StickySpilloverSnapshot{}, err
+		}
+	}
+	if len(values) > 1 && values[1] != nil {
+		snapshot.Guard, err = decodeStickySpilloverState(fmt.Sprint(values[1]))
+		if err != nil {
+			return service.StickySpilloverSnapshot{}, err
+		}
+	}
+	return snapshot, nil
+}
+
+func (c *gatewayCache) ClaimStickySpillover(
+	ctx context.Context,
+	groupID int64,
+	sessionHash string,
+	state service.StickySpilloverState,
+	leaseTTL, guardTTL time.Duration,
+) (*service.StickySpilloverState, service.StickySpilloverClaimOutcome, error) {
+	payload, err := json.Marshal(state)
+	if err != nil {
+		return nil, "", err
+	}
+	leaseKey, guardKey := buildStickySpilloverKeys(groupID, sessionHash)
+	values, err := claimStickySpilloverScript.Run(
+		ctx, c.rdb, []string{leaseKey, guardKey}, string(payload), spilloverTTLMillis(leaseTTL), spilloverTTLMillis(guardTTL),
+	).Slice()
+	if err != nil {
+		return nil, "", err
+	}
+	if len(values) != 2 {
+		return nil, "", errors.New("invalid sticky spillover claim result")
+	}
+	outcome := service.StickySpilloverClaimOutcome(fmt.Sprint(values[0]))
+	current, err := decodeStickySpilloverState(fmt.Sprint(values[1]))
+	return current, outcome, err
+}
+
+func (c *gatewayCache) RestoreStickySpillover(
+	ctx context.Context,
+	groupID int64,
+	sessionHash string,
+	expected service.StickySpilloverState,
+	nowMS int64,
+	leaseTTL, guardTTL time.Duration,
+) (*service.StickySpilloverState, bool, error) {
+	leaseKey, guardKey := buildStickySpilloverKeys(groupID, sessionHash)
+	values, err := restoreStickySpilloverScript.Run(ctx, c.rdb, []string{leaseKey, guardKey},
+		expected.PrimaryAccountID, expected.FallbackAccountID, nowMS, spilloverTTLMillis(leaseTTL), spilloverTTLMillis(guardTTL),
+	).Slice()
+	if err != nil {
+		return nil, false, err
+	}
+	return decodeStickySpilloverCASResult(values)
+}
+
+func (c *gatewayCache) RefreshStickySpillover(
+	ctx context.Context,
+	groupID int64,
+	sessionHash string,
+	expected service.StickySpilloverState,
+	nowMS int64,
+	leaseTTL, guardTTL time.Duration,
+) (*service.StickySpilloverState, bool, error) {
+	leaseKey, guardKey := buildStickySpilloverKeys(groupID, sessionHash)
+	values, err := refreshStickySpilloverScript.Run(ctx, c.rdb, []string{leaseKey, guardKey},
+		expected.PrimaryAccountID, expected.FallbackAccountID, nowMS, spilloverTTLMillis(leaseTTL), spilloverTTLMillis(guardTTL),
+	).Slice()
+	if err != nil {
+		return nil, false, err
+	}
+	return decodeStickySpilloverCASResult(values)
+}
+
+func decodeStickySpilloverCASResult(values []any) (*service.StickySpilloverState, bool, error) {
+	if len(values) != 2 {
+		return nil, false, errors.New("invalid sticky spillover CAS result")
+	}
+	updated, err := strconv.ParseInt(fmt.Sprint(values[0]), 10, 64)
+	if err != nil {
+		return nil, false, err
+	}
+	state, err := decodeStickySpilloverState(fmt.Sprint(values[1]))
+	return state, updated == 1, err
+}
+
+func (c *gatewayCache) InvalidateStickySpillover(ctx context.Context, groupID int64, sessionHash string, expected service.StickySpilloverState) (bool, error) {
+	leaseKey, _ := buildStickySpilloverKeys(groupID, sessionHash)
+	result, err := invalidateStickySpilloverScript.Run(ctx, c.rdb, []string{leaseKey}, expected.PrimaryAccountID, expected.FallbackAccountID).Int()
+	return result == 1, err
+}
+
+func (c *gatewayCache) ClearStickySpilloverGuard(ctx context.Context, groupID int64, sessionHash string, expected service.StickySpilloverState) (bool, error) {
+	leaseKey, guardKey := buildStickySpilloverKeys(groupID, sessionHash)
+	result, err := clearStickySpilloverGuardScript.Run(ctx, c.rdb, []string{leaseKey, guardKey}, expected.PrimaryAccountID, expected.FallbackAccountID).Int()
+	return result == 1, err
+}
+
+var _ service.StickySpilloverStore = (*gatewayCache)(nil)
 
 const (
 	grokVideoPendingBillingPrefix = "grok_video_pending:"

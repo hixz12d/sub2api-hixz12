@@ -1698,12 +1698,17 @@ func (s *OpenAIGatewayService) schedulingConfig() config.GatewaySchedulingConfig
 		return s.cfg.Gateway.Scheduling
 	}
 	return config.GatewaySchedulingConfig{
-		StickySessionMaxWaiting:       3,
-		StickySessionWaitTimeout:      45 * time.Second,
-		SoftSpilloverThresholdPercent: 80,
-		FallbackWaitTimeout:           30 * time.Second,
-		FallbackMaxWaiting:            100,
-		LoadBatchEnabled:              true,
-		SlotCleanupInterval:           30 * time.Second,
+		StickySessionMaxWaiting:             3,
+		StickySessionWaitTimeout:            45 * time.Second,
+		SoftSpilloverThresholdPercent:       80,
+		SoftSpilloverGraceMS:                1000,
+		SoftSpilloverLeaseTTLSeconds:        600,
+		SoftSpilloverReturnThresholdPercent: 50,
+		SoftSpilloverMaxAccountsPerSession:  2,
+		SoftSpilloverMaxSwitchesPer10M:      1,
+		FallbackWaitTimeout:                 30 * time.Second,
+		FallbackMaxWaiting:                  100,
+		LoadBatchEnabled:                    true,
+		SlotCleanupInterval:                 30 * time.Second,
 	}
 }

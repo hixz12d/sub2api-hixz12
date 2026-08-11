@@ -57,3 +57,37 @@ func fetchAccountSoftSpilloverState(
 	load := loadMap[accountID]
 	return accountLoadReachedSoftSpillover(load, maxConcurrency, percent), load
 }
+
+func fetchAccountSoftSpilloverStateFresh(
+	ctx context.Context,
+	concurrencyService *ConcurrencyService,
+	accountID int64,
+	maxConcurrency int,
+	percent int,
+) (bool, *AccountLoadInfo, error) {
+	if concurrencyService == nil || accountID <= 0 || maxConcurrency <= 0 {
+		return false, nil, nil
+	}
+	loadMap, err := concurrencyService.GetAccountsLoadBatchFresh(ctx, []AccountWithConcurrency{{
+		ID:             accountID,
+		MaxConcurrency: maxConcurrency,
+	}})
+	if err != nil {
+		return false, nil, err
+	}
+	load := loadMap[accountID]
+	return accountLoadReachedSoftSpillover(load, maxConcurrency, percent), load, nil
+}
+
+func fetchAccountBelowSoftSpilloverThresholdFresh(
+	ctx context.Context,
+	concurrencyService *ConcurrencyService,
+	accountID int64,
+	maxConcurrency int,
+	percent int,
+) (bool, error) {
+	reached, _, err := fetchAccountSoftSpilloverStateFresh(
+		ctx, concurrencyService, accountID, maxConcurrency, percent,
+	)
+	return !reached, err
+}

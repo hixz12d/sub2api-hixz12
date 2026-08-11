@@ -690,6 +690,18 @@ func TestLoadSchedulingConfigFromEnv(t *testing.T) {
 	}
 }
 
+func TestLoadSoftSpilloverLeaseDefaults(t *testing.T) {
+	resetViperWithJWTSecret(t)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Equal(t, 1000, cfg.Gateway.Scheduling.SoftSpilloverGraceMS)
+	require.Equal(t, 600, cfg.Gateway.Scheduling.SoftSpilloverLeaseTTLSeconds)
+	require.Equal(t, 50, cfg.Gateway.Scheduling.SoftSpilloverReturnThresholdPercent)
+	require.Equal(t, 2, cfg.Gateway.Scheduling.SoftSpilloverMaxAccountsPerSession)
+	require.Equal(t, 1, cfg.Gateway.Scheduling.SoftSpilloverMaxSwitchesPer10M)
+}
+
 func TestLoadWeChatConnectConfigFromLegacyEnv(t *testing.T) {
 	resetViperWithJWTSecret(t)
 	t.Setenv("WECHAT_OAUTH_OPEN_APP_ID", "wx-open-app")
@@ -2027,6 +2039,33 @@ func TestValidateConfigErrors(t *testing.T) {
 			name:    "gateway scheduling soft spillover threshold",
 			mutate:  func(c *Config) { c.Gateway.Scheduling.SoftSpilloverThresholdPercent = 0 },
 			wantErr: "gateway.scheduling.soft_spillover_threshold_percent",
+		},
+		{
+			name:    "gateway scheduling soft spillover grace",
+			mutate:  func(c *Config) { c.Gateway.Scheduling.SoftSpilloverGraceMS = 0 },
+			wantErr: "gateway.scheduling.soft_spillover_grace_ms",
+		},
+		{
+			name:    "gateway scheduling soft spillover lease ttl",
+			mutate:  func(c *Config) { c.Gateway.Scheduling.SoftSpilloverLeaseTTLSeconds = 0 },
+			wantErr: "gateway.scheduling.soft_spillover_lease_ttl_seconds",
+		},
+		{
+			name: "gateway scheduling soft spillover return threshold",
+			mutate: func(c *Config) {
+				c.Gateway.Scheduling.SoftSpilloverReturnThresholdPercent = c.Gateway.Scheduling.SoftSpilloverThresholdPercent
+			},
+			wantErr: "gateway.scheduling.soft_spillover_return_threshold_percent",
+		},
+		{
+			name:    "gateway scheduling soft spillover max accounts",
+			mutate:  func(c *Config) { c.Gateway.Scheduling.SoftSpilloverMaxAccountsPerSession = 3 },
+			wantErr: "gateway.scheduling.soft_spillover_max_accounts_per_session",
+		},
+		{
+			name:    "gateway scheduling soft spillover max switches",
+			mutate:  func(c *Config) { c.Gateway.Scheduling.SoftSpilloverMaxSwitchesPer10M = 2 },
+			wantErr: "gateway.scheduling.soft_spillover_max_switches_per_10m",
 		},
 		{
 			name:    "gateway scheduling load batch cache ttl",

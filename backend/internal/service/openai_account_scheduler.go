@@ -2311,14 +2311,51 @@ func (s *OpenAIGatewayService) SelectAccountWithSchedulerForImages(
 	return selection, decision, err
 }
 
-// selectAccountWithScheduler wraps selectAccountWithSchedulerOnce with a
+func (s *OpenAIGatewayService) selectAccountWithScheduler(
+	ctx context.Context,
+	groupID *int64,
+	previousResponseID string,
+	sessionHash string,
+	requestedModel string,
+	excludedIDs map[int64]struct{},
+	requiredTransport OpenAIUpstreamTransport,
+	requiredCapability OpenAIEndpointCapability,
+	requiredImageCapability OpenAIImagesCapability,
+	requireCompact bool,
+	platform string,
+	previousResponseCanMove bool,
+	useUpstreamTokenCost bool,
+) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	req := openAIStickySpilloverRequest{
+		groupID:                 groupID,
+		previousResponseID:      previousResponseID,
+		sessionHash:             sessionHash,
+		requestedModel:          requestedModel,
+		excludedIDs:             excludedIDs,
+		requiredTransport:       requiredTransport,
+		requiredCapability:      requiredCapability,
+		requiredImageCapability: requiredImageCapability,
+		requireCompact:          requireCompact,
+		platform:                platform,
+		previousResponseCanMove: previousResponseCanMove,
+	}
+	return s.selectAccountWithStickySpillover(ctx, req, func() (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+		return s.selectAccountWithSchedulerBase(
+			ctx, groupID, previousResponseID, sessionHash, requestedModel, excludedIDs,
+			requiredTransport, requiredCapability, requiredImageCapability, requireCompact,
+			platform, previousResponseCanMove, useUpstreamTokenCost,
+		)
+	})
+}
+
+// selectAccountWithSchedulerBase wraps selectAccountWithSchedulerOnce with a
 // fail-open second pass for the proxy stream circuit (#5056): when the only
 // reason no account is available is that every candidate sits behind a
 // quarantined proxy, the quarantine must degrade to a preference instead of
 // zeroing out capacity. The retry re-runs the exact same selection with the
 // quarantine checks bypassed, so healthy proxies always win the first pass
 // and quarantined ones only serve when nothing else can.
-func (s *OpenAIGatewayService) selectAccountWithScheduler(
+func (s *OpenAIGatewayService) selectAccountWithSchedulerBase(
 	ctx context.Context,
 	groupID *int64,
 	previousResponseID string,

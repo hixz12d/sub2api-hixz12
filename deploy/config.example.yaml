@@ -541,6 +541,19 @@ gateway:
     # 软溢出阈值（1-100）：80 表示 5 并发账号到 4/5 后，新请求优先使用未达阈值的兼容账号。
     # 临时溢出不改写原粘性绑定；设为 100 可恢复“满载才溢出”。
     soft_spillover_threshold_percent: 80
+    # OpenAI OAuth only: wait briefly, then recheck fresh load before spilling.
+    # 仅 OpenAI OAuth：短等后用新鲜负载复查，再决定是否外溢。
+    soft_spillover_grace_ms: 1000
+    # Sliding fallback lease TTL in seconds; active sessions keep the same fallback.
+    # 后备账号滑动租约 TTL（秒）；活跃会话持续固定同一后备账号。
+    soft_spillover_lease_ttl_seconds: 600
+    # Return to the primary only below this percentage after an idle lease expiry.
+    # 租约空闲过期后，仅当主账号低于该水位才回归。
+    soft_spillover_return_threshold_percent: 50
+    # Phase-one safety limits: one primary plus one fallback, one switch per 10 minutes.
+    # 第一阶段安全限制：一个主账号加一个后备账号，10 分钟最多切换一次。
+    soft_spillover_max_accounts_per_session: 2
+    soft_spillover_max_switches_per_10m: 1
     # Fallback wait timeout (duration)
     # 兜底排队等待超时（时间段）
     fallback_wait_timeout: 30s
