@@ -297,6 +297,10 @@ func (s *GroupRepoSuite) TestUpdateOpenAIAccountPriorityModeIfCurrentPublishesOu
 		SubscriptionType:          service.SubscriptionTypeStandard,
 	}
 	s.Require().NoError(s.repo.Create(s.ctx, group))
+	// Create emits the same deduplicated pending event; clear it so this test
+	// proves the CAS update publishes an event on its own.
+	_, err := s.tx.ExecContext(s.ctx, "DELETE FROM scheduler_outbox WHERE group_id=$1", group.ID)
+	s.Require().NoError(err)
 	var before int64
 	s.Require().NoError(scanSingleRow(s.ctx, s.tx, "SELECT count(*) FROM scheduler_outbox WHERE group_id=$1", []any{group.ID}, &before))
 
