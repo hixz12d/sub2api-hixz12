@@ -924,6 +924,17 @@ func (s *RateLimitService) handleOpenAI403(ctx context.Context, account *Account
 		return false
 	}
 
+	// HTML 403 responses are emitted by upstream proxies/CDNs and do not prove
+	// that the selected account is invalid. Preserve failover without penalizing it.
+	if isHTMLResponse(responseBody) {
+		slog.Warn(
+			"openai_403_html_body_skips_account_penalty",
+			"account_id", account.ID,
+			"upstream_message", upstreamMsg,
+		)
+		return false
+	}
+
 	msg := buildForbiddenErrorMessage(
 		"Access forbidden (403):",
 		upstreamMsg,
