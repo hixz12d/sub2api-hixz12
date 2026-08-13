@@ -306,6 +306,10 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		return nil, infraerrors.Newf(http.StatusBadRequest, "INVALID_OPENAI_ACCOUNT_PRIORITY_MODE", "%v", err)
 	}
 	openAIAccountPriorityMode := NormalizeOpenAIAccountPriorityMode(platform, input.OpenAIAccountPriorityMode)
+	modelPricing, err := normalizeGroupModelPricing(platform, input.ModelPricing)
+	if err != nil {
+		return nil, err
+	}
 	maxReasoningEffort, err := normalizeMaxReasoningEffortForPlatform(platform, input.MaxReasoningEffort)
 	if err != nil {
 		return nil, infraerrors.Newf(http.StatusBadRequest, "INVALID_MAX_REASONING_EFFORT", "%v", err)
@@ -465,6 +469,8 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		DailyLimitUSD:                   dailyLimit,
 		WeeklyLimitUSD:                  weeklyLimit,
 		MonthlyLimitUSD:                 monthlyLimit,
+		LongContextPricingEnabled:       input.LongContextPricingEnabled,
+		ModelPricing:                    modelPricing,
 		AllowImageGeneration:            allowImageGeneration,
 		AllowBatchImageGeneration:       allowBatchImageGeneration,
 		ImageRateIndependent:            input.ImageRateIndependent,
@@ -641,6 +647,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		return nil, err
 	}
 
+	// 渠道缓存里存了 groupID → platform 的映射，改了平台要让它失效（见函数末尾）
+	previousPlatform := group.Platform
+
 	if input.Name != "" {
 		group.Name = input.Name
 	}
@@ -668,6 +677,16 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 	if input.Status != "" {
 		group.Status = input.Status
+	}
+	if input.LongContextPricingEnabled != nil {
+		group.LongContextPricingEnabled = *input.LongContextPricingEnabled
+	}
+	if input.ModelPricing != nil {
+		modelPricing, normalizeErr := normalizeGroupModelPricing(group.Platform, *input.ModelPricing)
+		if normalizeErr != nil {
+			return nil, normalizeErr
+		}
+		group.ModelPricing = modelPricing
 	}
 
 	// 订阅相关字段
@@ -979,6 +998,9 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	if s.authCacheInvalidator != nil {
 		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, id)
 	}
+	if group.Platform != previousPlatform && s.channelCacheInvalidator != nil {
+		s.channelCacheInvalidator.InvalidateCache()
+	}
 
 	return group, nil
 }
@@ -1009,6 +1031,28 @@ func (s *adminServiceImpl) UpdateGroupAccountPriorities(ctx context.Context, gro
 		}
 	}
 	return s.groupPriorityRepo.UpdateAccountGroupPriorities(ctx, groupID, normalized)
+}
+
+func normalizeGroupModelPricing(platform string, pricing []ChannelModelPricing) ([]ChannelModelPricing, error) {
+	out := make([]ChannelModelPricing, len(pricing))
+	for i := range pricing {
+		out[i] = pricing[i].Clone()
+		out[i].ID = 0
+		out[i].ChannelID = 0
+		if strings.TrimSpace(out[i].Platform) == "" {
+			out[i].Platform = platform
+		}
+		for j := range out[i].Models {
+			out[i].Models[j] = strings.TrimSpace(out[i].Models[j])
+		}
+		if len(out[i].Models) == 0 {
+			return nil, infraerrors.New(http.StatusBadRequest, "GROUP_MODEL_PRICING_MODELS_REQUIRED", "group model pricing entry requires at least one model")
+		}
+	}
+	if err := validatePricingEntries(out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (s *adminServiceImpl) DeleteGroup(ctx context.Context, id int64) error {
