@@ -1045,7 +1045,16 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 				acceptedTurn = true
 			}
 			if isResponseCreate && account.IsOpenAIOAuth() {
-				out, filterErr = applyCodexFingerprintToRawBody(out, codexFingerprintIDsFromContext(c))
+				var clientHeaders http.Header
+				if c != nil && c.Request != nil {
+					clientHeaders = c.Request.Header
+				}
+				promptCacheKey := strings.TrimSpace(gjson.GetBytes(out, "prompt_cache_key").String())
+				ids := resolveCodexFingerprintIDsFromContext(account, c, clientHeaders, promptCacheKey)
+				if ids != nil && c != nil {
+					c.Set("codex_fingerprint_ids", ids)
+				}
+				out, filterErr = applyCodexFingerprintToRawBody(out, ids)
 				if filterErr != nil {
 					return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", filterErr)
 				}

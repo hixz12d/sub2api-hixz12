@@ -67,7 +67,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	if account.Platform == PlatformOpenAI {
 		ctx = s.snapshotOpenAIOutboundIdentity(ctx, account, c.GetHeader("User-Agent"))
 		promptCacheKey := strings.TrimSpace(gjson.GetBytes(firstClientMessage, "prompt_cache_key").String())
-		if ids := resolveCodexFingerprintIDsFromRequestWithPromptCacheKey(account, c.Request.Header, promptCacheKey); ids != nil {
+		if ids := resolveCodexFingerprintIDsFromContext(account, c, c.Request.Header, promptCacheKey); ids != nil {
 			c.Set("codex_fingerprint_ids", ids)
 		}
 	}

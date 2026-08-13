@@ -32,6 +32,9 @@ const (
 	// codexFingerprintWindow 是共享账号的风控折中：同一客户端在 UTC 8 小时窗口内
 	// 粘滞到 8 个槽之一，每个 UTC 日最多产生 24 个 thread，而非正常单用户模型。
 	codexFingerprintWindow codexFingerprintMode = "window"
+	// codexFingerprintWindow40 保持 8 小时粘滞，将每个 UTC 日的 thread
+	// 预算提高到 40（13 + 14 + 13 个槽）。
+	codexFingerprintWindow40 codexFingerprintMode = "window40"
 	// codexFingerprintFull 收敛所有标识：installation_id + session_id + thread_id。
 	// 上游看到 1 台设备 + 1 会话 + 1 线程，最激进。
 	codexFingerprintFull codexFingerprintMode = "full"
@@ -58,7 +61,7 @@ func (a *Account) GetCodexFingerprintMode() codexFingerprintMode {
 	}
 	raw := strings.TrimSpace(a.GetExtraString(codexFingerprintModeExtraKey))
 	switch codexFingerprintMode(raw) {
-	case codexFingerprintOff, codexFingerprintDevice, codexFingerprintSession, codexFingerprintWindow, codexFingerprintFull:
+	case codexFingerprintOff, codexFingerprintDevice, codexFingerprintSession, codexFingerprintWindow, codexFingerprintWindow40, codexFingerprintFull:
 		return codexFingerprintMode(raw)
 	default:
 		return codexFingerprintSession
@@ -137,6 +140,33 @@ func resolveWindowThreadID(account *Account, clientSessionID string, now time.Ti
 	))
 }
 
+func codexThreadWindow40Slots(now time.Time) int {
+	if now.UTC().Hour()/codexThreadWindowHours == 1 {
+		return 14
+	}
+	return 13
+}
+
+func resolveWindow40Slot(clientSeed string, now time.Time) int {
+	if strings.TrimSpace(clientSeed) == "" {
+		return 0
+	}
+	hash := sha256.Sum256([]byte(clientSeed))
+	return int(binary.BigEndian.Uint64(hash[:8]) % uint64(codexThreadWindow40Slots(now)))
+}
+
+func resolveWindow40ThreadID(account *Account, clientSeed string, now time.Time) string {
+	if account == nil {
+		return ""
+	}
+	return deriveStableUUIDv4(fmt.Sprintf(
+		"sub2api:codex-thread-id:v3-window40:%d:%s:%d",
+		account.ID,
+		codexThreadWindowKey(now),
+		resolveWindow40Slot(clientSeed, now),
+	))
+}
+
 // codexFingerprintIDs 收敛后的完整 ID 集合。
 // 由 resolveCodexFingerprintIDs 一次性生成，同一个实例在头改写和体改写之间共享，
 // 确保所有载体中的 turn_id 等随机字段一致。
@@ -183,6 +213,13 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 	case codexFingerprintWindow:
 		ids.sessionID = resolveConvergedSessionID(account)
 		ids.threadID = resolveWindowThreadID(account, clientSessionID, codexFingerprintNow())
+		ids.turnID = uuid.Must(uuid.NewV7()).String()
+		ids.windowID = ids.threadID + ":0"
+		return ids
+
+	case codexFingerprintWindow40:
+		ids.sessionID = resolveConvergedSessionID(account)
+		ids.threadID = resolveWindow40ThreadID(account, clientSessionID, codexFingerprintNow())
 		ids.turnID = uuid.Must(uuid.NewV7()).String()
 		ids.windowID = ids.threadID + ":0"
 		return ids
@@ -254,6 +291,30 @@ func extractClientThreadSeed(h http.Header, promptCacheKey string) string {
 	return strings.TrimSpace(promptCacheKey)
 }
 
+func codexFingerprintTenantSeed(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	value, _ := c.Get("api_key")
+	apiKey, ok := value.(*APIKey)
+	if !ok || apiKey == nil || apiKey.ID <= 0 {
+		return ""
+	}
+	return fmt.Sprintf("u%d:k%d", apiKey.UserID, apiKey.ID)
+}
+
+func combineCodexFingerprintSeed(tenantSeed, clientSeed string) string {
+	tenantSeed = strings.TrimSpace(tenantSeed)
+	clientSeed = strings.TrimSpace(clientSeed)
+	if tenantSeed == "" {
+		return clientSeed
+	}
+	if clientSeed == "" {
+		return tenantSeed
+	}
+	return tenantSeed + ":" + clientSeed
+}
+
 // resolveCodexFingerprintIDsFromRequest 从客户端原始请求头中提取 session-id，
 // 结合账号配置一次性解析收敛 ID 集合。调用方应将返回的 ids 同时传给
 // applyCodexFingerprintHeaders 和 applyCodexFingerprintClientMetadata。
@@ -262,6 +323,10 @@ func resolveCodexFingerprintIDsFromRequest(account *Account, clientHeaders http.
 }
 
 func resolveCodexFingerprintIDsFromRequestWithPromptCacheKey(account *Account, clientHeaders http.Header, promptCacheKey string) *codexFingerprintIDs {
+	return resolveCodexFingerprintIDsFromContext(account, nil, clientHeaders, promptCacheKey)
+}
+
+func resolveCodexFingerprintIDsFromContext(account *Account, c *gin.Context, clientHeaders http.Header, promptCacheKey string) *codexFingerprintIDs {
 	if account == nil {
 		return nil
 	}
@@ -270,8 +335,11 @@ func resolveCodexFingerprintIDsFromRequestWithPromptCacheKey(account *Account, c
 		return nil
 	}
 	clientSessionID := extractClientSessionID(clientHeaders)
-	if mode == codexFingerprintWindow {
+	if mode == codexFingerprintWindow || mode == codexFingerprintWindow40 {
 		clientSessionID = extractClientThreadSeed(clientHeaders, promptCacheKey)
+	}
+	if mode == codexFingerprintWindow40 {
+		clientSessionID = combineCodexFingerprintSeed(codexFingerprintTenantSeed(c), clientSessionID)
 	}
 	return resolveCodexFingerprintIDs(account, clientSessionID, mode)
 }

@@ -422,7 +422,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			if c != nil && c.Request != nil {
 				clientHeaders = c.Request.Header
 			}
-			fpIDs := resolveCodexFingerprintIDsFromRequestWithPromptCacheKey(account, clientHeaders, promptCacheKey)
+			fpIDs := resolveCodexFingerprintIDsFromContext(account, c, clientHeaders, promptCacheKey)
 			if fpIDs != nil {
 				rawAccountScopedWindowID := ""
 				if s.isOpenAIAccountScopedIdentityEnabled(account) {

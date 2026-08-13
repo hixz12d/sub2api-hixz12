@@ -353,7 +353,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		if c != nil && c.Request != nil {
 			clientHeaders = c.Request.Header
 		}
-		fingerprintIDs = resolveCodexFingerprintIDsFromRequestWithPromptCacheKey(account, clientHeaders, accountIdentityPromptCacheKey)
+		fingerprintIDs = resolveCodexFingerprintIDsFromContext(account, c, clientHeaders, accountIdentityPromptCacheKey)
 	}
 	accountIdentitySessionID := resolveOpenAIWSSessionHeaders(c, accountIdentityPromptCacheKey).SessionID
 	if accountIdentitySessionID == "" && isOpenAIResponsesCompactPath(c) {

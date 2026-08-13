@@ -574,11 +574,12 @@ export default {
         codexCLIOnlyAppServerDesc:
           "Effective only when the switch above is on. When enabled, this account also allows third-party clients that embed the Codex engine over the app-server protocol (e.g. Claude Code's codex plugin); they still pass the global engine-fingerprint gate. OR-combined with the global app-server toggle.",
         codexFingerprintMode: 'Codex fingerprint convergence',
-        codexFingerprintModeDesc: 'When multiple users share an OAuth account, converge device, session, and thread identifiers to account-level stable values. Threads are daily distinct conversations, not credits. Device + Session splits by client session; Sticky time-window pool limits a day to about 24 threads in 8-hour windows; Full convergence creates one very long thread all day and is not recommended for shared accounts.',
+        codexFingerprintModeDesc: 'When multiple users share an OAuth account, converge device, session, and thread identifiers to account-level stable values. Threads are daily distinct conversations, not credits. The 40 Threads pool rotates every 8 hours, caps each UTC day at 40, and assigns slots by local user, API key, and client session. The legacy pool caps a day at 24.',
         codexFingerprintOff: 'Off (passthrough)',
         codexFingerprintDevice: 'Device only',
         codexFingerprintSession: 'Device + Session',
-        codexFingerprintWindow: 'Sticky time-window pool (recommended)',
+        codexFingerprintWindow: 'Sticky time-window pool (24 Threads)',
+        codexFingerprintWindow40: 'Sticky time-window pool (40 Threads, recommended)',
         codexFingerprintFull: 'Full convergence',
         codexImageTool: 'Codex image bridge policy',
         codexImageToolDesc:

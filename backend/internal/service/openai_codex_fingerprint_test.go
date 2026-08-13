@@ -2,10 +2,13 @@ package service
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -60,6 +63,7 @@ func TestGetCodexFingerprintMode(t *testing.T) {
 		{"device", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "device"}), codexFingerprintDevice},
 		{"session", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "session"}), codexFingerprintSession},
 		{"window", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "window"}), codexFingerprintWindow},
+		{"window40", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "window40"}), codexFingerprintWindow40},
 		{"full", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "full"}), codexFingerprintFull},
 	}
 	for _, tt := range tests {
@@ -229,6 +233,46 @@ func TestExtractClientThreadSeedPriority(t *testing.T) {
 	assert.Equal(t, "conversation", extractClientThreadSeed(headers, "cache"))
 	headers.Del("conversation_id")
 	assert.Equal(t, "cache", extractClientThreadSeed(headers, " cache "))
+}
+
+func TestWindow40BudgetAndTenantIsolation(t *testing.T) {
+	times := []time.Time{
+		time.Date(2026, 8, 14, 1, 0, 0, 0, time.UTC),
+		time.Date(2026, 8, 14, 9, 0, 0, 0, time.UTC),
+		time.Date(2026, 8, 14, 17, 0, 0, 0, time.UTC),
+	}
+	assert.Equal(t, 13, codexThreadWindow40Slots(times[0]))
+	assert.Equal(t, 14, codexThreadWindow40Slots(times[1]))
+	assert.Equal(t, 13, codexThreadWindow40Slots(times[2]))
+	assert.Equal(t, 40, codexThreadWindow40Slots(times[0])+codexThreadWindow40Slots(times[1])+codexThreadWindow40Slots(times[2]))
+
+	account := newTestOAuthAccount(7, map[string]any{codexFingerprintModeExtraKey: "window40"})
+	cA, _ := gin.CreateTestContext(httptest.NewRecorder())
+	cA.Set("api_key", &APIKey{ID: 11, UserID: 101})
+	cB, _ := gin.CreateTestContext(httptest.NewRecorder())
+	cB.Set("api_key", &APIKey{ID: 12, UserID: 102})
+	headers := http.Header{"session-id": []string{"same-client-session"}}
+
+	originalNow := codexFingerprintNow
+	codexFingerprintNow = func() time.Time { return times[0] }
+	t.Cleanup(func() { codexFingerprintNow = originalNow })
+
+	idsA1 := resolveCodexFingerprintIDsFromContext(account, cA, headers, "")
+	idsA2 := resolveCodexFingerprintIDsFromContext(account, cA, headers, "")
+	idsB := resolveCodexFingerprintIDsFromContext(account, cB, headers, "")
+	require.NotNil(t, idsA1)
+	require.NotNil(t, idsA2)
+	require.NotNil(t, idsB)
+	assert.Equal(t, codexFingerprintWindow40, idsA1.mode)
+	assert.Equal(t, idsA1.threadID, idsA2.threadID)
+	assert.NotEqual(t, idsA1.turnID, idsA2.turnID)
+	assert.NotEqual(t, combineCodexFingerprintSeed(codexFingerprintTenantSeed(cA), "same-client-session"), combineCodexFingerprintSeed(codexFingerprintTenantSeed(cB), "same-client-session"))
+
+	for i := 0; i < 128; i++ {
+		slot := resolveWindow40Slot(fmt.Sprintf("seed-%d", i), times[1])
+		assert.GreaterOrEqual(t, slot, 0)
+		assert.Less(t, slot, 14)
+	}
 }
 
 // --- off 模式：resolveCodexFingerprintIDsFromRequest 返回 nil ---

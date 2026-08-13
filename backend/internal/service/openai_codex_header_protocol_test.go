@@ -79,6 +79,7 @@ func TestOpenAIOAuthHTTPHeaderProtocolAllFingerprintModes(t *testing.T) {
 		codexFingerprintDevice,
 		codexFingerprintSession,
 		codexFingerprintWindow,
+		codexFingerprintWindow40,
 		codexFingerprintFull,
 	} {
 		t.Run(string(mode), func(t *testing.T) {

@@ -295,7 +295,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		if c != nil && c.Request != nil {
 			clientHeaders = c.Request.Header
 		}
-		if ids := resolveCodexFingerprintIDsFromRequestWithPromptCacheKey(account, clientHeaders, promptCacheKey); ids != nil && c != nil {
+		if ids := resolveCodexFingerprintIDsFromContext(account, c, clientHeaders, promptCacheKey); ids != nil && c != nil {
 			c.Set("codex_fingerprint_ids", ids)
 		}
 	}
