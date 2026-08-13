@@ -185,8 +185,11 @@ func (s *OpenAIGatewayService) buildOpenAIWSCreatePayload(reqBody map[string]any
 	payload["type"] = "response.create"
 
 	// OAuth 默认保持 store=false，避免误依赖服务端历史。
-	if account != nil && account.Type == AccountTypeOAuth && !s.isOpenAIWSStoreRecoveryAllowed(account) {
-		payload["store"] = false
+	if account != nil && account.Type == AccountTypeOAuth {
+		delete(payload, "prompt_cache_key")
+		if !s.isOpenAIWSStoreRecoveryAllowed(account) {
+			payload["store"] = false
+		}
 	}
 	return payload
 }

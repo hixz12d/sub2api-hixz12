@@ -3035,6 +3035,7 @@ func TestOpenAIBuildUpstreamRequestOAuthMessagesBridgeUsesSessionOnly(t *testing
 		Type:        AccountTypeOAuth,
 		Credentials: map[string]any{"chatgpt_account_id": "chatgpt-acc"},
 	}
+	setOpenAICompatMessagesBridgeContext(c, true)
 
 	req, err := svc.buildUpstreamRequest(c.Request.Context(), c, account, body, "token", true, "anthropic-metadata-session-1", false)
 	require.NoError(t, err)

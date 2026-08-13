@@ -687,6 +687,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 		}
 	}
 	requestModel := strings.TrimSpace(gjson.GetBytes(firstClientMessage, "model").String())
+	promptCacheKey := strings.TrimSpace(gjson.GetBytes(firstClientMessage, "prompt_cache_key").String())
 	requestPreviousResponseID := strings.TrimSpace(gjson.GetBytes(firstClientMessage, "previous_response_id").String())
 	logOpenAIWSV2Passthrough(
 		"relay_start account_id=%d model=%s previous_response_id=%s first_message_type=%s first_message_bytes=%d",
@@ -774,7 +775,6 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	// goroutine）和 OnTurnComplete / final result（runUpstreamToClient
 	// goroutine）之间同步当前 turn 的 usage metadata。
 	usageMeta.initFromFirstFrame(firstClientMessage, capturedSessionModel)
-	promptCacheKey := strings.TrimSpace(gjson.GetBytes(firstClientMessage, "prompt_cache_key").String())
 
 	wsURL, err := s.buildOpenAIResponsesWSURL(account)
 	if err != nil {

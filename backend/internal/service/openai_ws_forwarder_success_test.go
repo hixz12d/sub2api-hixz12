@@ -755,7 +755,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStoreFalseByDefault(t *testing.T
 	require.Equal(t, resolveConvergedSessionID(account), captureDialer.lastHeaders.Get(codexSessionHeader))
 	require.Empty(t, captureDialer.lastHeaders.Get(legacyCodexSessionHeader))
 	require.Equal(t, captureDialer.lastHeaders.Get(codexSessionHeader), gjson.Get(requestJSON, "client_metadata.session_id").String())
-	require.Equal(t, isolateOpenAISessionID(0, "conv-oauth-1"), captureDialer.lastHeaders.Get("conversation_id"))
+	require.Equal(t, resolveConvergedSessionID(account), captureDialer.lastHeaders.Get("conversation_id"))
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_OAuthOriginatorCompatibility(t *testing.T) {
@@ -981,9 +981,11 @@ func TestOpenAIGatewayService_Forward_WSv2_HeaderSessionFallbackFromPromptCacheK
 	// 但握手与 body 的 session 均使用同一账号级收敛值。
 	require.Equal(t, resolveConvergedSessionID(account), captureDialer.lastHeaders.Get(codexSessionHeader))
 	require.Empty(t, captureDialer.lastHeaders.Get(legacyCodexSessionHeader))
-	require.Empty(t, captureDialer.lastHeaders.Get("conversation_id"))
+	require.Equal(t, resolveConvergedSessionID(account), captureDialer.lastHeaders.Get("conversation_id"))
 	require.NotNil(t, captureConn.lastWrite)
-	require.True(t, gjson.Get(requestToJSONString(captureConn.lastWrite), "stream").Exists())
+	requestJSON := requestToJSONString(captureConn.lastWrite)
+	require.True(t, gjson.Get(requestJSON, "stream").Exists())
+	require.False(t, gjson.Get(requestJSON, "prompt_cache_key").Exists())
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_ResponseDoneUsageParsed(t *testing.T) {

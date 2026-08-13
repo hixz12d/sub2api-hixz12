@@ -290,6 +290,16 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		}
 	}
 
+	if account.Type == AccountTypeOAuth && account.Platform != PlatformGrok {
+		var clientHeaders http.Header
+		if c != nil && c.Request != nil {
+			clientHeaders = c.Request.Header
+		}
+		if ids := resolveCodexFingerprintIDsFromRequestWithPromptCacheKey(account, clientHeaders, promptCacheKey); ids != nil && c != nil {
+			c.Set("codex_fingerprint_ids", ids)
+		}
+	}
+
 	// 5. Get access token
 	token, _, err := s.getRequestCredential(ctx, c, account)
 	if err != nil {
@@ -320,12 +330,17 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if account.Platform != PlatformGrok && promptCacheKey != "" {
 		isolatedSessionID := generateSessionUUID(s.openAIOutboundSessionID(account, apiKeyID, promptCacheKey))
 		if account.Type == AccountTypeOAuth {
-			normalizeCodexOAuthHeaders(upstreamReq.Header, isolatedSessionID, resolveCodexThreadHeader(upstreamReq.Header))
+			if codexFingerprintIDsFromContext(c) == nil {
+				normalizeCodexOAuthHeaders(upstreamReq.Header, isolatedSessionID, resolveCodexThreadHeader(upstreamReq.Header))
+				if upstreamReq.Header.Get("conversation_id") != "" {
+					upstreamReq.Header.Set("conversation_id", isolatedSessionID)
+				}
+			}
 		} else {
 			upstreamReq.Header.Set(legacyCodexSessionHeader, isolatedSessionID)
-		}
-		if upstreamReq.Header.Get("conversation_id") != "" {
-			upstreamReq.Header.Set("conversation_id", isolatedSessionID)
+			if upstreamReq.Header.Get("conversation_id") != "" {
+				upstreamReq.Header.Set("conversation_id", isolatedSessionID)
+			}
 		}
 	}
 	if account.Type == AccountTypeOAuth && account.Platform != PlatformGrok {

@@ -242,11 +242,13 @@ func applyCodexOAuthTransformWithOptions(reqBody map[string]any, opts codexOAuth
 	}
 
 	if v, ok := reqBody["prompt_cache_key"].(string); ok {
+		// Keep the client value available to callers as a fingerprint/window
+		// seed, but never send it to the ChatGPT internal API.
 		result.PromptCacheKey = strings.TrimSpace(v)
-		if isOpenAICompatMessagesBridgeRequestBody(reqBody) {
-			delete(reqBody, "prompt_cache_key")
-			result.Modified = true
-		}
+	}
+	if _, ok := reqBody["prompt_cache_key"]; ok {
+		delete(reqBody, "prompt_cache_key")
+		result.Modified = true
 	}
 
 	// ChatGPT internal Codex endpoint does not accept role:"system".

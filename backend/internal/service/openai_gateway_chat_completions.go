@@ -212,8 +212,6 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		}
 		if codexResult.PromptCacheKey != "" {
 			promptCacheKey = codexResult.PromptCacheKey
-		} else if promptCacheKey != "" {
-			reqBody["prompt_cache_key"] = promptCacheKey
 		}
 		responsesBody, err = json.Marshal(reqBody)
 		if err != nil {
@@ -249,6 +247,16 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	}
 	responsesBody = updatedBody
 
+	if account.Type == AccountTypeOAuth {
+		var clientHeaders http.Header
+		if c != nil && c.Request != nil {
+			clientHeaders = c.Request.Header
+		}
+		if ids := resolveCodexFingerprintIDsFromRequestWithPromptCacheKey(account, clientHeaders, promptCacheKey); ids != nil && c != nil {
+			c.Set("codex_fingerprint_ids", ids)
+		}
+	}
+
 	// 5. Get access token
 	token, _, err := s.GetAccessToken(ctx, account)
 	if err != nil {
@@ -267,7 +275,9 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		apiKeyID := getAPIKeyIDFromContext(c)
 		sessionID := generateSessionUUID(s.openAIOutboundSessionID(account, apiKeyID, promptCacheKey))
 		if account.Type == AccountTypeOAuth {
-			normalizeCodexOAuthHeaders(upstreamReq.Header, sessionID, resolveCodexThreadHeader(upstreamReq.Header))
+			if codexFingerprintIDsFromContext(c) == nil {
+				normalizeCodexOAuthHeaders(upstreamReq.Header, sessionID, resolveCodexThreadHeader(upstreamReq.Header))
+			}
 		} else {
 			upstreamReq.Header.Set(legacyCodexSessionHeader, sessionID)
 		}

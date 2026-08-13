@@ -1952,3 +1952,17 @@ func TestFilterCodexInput_PreservesReasoningInMixedInput(t *testing.T) {
 		})
 	}
 }
+
+func TestApplyCodexOAuthTransform_StripsPromptCacheKeyAfterCapturingSeed(t *testing.T) {
+	reqBody := map[string]any{
+		"model":            "gpt-5.4",
+		"prompt_cache_key": "client-cache-seed",
+		"input":            []any{},
+	}
+
+	result := applyCodexOAuthTransform(reqBody, false, false)
+
+	require.Equal(t, "client-cache-seed", result.PromptCacheKey)
+	require.True(t, result.Modified)
+	require.NotContains(t, reqBody, "prompt_cache_key")
+}

@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func newTestOAuthAccount(id int64, extra map[string]any) *Account {
@@ -201,6 +202,7 @@ func TestWindowFingerprintHeadersAndBodyConsistent(t *testing.T) {
 	metadata := body["client_metadata"].(map[string]any)
 
 	assert.Equal(t, resolveConvergedSessionID(account), outbound.Get("session-id"))
+	assert.Equal(t, ids.sessionID, outbound.Get("conversation_id"))
 	assert.Equal(t, ids.threadID, outbound.Get("thread-id"))
 	assert.Equal(t, ids.threadID, metadata["thread_id"])
 	assert.Equal(t, ids.turnID, metadata["turn_id"])
@@ -310,6 +312,7 @@ func TestApplyCodexFingerprintHeaders_SessionMode(t *testing.T) {
 
 	assert.Equal(t, convergedInstall, h.Get("x-codex-installation-id"))
 	assert.Equal(t, convergedSession, h.Get("session-id"))
+	assert.Equal(t, convergedSession, h.Get("conversation_id"))
 	assert.Empty(t, h.Get("session_id"), "OAuth/Codex HTTP 不得保留下划线 session 头")
 	assert.Equal(t, convergedThread, h.Get("thread-id"))
 	assert.Empty(t, h.Get("thread_id"), "OAuth/Codex HTTP 不得保留下划线 thread 头")
@@ -579,4 +582,12 @@ func TestExtractClientSessionID(t *testing.T) {
 			assert.Equal(t, tt.expected, extractClientSessionID(tt.headers))
 		})
 	}
+}
+
+func TestApplyCodexFingerprintToRawBody_StripsPromptCacheKeyEvenWhenOff(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.4","prompt_cache_key":"client-cache","input":[]}`)
+	out, err := applyCodexFingerprintToRawBody(body, nil)
+	require.NoError(t, err)
+	assert.False(t, gjson.GetBytes(out, "prompt_cache_key").Exists())
+	assert.Equal(t, "gpt-5.4", gjson.GetBytes(out, "model").String())
 }

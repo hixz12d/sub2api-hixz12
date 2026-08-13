@@ -14,6 +14,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestAccountTestServiceOpenAICompactAgentIdentityUsesFreshAssertion(t *testing.T) {
@@ -103,7 +104,7 @@ func TestAccountTestServiceOpenAICompactAgentIdentityRecoversInvalidTaskOnce(t *
 	require.Equal(t, []int64{account.ID}, invalidator.accountIDs)
 }
 
-func TestOpenAIAgentIdentityPassthroughKeepsSessionAndPromptCacheHeaders(t *testing.T) {
+func TestOpenAIAgentIdentityPassthroughUsesAccountFingerprintAndStripsPromptCacheKey(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	key, privateKey := newTestAgentIdentityKey(t)
 	account := &Account{
@@ -131,13 +132,14 @@ func TestOpenAIAgentIdentityPassthroughKeepsSessionAndPromptCacheHeaders(t *test
 	require.NoError(t, err)
 	require.Equal(t, "AgentAssertion", strings.SplitN(req.Header.Get("Authorization"), " ", 2)[0])
 	require.Equal(t, "account-agent-passthrough", req.Header.Get("chatgpt-account-id"))
-	require.NotEqual(t, "client-session", req.Header.Get(codexSessionHeader))
-	require.NotEqual(t, "client-conversation", req.Header.Get("conversation_id"))
-	require.Equal(t, isolateOpenAISessionID(0, "client-session"), req.Header.Get(codexSessionHeader))
-	require.Equal(t, isolateOpenAISessionID(0, "client-conversation"), req.Header.Get("conversation_id"))
+	agentSessionID := resolveConvergedSessionID(account)
+	require.Equal(t, agentSessionID, req.Header.Get(codexSessionHeader))
+	require.Equal(t, agentSessionID, req.Header.Get("conversation_id"))
+	require.NotEqual(t, "client-session", agentSessionID)
+	require.NotEqual(t, "client-conversation", agentSessionID)
 	requestBody, err := io.ReadAll(req.Body)
 	require.NoError(t, err)
-	require.Contains(t, string(requestBody), `"prompt_cache_key":"cache-agent"`)
+	require.False(t, gjson.GetBytes(requestBody, "prompt_cache_key").Exists())
 
 	// Authentication mode must not affect session isolation or prompt-cache
 	// behavior. Compare the same request with the existing OAuth path instead
@@ -157,8 +159,13 @@ func TestOpenAIAgentIdentityPassthroughKeepsSessionAndPromptCacheHeaders(t *test
 	oauthContext.Request.Header.Set("conversation_id", "client-conversation")
 	oauthReq, err := svc.buildUpstreamRequestOpenAIPassthrough(context.Background(), oauthContext, oauthAccount, body, "oauth-token")
 	require.NoError(t, err)
-	require.Equal(t, oauthReq.Header.Get(codexSessionHeader), req.Header.Get(codexSessionHeader))
-	require.Equal(t, oauthReq.Header.Get("conversation_id"), req.Header.Get("conversation_id"))
+	oauthSessionID := resolveConvergedSessionID(oauthAccount)
+	require.Equal(t, oauthSessionID, oauthReq.Header.Get(codexSessionHeader))
+	require.Equal(t, oauthSessionID, oauthReq.Header.Get("conversation_id"))
+	require.NotEqual(t, agentSessionID, oauthSessionID)
+	oauthBody, err := io.ReadAll(oauthReq.Body)
+	require.NoError(t, err)
+	require.False(t, gjson.GetBytes(oauthBody, "prompt_cache_key").Exists())
 }
 
 func TestOpenAIAgentIdentityErrorRedactionDoesNotLeakCredentialValues(t *testing.T) {

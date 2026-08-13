@@ -347,11 +347,24 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	token string,
 ) (*http.Request, error) {
 	accountIdentityPromptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
+	var fingerprintIDs *codexFingerprintIDs
+	if account != nil && account.Type == AccountTypeOAuth {
+		var clientHeaders http.Header
+		if c != nil && c.Request != nil {
+			clientHeaders = c.Request.Header
+		}
+		fingerprintIDs = resolveCodexFingerprintIDsFromRequestWithPromptCacheKey(account, clientHeaders, accountIdentityPromptCacheKey)
+	}
 	accountIdentitySessionID := resolveOpenAIWSSessionHeaders(c, accountIdentityPromptCacheKey).SessionID
 	if accountIdentitySessionID == "" && isOpenAIResponsesCompactPath(c) {
 		accountIdentitySessionID = resolveOpenAICompactSessionID(c)
 	}
 	if account.Type == AccountTypeOAuth {
+		fingerprintedBody, fingerprintErr := applyCodexFingerprintToRawBody(body, fingerprintIDs)
+		if fingerprintErr != nil {
+			return nil, fmt.Errorf("apply codex fingerprint to passthrough body: %w", fingerprintErr)
+		}
+		body = fingerprintedBody
 		accountScopedBody, identityErr := s.applyOpenAIAccountScopedBody(ctx, c, account, body, accountIdentitySessionID)
 		if identityErr != nil {
 			return nil, identityErr
@@ -414,7 +427,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		// experiment. Passthrough may receive it from an older client, so remove
 		// only that token while preserving any independent beta negotiation.
 		stripOpenAILegacyResponsesBeta(req.Header)
-		promptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
+		promptCacheKey := accountIdentityPromptCacheKey
 		req.Host = "chatgpt.com"
 		if err := resolveAndSetOpenAIChatGPTAccountHeaders(ctx, s.accountRepo, req.Header, account); err != nil {
 			return nil, fmt.Errorf("resolve chatgpt account headers: %w", err)
@@ -469,13 +482,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	s.applyOpenAIOutboundIdentityPolicy(ctx, account, req.Header, policy)
 	s.applyOpenAIAccountScopedHeaders(ctx, c, account, req.Header, accountIdentitySessionID)
 	if account.Type == AccountTypeOAuth {
-		if c != nil {
-			if fpIDs, ok := c.Get("codex_fingerprint_ids"); ok {
-				if ids, ok := fpIDs.(*codexFingerprintIDs); ok {
-					applyCodexFingerprintHeaders(req.Header, ids)
-				}
-			}
-		}
+		applyCodexFingerprintHeaders(req.Header, fingerprintIDs)
 		normalizeCodexOAuthHeaders(req.Header, resolveCodexSessionHeader(req.Header), resolveCodexThreadHeader(req.Header))
 	}
 	setOpenAICodexRoutingHintFromBody(req.Header, account, body)

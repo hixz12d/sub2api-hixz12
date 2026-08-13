@@ -1010,7 +1010,7 @@ func TestForwardAsAnthropic_ReusesOAuthCodexTurnState(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, secondResult)
 	require.Equal(t, "turn_state_first", upstream.requests[1].Header.Get("x-codex-turn-state"))
-	require.Equal(t, generateSessionUUID(isolateOpenAISessionID(0, "stable-cache-key")), upstream.requests[1].Header.Get(codexSessionHeader))
+	require.Equal(t, resolveConvergedSessionID(account), upstream.requests[1].Header.Get(codexSessionHeader))
 	require.Empty(t, upstream.requests[1].Header.Get("conversation_id"))
 	requireOpenAIMessagesCodexIdentity(t, upstream.requests[1], codexCLIUserAgent, openai.CodexDefaultOriginator)
 	require.False(t, gjson.GetBytes(upstream.bodies[1], "prompt_cache_key").Exists())

@@ -289,14 +289,19 @@ func codexFingerprintIDsFromContext(c *gin.Context) *codexFingerprintIDs {
 }
 
 func applyCodexFingerprintToRawBody(body []byte, ids *codexFingerprintIDs) ([]byte, error) {
-	if len(body) == 0 || ids == nil {
+	if len(body) == 0 {
 		return body, nil
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, err
 	}
-	if !applyCodexFingerprintClientMetadata(payload, ids) {
+	modified := applyCodexFingerprintClientMetadata(payload, ids)
+	if _, ok := payload["prompt_cache_key"]; ok {
+		delete(payload, "prompt_cache_key")
+		modified = true
+	}
+	if !modified {
 		return body, nil
 	}
 	return json.Marshal(payload)
@@ -323,6 +328,7 @@ func applyCodexFingerprintHeaders(h http.Header, ids *codexFingerprintIDs) {
 	h.Set("x-codex-window-id", ids.windowID)
 	h.Set("x-client-request-id", ids.threadID)
 	normalizeCodexOAuthHeaders(h, ids.sessionID, ids.threadID)
+	h.Set("conversation_id", ids.sessionID)
 
 	rewriteCodexTurnMetadataFields(h, map[string]any{
 		"installation_id":         ids.installationID,

@@ -12,6 +12,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func newCodexHeaderProtocolContext(t *testing.T, path string, headers map[string]string) *gin.Context {
@@ -133,7 +134,6 @@ func TestOpenAIOAuthCompactAndPassthroughHeaderProtocol(t *testing.T) {
 		account := newCodexHeaderProtocolOAuthAccount(codexFingerprintSession)
 		ids := resolveCodexFingerprintIDsFromRequest(account, c.Request.Header)
 		require.NotNil(t, ids)
-		c.Set("codex_fingerprint_ids", ids)
 		bodyMap := map[string]any{
 			"model": "gpt-5.4",
 			"client_metadata": map[string]any{
@@ -150,6 +150,7 @@ func TestOpenAIOAuthCompactAndPassthroughHeaderProtocol(t *testing.T) {
 		)
 		require.NoError(t, err)
 		requireCodexOAuthHeaderProtocol(t, req.Header, ids.sessionID, ids.threadID)
+		require.Equal(t, ids.sessionID, req.Header.Get("conversation_id"))
 		outBody, err := io.ReadAll(req.Body)
 		require.NoError(t, err)
 		var decoded map[string]any
@@ -268,4 +269,51 @@ func TestOpenAIOAuthCompatibilityForwardersUseCurrentSessionHeader(t *testing.T)
 			require.Empty(t, upstream.lastReq.Header.Get(legacyCodexSessionHeader))
 		})
 	}
+}
+
+func TestOpenAIOAuthPassthroughCrossAccountSessionIsolation(t *testing.T) {
+	body := []byte(`{"model":"gpt-5.4","prompt_cache_key":"shared-client-cache","input":[],"client_metadata":{}}`)
+	build := func(accountID int64) (*http.Request, []byte) {
+		c := newCodexHeaderProtocolContext(t, "/v1/responses", map[string]string{
+			"session-id":      "shared-client-session",
+			"conversation_id": "shared-client-conversation",
+		})
+		account := newCodexHeaderProtocolOAuthAccount(codexFingerprintSession)
+		account.ID = accountID
+		req, err := (&OpenAIGatewayService{}).buildUpstreamRequestOpenAIPassthrough(
+			context.Background(), c, account, body, "oauth-token",
+		)
+		require.NoError(t, err)
+		outBody, err := io.ReadAll(req.Body)
+		require.NoError(t, err)
+		return req, outBody
+	}
+
+	reqA, bodyA := build(801)
+	reqB, bodyB := build(802)
+	require.Equal(t, reqA.Header.Get(codexSessionHeader), reqA.Header.Get("conversation_id"))
+	require.Equal(t, reqB.Header.Get(codexSessionHeader), reqB.Header.Get("conversation_id"))
+	require.NotEqual(t, reqA.Header.Get(codexSessionHeader), reqB.Header.Get(codexSessionHeader))
+	require.False(t, gjson.GetBytes(bodyA, "prompt_cache_key").Exists())
+	require.False(t, gjson.GetBytes(bodyB, "prompt_cache_key").Exists())
+	require.NotContains(t, string(bodyA), "shared-client-cache")
+	require.NotContains(t, string(bodyB), "shared-client-cache")
+}
+
+func TestOpenAIOAuthPassthroughOffStillStripsPromptCacheKey(t *testing.T) {
+	c := newCodexHeaderProtocolContext(t, "/v1/responses", map[string]string{
+		"session-id":      "off-client-session",
+		"conversation_id": "off-client-conversation",
+	})
+	account := newCodexHeaderProtocolOAuthAccount(codexFingerprintOff)
+	body := []byte(`{"model":"gpt-5.4","prompt_cache_key":"off-client-cache","input":[]}`)
+	req, err := (&OpenAIGatewayService{}).buildUpstreamRequestOpenAIPassthrough(
+		context.Background(), c, account, body, "oauth-token",
+	)
+	require.NoError(t, err)
+	require.Equal(t, isolateOpenAISessionID(71, "off-client-session"), req.Header.Get(codexSessionHeader))
+	require.Equal(t, isolateOpenAISessionID(71, "off-client-conversation"), req.Header.Get("conversation_id"))
+	outBody, err := io.ReadAll(req.Body)
+	require.NoError(t, err)
+	require.False(t, gjson.GetBytes(outBody, "prompt_cache_key").Exists())
 }

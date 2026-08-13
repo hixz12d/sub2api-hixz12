@@ -1055,6 +1055,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 }
 
 func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Context, account *Account, body []byte, token string, isStream bool, promptCacheKey string, isCodexCLI bool) (*http.Request, error) {
+	fingerprintIDs := codexFingerprintIDsFromContext(c)
 	accountIdentitySessionID := strings.TrimSpace(promptCacheKey)
 	if isOpenAIResponsesCompactPath(c) {
 		accountIdentitySessionID = resolveOpenAICompactSessionID(c)
@@ -1063,6 +1064,11 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		accountIdentitySessionID = resolveOpenAIWSSessionHeaders(c, promptCacheKey).SessionID
 	}
 	if account.Type == AccountTypeOAuth {
+		fingerprintedBody, fingerprintErr := applyCodexFingerprintToRawBody(body, fingerprintIDs)
+		if fingerprintErr != nil {
+			return nil, fmt.Errorf("apply codex fingerprint to request body: %w", fingerprintErr)
+		}
+		body = fingerprintedBody
 		accountScopedBody, identityErr := s.applyOpenAIAccountScopedBody(ctx, c, account, body, accountIdentitySessionID)
 		if identityErr != nil {
 			return nil, identityErr
@@ -1128,12 +1134,14 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 			}
 		}
 	}
+	compatMessagesBridge := false
+	clientConversationID := ""
 	if account.Type == AccountTypeOAuth {
-		compatMessagesBridge := isOpenAICompatMessagesBridgeContext(c) || isOpenAICompatMessagesBridgeBody(body)
+		compatMessagesBridge = isOpenAICompatMessagesBridgeContext(c) || isOpenAICompatMessagesBridgeBody(body)
 		// Capture compatible client values before rebuilding the isolated OAuth identity.
 		clientSessionID := resolveCodexSessionHeader(req.Header)
 		clientThreadID := resolveCodexThreadHeader(req.Header)
-		clientConversationID := strings.TrimSpace(req.Header.Get("conversation_id"))
+		clientConversationID = strings.TrimSpace(req.Header.Get("conversation_id"))
 		req.Header.Del("conversation_id")
 		if compatMessagesBridge {
 			req.Header.Del("OpenAI-Beta")
@@ -1165,11 +1173,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 
 	// Apply upstream fingerprint convergence before the fork's final account-scoped
 	// identity stage below, so both features share the transformed request.
-	if account.Type == AccountTypeOAuth && c != nil {
-		if fpIDs, ok := c.Get("codex_fingerprint_ids"); ok {
-			if ids, ok := fpIDs.(*codexFingerprintIDs); ok {
-				applyCodexFingerprintHeaders(req.Header, ids)
-			}
+	if account.Type == AccountTypeOAuth {
+		applyCodexFingerprintHeaders(req.Header, fingerprintIDs)
+		if compatMessagesBridge && clientConversationID == "" {
+			req.Header.Del("conversation_id")
 		}
 	}
 	// Ensure required headers exist
