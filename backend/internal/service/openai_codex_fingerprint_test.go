@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -57,6 +58,7 @@ func TestGetCodexFingerprintMode(t *testing.T) {
 		{"显式 off", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "off"}), codexFingerprintOff},
 		{"device", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "device"}), codexFingerprintDevice},
 		{"session", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "session"}), codexFingerprintSession},
+		{"window", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "window"}), codexFingerprintWindow},
 		{"full", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "full"}), codexFingerprintFull},
 	}
 	for _, tt := range tests {
@@ -106,6 +108,125 @@ func TestResolveConvergedThreadID_Deterministic(t *testing.T) {
 func TestResolveConvergedThreadID_EmptySession(t *testing.T) {
 	account := newTestOAuthAccount(1, nil)
 	assert.Equal(t, "", resolveConvergedThreadID(account, ""))
+}
+
+// --- window 模式 ---
+
+func TestCodexThreadWindowKey(t *testing.T) {
+	tests := []struct {
+		name string
+		now  time.Time
+		want string
+	}{
+		{"窗口起点", time.Date(2026, 8, 14, 0, 0, 0, 0, time.UTC), "2026-08-14T00"},
+		{"窗口末尾", time.Date(2026, 8, 14, 7, 59, 59, 0, time.UTC), "2026-08-14T00"},
+		{"第二窗口", time.Date(2026, 8, 14, 8, 0, 0, 0, time.UTC), "2026-08-14T08"},
+		{"第三窗口", time.Date(2026, 8, 14, 16, 0, 0, 0, time.UTC), "2026-08-14T16"},
+		{"次日窗口", time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC), "2026-08-15T00"},
+		{"转换 UTC", time.Date(2026, 8, 14, 9, 0, 0, 0, time.FixedZone("UTC+8", 8*60*60)), "2026-08-14T00"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, codexThreadWindowKey(tt.now))
+		})
+	}
+}
+
+func TestResolveWindowSlot(t *testing.T) {
+	assert.Zero(t, resolveWindowSlot(""))
+	assert.Equal(t, resolveWindowSlot("client-stable"), resolveWindowSlot("client-stable"))
+
+	seen := make(map[int]struct{})
+	for _, seed := range []string{
+		"client-00", "client-01", "client-02", "client-03", "client-04", "client-05", "client-06", "client-07",
+		"client-08", "client-09", "client-10", "client-11", "client-12", "client-13", "client-14", "client-15",
+		"client-16", "client-17", "client-18", "client-19", "client-20", "client-21", "client-22", "client-23",
+		"client-24", "client-25", "client-26", "client-27", "client-28", "client-29", "client-30", "client-31",
+	} {
+		slot := resolveWindowSlot(seed)
+		assert.GreaterOrEqual(t, slot, 0)
+		assert.Less(t, slot, codexThreadWindowSlots)
+		seen[slot] = struct{}{}
+	}
+	assert.Greater(t, len(seen), 1)
+}
+
+func TestResolveWindowThreadID(t *testing.T) {
+	accountA := newTestOAuthAccount(1, nil)
+	accountB := newTestOAuthAccount(2, nil)
+	firstWindow := time.Date(2026, 8, 14, 1, 0, 0, 0, time.UTC)
+	sameWindow := time.Date(2026, 8, 14, 7, 59, 0, 0, time.UTC)
+	nextWindow := time.Date(2026, 8, 14, 8, 0, 0, 0, time.UTC)
+
+	seedA := "client-00"
+	seedB := ""
+	for _, candidate := range []string{"client-01", "client-02", "client-03", "client-04", "client-05", "client-06", "client-07"} {
+		if resolveWindowSlot(candidate) != resolveWindowSlot(seedA) {
+			seedB = candidate
+			break
+		}
+	}
+	require.NotEmpty(t, seedB)
+
+	threadA := resolveWindowThreadID(accountA, seedA, firstWindow)
+	assert.Equal(t, threadA, resolveWindowThreadID(accountA, seedA, sameWindow))
+	assert.NotEqual(t, threadA, resolveWindowThreadID(accountA, seedB, firstWindow))
+	assert.NotEqual(t, threadA, resolveWindowThreadID(accountA, seedA, nextWindow))
+	assert.NotEqual(t, threadA, resolveWindowThreadID(accountB, seedA, firstWindow))
+
+	emptyFirst := resolveWindowThreadID(accountA, "", firstWindow)
+	emptyNext := resolveWindowThreadID(accountA, "", nextWindow)
+	assert.NotEqual(t, emptyFirst, emptyNext, "空种子只固定到 slot 0，跨窗口仍须变化")
+	assert.NotEqual(t, resolveConvergedSessionID(accountA), emptyFirst, "空种子不能退化为 full 模式")
+}
+
+func TestWindowFingerprintHeadersAndBodyConsistent(t *testing.T) {
+	originalNow := codexFingerprintNow
+	codexFingerprintNow = func() time.Time {
+		return time.Date(2026, 8, 14, 9, 0, 0, 0, time.UTC)
+	}
+	t.Cleanup(func() { codexFingerprintNow = originalNow })
+
+	account := newTestOAuthAccount(7, map[string]any{codexFingerprintModeExtraKey: "window"})
+	headers := http.Header{}
+	headers.Set("conversation_id", "conversation-seed")
+	ids := resolveCodexFingerprintIDsFromRequestWithPromptCacheKey(account, headers, "cache-seed")
+	require.NotNil(t, ids)
+
+	outbound := http.Header{}
+	outbound.Set("x-codex-turn-metadata", `{"turn_id":"original"}`)
+	applyCodexFingerprintHeaders(outbound, ids)
+	body := map[string]any{"client_metadata": map[string]any{}}
+	require.True(t, applyCodexFingerprintClientMetadata(body, ids))
+	metadata := body["client_metadata"].(map[string]any)
+
+	assert.Equal(t, resolveConvergedSessionID(account), outbound.Get("session-id"))
+	assert.Equal(t, ids.threadID, outbound.Get("thread-id"))
+	assert.Equal(t, ids.threadID, metadata["thread_id"])
+	assert.Equal(t, ids.turnID, metadata["turn_id"])
+	assert.Equal(t, ids.threadID+":0", metadata["x-codex-window-id"])
+	assert.Empty(t, outbound.Get("session_id"))
+	assert.Empty(t, outbound.Get("thread_id"))
+
+	var turnMetadata map[string]any
+	require.NoError(t, json.Unmarshal([]byte(outbound.Get("x-codex-turn-metadata")), &turnMetadata))
+	assert.Equal(t, ids.threadID, turnMetadata["thread_id"])
+	assert.Equal(t, ids.turnID, turnMetadata["turn_id"])
+}
+
+func TestExtractClientThreadSeedPriority(t *testing.T) {
+	headers := http.Header{}
+	headers.Set("session-id", "current-session")
+	headers.Set("session_id", "legacy-session")
+	headers.Set("conversation_id", "conversation")
+	assert.Equal(t, "current-session", extractClientThreadSeed(headers, "cache"))
+
+	headers.Del("session-id")
+	assert.Equal(t, "legacy-session", extractClientThreadSeed(headers, "cache"))
+	headers.Del("session_id")
+	assert.Equal(t, "conversation", extractClientThreadSeed(headers, "cache"))
+	headers.Del("conversation_id")
+	assert.Equal(t, "cache", extractClientThreadSeed(headers, " cache "))
 }
 
 // --- off 模式：resolveCodexFingerprintIDsFromRequest 返回 nil ---
