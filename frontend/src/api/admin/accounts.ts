@@ -833,6 +833,19 @@ export interface OpenAIQuotaUsage {
   fetched_at: number
 }
 
+export interface OpenAICodexAnalyticsDay {
+  date: string
+  threads: number
+  turns: number
+  users: number
+}
+
+export interface OpenAICodexAnalytics {
+  data: OpenAICodexAnalyticsDay[]
+  current_utc_date: string
+  fetched_at: number
+}
+
 export interface OpenAIQuotaResetCredit {
   id?: string
   reset_type?: string
@@ -874,6 +887,14 @@ export interface OpenAIQuotaRefreshResult extends OpenAIQuotaUsage {
 export async function refreshOpenAIQuota(id: number): Promise<OpenAIQuotaRefreshResult> {
   const { data } = await apiClient.post<OpenAIQuotaRefreshResult>(
     `/admin/openai/accounts/${id}/quota/refresh`
+  )
+  return data
+}
+
+/** Query recent read-only UTC day buckets from Codex Analytics. */
+export async function getOpenAICodexAnalytics(id: number): Promise<OpenAICodexAnalytics> {
+  const { data } = await apiClient.get<OpenAICodexAnalytics>(
+    `/admin/openai/accounts/${id}/codex-analytics`
   )
   return data
 }
@@ -1030,6 +1051,7 @@ export const accountsAPI = {
   setPrivacy,
   revertProxyFallback,
   refreshOpenAIQuota,
+  getOpenAICodexAnalytics,
   resetOpenAIQuota,
   createSparkShadow,
   getUpstreamBillingProbeSettings,

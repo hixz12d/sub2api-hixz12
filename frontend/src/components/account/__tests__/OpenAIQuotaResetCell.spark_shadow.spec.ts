@@ -3,9 +3,10 @@ import { flushPromises, mount } from '@vue/test-utils'
 import OpenAIQuotaResetCell from '../OpenAIQuotaResetCell.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import type { Account } from '@/types'
-import { refreshOpenAIQuota, resetOpenAIQuota } from '@/api/admin/accounts'
+import { getOpenAICodexAnalytics, refreshOpenAIQuota, resetOpenAIQuota } from '@/api/admin/accounts'
 
 vi.mock('@/api/admin/accounts', () => ({
+  getOpenAICodexAnalytics: vi.fn(),
   refreshOpenAIQuota: vi.fn(),
   resetOpenAIQuota: vi.fn(),
 }))
@@ -15,8 +16,12 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string, params?: Record<string, unknown>) =>
-        params?.time ? `${key}:${params.time}` : params?.count ? `${key}:${params.count}` : key,
+      t: (key: string, params?: Record<string, unknown>) => {
+        if (params?.date) {
+          return `${key}:${params.date}:${params.threads}:${params.turns}:${params.users}`
+        }
+        return params?.time ? `${key}:${params.time}` : params?.count ? `${key}:${params.count}` : key
+      },
     }),
   }
 })
@@ -55,11 +60,12 @@ function makeAccount(overrides: Partial<Account>): Account {
   }
 }
 
-// 第二个按钮(橙色)是 reset 按钮::disabled="resetting||loading||!canReset" :title="resetButtonTitle"
+// 按稳定 test id 获取 reset 按钮，避免操作行新增按钮时测试误指向。
 const resetButton = (wrapper: ReturnType<typeof mount>) =>
-  wrapper.findAll('button')[1]
+  wrapper.get('[data-testid="reset-credit-consume"]')
 
 beforeEach(() => {
+  vi.mocked(getOpenAICodexAnalytics).mockReset()
   vi.mocked(refreshOpenAIQuota).mockReset()
   vi.mocked(resetOpenAIQuota).mockReset()
 })
@@ -82,6 +88,48 @@ describe('OpenAIQuotaResetCell — 外审 F6:影子禁用重置', () => {
     const btn = resetButton(wrapper)
     // 未加载数据时本就 disabled(无次数),但提示语必须是 needQuery,不得是 shadow 提示。
     expect(btn.attributes('title')).toBe('admin.accounts.openaiQuotaReset.resetTooltipNeedQuery')
+    wrapper.unmount()
+  })
+
+  it('查询 Threads 后优先展示当天 UTC 桶并在 tooltip 展示 Turns 和 Users', async () => {
+    vi.mocked(getOpenAICodexAnalytics).mockResolvedValue({
+      current_utc_date: '2026-08-13',
+      fetched_at: 1770000000,
+      data: [
+        { date: '2026-08-12', threads: 24, turns: 2413, users: 1 },
+        { date: '2026-08-13', threads: 7, turns: 88, users: 1 },
+      ],
+    })
+    const wrapper = mount(OpenAIQuotaResetCell, { props: { account: makeAccount({}) } })
+
+    const button = wrapper.get('[data-testid="codex-threads-query"]')
+    await button.trigger('click')
+    await flushPromises()
+
+    expect(getOpenAICodexAnalytics).toHaveBeenCalledWith(1)
+    expect(button.text()).toContain('7')
+    expect(button.attributes('title')).toContain('88')
+    expect(button.attributes('title')).toContain('2026-08-13')
+    wrapper.unmount()
+  })
+
+  it('当天 UTC 桶缺失时回退展示最近一天', async () => {
+    vi.mocked(getOpenAICodexAnalytics).mockResolvedValue({
+      current_utc_date: '2026-08-13',
+      fetched_at: 1770000000,
+      data: [
+        { date: '2026-08-11', threads: 12, turns: 90, users: 1 },
+        { date: '2026-08-12', threads: 23, turns: 180, users: 1 },
+      ],
+    })
+    const wrapper = mount(OpenAIQuotaResetCell, { props: { account: makeAccount({}) } })
+
+    const button = wrapper.get('[data-testid="codex-threads-query"]')
+    await button.trigger('click')
+    await flushPromises()
+
+    expect(button.text()).toContain('23')
+    expect(button.attributes('title')).toContain('2026-08-12')
     wrapper.unmount()
   })
 
@@ -165,7 +213,7 @@ describe('OpenAIQuotaResetCell — 外审 F6:影子禁用重置', () => {
     const account = makeAccount({ parent_account_id: null })
     const wrapper = mount(OpenAIQuotaResetCell, { props: { account } })
 
-    await wrapper.findAll('button')[0].trigger('click')
+    await wrapper.get('[data-testid="reset-credit-query"]').trigger('click')
     await flushPromises()
 
     expect(refreshOpenAIQuota).toHaveBeenCalledWith(1)
@@ -200,7 +248,7 @@ describe('OpenAIQuotaResetCell — 外审 F6:影子禁用重置', () => {
     const account = makeAccount({ parent_account_id: null })
     const wrapper = mount(OpenAIQuotaResetCell, { props: { account } })
 
-    await wrapper.findAll('button')[0].trigger('click')
+    await wrapper.get('[data-testid="reset-credit-query"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.find('[data-testid="reset-credit-expiry-toggle"]').exists()).toBe(false)
@@ -221,7 +269,7 @@ describe('OpenAIQuotaResetCell — 外审 F6:影子禁用重置', () => {
     const account = makeAccount({ parent_account_id: null })
     const wrapper = mount(OpenAIQuotaResetCell, { props: { account } })
 
-    await wrapper.findAll('button')[0].trigger('click')
+    await wrapper.get('[data-testid="reset-credit-query"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('admin.accounts.openaiQuotaReset.count2')

@@ -16,6 +16,23 @@
 
       <button
         type="button"
+        data-testid="codex-threads-query"
+        class="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 transition-colors hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-emerald-400 dark:hover:bg-emerald-900/30"
+        :disabled="analyticsLoading"
+        :title="analyticsButtonTitle"
+        @click="handleAnalyticsQuery"
+      >
+        <Icon
+          name="chartBar"
+          size="xs"
+          :class="{ 'animate-pulse': analyticsLoading }"
+        />
+        {{ t('admin.accounts.openaiQuotaReset.threads') }}<span v-if="selectedAnalyticsDay"> {{ selectedAnalyticsDay.threads }}</span>
+      </button>
+
+      <button
+        type="button"
+        data-testid="reset-credit-query"
         class="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-blue-600 transition-colors hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-blue-400 dark:hover:bg-blue-900/30"
         :disabled="loading || resetting"
         :title="countButtonTitle"
@@ -40,6 +57,7 @@
 
       <button
         type="button"
+        data-testid="reset-credit-consume"
         class="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-orange-600 transition-colors hover:bg-orange-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-orange-400 dark:hover:bg-orange-900/30"
         :disabled="resetting || loading || !canReset"
         :title="resetButtonTitle"
@@ -103,6 +121,12 @@
       </div>
     </div>
 
+    <div
+      v-if="analyticsError"
+      class="text-[10px] text-red-600 dark:text-red-400"
+      :title="analyticsError"
+    >{{ truncatedAnalyticsError }}</div>
+
     <!-- Error / success feedback -->
     <div
       v-if="error"
@@ -144,10 +168,13 @@ import type { Account } from '@/types'
 import {
   refreshOpenAIQuota,
   resetOpenAIQuota,
+  getOpenAICodexAnalytics,
   type OpenAIQuotaUsage,
-  type OpenAIQuotaResetResult
+  type OpenAIQuotaResetResult,
+  type OpenAICodexAnalyticsDay
 } from '@/api/admin/accounts'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
+import Icon from '@/components/icons/Icon.vue'
 
 const props = defineProps<{
   account: Account
@@ -167,6 +194,9 @@ const resetting = ref(false)
 const error = ref<string | null>(null)
 const data = ref<OpenAIQuotaUsage | null>(null)
 const cachedData = ref<OpenAIQuotaUsage | null>(null)
+const analyticsLoading = ref(false)
+const analyticsError = ref<string | null>(null)
+const selectedAnalyticsDay = ref<OpenAICodexAnalyticsDay | null>(null)
 const resetMessage = ref<string | null>(null)
 const resetWarning = ref<string | null>(null)
 const showResetConfirm = ref(false)
@@ -262,6 +292,24 @@ const countButtonTitle = computed(() => {
   return t('admin.accounts.openaiQuotaReset.countTooltipRefresh')
 })
 
+const analyticsButtonTitle = computed(() => {
+  const day = selectedAnalyticsDay.value
+  if (!day) return t('admin.accounts.openaiQuotaReset.threadsTooltipLoad')
+  return t('admin.accounts.openaiQuotaReset.threadsTooltipResult', {
+    date: day.date,
+    threads: day.threads,
+    turns: day.turns,
+    users: day.users
+  })
+})
+
+const truncatedAnalyticsError = computed(() => {
+  if (!analyticsError.value) return ''
+  return analyticsError.value.length > 80
+    ? `${analyticsError.value.slice(0, 80)}...`
+    : analyticsError.value
+})
+
 const truncatedError = computed(() => {
   if (!error.value) return ''
   return error.value.length > 80 ? `${error.value.slice(0, 80)}…` : error.value
@@ -345,6 +393,26 @@ const handleQuery = async () => {
   }
 }
 
+const handleAnalyticsQuery = async () => {
+  if (analyticsLoading.value) return
+  analyticsLoading.value = true
+  analyticsError.value = null
+  try {
+    const result = await getOpenAICodexAnalytics(props.account.id)
+    const sorted = [...result.data].sort((a, b) => b.date.localeCompare(a.date))
+    selectedAnalyticsDay.value =
+      sorted.find((day) => day.date === result.current_utc_date) ?? sorted[0] ?? null
+    if (!selectedAnalyticsDay.value) {
+      analyticsError.value = t('admin.accounts.openaiQuotaReset.threadsNoData')
+    }
+  } catch (e) {
+    selectedAnalyticsDay.value = null
+    analyticsError.value = extractErrorMessage(e)
+  } finally {
+    analyticsLoading.value = false
+  }
+}
+
 const openResetConfirm = () => {
   if (resetting.value || loading.value) return
   if (!canReset.value) {
@@ -407,6 +475,9 @@ watch(
     resetMessage.value = null
     resetWarning.value = null
     loading.value = false
+    analyticsLoading.value = false
+    analyticsError.value = null
+    selectedAnalyticsDay.value = null
     resetting.value = false
     showResetConfirm.value = false
     showResetCreditDetails.value = false

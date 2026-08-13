@@ -1462,6 +1462,10 @@ export default {
         activeQuery: 'Query'
       },
       openaiQuotaReset: {
+        threads: 'Threads',
+        threadsTooltipLoad: 'Query today\'s Codex Analytics threads; falls back to the latest available UTC day',
+        threadsTooltipResult: 'UTC {date}: Threads {threads}, Turns {turns}, Users {users}',
+        threadsNoData: 'No Codex Analytics data for the last two UTC dates',
         count: 'Credits',
         reset: 'Reset',
         countTooltipLoad: 'Click to load the available reset-credit count',

@@ -17,11 +17,13 @@ import (
 )
 
 type openAIQuotaWorkflowStub struct {
-	resetResult *service.OpenAIQuotaResetResult
-	resetErr    error
-	queryResult *service.OpenAIQuotaUsage
-	queryErr    error
-	cacheErr    error
+	analyticsResult *service.OpenAICodexAnalytics
+	analyticsErr    error
+	resetResult     *service.OpenAIQuotaResetResult
+	resetErr        error
+	queryResult     *service.OpenAIQuotaUsage
+	queryErr        error
+	cacheErr        error
 
 	resetCalls int
 	queryCalls int
@@ -34,6 +36,10 @@ type openAIQuotaWorkflowStub struct {
 func (s *openAIQuotaWorkflowStub) ResetCredit(context.Context, int64) (*service.OpenAIQuotaResetResult, error) {
 	s.resetCalls++
 	return s.resetResult, s.resetErr
+}
+
+func (s *openAIQuotaWorkflowStub) QueryCodexAnalytics(context.Context, int64) (*service.OpenAICodexAnalytics, error) {
+	return s.analyticsResult, s.analyticsErr
 }
 
 func (s *openAIQuotaWorkflowStub) QueryUsage(ctx context.Context, _ int64) (*service.OpenAIQuotaUsage, error) {

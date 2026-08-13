@@ -432,6 +432,10 @@ export default {
         activeQuery: '查询'
       },
       openaiQuotaReset: {
+        threads: 'Threads',
+        threadsTooltipLoad: '点击查询 Codex Analytics 的当日 Threads；若当日尚未刷新则显示最近一天',
+        threadsTooltipResult: 'UTC {date}：Threads {threads}，Turns {turns}，Users {users}',
+        threadsNoData: '最近两个 UTC 日期暂无 Codex Analytics 数据',
         count: '次数',
         reset: '重置',
         countTooltipLoad: '点击查询剩余重置次数',

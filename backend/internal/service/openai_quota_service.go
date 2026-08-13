@@ -24,17 +24,19 @@ var ErrSparkShadowResetNotSupported = infraerrors.New(http.StatusConflict, "SPAR
 
 // Endpoints used by the OpenAI/ChatGPT/Codex quota query and reset feature.
 const (
-	chatGPTUsageURL             = "https://chatgpt.com/backend-api/wham/usage"
-	chatGPTRateLimitCreditsURL  = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"
-	chatGPTRateLimitResetURL    = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume"
-	openaiQuotaUpstreamTimeout  = 20 * time.Second
-	openaiQuotaCodexBeta        = "codex-1"
-	openaiQuotaCodexOriginator  = "Codex Desktop"
-	openaiQuotaCodexLanguageTag = "zh-CN"
-	openaiQuotaSecFetchSite     = "none"
-	openaiQuotaSecFetchMode     = "no-cors"
-	openaiQuotaSecFetchDest     = "empty"
-	openaiQuotaResetCreditsKey  = "codex_reset_credit_snapshot"
+	chatGPTUsageURL                  = "https://chatgpt.com/backend-api/wham/usage"
+	chatGPTCodexAnalyticsURL         = "https://chatgpt.com/backend-api/wham/analytics/daily-workspace-usage-counts"
+	chatGPTRateLimitCreditsURL       = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"
+	chatGPTRateLimitResetURL         = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume"
+	openaiQuotaUpstreamTimeout       = 20 * time.Second
+	openaiQuotaCodexBeta             = "codex-1"
+	openaiQuotaCodexOriginator       = "Codex Desktop"
+	openaiQuotaCodexLanguageTag      = "zh-CN"
+	openaiQuotaSecFetchSite          = "none"
+	openaiQuotaSecFetchMode          = "no-cors"
+	openaiQuotaSecFetchDest          = "empty"
+	openaiQuotaResetCreditsKey       = "codex_reset_credit_snapshot"
+	openAICodexAnalyticsLookbackDays = 1
 )
 
 // OpenAIRateLimitWindow describes a single rate-limit window returned by
@@ -87,6 +89,32 @@ type OpenAIQuotaUsage struct {
 	AdditionalRateLimits  []OpenAIAdditionalRateLimit  `json:"additional_rate_limits,omitempty"`
 	RateLimitResetCredits *OpenAIRateLimitResetCredits `json:"rate_limit_reset_credits,omitempty"`
 	FetchedAt             int64                        `json:"fetched_at"`
+}
+
+// OpenAICodexAnalyticsDay is the privacy-safe subset of one upstream Codex
+// Analytics UTC day bucket. Identity and raw client data are not exposed.
+type OpenAICodexAnalyticsDay struct {
+	Date    string `json:"date"`
+	Threads int64  `json:"threads"`
+	Turns   int64  `json:"turns"`
+	Users   int64  `json:"users"`
+}
+
+type OpenAICodexAnalytics struct {
+	Data           []OpenAICodexAnalyticsDay `json:"data"`
+	CurrentUTCDate string                    `json:"current_utc_date"`
+	FetchedAt      int64                     `json:"fetched_at"`
+}
+
+type openAICodexAnalyticsUpstreamResponse struct {
+	Data []struct {
+		Date   string `json:"date"`
+		Totals struct {
+			Threads int64 `json:"threads"`
+			Turns   int64 `json:"turns"`
+			Users   int64 `json:"users"`
+		} `json:"totals"`
+	} `json:"data"`
 }
 
 // OpenAIQuotaResetCredit captures the redeemed credit metadata returned by the
@@ -218,6 +246,90 @@ func (s *OpenAIQuotaService) QueryUsage(ctx context.Context, accountID int64) (*
 		}
 	}
 	return &payload, nil
+}
+
+// QueryCodexAnalytics fetches the current and previous UTC day. The upstream
+// response is projected before it crosses the service boundary so account
+// identity, email, token, and raw client fields cannot reach the panel.
+func (s *OpenAIQuotaService) QueryCodexAnalytics(ctx context.Context, accountID int64) (*OpenAICodexAnalytics, error) {
+	ctx = s.snapshotOutboundIdentity(ctx, accountID)
+	accessToken, chatGPTAccountID, proxyURL, fedRAMP, err := s.prepareUpstreamCall(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+
+	client, err := s.privacyClientFactory(proxyURL)
+	if err != nil {
+		return nil, infraerrors.Newf(http.StatusBadGateway, "OPENAI_CODEX_ANALYTICS_CLIENT_ERROR", "failed to build upstream client: %v", err)
+	}
+
+	callCtx, cancel := context.WithTimeout(ctx, openaiQuotaUpstreamTimeout)
+	defer cancel()
+	now := time.Now().UTC()
+	startDate := now.AddDate(0, 0, -openAICodexAnalyticsLookbackDays).Format(time.DateOnly)
+	endDate := now.AddDate(0, 0, 1).Format(time.DateOnly)
+	agentIdentity := s.isAgentIdentityAccount(ctx, accountID)
+
+	var upstream openAICodexAnalyticsUpstreamResponse
+	for recovered := false; ; {
+		headers, expectedTaskID, headerErr := s.buildCodexQuotaHeaders(callCtx, accountID, accessToken, chatGPTAccountID, fedRAMP)
+		if headerErr != nil {
+			return nil, infraerrors.Newf(http.StatusBadGateway, "OPENAI_CODEX_ANALYTICS_AUTH_FAILED", "failed to build upstream authentication: %v", headerErr)
+		}
+		resp, requestErr := client.R().
+			SetContext(callCtx).
+			SetHeaders(headers).
+			SetQueryParam("start_date", startDate).
+			SetQueryParam("end_date", endDate).
+			SetQueryParam("group_by", "day").
+			SetSuccessResult(&upstream).
+			Get(chatGPTCodexAnalyticsURL)
+		if requestErr != nil {
+			return nil, infraerrors.Newf(http.StatusBadGateway, "OPENAI_CODEX_ANALYTICS_REQUEST_FAILED", "upstream request failed: %v", requestErr)
+		}
+		if !resp.IsSuccessState() {
+			if agentIdentity && !recovered && isAgentIdentityTaskInvalidHTTPResponse(resp.StatusCode, []byte(resp.String())) {
+				recovered = true
+				if recoverErr := s.recoverAgentIdentityTask(ctx, accountID, expectedTaskID); recoverErr != nil {
+					return nil, infraerrors.Newf(http.StatusBadGateway, "OPENAI_CODEX_ANALYTICS_AUTH_FAILED", "agent identity task recovery failed: %v", recoverErr)
+				}
+				continue
+			}
+			status := resp.StatusCode
+			slog.Warn("openai_codex_analytics_query_failed", "account_id", accountID, "status", status)
+			return nil, infraerrors.Newf(mapUpstreamStatus(status), "OPENAI_CODEX_ANALYTICS_UPSTREAM_ERROR", "upstream returned %d", status)
+		}
+		break
+	}
+
+	result := &OpenAICodexAnalytics{
+		Data:           make([]OpenAICodexAnalyticsDay, 0, len(upstream.Data)),
+		CurrentUTCDate: now.Format(time.DateOnly),
+		FetchedAt:      time.Now().Unix(),
+	}
+	for _, day := range upstream.Data {
+		date := strings.TrimSpace(day.Date)
+		if _, parseErr := time.Parse(time.DateOnly, date); parseErr != nil {
+			continue
+		}
+		threads, turns, users := day.Totals.Threads, day.Totals.Turns, day.Totals.Users
+		if threads < 0 {
+			threads = 0
+		}
+		if turns < 0 {
+			turns = 0
+		}
+		if users < 0 {
+			users = 0
+		}
+		result.Data = append(result.Data, OpenAICodexAnalyticsDay{
+			Date:    date,
+			Threads: threads,
+			Turns:   turns,
+			Users:   users,
+		})
+	}
+	return result, nil
 }
 
 // CacheResetCreditsSnapshot persists a complete reset-credit snapshot after an
