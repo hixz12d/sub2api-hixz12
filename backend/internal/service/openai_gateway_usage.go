@@ -625,6 +625,9 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 	serviceTier string,
 	longContextBillingEnabled bool,
 ) (*CostBreakdown, error) {
+	if isGrok46BillingModel(billingModel) {
+		longContextBillingEnabled = true
+	}
 	if s.resolver != nil && apiKey.Group != nil {
 		gid := apiKey.Group.ID
 		return s.billingService.CalculateCostUnified(CostInput{
@@ -646,6 +649,11 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 		serviceTier,
 		longContextBillingEnabled,
 	)
+}
+
+func isGrok46BillingModel(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	return model == "grok-4.6" || model == "grok-4.6-latest"
 }
 
 func (s *OpenAIGatewayService) calculateOpenAIImageCost(
