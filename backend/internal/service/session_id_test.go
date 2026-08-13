@@ -79,6 +79,7 @@ func TestExtractClientSessionID_SupportedHeaders(t *testing.T) {
 		header string
 		value  string
 	}{
+		{"session-id", "session-id", "sess-current"},
 		{"session_id", "session_id", "sess-A"},
 		{"conversation_id", "conversation_id", "conv-B"},
 		{"X-Session-Affinity", openCodeSessionAffinityHeader, "aff-C"},
@@ -96,14 +97,15 @@ func TestExtractClientSessionID_SupportedHeaders(t *testing.T) {
 }
 
 func TestExtractClientSessionID_HeaderPrecedence(t *testing.T) {
-	// session_id ranks ahead of conversation_id and the X-* variants.
+	// session-id ranks ahead of legacy session_id and all other variants.
 	c := newSessionHeaderContext(t, map[string]string{
-		"session_id":                "primary",
+		"session-id":                "current-primary",
+		"session_id":                "legacy-secondary",
 		"conversation_id":           "secondary",
 		openCodeSessionIDHeader:     "tertiary",
 		codeBuddyConversationHeader: "quaternary",
 	})
-	require.Equal(t, "primary", ExtractClientSessionID(c))
+	require.Equal(t, "current-primary", ExtractClientSessionID(c))
 }
 
 func TestExtractClientSessionID_Sanitizes(t *testing.T) {
@@ -148,8 +150,18 @@ func TestExtractClientSessionID_GrokConversationHeaderForCompositeRoute(t *testi
 }
 
 func TestExtractClientSessionID_InjectionHeaderDropped(t *testing.T) {
-	// A supported header carrying a CRLF payload is rejected, not persisted mangled.
-	c := newSessionHeaderContext(t, map[string]string{"session_id": "abc"})
-	c.Request.Header.Set("session_id", "abc\r\nX-Injected: 1")
-	require.Equal(t, "", ExtractClientSessionID(c))
+	// Current and legacy supported headers carrying CRLF are rejected.
+	for _, header := range []string{codexSessionHeader, legacyCodexSessionHeader} {
+		c := newSessionHeaderContext(t, map[string]string{header: "abc"})
+		c.Request.Header.Set(header, "abc\r\nX-Injected: 1")
+		require.Equal(t, "", ExtractClientSessionID(c))
+	}
+}
+
+func TestExtractClientSessionID_CurrentHeaderInvalidFallsBackToLegacy(t *testing.T) {
+	c := newSessionHeaderContext(t, map[string]string{
+		codexSessionHeader:       strings.Repeat("a", maxPersistedSessionIDLength+1),
+		legacyCodexSessionHeader: "legacy-valid",
+	})
+	require.Equal(t, "legacy-valid", ExtractClientSessionID(c))
 }

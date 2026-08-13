@@ -265,7 +265,15 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 
 	if promptCacheKey != "" {
 		apiKeyID := getAPIKeyIDFromContext(c)
-		upstreamReq.Header.Set("session_id", generateSessionUUID(s.openAIOutboundSessionID(account, apiKeyID, promptCacheKey)))
+		sessionID := generateSessionUUID(s.openAIOutboundSessionID(account, apiKeyID, promptCacheKey))
+		if account.Type == AccountTypeOAuth {
+			normalizeCodexOAuthHeaders(upstreamReq.Header, sessionID, resolveCodexThreadHeader(upstreamReq.Header))
+		} else {
+			upstreamReq.Header.Set(legacyCodexSessionHeader, sessionID)
+		}
+	}
+	if account.Type == AccountTypeOAuth {
+		normalizeCodexOAuthHeaders(upstreamReq.Header, resolveCodexSessionHeader(upstreamReq.Header), resolveCodexThreadHeader(upstreamReq.Header))
 	}
 
 	// 7. Send request

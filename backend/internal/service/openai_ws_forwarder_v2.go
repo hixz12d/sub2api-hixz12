@@ -61,6 +61,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	)
 
 	payload := s.buildOpenAIWSCreatePayload(reqBody, account)
+	if account.IsOpenAIOAuth() {
+		applyCodexFingerprintClientMetadata(payload, codexFingerprintIDsFromContext(c))
+	}
 	payloadStrategy, removedKeys := applyOpenAIWSRetryPayloadStrategy(payload, attempt)
 	previousResponseID := openAIWSPayloadString(payload, "previous_response_id")
 	previousResponseIDKind := ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
@@ -176,14 +179,14 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		openAIWSHeaderValueForLog(wsHeaders, "openai-beta"),
 		openAIWSHeaderValueForLog(wsHeaders, "originator"),
 		openAIWSHeaderValueForLog(wsHeaders, "accept-language"),
-		openAIWSHeaderValueForLog(wsHeaders, "session_id"),
+		openAIWSSessionHeaderValueForLog(wsHeaders),
 		openAIWSHeaderValueForLog(wsHeaders, "conversation_id"),
 		normalizeOpenAIWSLogValue(sessionResolution.SessionSource),
 		normalizeOpenAIWSLogValue(sessionResolution.ConversationSource),
 		promptCacheKey != "",
 		hasOpenAIWSHeader(wsHeaders, "chatgpt-account-id"),
 		hasOpenAIWSHeader(wsHeaders, "authorization"),
-		hasOpenAIWSHeader(wsHeaders, "session_id"),
+		hasOpenAIWSSessionHeader(wsHeaders),
 		hasOpenAIWSHeader(wsHeaders, "conversation_id"),
 		account.ProxyID != nil && account.Proxy != nil,
 	)
@@ -280,7 +283,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 			lease.Reused(),
 			storeDisabled,
 			truncateOpenAIWSLogValue(sessionHash, 12),
-			openAIWSHeaderValueForLog(wsHeaders, "session_id"),
+			openAIWSSessionHeaderValueForLog(wsHeaders),
 			openAIWSHeaderValueForLog(wsHeaders, "conversation_id"),
 			normalizeOpenAIWSLogValue(sessionResolution.SessionSource),
 			normalizeOpenAIWSLogValue(sessionResolution.ConversationSource),
@@ -629,7 +632,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 					storeDisabled,
 					lease.Reused(),
 					truncateOpenAIWSLogValue(sessionHash, 12),
-					openAIWSHeaderValueForLog(wsHeaders, "session_id"),
+					openAIWSSessionHeaderValueForLog(wsHeaders),
 					openAIWSHeaderValueForLog(wsHeaders, "conversation_id"),
 					normalizeOpenAIWSLogValue(sessionResolution.SessionSource),
 					normalizeOpenAIWSLogValue(sessionResolution.ConversationSource),

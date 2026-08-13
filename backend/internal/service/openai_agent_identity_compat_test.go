@@ -131,9 +131,9 @@ func TestOpenAIAgentIdentityPassthroughKeepsSessionAndPromptCacheHeaders(t *test
 	require.NoError(t, err)
 	require.Equal(t, "AgentAssertion", strings.SplitN(req.Header.Get("Authorization"), " ", 2)[0])
 	require.Equal(t, "account-agent-passthrough", req.Header.Get("chatgpt-account-id"))
-	require.NotEqual(t, "client-session", req.Header.Get("session_id"))
+	require.NotEqual(t, "client-session", req.Header.Get(codexSessionHeader))
 	require.NotEqual(t, "client-conversation", req.Header.Get("conversation_id"))
-	require.Equal(t, isolateOpenAISessionID(0, "client-session"), req.Header.Get("session_id"))
+	require.Equal(t, isolateOpenAISessionID(0, "client-session"), req.Header.Get(codexSessionHeader))
 	require.Equal(t, isolateOpenAISessionID(0, "client-conversation"), req.Header.Get("conversation_id"))
 	requestBody, err := io.ReadAll(req.Body)
 	require.NoError(t, err)
@@ -157,7 +157,7 @@ func TestOpenAIAgentIdentityPassthroughKeepsSessionAndPromptCacheHeaders(t *test
 	oauthContext.Request.Header.Set("conversation_id", "client-conversation")
 	oauthReq, err := svc.buildUpstreamRequestOpenAIPassthrough(context.Background(), oauthContext, oauthAccount, body, "oauth-token")
 	require.NoError(t, err)
-	require.Equal(t, oauthReq.Header.Get("session_id"), req.Header.Get("session_id"))
+	require.Equal(t, oauthReq.Header.Get(codexSessionHeader), req.Header.Get(codexSessionHeader))
 	require.Equal(t, oauthReq.Header.Get("conversation_id"), req.Header.Get("conversation_id"))
 }
 

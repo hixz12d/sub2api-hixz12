@@ -2066,7 +2066,11 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	}
 	applyOpenAICodexProbeHeaders(req.Header)
 	probeSessionID := compactProbeSessionID(account.ID)
-	req.Header.Set("Session_ID", probeSessionID)
+	if isOAuth {
+		normalizeCodexOAuthHeaders(req.Header, probeSessionID, "")
+	} else {
+		req.Header.Set(legacyCodexSessionHeader, probeSessionID)
+	}
 	req.Header.Set("Conversation_ID", probeSessionID)
 
 	if isOAuth {
@@ -2085,6 +2089,9 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 		policy = openAIOutboundOAuthPolicy
 	}
 	applyResolvedOpenAIOutboundIdentityWithPolicy(req.Header, identity, policy)
+	if isOAuth {
+		normalizeCodexOAuthHeaders(req.Header, resolveCodexSessionHeader(req.Header), resolveCodexThreadHeader(req.Header))
+	}
 
 	proxyURL := ""
 	if account.ProxyID != nil && account.Proxy != nil {

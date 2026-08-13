@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
 
@@ -33,7 +34,14 @@ const (
 	codexFingerprintFull codexFingerprintMode = "full"
 )
 
-const codexFingerprintModeExtraKey = "codex_fingerprint_mode"
+const (
+	codexFingerprintModeExtraKey = "codex_fingerprint_mode"
+
+	codexSessionHeader       = "session-id"
+	legacyCodexSessionHeader = "session_id"
+	codexThreadHeader        = "thread-id"
+	legacyCodexThreadHeader  = "thread_id"
+)
 
 // GetCodexFingerprintMode 从账号 extra JSON 读取指纹收敛模式。
 // 未设置时默认 session（设备+会话收敛），显式设为 "off" 才关闭。
@@ -149,14 +157,48 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 	return nil
 }
 
-// extractClientSessionID 从请求头中提取客户端原始的会话标识。
-// 优先取 session-id（连字符形式，Codex CLI 标准），回退到 session_id（下划线形式）。
-// 返回的值尚未被 isolateOpenAISessionID 改写，是客户端的真实标识。
-func extractClientSessionID(h http.Header) string {
-	if v := strings.TrimSpace(h.Get("session-id")); v != "" {
-		return v
+// resolveCodexCompatibleHeader accepts the current Codex HTTP header name and
+// falls back to the legacy underscore form. The current spelling always wins.
+func resolveCodexCompatibleHeader(h http.Header, currentName, legacyName string) string {
+	if h == nil {
+		return ""
 	}
-	return strings.TrimSpace(h.Get("session_id"))
+	if value := strings.TrimSpace(h.Get(currentName)); value != "" {
+		return value
+	}
+	return strings.TrimSpace(h.Get(legacyName))
+}
+
+func resolveCodexSessionHeader(h http.Header) string {
+	return resolveCodexCompatibleHeader(h, codexSessionHeader, legacyCodexSessionHeader)
+}
+
+func resolveCodexThreadHeader(h http.Header) string {
+	return resolveCodexCompatibleHeader(h, codexThreadHeader, legacyCodexThreadHeader)
+}
+
+// normalizeCodexOAuthHeaders is the final ChatGPT/Codex upstream protocol
+// boundary. Value derivation is deliberately separate: fingerprint off still
+// normalizes names, while API-key/custom upstream builders do not call it.
+func normalizeCodexOAuthHeaders(h http.Header, sessionID, threadID string) {
+	if h == nil {
+		return
+	}
+	deleteOpenAIHeaderEqualFold(h, codexSessionHeader)
+	deleteOpenAIHeaderEqualFold(h, legacyCodexSessionHeader)
+	deleteOpenAIHeaderEqualFold(h, codexThreadHeader)
+	deleteOpenAIHeaderEqualFold(h, legacyCodexThreadHeader)
+	if sessionID = strings.TrimSpace(sessionID); sessionID != "" {
+		h.Set(codexSessionHeader, sessionID)
+	}
+	if threadID = strings.TrimSpace(threadID); threadID != "" {
+		h.Set(codexThreadHeader, threadID)
+	}
+}
+
+// extractClientSessionID returns the client's un-isolated session identity.
+func extractClientSessionID(h http.Header) string {
+	return resolveCodexSessionHeader(h)
 }
 
 // resolveCodexFingerprintIDsFromRequest 从客户端原始请求头中提取 session-id，
@@ -175,6 +217,32 @@ func resolveCodexFingerprintIDsFromRequest(account *Account, clientHeaders http.
 		clientSessionID = extractClientSessionID(clientHeaders)
 	}
 	return resolveCodexFingerprintIDs(account, clientSessionID, mode)
+}
+
+func codexFingerprintIDsFromContext(c *gin.Context) *codexFingerprintIDs {
+	if c == nil {
+		return nil
+	}
+	value, ok := c.Get("codex_fingerprint_ids")
+	if !ok {
+		return nil
+	}
+	ids, _ := value.(*codexFingerprintIDs)
+	return ids
+}
+
+func applyCodexFingerprintToRawBody(body []byte, ids *codexFingerprintIDs) ([]byte, error) {
+	if len(body) == 0 || ids == nil {
+		return body, nil
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, err
+	}
+	if !applyCodexFingerprintClientMetadata(payload, ids) {
+		return body, nil
+	}
+	return json.Marshal(payload)
 }
 
 // applyCodexFingerprintHeaders 按预计算的收敛 ID 改写出站 HTTP 头中的设备指纹。
@@ -197,10 +265,7 @@ func applyCodexFingerprintHeaders(h http.Header, ids *codexFingerprintIDs) {
 	// session / full 模式：改写所有相关头
 	h.Set("x-codex-window-id", ids.windowID)
 	h.Set("x-client-request-id", ids.threadID)
-	// 连字符形式和下划线形式都改写，保证一致
-	h.Set("session-id", ids.sessionID)
-	h.Set("session_id", ids.sessionID)
-	h.Set("thread-id", ids.threadID)
+	normalizeCodexOAuthHeaders(h, ids.sessionID, ids.threadID)
 
 	rewriteCodexTurnMetadataFields(h, map[string]any{
 		"installation_id":         ids.installationID,

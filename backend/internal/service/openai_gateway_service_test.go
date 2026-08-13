@@ -343,15 +343,20 @@ func TestOpenAIGatewayService_GenerateSessionHash_Priority(t *testing.T) {
 
 	bodyWithKey := []byte(`{"prompt_cache_key":"ses_aaa"}`)
 
-	// 1) session_id header wins
-	c.Request.Header.Set("session_id", "sess-123")
+	// 1) current session-id wins over legacy session_id.
+	c.Request.Header.Set("session-id", "sess-current")
+	c.Request.Header.Set("session_id", "sess-legacy")
+	c.Request.Header.Set("thread-id", "turn-thread-must-not-affect-affinity")
 	c.Request.Header.Set("conversation_id", "conv-456")
 	h1 := svc.GenerateSessionHash(c, bodyWithKey)
-	if h1 == "" {
-		t.Fatalf("expected non-empty hash")
-	}
+	require.Equal(t, fmt.Sprintf("%016x", xxhash.Sum64String("sess-current")), h1)
 
-	// 2) conversation_id used when session_id absent
+	// 2) legacy session_id remains compatible when current header is absent.
+	c.Request.Header.Del("session-id")
+	hLegacy := svc.GenerateSessionHash(c, bodyWithKey)
+	require.Equal(t, fmt.Sprintf("%016x", xxhash.Sum64String("sess-legacy")), hLegacy)
+
+	// 3) conversation_id used when both session headers are absent.
 	c.Request.Header.Del("session_id")
 	h2 := svc.GenerateSessionHash(c, bodyWithKey)
 	if h2 == "" {
@@ -440,7 +445,7 @@ func TestOpenAIGatewayService_GenerateSessionHash_UsesXXHash64(t *testing.T) {
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
 
-	c.Request.Header.Set("session_id", "sess-fixed-value")
+	c.Request.Header.Set("session-id", "sess-fixed-value")
 	svc := &OpenAIGatewayService{}
 
 	got := svc.GenerateSessionHash(c, nil)
@@ -2969,7 +2974,8 @@ func TestOpenAIBuildUpstreamRequestOpenAIPassthroughPreservesCompactPath(t *test
 	require.Equal(t, "application/json", req.Header.Get("Accept"))
 	require.Equal(t, codexCLIVersion, req.Header.Get("Version"))
 	require.Empty(t, req.Header.Get("OpenAI-Beta"), "Codex OAuth HTTP must not synthesize the legacy responses beta header")
-	require.NotEmpty(t, req.Header.Get("Session_Id"))
+	require.NotEmpty(t, req.Header.Get(codexSessionHeader))
+	require.Empty(t, req.Header.Get(legacyCodexSessionHeader))
 	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(req.Context()))
 }
 
@@ -3010,7 +3016,8 @@ func TestOpenAIBuildUpstreamRequestCompactForcesJSONAcceptForOAuth(t *testing.T)
 	require.Equal(t, "application/json", req.Header.Get("Accept"))
 	require.Equal(t, codexCLIVersion, req.Header.Get("Version"))
 	require.Empty(t, req.Header.Get("OpenAI-Beta"), "Codex OAuth HTTP must not synthesize the legacy responses beta header")
-	require.NotEmpty(t, req.Header.Get("Session_Id"))
+	require.NotEmpty(t, req.Header.Get(codexSessionHeader))
+	require.Empty(t, req.Header.Get(legacyCodexSessionHeader))
 	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(req.Context()))
 }
 
@@ -3031,7 +3038,8 @@ func TestOpenAIBuildUpstreamRequestOAuthMessagesBridgeUsesSessionOnly(t *testing
 
 	req, err := svc.buildUpstreamRequest(c.Request.Context(), c, account, body, "token", true, "anthropic-metadata-session-1", false)
 	require.NoError(t, err)
-	require.NotEmpty(t, req.Header.Get("Session_Id"))
+	require.NotEmpty(t, req.Header.Get(codexSessionHeader))
+	require.Empty(t, req.Header.Get(legacyCodexSessionHeader))
 	require.Empty(t, req.Header.Get("Conversation_Id"))
 	require.Empty(t, req.Header.Get("OpenAI-Beta"))
 	require.Equal(t, DefaultOpenAICodexUserAgent, req.Header.Get("User-Agent"))

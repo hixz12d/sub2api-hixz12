@@ -130,7 +130,7 @@ func TestOpenAIAccountScopedIdentityHTTPBuilders(t *testing.T) {
 			}
 			require.Equal(t, deviceID, req.Header.Get(openAICodexInstallationIDHeader))
 			require.Equal(t, deriveOpenAIAccountScopedWindowID(account.ID, apiKeyID, identitySession, rawHeaderWindow), req.Header.Get(openAICodexWindowIDHeader))
-			require.NotEqual(t, rawSession, req.Header.Get("session_id"))
+			require.NotEqual(t, rawSession, req.Header.Get(codexSessionHeader))
 			requestBody, readErr := io.ReadAll(req.Body)
 			require.NoError(t, readErr)
 			require.Equal(t, deviceID, gjson.GetBytes(requestBody, "client_metadata.x-codex-installation-id").String())
@@ -155,7 +155,7 @@ func TestOpenAIAccountScopedIdentityDisabledPreservesExistingOutboundBehavior(t 
 	body := []byte(`{"model":"gpt-5.4","client_metadata":{"x-codex-installation-id":"client-body-installation-disabled","x-codex-window-id":"client-body-window-disabled"}}`)
 	req, err := svc.buildUpstreamRequest(context.Background(), c, account, body, "oauth-token", true, "cache-disabled", true)
 	require.NoError(t, err)
-	require.Equal(t, isolateOpenAISessionID(601, "cache-disabled"), req.Header.Get("session_id"))
+	require.Equal(t, isolateOpenAISessionID(601, "cache-disabled"), req.Header.Get(codexSessionHeader))
 	require.Equal(t, "client-window-disabled", req.Header.Get(openAICodexWindowIDHeader))
 	require.Equal(t, "client-installation-disabled", req.Header.Get(openAICodexInstallationIDHeader))
 	requestBody, readErr := io.ReadAll(req.Body)
@@ -188,7 +188,7 @@ func TestOpenAIAccountScopedIdentityMissingDeviceOmitsClientInstallation(t *test
 	require.False(t, gjson.GetBytes(firstBody, "client_metadata.x-codex-installation-id").Exists())
 	require.Empty(t, firstReq.Header.Get(openAICodexWindowIDHeader))
 	require.False(t, gjson.GetBytes(firstBody, "client_metadata.x-codex-window-id").Exists())
-	require.Equal(t, firstReq.Header.Get("session_id"), secondReq.Header.Get("session_id"))
+	require.Equal(t, firstReq.Header.Get(codexSessionHeader), secondReq.Header.Get(codexSessionHeader))
 	require.Equal(t, string(firstBody), string(secondBody))
 }
 
@@ -215,7 +215,7 @@ func TestOpenAIAccountScopedIdentityPassthroughTransport(t *testing.T) {
 	require.NotNil(t, result)
 	require.NotNil(t, upstream.lastReq)
 	require.Equal(t, account.GetOpenAIDeviceID(), upstream.lastReq.Header.Get(openAICodexInstallationIDHeader))
-	require.Equal(t, deriveOpenAIAccountScopedSessionID(account.ID, 801, "passthrough-session"), upstream.lastReq.Header.Get("session_id"))
+	require.Equal(t, deriveOpenAIAccountScopedSessionID(account.ID, 801, "passthrough-session"), upstream.lastReq.Header.Get(codexSessionHeader))
 	require.Equal(t, account.GetOpenAIDeviceID(), gjson.GetBytes(upstream.lastBody, "client_metadata.x-codex-installation-id").String())
 	require.NotContains(t, string(upstream.lastBody), "passthrough-body-installation")
 }
@@ -265,7 +265,8 @@ func TestOpenAIAccountScopedIdentityWSV2OutboundMessage(t *testing.T) {
 	result, err := svc.Forward(context.Background(), c, account, body)
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Equal(t, deriveOpenAIAccountScopedSessionID(account.ID, 901, "wsv2-session"), captureDialer.lastHeaders.Get("session_id"))
+	require.Equal(t, deriveOpenAIAccountScopedSessionID(account.ID, 901, "wsv2-session"), captureDialer.lastHeaders.Get(codexSessionHeader))
+	require.Empty(t, captureDialer.lastHeaders.Get(legacyCodexSessionHeader))
 	require.Equal(t, account.GetOpenAIDeviceID(), captureDialer.lastHeaders.Get(openAICodexInstallationIDHeader))
 	require.Equal(t, deriveOpenAIAccountScopedWindowID(account.ID, 901, "wsv2-session", "wsv2-window"), captureDialer.lastHeaders.Get(openAICodexWindowIDHeader))
 
@@ -286,6 +287,9 @@ func accountScopedIdentityTestAccount(id int64, deviceID string) *Account {
 	extra := map[string]any{}
 	if deviceID != "" {
 		extra["openai_device_id"] = deviceID
+	}
+	if _, ok := extra[codexFingerprintModeExtraKey]; !ok {
+		extra[codexFingerprintModeExtraKey] = string(codexFingerprintOff)
 	}
 	return &Account{
 		ID:          id,

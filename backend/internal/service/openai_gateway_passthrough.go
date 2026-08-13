@@ -421,7 +421,8 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		}
 		apiKeyID := getAPIKeyIDFromContext(c)
 		// 先保存客户端原始值，再做 compact 补充，避免后续统一隔离时读到已处理的值。
-		clientSessionID := strings.TrimSpace(req.Header.Get("session_id"))
+		clientSessionID := resolveCodexSessionHeader(req.Header)
+		clientThreadID := resolveCodexThreadHeader(req.Header)
 		clientConversationID := strings.TrimSpace(req.Header.Get("conversation_id"))
 		if isOpenAIResponsesCompactPath(c) {
 			req.Header.Set("accept", "application/json")
@@ -438,9 +439,11 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		if clientConversationID == "" {
 			clientConversationID = promptCacheKey
 		}
+		outboundSessionID := ""
 		if clientSessionID != "" {
-			req.Header.Set("session_id", s.openAIOutboundSessionID(account, apiKeyID, clientSessionID))
+			outboundSessionID = s.openAIOutboundSessionID(account, apiKeyID, clientSessionID)
 		}
+		normalizeCodexOAuthHeaders(req.Header, outboundSessionID, clientThreadID)
 		if clientConversationID != "" {
 			req.Header.Set("conversation_id", s.openAIOutboundSessionID(account, apiKeyID, clientConversationID))
 		}
@@ -465,6 +468,16 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	}
 	s.applyOpenAIOutboundIdentityPolicy(ctx, account, req.Header, policy)
 	s.applyOpenAIAccountScopedHeaders(ctx, c, account, req.Header, accountIdentitySessionID)
+	if account.Type == AccountTypeOAuth {
+		if c != nil {
+			if fpIDs, ok := c.Get("codex_fingerprint_ids"); ok {
+				if ids, ok := fpIDs.(*codexFingerprintIDs); ok {
+					applyCodexFingerprintHeaders(req.Header, ids)
+				}
+			}
+		}
+		normalizeCodexOAuthHeaders(req.Header, resolveCodexSessionHeader(req.Header), resolveCodexThreadHeader(req.Header))
+	}
 	setOpenAICodexRoutingHintFromBody(req.Header, account, body)
 	logOpenAIRoutingDiagnosticsFromBody(ctx, account, "http_passthrough", req.Header, body, "not_applicable")
 

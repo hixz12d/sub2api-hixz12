@@ -752,6 +752,13 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 		return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, blocked.Message, blocked)
 	}
 	firstClientMessage = updatedFirst
+	if account.IsOpenAIOAuth() {
+		fingerprinted, fingerprintErr := applyCodexFingerprintToRawBody(firstClientMessage, codexFingerprintIDsFromContext(c))
+		if fingerprintErr != nil {
+			return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", fingerprintErr)
+		}
+		firstClientMessage = fingerprinted
+	}
 
 	// 在 policy filter 之后再提取 service_tier / reasoning_effort 用于
 	// usage 上报：filter
@@ -1036,6 +1043,12 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			if policyErr == nil && blocked == nil && isResponseCreate {
 				usageMeta.updateFromResponseCreate(out, model, requestModelForThisFrame)
 				acceptedTurn = true
+			}
+			if isResponseCreate && account.IsOpenAIOAuth() {
+				out, filterErr = applyCodexFingerprintToRawBody(out, codexFingerprintIDsFromContext(c))
+				if filterErr != nil {
+					return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", filterErr)
+				}
 			}
 			return out, blocked, policyErr
 		},

@@ -66,6 +66,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	}
 	if account.Platform == PlatformOpenAI {
 		ctx = s.snapshotOpenAIOutboundIdentity(ctx, account, c.GetHeader("User-Agent"))
+		if ids := resolveCodexFingerprintIDsFromRequest(account, c.Request.Header); ids != nil {
+			c.Set("codex_fingerprint_ids", ids)
+		}
 	}
 
 	// 预取一次 OpenAI Fast Policy settings，绑定到 ctx，让该 WS session
@@ -701,7 +704,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			normalizeOpenAIWSLogValue(firstPreviousResponseIDKind),
 			truncateOpenAIWSLogValue(preferredConnID, openAIWSIDValueMaxLen),
 			truncateOpenAIWSLogValue(sessionHash, 12),
-			openAIWSHeaderValueForLog(baseAcquireReq.Headers, "session_id"),
+			openAIWSSessionHeaderValueForLog(baseAcquireReq.Headers),
 			openAIWSHeaderValueForLog(baseAcquireReq.Headers, "conversation_id"),
 			turnState != "",
 			len(turnState),
@@ -819,6 +822,13 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			return nil, wrapOpenAIWSIngressTurnError("account_scoped_identity", identityErr, false)
 		}
 		payload = accountScopedPayload
+		if account.IsOpenAIOAuth() {
+			fingerprintedPayload, fingerprintErr := applyCodexFingerprintToRawBody(payload, codexFingerprintIDsFromContext(c))
+			if fingerprintErr != nil {
+				return nil, wrapOpenAIWSIngressTurnError("codex_fingerprint", fingerprintErr, false)
+			}
+			payload = fingerprintedPayload
+		}
 		payloadBytes := len(payload)
 		turnStart := time.Now()
 		wroteDownstream := false
@@ -1569,7 +1579,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				openAIWSStateIDDigest(expectedPrev),
 				chainedFromLast,
 				truncateOpenAIWSLogValue(preferredConnID, openAIWSIDValueMaxLen),
-				openAIWSHeaderValueForLog(baseAcquireReq.Headers, "session_id"),
+				openAIWSSessionHeaderValueForLog(baseAcquireReq.Headers),
 				openAIWSHeaderValueForLog(baseAcquireReq.Headers, "conversation_id"),
 				turnState != "",
 				len(turnState),

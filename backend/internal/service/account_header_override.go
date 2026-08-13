@@ -29,7 +29,7 @@ const (
 //   - authorization/x-api-key/cookie 等：上游认证头由账号凭据统一注入，禁止通过覆写篡改或重新引入；
 //   - accept-encoding：强制压缩会破坏网关对上游流式响应（SSE/usage）的解析；
 //   - sec-websocket-*：WebSocket 握手头由拨号器管理（OpenAI WS 模式）；
-//   - session_id/x-claude-code-session-id/x-grok-conv-id 等：逐请求会话隔离头，
+//   - session-id/session_id/thread-id/thread_id 等：逐请求会话隔离头，
 //     固定值会造成会话串扰。
 var headerOverrideBlockedNames = map[string]struct{}{
 	"host":                     {},
@@ -54,7 +54,10 @@ var headerOverrideBlockedNames = map[string]struct{}{
 	"sec-websocket-extensions": {},
 	"sec-websocket-protocol":   {},
 	"sec-websocket-accept":     {},
+	"session-id":               {},
 	"session_id":               {},
+	"thread-id":                {},
+	"thread_id":                {},
 	"conversation_id":          {},
 	"x-codex-turn-state":       {},
 	"x-codex-turn-metadata":    {},
@@ -203,7 +206,8 @@ func (a *Account) ApplyHeaderOverrides(h http.Header) {
 func isOpenAIProtectedHeaderOverrideName(name string) bool {
 	switch name {
 	case "user-agent", "originator", "version", "openai-beta",
-		"session_id", "conversation_id":
+		codexSessionHeader, legacyCodexSessionHeader,
+		codexThreadHeader, legacyCodexThreadHeader, "conversation_id":
 		return true
 	}
 	return strings.HasPrefix(name, "x-codex-")

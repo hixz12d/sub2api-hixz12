@@ -315,11 +315,15 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		return nil, fmt.Errorf("build upstream request: %w", err)
 	}
 
-	// Override session_id with a deterministic UUID derived from the isolated
+	// Override the session with a deterministic UUID derived from the isolated
 	// session key, ensuring different API keys produce different upstream sessions.
 	if account.Platform != PlatformGrok && promptCacheKey != "" {
 		isolatedSessionID := generateSessionUUID(s.openAIOutboundSessionID(account, apiKeyID, promptCacheKey))
-		upstreamReq.Header.Set("session_id", isolatedSessionID)
+		if account.Type == AccountTypeOAuth {
+			normalizeCodexOAuthHeaders(upstreamReq.Header, isolatedSessionID, resolveCodexThreadHeader(upstreamReq.Header))
+		} else {
+			upstreamReq.Header.Set(legacyCodexSessionHeader, isolatedSessionID)
+		}
 		if upstreamReq.Header.Get("conversation_id") != "" {
 			upstreamReq.Header.Set("conversation_id", isolatedSessionID)
 		}
@@ -341,6 +345,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	}
 	if compatTurnState != "" && upstreamReq.Header.Get("x-codex-turn-state") == "" {
 		upstreamReq.Header.Set("x-codex-turn-state", compatTurnState)
+	}
+	if account.Type == AccountTypeOAuth && account.Platform != PlatformGrok {
+		normalizeCodexOAuthHeaders(upstreamReq.Header, resolveCodexSessionHeader(upstreamReq.Header), resolveCodexThreadHeader(upstreamReq.Header))
 	}
 
 	// 7. Send request

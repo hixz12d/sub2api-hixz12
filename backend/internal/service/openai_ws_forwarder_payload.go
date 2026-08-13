@@ -99,12 +99,18 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 			}
 		}
 	}
-	// OAuth 账号：将 apiKeyID 混入 session 标识符，防止跨用户会话碰撞。
+	// OAuth accounts isolate the session while preserving the current Codex wire names.
 	if account != nil && account.Type == AccountTypeOAuth {
 		apiKeyID := getAPIKeyIDFromContext(c)
+		outboundSessionID := ""
 		if sessionResolution.SessionID != "" {
-			headers.Set("session_id", s.openAIOutboundSessionID(account, apiKeyID, sessionResolution.SessionID))
+			outboundSessionID = s.openAIOutboundSessionID(account, apiKeyID, sessionResolution.SessionID)
 		}
+		clientThreadID := ""
+		if c != nil && c.Request != nil {
+			clientThreadID = resolveCodexThreadHeader(c.Request.Header)
+		}
+		normalizeCodexOAuthHeaders(headers, outboundSessionID, clientThreadID)
 		if sessionResolution.ConversationID != "" {
 			headers.Set("conversation_id", s.openAIOutboundSessionID(account, apiKeyID, sessionResolution.ConversationID))
 		}
@@ -143,7 +149,13 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 		policy = openAIOutboundOAuthPolicy
 	}
 	s.applyOpenAIOutboundIdentityPolicy(ctx, account, headers, policy)
+	if account != nil && account.Type == AccountTypeOAuth {
+		applyCodexFingerprintHeaders(headers, codexFingerprintIDsFromContext(c))
+	}
 	s.applyOpenAIAccountScopedHeaders(ctx, c, account, headers, sessionResolution.SessionID)
+	if account != nil && account.Type == AccountTypeOAuth {
+		normalizeCodexOAuthHeaders(headers, resolveCodexSessionHeader(headers), resolveCodexThreadHeader(headers))
+	}
 	setOpenAICodexRoutingHint(headers, account, routingModel, routingServiceTier)
 	logOpenAIRoutingDiagnostics(
 		ctx,
