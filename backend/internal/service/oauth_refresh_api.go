@@ -170,6 +170,7 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 	account *Account,
 	executor OAuthRefreshExecutor,
 	refreshWindow time.Duration,
+	force ...bool,
 ) (*OAuthRefreshResult, error) {
 	if api == nil || api.accountRepo == nil {
 		return nil, errors.New("oauth refresh account repository is not configured")
@@ -181,6 +182,9 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 		return nil, errors.New("oauth refresh executor is nil")
 	}
 	requestPath := isOAuthRefreshRequestPath(ctx)
+	forceRefresh := len(force) > 0 && force[0]
+	observedTokenVersion := fmt.Sprint(account.Credentials["_token_version"])
+	observedAccessToken := strings.TrimSpace(account.GetCredential("access_token"))
 	cacheKey := executor.CacheKey(account)
 
 	// 0. 获取进程内互斥锁（防止同一进程内的并发刷新竞争）
@@ -246,11 +250,16 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 		return &OAuthRefreshResult{Account: freshAccount}, nil
 	}
 
-	// 3. 二次检查是否仍需刷新（另一条路径可能已刷新）
-	if !executor.NeedsRefresh(freshAccount, refreshWindow) {
-		return &OAuthRefreshResult{
-			Account: freshAccount,
-		}, nil
+	// 3. 二次检查是否仍需刷新。强制 401 恢复也会先比较凭据版本，
+	// 这样并发等待者会复用赢家的新 token，而不是再次刷新。
+	if forceRefresh {
+		freshVersion := fmt.Sprint(freshAccount.Credentials["_token_version"])
+		freshAccessToken := strings.TrimSpace(freshAccount.GetCredential("access_token"))
+		if freshVersion != observedTokenVersion || freshAccessToken != observedAccessToken {
+			return &OAuthRefreshResult{Account: freshAccount}, nil
+		}
+	} else if !executor.NeedsRefresh(freshAccount, refreshWindow) {
+		return &OAuthRefreshResult{Account: freshAccount}, nil
 	}
 
 	// 4. 执行平台特定刷新逻辑

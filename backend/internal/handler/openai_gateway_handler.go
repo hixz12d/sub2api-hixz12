@@ -628,6 +628,11 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		_ = errors.As(err, &attemptFailoverErr)
 		attemptRetryEligible := attemptFailoverErr != nil && openAIForwardMayFailover(c, writerSizeBeforeForward, attemptFailoverErr)
 		attemptWriterCommitted := service.OpenAICompactKeepaliveAdjustedWrittenSize(c) != writerSizeBeforeForward
+		if attemptWriterCommitted {
+			if budget := service.OpenAIRetryBudgetFromContext(c); budget != nil {
+				budget.MarkBytesEmitted()
+			}
+		}
 		attemptUpstreamModel := account.GetMappedModel(reqModel)
 		attemptUpstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account, result)
 		attemptInputTokens, attemptOutputTokens := 0, 0

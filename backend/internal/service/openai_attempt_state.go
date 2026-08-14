@@ -78,6 +78,9 @@ func MarkOpenAISemanticOutputStarted(c *gin.Context) {
 	updateOpenAIAttemptWireState(c, func(state *OpenAIAttemptWireState) {
 		state.SemanticOutputStarted = true
 		state.HeartbeatOnly = false
+		if budget := OpenAIRetryBudgetFromContext(c); budget != nil {
+			budget.MarkSemanticOutput()
+		}
 	})
 }
 
@@ -99,6 +102,9 @@ func MarkOpenAIAttemptTerminal(c *gin.Context, event string) {
 func MarkOpenAIAttemptTransportCommitted(c *gin.Context) {
 	updateOpenAIAttemptWireState(c, func(state *OpenAIAttemptWireState) {
 		state.TransportCommitted = true
+		if budget := OpenAIRetryBudgetFromContext(c); budget != nil {
+			budget.MarkBytesEmitted()
+		}
 	})
 }
 

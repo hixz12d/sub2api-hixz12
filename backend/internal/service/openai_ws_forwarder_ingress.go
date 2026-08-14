@@ -424,7 +424,13 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	writeClientMessage := func(message []byte) error {
 		writeCtx, cancel := newOpenAIWSDownstreamWriteContext(ctx, hooks, s.openAIWSWriteTimeout())
 		defer cancel()
-		return clientConn.Write(writeCtx, coderws.MessageText, message)
+		if err := clientConn.Write(writeCtx, coderws.MessageText, message); err != nil {
+			return err
+		}
+		if budget := OpenAIRetryBudgetFromContext(c); budget != nil {
+			budget.MarkBytesEmitted()
+		}
+		return nil
 	}
 
 	readClientMessage := func() ([]byte, error) {
@@ -1215,6 +1221,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				normalizeOpenAIWSLogValue(storeDisabledConnMode),
 			)
 		}
+		if budget := OpenAIRetryBudgetFromContext(c); budget != nil && !budget.UsePreviousResponseRecovery() {
+			return false
+		}
 		turnPrevRecoveryTried = true
 		updatedPayload, removed, dropErr := dropPreviousResponseIDFromRawPayload(currentPayload)
 		if dropErr != nil || !removed {
@@ -1293,6 +1302,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			if err := hooks.BeforeTurn(turn); err != nil {
 				return err
 			}
+		}
+		if !skipBeforeTurn {
+			StartOpenAIRetryBudgetTurn(c, account, currentPayload)
 		}
 		// A complete response.create gets one fresh immutable identity snapshot.
 		// Retries of the same turn keep the existing snapshot; a reconnect then
@@ -1458,6 +1470,13 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 		}
 		forcePreferredConn := isStrictAffinityTurn(currentPayload)
+		if reserveErr := ReserveOpenAIUpstreamAttempt(c, account.ID); reserveErr != nil {
+			return NewOpenAIWSClientCloseError(
+				coderws.StatusTryAgainLater,
+				"upstream retry budget exhausted",
+				reserveErr,
+			)
+		}
 		if sessionLease == nil {
 			acquiredLease, acquireErr := acquireTurnLease(turn, preferredConnID, forcePreferredConn)
 			if acquireErr != nil {

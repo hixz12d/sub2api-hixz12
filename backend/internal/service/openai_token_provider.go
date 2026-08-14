@@ -270,6 +270,42 @@ func (p *OpenAITokenProvider) GetAccessToken(ctx context.Context, account *Accou
 	return accessToken, nil
 }
 
+// RefreshAfterUnauthorized performs the single credential-scoped refresh used
+// by RetryBudget v2. OAuthRefreshAPI serializes refreshes and re-reads the DB;
+// waiters reuse a token whose version changed while they were queued.
+func (p *OpenAITokenProvider) RefreshAfterUnauthorized(ctx context.Context, account *Account, observedToken string) (string, error) {
+	if p == nil || p.refreshAPI == nil || p.executor == nil {
+		return "", errors.New("openai forced token refresh is not configured")
+	}
+	p.ensureMetrics()
+	p.metrics.refreshRequests.Add(1)
+	p.metrics.touchNow()
+	result, err := p.refreshAPI.RefreshIfNeeded(ctx, account, p.executor, 0, true)
+	if err != nil {
+		p.metrics.refreshFailure.Add(1)
+		return "", err
+	}
+	if result == nil || result.Account == nil {
+		return "", errors.New("openai forced token refresh returned no account")
+	}
+	if result.Refreshed {
+		p.metrics.refreshSuccess.Add(1)
+	}
+	refreshedToken := strings.TrimSpace(result.Account.GetOpenAIAccessToken())
+	if result.NewCredentials != nil {
+		if value, ok := result.NewCredentials["access_token"].(string); ok && strings.TrimSpace(value) != "" {
+			refreshedToken = strings.TrimSpace(value)
+		}
+	}
+	if refreshedToken == "" || refreshedToken == strings.TrimSpace(observedToken) {
+		return "", errors.New("openai forced token refresh did not produce a new access token")
+	}
+	if p.tokenCache != nil {
+		_ = p.tokenCache.SetAccessToken(ctx, OpenAITokenCacheKey(account), refreshedToken, 30*time.Minute)
+	}
+	return refreshedToken, nil
+}
+
 // disableAccountMissingRefreshToken 在请求路径上发现 OpenAI OAuth 账号
 // 凭证已过期且 refresh_token 缺失时，将账号标记为 error 状态。
 // 这是一种永久性故障：仅靠后续请求或 TokenRefreshService 不会自愈

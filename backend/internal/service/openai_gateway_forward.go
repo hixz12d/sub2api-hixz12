@@ -26,6 +26,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	startTime := time.Now()
 	// 固定渠道映射后的请求级 canonical body；账号 normalize/strip 不得改写跨 failover hint。
 	canonicalImageIntentBody := body
+	EnsureOpenAIRetryBudget(c, account, body)
 
 	restrictionResult := s.detectCodexClientRestriction(c, account, body)
 	apiKeyID := getAPIKeyIDFromContext(c)
@@ -601,6 +602,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		wsLastFailureReason := ""
 		agentTaskRecoveryTried := false
 		wsPrevResponseRecoveryTried := false
+		sharedRetryBudget := OpenAIRetryBudgetFromContext(c)
 		wsInvalidEncryptedContentRecoveryTried := false
 		recoverPrevResponseNotFound := func(attempt int) bool {
 			if wsPrevResponseRecoveryTried {
@@ -621,6 +623,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 					account.ID,
 					attempt,
 				)
+				return false
+			}
+			if sharedRetryBudget != nil && !sharedRetryBudget.UsePreviousResponseRecovery() {
 				return false
 			}
 			delete(wsReqBody, "previous_response_id")
@@ -669,6 +674,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		retryStartedAt := time.Now()
 	wsRetryLoop:
 		for attempt := 1; attempt <= maxAttempts; attempt++ {
+			if sharedRetryBudget != nil {
+				if reserveErr := sharedRetryBudget.Reserve(account.ID); reserveErr != nil {
+					wsErr = reserveErr
+					break
+				}
+			}
 			wsAttempts = attempt
 			wsResult, wsErr = s.forwardOpenAIWSV2(
 				ctx,
@@ -817,6 +828,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	agentTaskRecoveryTried := false
 	rejectedFieldRetryState := newOpenAIResponsesRejectedFieldRetryState(body)
 	for {
+		if reserveErr := ReserveOpenAIUpstreamAttempt(c, account.ID); reserveErr != nil {
+			return nil, reserveErr
+		}
 		// Build upstream request
 		upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
 		var headerGuard *openAIFirstOutputHeaderGuard
@@ -866,7 +880,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			// Transport-level failure (proxy/DNS/TCP/TLS — no HTTP response). Convert to
 			// a failover so the handler switches to a healthy account, and temporarily
 			// unschedule the account on durable faults (e.g. rejected proxy credentials).
-			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
+			transportErr := s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
+			RecordOpenAIRetryFailure(c, 0, transportErr)
+			return nil, transportErr
 		}
 		if headerGuard != nil {
 			resp.Body = &openAIRequestContextReadCloser{ReadCloser: resp.Body, cleanup: headerGuard.close}
@@ -881,6 +897,18 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 			upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
 			upstreamCode := extractUpstreamErrorCode(respBody)
+			if resp.StatusCode == http.StatusUnauthorized && account.IsOpenAIOAuth() {
+				decision := RecordOpenAIRetryFailure(c, resp.StatusCode, nil)
+				budget := OpenAIRetryBudgetFromContext(c)
+				if decision.RefreshCredential && budget != nil && budget.UseRefresh() && s.openAITokenProvider != nil {
+					refreshedToken, refreshErr := s.openAITokenProvider.RefreshAfterUnauthorized(ctx, account, token)
+					if refreshErr != nil {
+						return nil, fmt.Errorf("refresh OpenAI token after 401: %w", refreshErr)
+					}
+					token = refreshedToken
+					continue
+				}
+			}
 			if !agentTaskRecoveryTried && s.isAgentIdentityAccount(ctx, account) && isAgentIdentityTaskInvalidHTTPResponse(resp.StatusCode, respBody) {
 				agentTaskRecoveryTried = true
 				expectedTaskID := account.GetCredential("task_id")
@@ -938,6 +966,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				})
 
 				shouldDisable := s.handleFailoverSideEffects(ctx, resp, account, respBody, upstreamModel)
+				RecordOpenAIRetryFailure(c, resp.StatusCode, nil)
 				return nil, newOpenAIUpstreamFailoverError(
 					resp.StatusCode,
 					resp.Header,

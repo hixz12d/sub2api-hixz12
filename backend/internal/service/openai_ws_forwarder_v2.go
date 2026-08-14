@@ -424,6 +424,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		_, wErr := c.Writer.Write(frame)
 		if wErr == nil {
 			wroteDownstream = true
+			MarkOpenAISemanticOutputStarted(c)
+			MarkOpenAIAttemptTransportCommitted(c)
 			pendingFlushEvents++
 			flushStreamWriter(forceFlush)
 			return

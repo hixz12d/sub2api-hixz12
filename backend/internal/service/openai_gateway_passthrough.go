@@ -194,6 +194,9 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	agentTaskRecoveryTried := false
 	var resp *http.Response
 	for {
+		if reserveErr := ReserveOpenAIUpstreamAttempt(c, account.ID); reserveErr != nil {
+			return nil, reserveErr
+		}
 		upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
 		upstreamReq, buildErr := s.buildUpstreamRequestOpenAIPassthrough(upstreamCtx, c, account, body, token)
 		releaseUpstreamCtx()
@@ -207,7 +210,9 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		if err != nil {
 			// Transport-level failure (proxy/DNS/TCP/TLS — no HTTP response). Convert to
 			// a failover so the handler switches to a healthy account.
-			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true)
+			transportErr := s.handleOpenAIUpstreamTransportError(ctx, c, account, err, true)
+			RecordOpenAIRetryFailure(c, 0, transportErr)
+			return nil, transportErr
 		}
 		if resp.StatusCode < 400 {
 			break
@@ -216,6 +221,19 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		// Peek only to identify an invalid task. Restore the body so the existing
 		// passthrough error handling sees the same response after recovery fails.
 		probeBody := s.readUpstreamErrorBody(resp)
+		if resp.StatusCode == http.StatusUnauthorized && account.IsOpenAIOAuth() {
+			decision := RecordOpenAIRetryFailure(c, resp.StatusCode, nil)
+			budget := OpenAIRetryBudgetFromContext(c)
+			if decision.RefreshCredential && budget != nil && budget.UseRefresh() && s.openAITokenProvider != nil {
+				_ = resp.Body.Close()
+				refreshedToken, refreshErr := s.openAITokenProvider.RefreshAfterUnauthorized(ctx, account, token)
+				if refreshErr != nil {
+					return nil, fmt.Errorf("refresh OpenAI token after passthrough 401: %w", refreshErr)
+				}
+				token = refreshedToken
+				continue
+			}
+		}
 		_ = resp.Body.Close()
 		resp.Body = io.NopCloser(bytes.NewReader(probeBody))
 		if !agentTaskRecoveryTried && s.isAgentIdentityAccount(ctx, account) && isAgentIdentityTaskInvalidHTTPResponse(resp.StatusCode, probeBody) {
@@ -231,6 +249,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		// 5xx 应先触发多账号 failover，且此时尚未写入下游响应。
 		// probeBody 已在上方任务探测时读取过一次，直接复用避免重复读取。
 		if shouldFailoverOpenAIPassthroughResponse(account, resp.StatusCode, probeBody) {
+			RecordOpenAIRetryFailure(c, resp.StatusCode, nil)
 			return nil, s.handleFailoverErrorResponsePassthrough(ctx, resp, c, account, body, probeBody)
 		}
 		return nil, s.handleErrorResponsePassthrough(ctx, resp, c, account, body, probeBody)
