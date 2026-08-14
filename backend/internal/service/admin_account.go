@@ -842,6 +842,11 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 			return nil, err
 		}
 	}
+	if input.ProxyID != nil && s.cfg != nil && s.cfg.Gateway.OpenAIEgress.InvalidateOnProxyChange {
+		if invalidator, ok := s.runtimeBlocker.(interface{ InvalidateOpenAIRouteAccount(int64) }); ok {
+			invalidator.InvalidateOpenAIRouteAccount(account.ID)
+		}
+	}
 
 	// 绑定分组
 	if input.GroupIDs != nil {
@@ -1558,6 +1563,13 @@ func (s *adminServiceImpl) ResetAccountQuota(ctx context.Context, id int64) erro
 	return s.accountRepo.ResetQuotaUsed(ctx, id)
 }
 
+func (s *adminServiceImpl) resolveAdminOpenAIEgress(ctx context.Context, account *Account) (OpenAIEgressRoute, error) {
+	if s.openAIEgressResolver != nil {
+		return s.openAIEgressResolver.Resolve(ctx, account)
+	}
+	return newOpenAIEgressResolver(s.cfg, s.proxyRepo).Resolve(ctx, account)
+}
+
 // EnsureOpenAIPrivacy 检查 OpenAI OAuth 账号是否已设置 privacy_mode，
 // 未设置则调用 disableOpenAITraining 并持久化到 Extra，返回设置的 mode 值。
 func (s *adminServiceImpl) EnsureOpenAIPrivacy(ctx context.Context, account *Account) string {
@@ -1580,12 +1592,12 @@ func (s *adminServiceImpl) EnsureOpenAIPrivacy(ctx context.Context, account *Acc
 		return ""
 	}
 
-	var proxyURL string
-	if account.ProxyID != nil {
-		if p, err := s.proxyRepo.GetByID(ctx, *account.ProxyID); err == nil && p != nil {
-			proxyURL = p.URL()
-		}
+	route, routeErr := s.resolveAdminOpenAIEgress(ctx, account)
+	if routeErr != nil {
+		logger.LegacyPrintf("service.admin", "openai_privacy_egress_resolve_failed: account_id=%d err=%v", account.ID, routeErr)
+		return ""
 	}
+	proxyURL := route.ProxyURL
 
 	mode := disableOpenAITraining(ctx, s.privacyClientFactory, token, proxyURL, s.resolveOpenAIOutboundIdentity(ctx, account))
 	if mode == "" {
@@ -1614,12 +1626,12 @@ func (s *adminServiceImpl) ForceOpenAIPrivacy(ctx context.Context, account *Acco
 		return ""
 	}
 
-	var proxyURL string
-	if account.ProxyID != nil {
-		if p, err := s.proxyRepo.GetByID(ctx, *account.ProxyID); err == nil && p != nil {
-			proxyURL = p.URL()
-		}
+	route, routeErr := s.resolveAdminOpenAIEgress(ctx, account)
+	if routeErr != nil {
+		logger.LegacyPrintf("service.admin", "openai_privacy_egress_resolve_failed: account_id=%d err=%v", account.ID, routeErr)
+		return ""
 	}
+	proxyURL := route.ProxyURL
 
 	mode := disableOpenAITraining(ctx, s.privacyClientFactory, token, proxyURL, s.resolveOpenAIOutboundIdentity(ctx, account))
 	if mode == "" {

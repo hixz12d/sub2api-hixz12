@@ -143,6 +143,7 @@ type AccountTestService struct {
 	grokTokenProvider         *GrokTokenProvider
 	antigravityGatewayService *AntigravityGatewayService
 	httpUpstream              HTTPUpstream
+	openAIEgressResolver      OpenAIEgressResolver
 	cfg                       *config.Config
 	settingService            *SettingService
 	tlsFPProfileService       *TLSFingerprintProfileService
@@ -178,6 +179,7 @@ func NewAccountTestService(
 		antigravityGatewayService: antigravityGatewayService,
 		httpUpstream:              httpUpstream,
 		cfg:                       cfg,
+		openAIEgressResolver:      newOpenAIEgressResolver(cfg, nil),
 		tlsFPProfileService:       tlsFPProfileService,
 	}
 }
@@ -749,10 +751,11 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	}
 
 	// Get proxy URL
-	proxyURL := ""
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	route, routeErr := s.resolveOpenAIEgress(ctx, account)
+	if routeErr != nil {
+		return s.sendErrorAndEnd(c, "OpenAI egress route unavailable")
 	}
+	proxyURL := route.ProxyURL
 
 	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
@@ -1960,10 +1963,11 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 	}
 	applyResolvedOpenAIOutboundIdentityWithPolicy(req.Header, identity, openAIOutboundAPIKeyPolicy)
 
-	proxyURL := ""
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	route, routeErr := s.resolveOpenAIEgress(ctx, account)
+	if routeErr != nil {
+		return s.sendErrorAndEnd(c, "OpenAI egress route unavailable")
 	}
+	proxyURL := route.ProxyURL
 
 	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
@@ -2095,10 +2099,11 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 		applyCodexOAuthStableEnvironmentHeaders(req.Header, credentialAccount)
 	}
 
-	proxyURL := ""
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	route, routeErr := s.resolveOpenAIEgress(ctx, account)
+	if routeErr != nil {
+		return s.sendErrorAndEnd(c, "OpenAI egress route unavailable")
 	}
+	proxyURL := route.ProxyURL
 
 	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
@@ -2868,10 +2873,11 @@ func (s *AccountTestService) testOpenAIImageAPIKey(c *gin.Context, ctx context.C
 	}
 	applyResolvedOpenAIOutboundIdentityWithPolicy(req.Header, identity, openAIOutboundAPIKeyPolicy)
 
-	proxyURL := ""
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	route, routeErr := s.resolveOpenAIEgress(ctx, account)
+	if routeErr != nil {
+		return s.sendErrorAndEnd(c, "OpenAI egress route unavailable")
 	}
+	proxyURL := route.ProxyURL
 
 	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {
@@ -2985,10 +2991,11 @@ func (s *AccountTestService) testOpenAIImageOAuth(c *gin.Context, ctx context.Co
 	setOpenAIChatGPTAccountHeaders(req.Header, credentialAccount)
 	applyResolvedOpenAIOutboundIdentity(req.Header, resolveOpenAIOutboundIdentityFromSettings(ctx, credentialAccount, nil), true)
 
-	proxyURL := ""
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	route, routeErr := s.resolveOpenAIEgress(ctx, account)
+	if routeErr != nil {
+		return s.sendErrorAndEnd(c, "OpenAI egress route unavailable")
 	}
+	proxyURL := route.ProxyURL
 	resp, err := s.httpUpstream.Do(req, proxyURL, account.ID, account.Concurrency)
 	if err != nil {
 		return s.sendErrorAndEnd(c, fmt.Sprintf("Responses API request failed: %s", err.Error()))
@@ -3111,4 +3118,11 @@ func parseTestSSEOutput(body string) (responseText, errMsg string) {
 	}
 	responseText = strings.Join(texts, "")
 	return
+}
+
+func (s *AccountTestService) resolveOpenAIEgress(ctx context.Context, account *Account) (OpenAIEgressRoute, error) {
+	if s.openAIEgressResolver != nil {
+		return s.openAIEgressResolver.Resolve(ctx, account)
+	}
+	return newOpenAIEgressResolver(s.cfg, nil).Resolve(ctx, account)
 }

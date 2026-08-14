@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 )
@@ -18,14 +19,20 @@ type OpenAIOAuthService struct {
 	proxyRepo            ProxyRepository
 	oauthClient          OpenAIOAuthClient
 	privacyClientFactory PrivacyClientFactory // 用于调用 chatgpt.com/backend-api（ImpersonateChrome）
+	openAIEgressResolver OpenAIEgressResolver
 }
 
 // NewOpenAIOAuthService creates a new OpenAI OAuth service
-func NewOpenAIOAuthService(proxyRepo ProxyRepository, oauthClient OpenAIOAuthClient) *OpenAIOAuthService {
+func NewOpenAIOAuthService(proxyRepo ProxyRepository, oauthClient OpenAIOAuthClient, configs ...*config.Config) *OpenAIOAuthService {
+	var cfg *config.Config
+	if len(configs) > 0 {
+		cfg = configs[0]
+	}
 	return &OpenAIOAuthService{
-		sessionStore: openai.NewSessionStore(),
-		proxyRepo:    proxyRepo,
-		oauthClient:  oauthClient,
+		sessionStore:         openai.NewSessionStore(),
+		proxyRepo:            proxyRepo,
+		oauthClient:          oauthClient,
+		openAIEgressResolver: newOpenAIEgressResolver(cfg, proxyRepo),
 	}
 }
 
@@ -62,17 +69,11 @@ func (s *OpenAIOAuthService) GenerateAuthURL(ctx context.Context, proxyID *int64
 		return nil, infraerrors.Newf(http.StatusInternalServerError, "OPENAI_OAUTH_SESSION_FAILED", "failed to generate session ID: %v", err)
 	}
 
-	// Get proxy URL if specified
-	var proxyURL string
-	if proxyID != nil {
-		proxy, err := s.proxyRepo.GetByID(ctx, *proxyID)
-		if err != nil {
-			return nil, infraerrors.Newf(http.StatusBadRequest, "OPENAI_OAUTH_PROXY_NOT_FOUND", "proxy not found: %v", err)
-		}
-		if proxy != nil {
-			proxyURL = proxy.URL()
-		}
+	route, routeErr := s.openAIEgressResolver.Resolve(ctx, &Account{Platform: PlatformOpenAI, ProxyID: proxyID})
+	if routeErr != nil {
+		return nil, infraerrors.New(http.StatusServiceUnavailable, "OPENAI_EGRESS_PROXY_UNAVAILABLE", "OpenAI egress proxy is unavailable")
 	}
+	proxyURL := route.ProxyURL
 
 	// Use default redirect URI if not specified
 	if redirectURI == "" {
@@ -143,15 +144,17 @@ func (s *OpenAIOAuthService) ExchangeCode(ctx context.Context, input *OpenAIExch
 		return nil, infraerrors.New(http.StatusBadRequest, "OPENAI_OAUTH_INVALID_STATE", "invalid oauth state")
 	}
 
-	// Get proxy URL: prefer input.ProxyID, fallback to session.ProxyURL
+	// Prefer a newly selected proxy; otherwise retain the route validated when the session was created.
 	proxyURL := session.ProxyURL
 	if input.ProxyID != nil {
-		proxy, err := s.proxyRepo.GetByID(ctx, *input.ProxyID)
-		if err != nil {
-			return nil, infraerrors.Newf(http.StatusBadRequest, "OPENAI_OAUTH_PROXY_NOT_FOUND", "proxy not found: %v", err)
+		route, routeErr := s.openAIEgressResolver.Resolve(ctx, &Account{Platform: PlatformOpenAI, ProxyID: input.ProxyID})
+		if routeErr != nil {
+			return nil, infraerrors.New(http.StatusServiceUnavailable, "OPENAI_EGRESS_PROXY_UNAVAILABLE", "OpenAI egress proxy is unavailable")
 		}
-		if proxy != nil {
-			proxyURL = proxy.URL()
+		proxyURL = route.ProxyURL
+	} else if strings.TrimSpace(proxyURL) == "" {
+		if _, routeErr := s.openAIEgressResolver.Resolve(ctx, &Account{Platform: PlatformOpenAI}); routeErr != nil {
+			return nil, infraerrors.New(http.StatusServiceUnavailable, "OPENAI_EGRESS_PROXY_REQUIRED", "OpenAI egress proxy is required")
 		}
 	}
 
@@ -359,13 +362,11 @@ func (s *OpenAIOAuthService) RefreshAccountToken(ctx context.Context, account *A
 		return nil, infraerrors.New(http.StatusBadRequest, "OPENAI_OAUTH_INVALID_ACCOUNT_TYPE", "account is not an OAuth account")
 	}
 
-	var proxyURL string
-	if account.ProxyID != nil && s.proxyRepo != nil {
-		proxy, err := s.proxyRepo.GetByID(ctx, *account.ProxyID)
-		if err == nil && proxy != nil {
-			proxyURL = proxy.URL()
-		}
+	route, routeErr := s.openAIEgressResolver.Resolve(ctx, account)
+	if routeErr != nil {
+		return nil, routeErr
 	}
+	proxyURL := route.ProxyURL
 
 	accessToken := account.GetCredential("access_token")
 	if account.IsOpenAIPersonalAccessToken() {

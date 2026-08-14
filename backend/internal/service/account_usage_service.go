@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	httppool "github.com/Wei-Shaw/sub2api/internal/pkg/httpclient"
 	openaipkg "github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
@@ -299,6 +300,8 @@ type AccountUsageService struct {
 	grokQuotaFetcher        *GrokQuotaFetcher
 	grokQuotaService        *GrokQuotaService
 	openAIQuotaService      *OpenAIQuotaService
+	openAIEgressResolver    OpenAIEgressResolver
+	cfg                     *config.Config
 	cache                   *UsageCache
 	identityCache           IdentityCache
 	tlsFPProfileService     *TLSFingerprintProfileService
@@ -316,6 +319,7 @@ func NewAccountUsageService(
 	grokQuotaFetcher *GrokQuotaFetcher,
 	grokQuotaService *GrokQuotaService,
 	openAIQuotaService *OpenAIQuotaService,
+	cfg *config.Config,
 	cache *UsageCache,
 	identityCache IdentityCache,
 	tlsFPProfileService *TLSFingerprintProfileService,
@@ -329,10 +333,19 @@ func NewAccountUsageService(
 		grokQuotaFetcher:        grokQuotaFetcher,
 		grokQuotaService:        grokQuotaService,
 		openAIQuotaService:      openAIQuotaService,
+		openAIEgressResolver:    newOpenAIEgressResolver(cfg, nil),
+		cfg:                     cfg,
 		cache:                   cache,
 		identityCache:           identityCache,
 		tlsFPProfileService:     tlsFPProfileService,
 	}
+}
+
+func (s *AccountUsageService) resolveOpenAIEgress(ctx context.Context, account *Account) (OpenAIEgressRoute, error) {
+	if s.openAIEgressResolver != nil {
+		return s.openAIEgressResolver.Resolve(ctx, account)
+	}
+	return newOpenAIEgressResolver(s.cfg, nil).Resolve(ctx, account)
 }
 
 func supportsAnthropicPassiveUsage(account *Account) bool {
@@ -865,10 +878,11 @@ func (s *AccountUsageService) probeOpenAICodexSnapshot(ctx context.Context, acco
 	setOpenAIChatGPTAccountHeaders(req.Header, account)
 	applyResolvedOpenAIOutboundIdentityWithPolicy(req.Header, identity, openAIOutboundOAuthPolicy)
 
-	proxyURL := ""
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	route, routeErr := s.resolveOpenAIEgress(ctx, account)
+	if routeErr != nil {
+		return nil, routeErr
 	}
+	proxyURL := route.ProxyURL
 	client, err := httppool.GetClient(httppool.Options{
 		ProxyURL:              proxyURL,
 		Timeout:               15 * time.Second,

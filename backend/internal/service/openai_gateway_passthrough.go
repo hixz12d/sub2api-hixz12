@@ -182,10 +182,11 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		return nil, err
 	}
 
-	proxyURL := ""
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	route, routeErr := s.resolveOpenAIEgress(ctx, account)
+	if routeErr != nil {
+		return nil, routeErr
 	}
+	proxyURL := route.ProxyURL
 
 	if c != nil {
 		c.Set("openai_passthrough", true)

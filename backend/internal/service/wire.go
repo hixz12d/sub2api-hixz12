@@ -111,8 +111,9 @@ func ProvideOpenAIOAuthService(
 	proxyRepo ProxyRepository,
 	oauthClient OpenAIOAuthClient,
 	privacyClientFactory PrivacyClientFactory,
+	cfg *config.Config,
 ) *OpenAIOAuthService {
-	svc := NewOpenAIOAuthService(proxyRepo, oauthClient)
+	svc := NewOpenAIOAuthService(proxyRepo, oauthClient, cfg)
 	svc.SetPrivacyClientFactory(privacyClientFactory)
 	return svc
 }
@@ -198,6 +199,7 @@ func ProvideAccountUsageService(
 	grokQuotaFetcher *GrokQuotaFetcher,
 	grokQuotaService *GrokQuotaService,
 	openAIQuotaService *OpenAIQuotaService,
+	cfg *config.Config,
 	cache *UsageCache,
 	identityCache IdentityCache,
 	tlsFPProfileService *TLSFingerprintProfileService,
@@ -212,6 +214,7 @@ func ProvideAccountUsageService(
 		grokQuotaFetcher,
 		grokQuotaService,
 		openAIQuotaService,
+		cfg,
 		cache,
 		identityCache,
 		tlsFPProfileService,

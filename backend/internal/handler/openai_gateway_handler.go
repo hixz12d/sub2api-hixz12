@@ -451,6 +451,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	var passthroughFailoverState openAIPassthroughFailoverState
+	requiredEgressRouteKey := ""
 	autoRetryRound := 0
 
 	// 生图意图的 /v1/responses 请求必须调度到确实支持 Responses API 的账号，否则
@@ -558,6 +559,27 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			zap.Float64("load_skew", scheduleDecision.LoadSkew),
 		)
 		account := selection.Account
+		if requestPlatform == service.PlatformOpenAI {
+			route, routeErr := h.gatewayService.ResolveOpenAIEgressRoute(c.Request.Context(), account)
+			if routeErr != nil {
+				if selection.ReleaseFunc != nil {
+					selection.ReleaseFunc()
+				}
+				h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "OPENAI_EGRESS_PROXY_UNAVAILABLE", "OpenAI egress proxy is unavailable", streamStarted)
+				return
+			}
+			if h.gatewayService.OpenAIFailoverRequiresSameRoute() {
+				if requiredEgressRouteKey == "" {
+					requiredEgressRouteKey = route.RouteKey
+				} else if route.RouteKey != requiredEgressRouteKey {
+					if selection.ReleaseFunc != nil {
+						selection.ReleaseFunc()
+					}
+					failedAccountIDs[account.ID] = struct{}{}
+					continue
+				}
+			}
+		}
 		sessionHash = ensureOpenAIPoolModeSessionHash(selectionSessionHash, account)
 		attemptSessionHash := sessionHash
 		reqLog.Debug("openai.account_selected", zap.Int64("account_id", account.ID), zap.String("account_name", account.Name))

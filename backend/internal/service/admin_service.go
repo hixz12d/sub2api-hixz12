@@ -6,6 +6,7 @@ import (
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
@@ -655,6 +656,8 @@ type adminServiceImpl struct {
 	accountDuplicateRepo AccountDuplicateRepository
 	accountBillingRepo   AccountBillingSettingsRepository
 	proxyRepo            ProxyRepository
+	openAIEgressResolver OpenAIEgressResolver
+	cfg                  *config.Config
 	apiKeyRepo           APIKeyRepository
 	redeemCodeRepo       RedeemCodeRepository
 	userGroupRateRepo    UserGroupRateRepository
@@ -715,6 +718,7 @@ func NewAdminService(
 	compositeRouteRepo CompositeModelRouteRepository,
 	compositeResolver *CompositeRouteResolver,
 	channelCacheInvalidator ChannelCacheInvalidator,
+	cfg *config.Config,
 ) AdminService {
 	return &adminServiceImpl{
 		userRepo:             userRepo,
@@ -725,6 +729,8 @@ func NewAdminService(
 		accountDuplicateRepo: accountRepo,
 		accountBillingRepo:   accountRepo,
 		proxyRepo:            proxyRepo,
+		openAIEgressResolver: newOpenAIEgressResolver(cfg, proxyRepo),
+		cfg:                  cfg,
 		apiKeyRepo:           apiKeyRepo,
 		redeemCodeRepo:       redeemCodeRepo,
 		userGroupRateRepo:    userGroupRateRepo,

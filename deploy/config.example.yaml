@@ -198,6 +198,12 @@ security:
 # 网关配置
 # =============================================================================
 gateway:
+  # This fork requires every OpenAI/Codex upstream request to use the account proxy.
+  openai_egress:
+    mode: proxy_required
+    failover_route_policy: same_route
+    invalidate_connections_on_proxy_change: true
+
   # Timeout for waiting upstream response headers (seconds)
   # 等待上游响应头超时时间（秒）
   response_header_timeout: 600

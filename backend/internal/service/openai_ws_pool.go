@@ -69,6 +69,7 @@ type openAIWSAcquireRequest struct {
 	// lastAcquire or delayed prewarm state.
 	HeadersFactory   func(context.Context, http.Header) (http.Header, error)
 	ProxyURL         string
+	RouteKey         string
 	PreferredConnID  string
 	SessionScopeHash string
 	// ForceNewConn: 强制本次获取新连接（避免复用导致连接内续链状态互相污染）。
@@ -80,6 +81,7 @@ type openAIWSAcquireRequest struct {
 type openAIWSHandshakeCompatibilityKey struct {
 	betaFeatures     string
 	sessionScopeHash string
+	routeKey         string
 }
 
 type openAIWSConnLease struct {
@@ -249,6 +251,7 @@ type openAIWSConn struct {
 	handshakeHeaders       http.Header
 	handshakeCompatibility openAIWSHandshakeCompatibilityKey
 	routingAffinity        string
+	routeKey               string
 
 	leaseCh   chan struct{}
 	closedCh  chan struct{}
@@ -542,6 +545,10 @@ func (c *openAIWSConn) handshakeHeader(name string) string {
 
 func (c *openAIWSConn) matchesHandshakeCompatibility(compatibility openAIWSHandshakeCompatibilityKey) bool {
 	return c != nil && c.handshakeCompatibility == compatibility
+}
+
+func (c *openAIWSConn) matchesRouteKey(routeKey string) bool {
+	return c != nil && c.routeKey == stringsTrim(routeKey)
 }
 
 func (c *openAIWSConn) matchesRoutingAffinity(routingAffinity string) bool {
@@ -857,7 +864,7 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 
 retryAcquire:
 	accountID := req.Account.ID
-	compatibility := normalizeOpenAIWSHandshakeCompatibility(req.Headers, req.SessionScopeHash)
+	compatibility := normalizeOpenAIWSHandshakeCompatibility(req.Headers, req.SessionScopeHash, req.RouteKey)
 	routingAffinity := normalizeOpenAIWSRoutingAffinity(req.Headers)
 	effectiveMaxConns := p.effectiveMaxConnsByAccount(req.Account)
 	if effectiveMaxConns <= 0 {
@@ -1808,8 +1815,9 @@ func (p *openAIWSConnPool) dialConn(ctx context.Context, req openAIWSAcquireRequ
 	}
 	id := p.nextConnID(req.Account.ID)
 	pooledConn := newOpenAIWSConn(id, req.Account.ID, conn, handshakeHeaders)
-	pooledConn.handshakeCompatibility = normalizeOpenAIWSHandshakeCompatibility(req.Headers, req.SessionScopeHash)
+	pooledConn.handshakeCompatibility = normalizeOpenAIWSHandshakeCompatibility(req.Headers, req.SessionScopeHash, req.RouteKey)
 	pooledConn.routingAffinity = normalizeOpenAIWSRoutingAffinity(req.Headers)
+	pooledConn.routeKey = stringsTrim(req.RouteKey)
 	return pooledConn, nil
 }
 
@@ -1976,6 +1984,7 @@ func cloneOpenAIWSAcquireRequest(req openAIWSAcquireRequest) openAIWSAcquireRequ
 	copied.Headers = cloneHeader(req.Headers)
 	copied.WSURL = stringsTrim(req.WSURL)
 	copied.ProxyURL = stringsTrim(req.ProxyURL)
+	copied.RouteKey = stringsTrim(req.RouteKey)
 	copied.PreferredConnID = stringsTrim(req.PreferredConnID)
 	return copied
 }
@@ -1990,8 +1999,8 @@ func cloneOpenAIWSAcquireRequestPtr(req *openAIWSAcquireRequest) *openAIWSAcquir
 
 func sameOpenAIWSPrewarmTarget(a, b openAIWSAcquireRequest) bool {
 	return stringsTrim(a.WSURL) == stringsTrim(b.WSURL) &&
-		stringsTrim(a.ProxyURL) == stringsTrim(b.ProxyURL) &&
-		normalizeOpenAIWSHandshakeCompatibility(a.Headers, a.SessionScopeHash) == normalizeOpenAIWSHandshakeCompatibility(b.Headers, b.SessionScopeHash)
+		stringsTrim(a.RouteKey) == stringsTrim(b.RouteKey) &&
+		normalizeOpenAIWSHandshakeCompatibility(a.Headers, a.SessionScopeHash, a.RouteKey) == normalizeOpenAIWSHandshakeCompatibility(b.Headers, b.SessionScopeHash, b.RouteKey)
 }
 
 func normalizeOpenAIWSBetaFeatures(headers http.Header) string {
@@ -2021,12 +2030,17 @@ func normalizeOpenAIWSBetaFeatures(headers http.Header) string {
 
 func normalizeOpenAIWSHandshakeCompatibility(headers http.Header, sessionScopeHash ...string) openAIWSHandshakeCompatibilityKey {
 	scope := ""
+	routeKey := ""
 	if len(sessionScopeHash) > 0 {
 		scope = stringsTrim(sessionScopeHash[0])
+	}
+	if len(sessionScopeHash) > 1 {
+		routeKey = stringsTrim(sessionScopeHash[1])
 	}
 	return openAIWSHandshakeCompatibilityKey{
 		betaFeatures:     normalizeOpenAIWSBetaFeatures(headers),
 		sessionScopeHash: scope,
+		routeKey:         routeKey,
 	}
 }
 

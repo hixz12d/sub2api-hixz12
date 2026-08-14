@@ -421,6 +421,7 @@ type OpenAIGatewayService struct {
 	userSubRepo           UserSubscriptionRepository
 	cache                 GatewayCache
 	cfg                   *config.Config
+	openAIEgressResolver  OpenAIEgressResolver
 	codexDetector         CodexClientRestrictionDetector
 	schedulerSnapshot     *SchedulerSnapshotService
 	concurrencyService    *ConcurrencyService
@@ -506,19 +507,20 @@ func NewOpenAIGatewayService(
 		SetCodexIdentityEnforcementEnabled(!cfg.Gateway.DisableCodexIdentityEnforcement)
 	}
 	svc := &OpenAIGatewayService{
-		accountRepo:         accountRepo,
-		usageLogRepo:        usageLogRepo,
-		usageBillingRepo:    usageBillingRepo,
-		userRepo:            userRepo,
-		userSubRepo:         userSubRepo,
-		cache:               cache,
-		cfg:                 cfg,
-		codexDetector:       NewOpenAICodexClientRestrictionDetector(cfg),
-		schedulerSnapshot:   schedulerSnapshot,
-		concurrencyService:  concurrencyService,
-		billingService:      billingService,
-		rateLimitService:    rateLimitService,
-		billingCacheService: billingCacheService,
+		accountRepo:          accountRepo,
+		usageLogRepo:         usageLogRepo,
+		usageBillingRepo:     usageBillingRepo,
+		userRepo:             userRepo,
+		userSubRepo:          userSubRepo,
+		cache:                cache,
+		cfg:                  cfg,
+		openAIEgressResolver: newOpenAIEgressResolver(cfg, nil),
+		codexDetector:        NewOpenAICodexClientRestrictionDetector(cfg),
+		schedulerSnapshot:    schedulerSnapshot,
+		concurrencyService:   concurrencyService,
+		billingService:       billingService,
+		rateLimitService:     rateLimitService,
+		billingCacheService:  billingCacheService,
 		userGroupRateResolver: newUserGroupRateResolver(
 			userGroupRateRepo,
 			nil,
@@ -717,6 +719,17 @@ func (s *OpenAIGatewayService) getOpenAIWSProtocolResolver() OpenAIWSProtocolRes
 		cfg = s.cfg
 	}
 	return NewOpenAIWSProtocolResolver(cfg)
+}
+
+func (s *OpenAIGatewayService) resolveOpenAIEgress(ctx context.Context, account *Account) (OpenAIEgressRoute, error) {
+	if s != nil && s.openAIEgressResolver != nil {
+		return s.openAIEgressResolver.Resolve(ctx, account)
+	}
+	var cfg *config.Config
+	if s != nil {
+		cfg = s.cfg
+	}
+	return newOpenAIEgressResolver(cfg, nil).Resolve(ctx, account)
 }
 
 func classifyOpenAIWSReconnectReason(err error) (string, bool) {
@@ -1218,4 +1231,23 @@ func (s *OpenAIGatewayService) GetAccessToken(ctx context.Context, account *Acco
 	default:
 		return "", "", fmt.Errorf("unsupported account type: %s", account.Type)
 	}
+}
+
+// InvalidateOpenAIRouteAccount discards pooled WS and prewarm state after a committed route change.
+func (s *OpenAIGatewayService) InvalidateOpenAIRouteAccount(accountID int64) {
+	if s == nil || accountID <= 0 {
+		return
+	}
+	if s.openaiWSPool != nil {
+		s.openaiWSPool.ClearAccount(accountID)
+	}
+}
+
+// ResolveOpenAIEgressRoute exposes the sanitized route decision to request schedulers.
+func (s *OpenAIGatewayService) ResolveOpenAIEgressRoute(ctx context.Context, account *Account) (OpenAIEgressRoute, error) {
+	return s.resolveOpenAIEgress(ctx, account)
+}
+
+func (s *OpenAIGatewayService) OpenAIFailoverRequiresSameRoute() bool {
+	return s != nil && s.cfg != nil && strings.EqualFold(strings.TrimSpace(s.cfg.Gateway.OpenAIEgress.FailoverRoutePolicy), "same_route")
 }

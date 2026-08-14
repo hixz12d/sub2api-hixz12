@@ -897,6 +897,13 @@ type GatewayOpenAIAffinityConfig struct {
 	RefreshMinIntervalSeconds int    `mapstructure:"refresh_min_interval_seconds"`
 }
 
+// GatewayOpenAIEgressConfig controls whether OpenAI/Codex upstream traffic may use a direct route.
+type GatewayOpenAIEgressConfig struct {
+	Mode                    string `mapstructure:"mode"`
+	FailoverRoutePolicy     string `mapstructure:"failover_route_policy"`
+	InvalidateOnProxyChange bool   `mapstructure:"invalidate_connections_on_proxy_change"`
+}
+
 // GatewayConfig API网关相关配置
 type GatewayConfig struct {
 	// 等待上游响应头的超时时间（秒），0表示无超时
@@ -922,6 +929,8 @@ type GatewayConfig struct {
 	GeminiDebugResponseHeaders bool `mapstructure:"gemini_debug_response_headers"`
 	// ConnectionPoolIsolation: 上游连接池隔离策略（proxy/account/account_proxy）
 	ConnectionPoolIsolation string `mapstructure:"connection_pool_isolation"`
+	// OpenAIEgress centralizes OpenAI/Codex proxy routing. The compatibility default is optional.
+	OpenAIEgress GatewayOpenAIEgressConfig `mapstructure:"openai_egress"`
 	// ForceCodexCLI: 强制将 OpenAI `/v1/responses` 请求按 Codex CLI 处理。
 	// 用于网关未透传/改写 User-Agent 时的兼容兜底（默认关闭，避免影响其他客户端）。
 	ForceCodexCLI bool `mapstructure:"force_codex_cli"`
@@ -2307,6 +2316,9 @@ func setDefaults() {
 	viper.SetDefault("gateway.codex_image_generation_bridge_enabled", false)
 	viper.SetDefault("gateway.openai_passthrough_allow_timeout_headers", false)
 	viper.SetDefault("gateway.openai_compact_model", "gpt-5.4")
+	viper.SetDefault("gateway.openai_egress.mode", "optional")
+	viper.SetDefault("gateway.openai_egress.failover_route_policy", "any")
+	viper.SetDefault("gateway.openai_egress.invalidate_connections_on_proxy_change", true)
 	viper.SetDefault("gateway.openai_account_scoped_identity.enabled", false)
 	viper.SetDefault("gateway.live.max_session_duration_seconds", 3600)
 	// OpenAI Responses WebSocket（默认开启；可通过 force_http 紧急回滚）
@@ -2585,6 +2597,20 @@ func (c *Config) Validate() error {
 	}
 	c.Security.ForwardedClientIPHeaders = forwardedClientIPHeaders
 	c.SetForwardedClientIPSettings(c.Security.TrustForwardedIPForAPIKeyACL, forwardedClientIPHeaders)
+	c.Gateway.OpenAIEgress.Mode = strings.ToLower(strings.TrimSpace(c.Gateway.OpenAIEgress.Mode))
+	if c.Gateway.OpenAIEgress.Mode == "" {
+		c.Gateway.OpenAIEgress.Mode = "optional"
+	}
+	if c.Gateway.OpenAIEgress.Mode != "optional" && c.Gateway.OpenAIEgress.Mode != "proxy_required" {
+		return fmt.Errorf("gateway.openai_egress.mode must be optional or proxy_required")
+	}
+	c.Gateway.OpenAIEgress.FailoverRoutePolicy = strings.ToLower(strings.TrimSpace(c.Gateway.OpenAIEgress.FailoverRoutePolicy))
+	if c.Gateway.OpenAIEgress.FailoverRoutePolicy == "" {
+		c.Gateway.OpenAIEgress.FailoverRoutePolicy = "any"
+	}
+	if c.Gateway.OpenAIEgress.FailoverRoutePolicy != "any" && c.Gateway.OpenAIEgress.FailoverRoutePolicy != "same_route" {
+		return fmt.Errorf("gateway.openai_egress.failover_route_policy must be any or same_route")
+	}
 	if c.Server.ReadHeaderTimeout < 1 || c.Server.ReadHeaderTimeout > 60 {
 		return fmt.Errorf("server.read_header_timeout must be between 1 and 60 seconds")
 	}

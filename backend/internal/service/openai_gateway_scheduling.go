@@ -1497,6 +1497,7 @@ func (s *OpenAIGatewayService) listSchedulableAccounts(ctx context.Context, grou
 			return accounts, err
 		}
 		accounts = s.filterOpenAIAccountsBySchedulingThreshold(ctx, accounts)
+		accounts = s.filterOpenAIAccountsByEgressPolicy(ctx, platform, accounts)
 		if platform == PlatformGrok {
 			accounts = s.filterGrokFreeQuotaAccountsForOpenAI(ctx, accounts)
 		}
@@ -1515,6 +1516,7 @@ func (s *OpenAIGatewayService) listSchedulableAccounts(ctx context.Context, grou
 		return nil, fmt.Errorf("query accounts failed: %w", err)
 	}
 	accounts = s.filterOpenAIAccountsBySchedulingThreshold(ctx, accounts)
+	accounts = s.filterOpenAIAccountsByEgressPolicy(ctx, platform, accounts)
 	if platform == PlatformGrok {
 		accounts = s.filterGrokFreeQuotaAccountsForOpenAI(ctx, accounts)
 	}
@@ -1759,4 +1761,27 @@ func (s *OpenAIGatewayService) schedulingConfig() config.GatewaySchedulingConfig
 		LoadBatchEnabled:                    true,
 		SlotCleanupInterval:                 30 * time.Second,
 	}
+}
+
+func (s *OpenAIGatewayService) filterOpenAIAccountsByEgressPolicy(ctx context.Context, platform string, accounts []Account) []Account {
+	if s == nil || s.cfg == nil || platform != PlatformOpenAI || s.cfg.Gateway.OpenAIEgress.Mode != string(OpenAIEgressProxyRequired) {
+		return accounts
+	}
+	filtered := make([]Account, 0, len(accounts))
+	for i := range accounts {
+		candidate := &accounts[i]
+		if candidate.ProxyID == nil || *candidate.ProxyID <= 0 {
+			continue
+		}
+		// Snapshot rows may intentionally omit the relation. Keep bound rows for
+		// hydration, but reject every loaded invalid/expired/direct-fallback proxy.
+		if candidate.Proxy == nil {
+			filtered = append(filtered, *candidate)
+			continue
+		}
+		if _, err := s.resolveOpenAIEgress(ctx, candidate); err == nil {
+			filtered = append(filtered, *candidate)
+		}
+	}
+	return filtered
 }
