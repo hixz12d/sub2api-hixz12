@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -421,6 +422,12 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			}
 			if responseID == "" {
 				responseID = extractOpenAIResponseIDFromJSONBytes(dataBytes)
+				if responseID != "" {
+					if bindErr := s.bindPersistentOpenAIResponse(ctx, c, account, responseID); bindErr != nil {
+						streamEarlyErr = fmt.Errorf("persist OpenAI response ownership before output: %w", bindErr)
+						return
+					}
+				}
 			}
 			forceFlushFailedEvent := false
 			if eventType == "response.failed" {
@@ -1106,13 +1113,16 @@ func (s *OpenAIGatewayService) bindHTTPResponseAccount(ctx context.Context, c *g
 	if responseID == "" {
 		return
 	}
+	ctx = WithOpenAIWSRequestOwner(ctx, c)
+	if err := s.bindPersistentOpenAIResponse(ctx, c, account, responseID); err != nil {
+		slog.Warn("openai.affinity_response_bind_failed", "account_id", account.ID, "error", err)
+	}
 	store := s.getOpenAIWSStateStore()
 	if store == nil {
 		return
 	}
 	groupID := getOpenAIGroupIDFromContext(c)
 	ttl := s.openAIWSResponseStickyTTL()
-	ctx = WithOpenAIWSRequestOwner(ctx, c)
 	logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, bindOpenAIWSResponseAccount(ctx, store, groupID, responseID, account.ID, ttl))
 }
 
@@ -1207,7 +1217,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	// Some OpenAI-compatible upstreams (including other sub2api instances)
 	// may return SSE even when stream=false was requested.
 	if isEventStreamResponse(resp.Header) {
-		return s.handleSSEToJSON(resp, c, body, originalModel, mappedModel)
+		return s.handleSSEToJSONWithAffinity(ctx, resp, c, account, body, originalModel, mappedModel)
 	}
 	// bodyLooksLikeSSE is a line-level heuristic: real SSE framing requires
 	// "data:"/"event:" field names at the very start of a physical line. A
@@ -1223,7 +1233,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	// positives on JSON responses that coincidentally contain "data:" or
 	// "event:" in their text content.
 	if account.Type == AccountTypeOAuth && bodyLooksLikeSSE {
-		return s.handleSSEToJSON(resp, c, body, originalModel, mappedModel)
+		return s.handleSSEToJSONWithAffinity(ctx, resp, c, account, body, originalModel, mappedModel)
 	}
 	if account != nil && account.IsGrok() && isOpenAIResponsesCompactPath(c) {
 		body, err = convertGrokResponseToOpenAICompact(body)
@@ -1235,7 +1245,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	usageValue, usageOK := extractOpenAIUsageFromJSONBytes(body)
 	if !usageOK {
 		if bodyLooksLikeSSE {
-			return s.handleSSEToJSON(resp, c, body, originalModel, mappedModel)
+			return s.handleSSEToJSONWithAffinity(ctx, resp, c, account, body, originalModel, mappedModel)
 		}
 		return nil, fmt.Errorf("parse response: invalid json response")
 	}
@@ -1262,6 +1272,12 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 		}
 	}
 
+	responseID := extractOpenAIResponseIDFromJSONBytes(body)
+	if responseID != "" {
+		if bindErr := s.bindPersistentOpenAIResponse(ctx, c, account, responseID); bindErr != nil {
+			return nil, fmt.Errorf("persist non-stream response ownership before output: %w", bindErr)
+		}
+	}
 	if !writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
 		c.Data(resp.StatusCode, contentType, body)
 	}
@@ -1269,7 +1285,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	return &openaiNonStreamingResult{
 		OpenAIUsage:      usage,
 		usage:            usage,
-		responseID:       extractOpenAIResponseIDFromJSONBytes(body),
+		responseID:       responseID,
 		imageCount:       countOpenAIResponseImageOutputsFromJSONBytes(body),
 		imageOutputSizes: collectOpenAIResponseImageOutputSizesFromJSONBytes(body),
 		searchCount:      countGrokNativeSearchCallsFromJSONBytes(body),
@@ -1298,6 +1314,10 @@ func bodyHasSSEFraming(body []byte) bool {
 }
 
 func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Context, body []byte, originalModel, mappedModel string) (*openaiNonStreamingResult, error) {
+	return s.handleSSEToJSONWithAffinity(c.Request.Context(), resp, c, nil, body, originalModel, mappedModel)
+}
+
+func (s *OpenAIGatewayService) handleSSEToJSONWithAffinity(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, body []byte, originalModel, mappedModel string) (*openaiNonStreamingResult, error) {
 	bodyText := string(body)
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
 
@@ -1357,6 +1377,12 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 			contentType = "text/event-stream"
 		}
 	}
+	responseID := extractOpenAIResponseIDFromJSONBytes(body)
+	if responseID != "" {
+		if bindErr := s.bindPersistentOpenAIResponse(ctx, c, account, responseID); bindErr != nil {
+			return nil, fmt.Errorf("persist SSE-to-JSON response ownership before output: %w", bindErr)
+		}
+	}
 	if !writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
 		c.Data(resp.StatusCode, contentType, body)
 	}
@@ -1364,7 +1390,7 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 	return &openaiNonStreamingResult{
 		OpenAIUsage:      usage,
 		usage:            usage,
-		responseID:       extractOpenAIResponseIDFromJSONBytes(body),
+		responseID:       responseID,
 		imageCount:       countOpenAIImageOutputsFromSSEBody(bodyText),
 		imageOutputSizes: collectOpenAIImageOutputSizesFromSSEBody(bodyText),
 		searchCount:      countGrokNativeSearchCallsFromSSEBody(bodyText),

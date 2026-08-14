@@ -50,6 +50,7 @@ type accountRepository struct {
 	// Used to proactively sync account snapshot to cache when status changes,
 	// ensuring sticky sessions can promptly detect unavailable accounts.
 	schedulerCache service.SchedulerCache
+	openAIAffinity service.OpenAIAffinityRepository
 }
 
 var schedulerNeutralExtraKeyPrefixes = []string{
@@ -87,7 +88,11 @@ func NewAdminAccountRepository(client *dbent.Client, sqlDB *sql.DB, schedulerCac
 // newAccountRepositoryWithSQL 是内部构造函数，支持依赖注入 SQL 执行器。
 // 这种设计便于单元测试时注入 mock 对象。
 func newAccountRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor, schedulerCache service.SchedulerCache) *accountRepository {
-	return &accountRepository{client: client, sql: sqlq, schedulerCache: schedulerCache}
+	repo := &accountRepository{client: client, sql: sqlq, schedulerCache: schedulerCache}
+	if db, ok := sqlq.(*sql.DB); ok && db != nil {
+		repo.openAIAffinity = NewOpenAIAffinityRepository(db)
+	}
+	return repo
 }
 
 func (r *accountRepository) Create(ctx context.Context, account *service.Account) error {

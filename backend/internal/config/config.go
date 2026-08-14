@@ -884,6 +884,19 @@ type GatewayOpenAIAccountScopedIdentityConfig struct {
 	Enabled bool `mapstructure:"enabled"`
 }
 
+// GatewayOpenAIAffinityConfig controls the default-off persistent OpenAI OAuth
+// affinity path. Secret must be stable across restarts when Enabled is true.
+type GatewayOpenAIAffinityConfig struct {
+	Enabled                   bool   `mapstructure:"enabled"`
+	WritesEnabled             bool   `mapstructure:"writes_enabled"`
+	Secret                    string `mapstructure:"secret"`
+	ResponseTTLHours          int    `mapstructure:"response_ttl_hours"`
+	StrongTTLHours            int    `mapstructure:"strong_ttl_hours"`
+	ExplicitTTLHours          int    `mapstructure:"explicit_ttl_hours"`
+	WeakTTLMinutes            int    `mapstructure:"weak_ttl_minutes"`
+	RefreshMinIntervalSeconds int    `mapstructure:"refresh_min_interval_seconds"`
+}
+
 // GatewayConfig API网关相关配置
 type GatewayConfig struct {
 	// 等待上游响应头的超时时间（秒），0表示无超时
@@ -942,6 +955,9 @@ type GatewayConfig struct {
 	// OpenAIAccountScopedIdentity isolates OAuth protocol identity by the selected upstream account.
 	// The account extra key openai_account_scoped_identity_enabled can override this for canary rollout.
 	OpenAIAccountScopedIdentity GatewayOpenAIAccountScopedIdentityConfig `mapstructure:"openai_account_scoped_identity"`
+	// OpenAIAffinity is read before account selection; it therefore cannot be an
+	// account-only feature flag. Disabled is the compatibility default.
+	OpenAIAffinity GatewayOpenAIAffinityConfig `mapstructure:"openai_affinity"`
 	// OpenAIWS: OpenAI Responses WebSocket 配置（默认开启，可按需回滚到 HTTP）
 	OpenAIWS GatewayOpenAIWSConfig `mapstructure:"openai_ws"`
 	// Live: ChatGPT Frameless Live 会话配置。

@@ -162,7 +162,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if previousResponseID != "" {
 		logFields = append(logFields,
 			zap.Bool("compat_previous_response_id_attached", true),
-			zap.String("compat_previous_response_id", truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen)),
+			zap.String("compat_previous_response_id", openAIWSStateIDDigest(previousResponseID)),
 		)
 	}
 	if compatTurnState != "" {
@@ -440,7 +440,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 			}
 			logger.L().Info("openai messages: previous_response_id unavailable, retrying without continuation",
 				zap.Int64("account_id", account.ID),
-				zap.String("previous_response_id", truncateOpenAIWSLogValue(previousResponseID, openAIWSIDValueMaxLen)),
+				zap.String("previous_response_id", openAIWSStateIDDigest(previousResponseID)),
 				zap.String("upstream_model", upstreamModel),
 			)
 			return s.ForwardAsAnthropic(ctx, c, account, body, promptCacheKey, defaultMappedModel)
@@ -938,6 +938,15 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		observer.ObserveOpenAI([]byte(payload), event.Type)
 
 		eventType := strings.TrimSpace(event.Type)
+		if responseID == "" && event.Response != nil {
+			if id := strings.TrimSpace(event.Response.ID); id != "" {
+				responseID = id
+				if bindErr := s.bindPersistentOpenAIResponse(c.Request.Context(), c, account, responseID); bindErr != nil {
+					streamFailoverErr = fmt.Errorf("persist Messages response ownership before output: %w", bindErr)
+					return true
+				}
+			}
+		}
 		isBareErrorEvent := eventType == "error"
 		isTerminalEvent := isOpenAICompatResponsesTerminalEvent(eventType) || isBareErrorEvent
 		if isTerminalEvent {

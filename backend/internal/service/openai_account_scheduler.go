@@ -392,6 +392,14 @@ func (s *defaultOpenAIAccountScheduler) Select(
 	}
 
 	previousResponseID := strings.TrimSpace(req.PreviousResponseID)
+	var persistentResponseBinding *OpenAIResponseBinding
+	if previousResponseID != "" {
+		var affinityErr error
+		persistentResponseBinding, affinityErr = s.service.resolvePersistentOpenAIResponse(ctx)
+		if shouldFailClosedOpenAIAffinity(affinityErr) {
+			return nil, decision, affinityErr
+		}
+	}
 	if previousResponseID != "" && normalizeOpenAICompatiblePlatform(req.Platform) == PlatformOpenAI &&
 		(!req.StickyWeighted || !req.PreviousResponseCanMove) {
 		selection, err := s.service.selectAccountByPreviousResponseIDForCapability(
@@ -434,6 +442,9 @@ func (s *defaultOpenAIAccountScheduler) Select(
 			return selection, decision, nil
 		}
 	}
+	if persistentResponseBinding != nil {
+		return nil, decision, fmt.Errorf("%w: response is owned by account %d but cannot continue", ErrOpenAIAffinityStateUnbound, persistentResponseBinding.AccountID)
+	}
 
 	if !req.StickyWeighted {
 		selection, escapedSticky, err := s.selectBySessionHash(ctx, req)
@@ -463,6 +474,10 @@ func (s *defaultOpenAIAccountScheduler) Select(
 	}
 	if selection != nil {
 		selection.PreserveStickyBinding = req.PreserveStickyBinding
+		selection, err = s.finalizeOpenAIAffinityColdWinner(ctx, req, selection)
+		if err != nil {
+			return nil, decision, err
+		}
 	}
 	if selection != nil && selection.Account != nil {
 		decision.SelectedAccountID = selection.Account.ID
@@ -529,20 +544,47 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	req OpenAIAccountScheduleRequest,
 ) (*AccountSelectionResult, bool, error) {
 	sessionHash := strings.TrimSpace(req.SessionHash)
-	if sessionHash == "" || s == nil || s.service == nil || s.service.cache == nil {
+	if sessionHash == "" || s == nil || s.service == nil {
 		return nil, false, nil
 	}
 
+	persistentBinding, persistentErr := s.service.resolvePersistentOpenAISession(ctx)
+	persistentHit := persistentErr == nil && persistentBinding != nil
+	persistentStrong := persistentHit && persistentBinding.Strength == AffinityStrong
+	if shouldFailClosedOpenAIAffinity(persistentErr) && !errors.Is(persistentErr, ErrOpenAIAffinityStateUnbound) {
+		return nil, false, persistentErr
+	}
 	accountID := req.StickyAccountID
+	if persistentHit {
+		accountID = persistentBinding.AccountID
+	}
 	if accountID <= 0 {
 		var err error
 		accountID, err = s.service.getStickySessionAccountID(ctx, req.GroupID, sessionHash)
-		if err != nil || accountID <= 0 {
+		if err != nil {
+			return nil, false, err
+		}
+		if accountID <= 0 {
 			return nil, false, nil
 		}
 	}
 	if accountID <= 0 {
 		return nil, false, nil
+	}
+	if errors.Is(persistentErr, ErrOpenAIAffinityStateUnbound) {
+		if !persistentHit {
+			var adoptErr error
+			accountID, adoptErr = s.service.adoptLegacyOpenAIAffinityBinding(ctx, accountID)
+			if adoptErr != nil {
+				return nil, false, adoptErr
+			}
+		}
+		persistentBinding, persistentErr = s.service.resolvePersistentOpenAISession(ctx)
+		persistentHit = persistentErr == nil && persistentBinding != nil
+		persistentStrong = persistentHit && persistentBinding.Strength == AffinityStrong
+		if shouldFailClosedOpenAIAffinity(persistentErr) {
+			return nil, false, persistentErr
+		}
 	}
 	if req.ExcludedIDs != nil {
 		if _, excluded := req.ExcludedIDs[accountID]; excluded {
@@ -551,11 +593,38 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	}
 
 	account, err := s.service.getSchedulableAccount(ctx, accountID)
+	if persistentStrong && s.service.accountRepo != nil {
+		account, err = s.service.accountRepo.GetByID(ctx, accountID)
+	}
 	if err != nil || account == nil {
+		if persistentStrong {
+			return nil, false, fmt.Errorf("%w: bound account %d unavailable", ErrOpenAIAffinityStateUnbound, accountID)
+		}
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return nil, false, nil
 	}
-	if shouldClearStickySession(account, req.RequestedModel) || account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() || !account.IsSchedulable() {
+	if persistentStrong {
+		if account.Status != StatusActive || account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() ||
+			(req.RequestedModel != "" && !account.IsModelSupported(req.RequestedModel)) ||
+			!account.SupportsOpenAIEndpointCapability(req.RequiredCapability) ||
+			!s.service.openAIAccountMatchesSchedulingGroup(account, req.GroupID) ||
+			!s.isAccountTransportCompatible(account, req.RequiredTransport) {
+			return nil, false, fmt.Errorf("%w: strong-bound account %d cannot continue request", ErrOpenAIAffinityStateUnbound, accountID)
+		}
+		result, acquireErr := s.service.tryAcquireAccountSlot(ctx, accountID, account.Concurrency)
+		if acquireErr != nil {
+			return nil, false, acquireErr
+		}
+		if result != nil && result.Acquired {
+			return &AccountSelectionResult{Account: account, Acquired: true, ReleaseFunc: result.ReleaseFunc}, false, nil
+		}
+		if s.service.concurrencyService != nil {
+			cfg := s.service.schedulingConfig()
+			return &AccountSelectionResult{Account: account, WaitPlan: &AccountWaitPlan{AccountID: accountID, MaxConcurrency: account.Concurrency, Timeout: cfg.StickySessionWaitTimeout, MaxWaiting: cfg.StickySessionMaxWaiting}}, false, nil
+		}
+		return nil, false, fmt.Errorf("%w: strong-bound account %d has no capacity", ErrOpenAIAffinityStateUnbound, accountID)
+	}
+	if !persistentStrong && (shouldClearStickySession(account, req.RequestedModel) || account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() || !account.IsSchedulable()) {
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return nil, false, nil
 	}
@@ -571,7 +640,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return nil, false, nil
 	}
-	if req.PriorityMode == OpenAIAccountPriorityModeBinding {
+	if !persistentStrong && req.PriorityMode == OpenAIAccountPriorityModeBinding {
 		stickyPriority, ok := openAIAccountBindingPriority(account, req.GroupID)
 		if !ok {
 			_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
@@ -587,23 +656,23 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	}
 	// Free-tier soft gate: sticky session must not pin an over-quota free OAuth account.
 	// Admin QueryQuota / import probes do not use this path.
-	if account != nil && len(s.filterGrokFreeQuotaAccounts(ctx, []Account{*account})) == 0 {
+	if !persistentStrong && account != nil && len(s.filterGrokFreeQuotaAccounts(ctx, []Account{*account})) == 0 {
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return nil, false, nil
 	}
 	// Team+model cool: sticky must not pin a sibling under the same team 429 window.
 	now := time.Now()
 	upstreamModel := canonicalOpenAIAccountSchedulingModel(account, req.RequestedModel)
-	if account != nil && isGrokTeamModelRateLimited(account, upstreamModel, now) {
+	if !persistentStrong && account != nil && isGrokTeamModelRateLimited(account, upstreamModel, now) {
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return nil, false, nil
 	}
-	if account != nil && isGrokModelQuotaBlocked(account.ID, upstreamModel, now) {
+	if !persistentStrong && account != nil && isGrokModelQuotaBlocked(account.ID, upstreamModel, now) {
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return nil, false, nil
 	}
 	escapeCfg := s.service.openAIStickyEscapeConfig()
-	if reason, errorRate, ttft, shouldEscape := s.shouldEscapeStickyAccount(accountID, escapeCfg); shouldEscape {
+	if reason, errorRate, ttft, shouldEscape := s.shouldEscapeStickyAccount(accountID, escapeCfg); shouldEscape && !persistentStrong {
 		slog.Info("sticky_escape_triggered",
 			"account_id", accountID,
 			"reason", reason,
@@ -619,7 +688,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		account.Concurrency,
 		s.service.schedulingConfig().SoftSpilloverThresholdPercent,
 	)
-	if softSpillover {
+	if softSpillover && !persistentStrong {
 		slog.Debug("sticky_soft_spillover_triggered",
 			"account_id", accountID,
 			"current_concurrency", load.CurrentConcurrency,

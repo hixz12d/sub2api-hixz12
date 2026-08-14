@@ -546,6 +546,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 
 		if responseID == "" && eventResponseID != "" {
 			responseID = eventResponseID
+			if bindErr := s.bindPersistentOpenAIResponse(ctx, c, account, responseID); bindErr != nil {
+				return nil, fmt.Errorf("persist WSv2 response ownership before output: %w", bindErr)
+			}
 		}
 
 		isTokenEvent := isOpenAIWSTokenEvent(eventType)

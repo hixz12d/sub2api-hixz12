@@ -170,6 +170,13 @@ func openAIRetryRequestIsStateful(body []byte) bool {
 		strings.Contains(lower, "encrypted_reasoning")
 }
 
+func openAIRetryRequestIsStatefulForContext(c *gin.Context, body []byte) bool {
+	if value, ok := openAIAffinityFromGin(c); ok {
+		return value.Identity.Stateful || value.Identity.Strength == AffinityStrong
+	}
+	return openAIRetryRequestIsStateful(body)
+}
+
 func EnsureOpenAIRetryBudget(c *gin.Context, account *Account, body []byte) *OpenAIRetryBudget {
 	if c == nil {
 		return nil
@@ -180,7 +187,7 @@ func EnsureOpenAIRetryBudget(c *gin.Context, account *Account, body []byte) *Ope
 	if account == nil || !account.IsOpenAIOAuth() || !openAIRetryBudgetV2Enabled(account) {
 		return nil
 	}
-	budget := NewOpenAIRetryBudget(openAIRetryRequestIsStateful(body))
+	budget := NewOpenAIRetryBudget(openAIRetryRequestIsStatefulForContext(c, body))
 	c.Set(openAIRetryBudgetContextKey, budget)
 	return budget
 }
@@ -191,7 +198,7 @@ func StartOpenAIRetryBudgetTurn(c *gin.Context, account *Account, body []byte) *
 	if c == nil || account == nil || !account.IsOpenAIOAuth() || !openAIRetryBudgetV2Enabled(account) {
 		return nil
 	}
-	budget := NewOpenAIRetryBudget(openAIRetryRequestIsStateful(body))
+	budget := NewOpenAIRetryBudget(openAIRetryRequestIsStatefulForContext(c, body))
 	c.Set(openAIRetryBudgetContextKey, budget)
 	return budget
 }

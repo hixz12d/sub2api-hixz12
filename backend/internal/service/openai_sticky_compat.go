@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -119,29 +120,66 @@ func (s *OpenAIGatewayService) openAIStickyLegacyTTL(ttl time.Duration) time.Dur
 	return legacyTTL
 }
 
+func (s *OpenAIGatewayService) adoptLegacyOpenAIAffinityBinding(ctx context.Context, accountID int64) (int64, error) {
+	value, enabled := openAIAffinityFromContext(ctx)
+	if !enabled || !value.Identity.Stateful {
+		return accountID, nil
+	}
+	if !value.Writable || value.Identity.PrimaryHash == "" {
+		return 0, ErrOpenAIAffinityStateUnbound
+	}
+	binding, _, err := s.createOrGetPersistentOpenAISession(ctx, accountID)
+	if err != nil {
+		return 0, err
+	}
+	if binding == nil || binding.AccountID <= 0 {
+		return 0, ErrOpenAIAffinityStateUnbound
+	}
+	return binding.AccountID, nil
+}
+
 func (s *OpenAIGatewayService) getStickySessionAccountID(ctx context.Context, groupID *int64, sessionHash string) (int64, error) {
-	if s == nil || s.cache == nil {
+	if s == nil {
 		return 0, nil
+	}
+	var stateErr error
+	if _, enabled := openAIAffinityFromContext(ctx); enabled {
+		binding, affinityErr := s.resolvePersistentOpenAISession(ctx)
+		if affinityErr == nil && binding != nil && binding.AccountID > 0 {
+			return binding.AccountID, nil
+		}
+		if shouldFailClosedOpenAIAffinity(affinityErr) {
+			if !errors.Is(affinityErr, ErrOpenAIAffinityStateUnbound) {
+				return 0, affinityErr
+			}
+			stateErr = affinityErr
+		}
+	}
+	if s.cache == nil {
+		return 0, stateErr
 	}
 
 	primaryKey := s.openAISessionCacheKey(sessionHash)
 	if primaryKey == "" {
-		return 0, nil
+		return 0, stateErr
 	}
 
 	accountID, err := s.cache.GetSessionAccountID(ctx, derefGroupID(groupID), primaryKey)
 	if err == nil && accountID > 0 {
-		return accountID, nil
+		return s.adoptLegacyOpenAIAffinityBinding(ctx, accountID)
 	}
-	if strings.HasPrefix(sessionHash, "oas-session-v2:") {
-		return accountID, err
-	}
-	if !s.openAISessionHashReadOldFallbackEnabled() {
+	if strings.HasPrefix(sessionHash, "oas-session-v2:") || !s.openAISessionHashReadOldFallbackEnabled() {
+		if stateErr != nil {
+			return 0, stateErr
+		}
 		return accountID, err
 	}
 
 	legacyKey := s.openAILegacySessionCacheKey(ctx, sessionHash)
 	if legacyKey == "" {
+		if stateErr != nil {
+			return 0, stateErr
+		}
 		return accountID, err
 	}
 
@@ -149,7 +187,10 @@ func (s *OpenAIGatewayService) getStickySessionAccountID(ctx context.Context, gr
 	legacyAccountID, legacyErr := s.cache.GetSessionAccountID(ctx, derefGroupID(groupID), legacyKey)
 	if legacyErr == nil && legacyAccountID > 0 {
 		openAIStickyLegacyReadFallbackHit.Add(1)
-		return legacyAccountID, nil
+		return s.adoptLegacyOpenAIAffinityBinding(ctx, legacyAccountID)
+	}
+	if stateErr != nil {
+		return 0, stateErr
 	}
 	return accountID, err
 }

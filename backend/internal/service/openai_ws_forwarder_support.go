@@ -404,37 +404,42 @@ func (s *OpenAIGatewayService) selectAccountByPreviousResponseIDForCapability(
 	if s == nil {
 		return nil, nil
 	}
+	_, persistentErr := s.resolvePersistentOpenAIResponse(ctx)
+	if shouldFailClosedOpenAIAffinity(persistentErr) {
+		return nil, persistentErr
+	}
+	persistent := persistentErr == nil
 	accountID, account, responseID, store := s.resolveAccountByPreviousResponseIDForCapability(ctx, groupID, previousResponseID, requestedModel, excludedIDs, requiredCapability, requireCompact)
-	if accountID <= 0 || account == nil || store == nil {
+	if accountID <= 0 || account == nil || (store == nil && !persistent) {
 		return nil, nil
 	}
 
 	result, acquireErr := s.tryAcquireAccountSlot(ctx, accountID, account.Concurrency)
 	if acquireErr == nil && result.Acquired {
-		logOpenAIWSBindResponseAccountWarn(
-			derefGroupID(groupID),
-			accountID,
-			responseID,
-			bindOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID, accountID, s.openAIWSResponseStickyTTL()),
-		)
-		return attachSelectionProfitGate(ctx, &AccountSelectionResult{
-			Account:     account,
-			Acquired:    true,
-			ReleaseFunc: result.ReleaseFunc,
-		}), nil
+		if store != nil {
+			logOpenAIWSBindResponseAccountWarn(
+				derefGroupID(groupID),
+				accountID,
+				responseID,
+				bindOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID, accountID, s.openAIWSResponseStickyTTL()),
+			)
+		}
+		selection := &AccountSelectionResult{Account: account, Acquired: true, ReleaseFunc: result.ReleaseFunc}
+		if persistent {
+			return selection, nil
+		}
+		return attachSelectionProfitGate(ctx, selection), nil
 	}
 
 	cfg := s.schedulingConfig()
 	if s.concurrencyService != nil {
-		return attachSelectionProfitGate(ctx, &AccountSelectionResult{
-			Account: account,
-			WaitPlan: &AccountWaitPlan{
-				AccountID:      accountID,
-				MaxConcurrency: account.Concurrency,
-				Timeout:        cfg.StickySessionWaitTimeout,
-				MaxWaiting:     cfg.StickySessionMaxWaiting,
-			},
-		}), nil
+		selection := &AccountSelectionResult{Account: account, WaitPlan: &AccountWaitPlan{
+			AccountID: accountID, MaxConcurrency: account.Concurrency, Timeout: cfg.StickySessionWaitTimeout, MaxWaiting: cfg.StickySessionMaxWaiting,
+		}}
+		if persistent {
+			return selection, nil
+		}
+		return attachSelectionProfitGate(ctx, selection), nil
 	}
 	return nil, nil
 }
@@ -469,13 +474,22 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 		return 0, nil, "", nil
 	}
 	store := s.getOpenAIWSStateStore()
-	if store == nil {
-		return 0, nil, "", nil
+	persistent := false
+	accountID := int64(0)
+	if binding, affinityErr := s.resolvePersistentOpenAIResponse(ctx); affinityErr == nil && binding != nil {
+		accountID = binding.AccountID
+		persistent = true
+	} else if shouldFailClosedOpenAIAffinity(affinityErr) {
+		return 0, nil, "", store
 	}
-
-	accountID, err := getOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
-	if err != nil || accountID <= 0 {
-		return 0, nil, "", nil
+	if accountID <= 0 && store != nil {
+		legacyID, legacyErr := getOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
+		if legacyErr == nil {
+			accountID = legacyID
+		}
+	}
+	if accountID <= 0 {
+		return 0, nil, "", store
 	}
 	if excludedIDs != nil {
 		if _, excluded := excludedIDs[accountID]; excluded {
@@ -484,21 +498,39 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 	}
 
 	account, err := s.getSchedulableAccount(ctx, accountID)
+	if persistent && s.accountRepo != nil {
+		account, err = s.accountRepo.GetByID(ctx, accountID)
+	}
 	if err != nil || account == nil {
-		_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
+		if !persistent && store != nil {
+			_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
+		}
 		return 0, nil, "", nil
 	}
-	// 非 WSv2 场景（如 force_http/全局关闭）不应使用 previous_response_id 粘连，
-	// 以保持“回滚到 HTTP”后的历史行为一致性。
+	if persistent {
+		if account.Status != StatusActive || !account.Schedulable || !account.IsOpenAIOAuth() ||
+			!s.openAIAccountMatchesSchedulingGroup(account, groupID) ||
+			(requestedModel != "" && !account.IsModelSupported(requestedModel)) ||
+			!account.SupportsOpenAIEndpointCapability(requiredCapability) ||
+			(requireCompact && openAICompactSupportTier(account) == 0) {
+			return 0, nil, "", store
+		}
+		return accountID, account, responseID, store
+	}
+	// Legacy cache bindings retain the historical WSv2-only compatibility behavior.
 	if s.getOpenAIWSProtocolResolver().Resolve(account).Transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
 		return 0, nil, "", nil
 	}
 	if shouldClearStickySession(account, requestedModel) || !account.IsOpenAI() || !account.IsSchedulable() {
-		_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
+		if !persistent && store != nil {
+			_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
+		}
 		return 0, nil, "", nil
 	}
 	if !parentHealthyForShadow(account, s.parentAccountLookup(ctx)) {
-		_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
+		if !persistent && store != nil {
+			_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
+		}
 		return 0, nil, "", nil
 	}
 	if requestedModel != "" && !account.IsModelSupported(requestedModel) {
@@ -523,15 +555,21 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 	if s.schedulerSnapshot != nil && s.accountRepo != nil {
 		latest, latestErr := s.accountRepo.GetByID(ctx, account.ID)
 		if latestErr != nil || latest == nil {
-			_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
+			if !persistent && store != nil {
+				_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
+			}
 			return 0, nil, "", nil
 		}
 		if shouldClearStickySession(latest, requestedModel) || !latest.IsOpenAI() || !latest.IsSchedulable() {
-			_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
+			if !persistent && store != nil {
+				_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
+			}
 			return 0, nil, "", nil
 		}
 		if !parentHealthyForShadow(latest, s.parentAccountLookup(ctx)) {
-			_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
+			if !persistent && store != nil {
+				_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
+			}
 			return 0, nil, "", nil
 		}
 		if requestedModel != "" && !latest.IsModelSupported(requestedModel) {
@@ -548,13 +586,17 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 			return 0, nil, "", nil
 		}
 		if s.isOpenAIAccountRequestRuntimeBlocked(latest, requestedModel) {
-			_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
+			if !persistent && store != nil {
+				_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
+			}
 			return 0, nil, "", nil
 		}
 		account = latest
 	}
 	if requireCompact && openAICompactSupportTier(account) == 0 {
-		_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
+		if !persistent && store != nil {
+			_ = deleteOpenAIWSResponseAccount(ctx, store, derefGroupID(groupID), responseID)
+		}
 		return 0, nil, "", nil
 	}
 	return accountID, account, responseID, store

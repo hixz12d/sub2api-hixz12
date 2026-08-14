@@ -280,7 +280,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 		imageOutputSizes = result.imageOutputSizes
 		streamErr = err
 	} else {
-		result, err := s.handleNonStreamingResponsePassthrough(ctx, resp, c, reqModel, upstreamPassthroughModel)
+		result, err := s.handleNonStreamingResponsePassthroughWithAffinity(ctx, resp, c, account, reqModel, upstreamPassthroughModel)
 		if err != nil {
 			return nil, err
 		}
@@ -1504,6 +1504,11 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			}
 			if responseID == "" {
 				responseID = extractOpenAIResponseIDFromJSONBytes(dataBytes)
+				if responseID != "" {
+					if bindErr := s.bindPersistentOpenAIResponse(ctx, c, account, responseID); bindErr != nil {
+						return resultWithUsage(), fmt.Errorf("persist OpenAI passthrough response ownership before output: %w", bindErr)
+					}
+				}
 			}
 			imageCounter.AddSSEData(dataBytes)
 			if sanitizedData, sanitized := sanitizeOpenAIResponseFailedEventForClient(
@@ -1630,6 +1635,12 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	originalModel string,
 	mappedModel string,
 ) (*openaiNonStreamingResultPassthrough, error) {
+	return s.handleNonStreamingResponsePassthroughWithAffinity(ctx, resp, c, nil, originalModel, mappedModel)
+}
+
+func (s *OpenAIGatewayService) handleNonStreamingResponsePassthroughWithAffinity(
+	ctx context.Context, resp *http.Response, c *gin.Context, account *Account, originalModel, mappedModel string,
+) (*openaiNonStreamingResultPassthrough, error) {
 	body, err := ReadUpstreamResponseBody(resp.Body, s.cfg, c, openAITooLargeError)
 	if err != nil {
 		return nil, err
@@ -1649,7 +1660,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	// stream=false was requested. Without this conversion the client would
 	// receive raw SSE text or a terminal event with empty output.
 	if isEventStreamResponse(resp.Header) {
-		return s.handlePassthroughSSEToJSON(resp, c, body, originalModel, mappedModel)
+		return s.handlePassthroughSSEToJSONWithAffinity(ctx, resp, c, account, body, originalModel, mappedModel)
 	}
 
 	usage := &OpenAIUsage{}
@@ -1678,13 +1689,19 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 	if err != nil {
 		return nil, fmt.Errorf("restore OpenAI passthrough namespace response: %w", err)
 	}
+	responseID := extractOpenAIResponseIDFromJSONBytes(body)
+	if responseID != "" {
+		if bindErr := s.bindPersistentOpenAIResponse(ctx, c, account, responseID); bindErr != nil {
+			return nil, fmt.Errorf("persist passthrough response ownership before output: %w", bindErr)
+		}
+	}
 	if !writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
 		c.Data(resp.StatusCode, contentType, body)
 	}
 	return &openaiNonStreamingResultPassthrough{
 		OpenAIUsage:      usage,
 		usage:            usage,
-		responseID:       extractOpenAIResponseIDFromJSONBytes(body),
+		responseID:       responseID,
 		imageCount:       countOpenAIResponseImageOutputsFromJSONBytes(body),
 		imageOutputSizes: collectOpenAIResponseImageOutputSizesFromJSONBytes(body),
 	}, nil
@@ -1695,6 +1712,10 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthrough(
 // preserving passthrough payloads, except compact-only model remapping may
 // rewrite model fields back to the original requested model.
 func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c *gin.Context, body []byte, originalModel string, mappedModel string) (*openaiNonStreamingResultPassthrough, error) {
+	return s.handlePassthroughSSEToJSONWithAffinity(c.Request.Context(), resp, c, nil, body, originalModel, mappedModel)
+}
+
+func (s *OpenAIGatewayService) handlePassthroughSSEToJSONWithAffinity(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, body []byte, originalModel string, mappedModel string) (*openaiNonStreamingResultPassthrough, error) {
 	bodyText := string(body)
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
 
@@ -1749,6 +1770,12 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 			contentType = "text/event-stream"
 		}
 	}
+	responseID := extractOpenAIResponseIDFromJSONBytes(body)
+	if responseID != "" {
+		if bindErr := s.bindPersistentOpenAIResponse(ctx, c, account, responseID); bindErr != nil {
+			return nil, fmt.Errorf("persist passthrough SSE-to-JSON ownership before output: %w", bindErr)
+		}
+	}
 	if !writeOpenAICompactSSEBridge(c, resp.StatusCode, body) {
 		c.Data(resp.StatusCode, contentType, body)
 	}
@@ -1756,7 +1783,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 	return &openaiNonStreamingResultPassthrough{
 		OpenAIUsage:      usage,
 		usage:            usage,
-		responseID:       extractOpenAIResponseIDFromJSONBytes(body),
+		responseID:       responseID,
 		imageCount:       countOpenAIImageOutputsFromSSEBody(bodyText),
 		imageOutputSizes: collectOpenAIImageOutputSizesFromSSEBody(bodyText),
 	}, nil

@@ -903,6 +903,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			responseModelObserver.ObserveOpenAI(upstreamMessage, eventType)
 			if responseID == "" && eventResponseID != "" {
 				responseID = eventResponseID
+				if bindErr := s.bindPersistentOpenAIResponse(ctx, c, account, responseID); bindErr != nil {
+					return nil, fmt.Errorf("persist WS response ownership before output: %w", bindErr)
+				}
 			}
 			if eventType != "" {
 				eventCount++
@@ -1671,6 +1674,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			lastTurnStrictState = nextStrictState
 		}
 
+		if responseID != "" {
+			if bindErr := s.bindPersistentOpenAIResponse(ctx, c, account, responseID); bindErr != nil {
+				return bindErr
+			}
+		}
 		if responseID != "" && stateStore != nil {
 			ttl := s.openAIWSResponseStickyTTL()
 			logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, bindOpenAIWSResponseAccount(ctx, stateStore, groupID, responseID, account.ID, ttl))

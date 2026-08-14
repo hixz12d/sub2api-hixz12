@@ -157,6 +157,7 @@ func (s *OpenAIGatewayService) GenerateSessionHash(c *gin.Context, body []byte) 
 		sessionID = deriveOpenAIContentSessionSeed(body)
 	}
 	if sessionID == "" {
+		_ = s.prepareOpenAIAffinityIdentity(c, body, "")
 		return ""
 	}
 
@@ -166,6 +167,7 @@ func (s *OpenAIGatewayService) GenerateSessionHash(c *gin.Context, body []byte) 
 
 	currentHash, legacyHash := deriveOpenAISessionHashesForContext(c, sessionID)
 	attachOpenAILegacySessionHashToGin(c, legacyHash)
+	_ = s.prepareOpenAIAffinityIdentity(c, body, currentHash)
 	return currentHash
 }
 
@@ -202,6 +204,7 @@ func (s *OpenAIGatewayService) GenerateSessionHashWithFallback(c *gin.Context, b
 
 	currentHash, legacyHash := deriveOpenAISessionHashesForContext(c, seed)
 	attachOpenAILegacySessionHashToGin(c, legacyHash)
+	_ = s.prepareOpenAIAffinityIdentity(c, body, currentHash)
 	return currentHash
 }
 
