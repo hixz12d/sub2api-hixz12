@@ -53,7 +53,23 @@ func hasOpenAIWSHeader(headers http.Header, key string) bool {
 }
 
 func openAIWSSessionHeaderValueForLog(headers http.Header) string {
-	return truncateOpenAIWSLogValue(resolveCodexSessionHeader(headers), openAIWSHeaderValueMaxLen)
+	if headers == nil {
+		return "-"
+	}
+	if digest := openAIWSSensitiveIDDigest("session", resolveCodexSessionHeader(headers)); digest != "" {
+		return digest
+	}
+	return "-"
+}
+
+func openAIWSConversationHeaderValueForLog(headers http.Header) string {
+	if headers == nil {
+		return "-"
+	}
+	if digest := openAIWSSensitiveIDDigest("conversation", headers.Get("conversation_id")); digest != "" {
+		return digest
+	}
+	return "-"
 }
 
 func hasOpenAIWSSessionHeader(headers http.Header) bool {

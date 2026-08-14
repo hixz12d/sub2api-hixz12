@@ -58,7 +58,7 @@ func TestGetCodexFingerprintMode(t *testing.T) {
 		{"非 OAuth 账号", &Account{Platform: PlatformOpenAI, Type: "api_key"}, codexFingerprintOff},
 		{"无 extra 默认 session", newTestOAuthAccount(1, nil), codexFingerprintSession},
 		{"空值默认 session", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: ""}), codexFingerprintSession},
-		{"非法值默认 session", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "invalid"}), codexFingerprintSession},
+		{"非法值安全关闭", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "invalid"}), codexFingerprintOff},
 		{"显式 off", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "off"}), codexFingerprintOff},
 		{"device", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "device"}), codexFingerprintDevice},
 		{"session", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "session"}), codexFingerprintSession},
@@ -360,7 +360,7 @@ func TestApplyCodexFingerprintHeaders_SessionMode(t *testing.T) {
 	assert.Empty(t, h.Get("session_id"), "OAuth/Codex HTTP 不得保留下划线 session 头")
 	assert.Equal(t, convergedThread, h.Get("thread-id"))
 	assert.Empty(t, h.Get("thread_id"), "OAuth/Codex HTTP 不得保留下划线 thread 头")
-	assert.Equal(t, convergedThread, h.Get("x-client-request-id"))
+	assert.Equal(t, ids.turnID, h.Get("x-client-request-id"))
 	assert.Equal(t, convergedThread+":0", h.Get("x-codex-window-id"))
 
 	var meta map[string]any
@@ -370,7 +370,7 @@ func TestApplyCodexFingerprintHeaders_SessionMode(t *testing.T) {
 	assert.Equal(t, convergedThread, meta["thread_id"])
 	assert.NotEqual(t, "user-turn", meta["turn_id"], "turn_id 应被新生成的值替换")
 	assert.Equal(t, "seccomp", meta["sandbox"], "sandbox 保留原样")
-	assert.Equal(t, "user", meta["thread_source"], "thread_source 保留原样")
+	assert.Equal(t, "cli", meta["thread_source"], "thread_source 由最终身份策略统一")
 }
 
 // --- session 模式：不同客户端得到不同 thread ---

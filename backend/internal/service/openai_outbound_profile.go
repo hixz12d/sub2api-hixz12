@@ -14,11 +14,9 @@ const maxOpenAIAccountUserAgentLength = 512
 // openAIOutboundIdentity is the trusted Codex identity used for upstream
 // requests. It is resolved from account and system settings only; inbound
 // caller headers never participate in the decision.
-type openAIOutboundIdentity struct {
-	UserAgent  string
-	Originator string
-	Version    string
-}
+// openAIOutboundIdentity remains as an internal compatibility alias while the
+// complete, versioned protocol tuple is represented by CodexProtocolProfile.
+type openAIOutboundIdentity = CodexProtocolProfile
 
 type openAIOutboundEndpointPolicy struct {
 	UseCodexIdentity bool
@@ -217,7 +215,7 @@ func resolveOpenAIOutboundIdentityWithVersion(accountUA, systemUA, configuredVer
 		identity.UserAgent = userAgent
 		identity.Version = version
 	}
-	return identity
+	return completeCodexProtocolProfile(identity)
 }
 
 func validOpenAIOutboundIdentity(userAgent string) (openAIOutboundIdentity, bool) {

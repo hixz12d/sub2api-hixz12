@@ -1050,7 +1050,10 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 					clientHeaders = c.Request.Header
 				}
 				promptCacheKey := strings.TrimSpace(gjson.GetBytes(out, "prompt_cache_key").String())
-				ids := resolveCodexFingerprintIDsFromContext(account, c, clientHeaders, promptCacheKey)
+				ids, identityErr := finalizeCodexOAuthIdentity(account, c, clientHeaders, promptCacheKey)
+				if identityErr != nil {
+					return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid Codex identity mode", identityErr)
+				}
 				if ids != nil && c != nil {
 					c.Set("codex_fingerprint_ids", ids)
 				}

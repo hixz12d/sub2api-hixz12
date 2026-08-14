@@ -252,7 +252,11 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		if c != nil && c.Request != nil {
 			clientHeaders = c.Request.Header
 		}
-		if ids := resolveCodexFingerprintIDsFromContext(account, c, clientHeaders, promptCacheKey); ids != nil && c != nil {
+		ids, identityErr := finalizeCodexOAuthIdentity(account, c, clientHeaders, promptCacheKey)
+		if identityErr != nil {
+			return nil, fmt.Errorf("finalize Codex OAuth identity for chat completions bridge: %w", identityErr)
+		}
+		if ids != nil && c != nil {
 			c.Set("codex_fingerprint_ids", ids)
 		}
 	}
@@ -283,7 +287,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		}
 	}
 	if account.Type == AccountTypeOAuth {
-		normalizeCodexOAuthHeaders(upstreamReq.Header, resolveCodexSessionHeader(upstreamReq.Header), resolveCodexThreadHeader(upstreamReq.Header))
+		s.finalizeCodexOAuthHeaders(ctx, c, account, upstreamReq.Header, codexFingerprintIDsFromContext(c), promptCacheKey)
 	}
 
 	// 7. Send request

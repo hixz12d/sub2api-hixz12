@@ -135,27 +135,26 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 		}
 	}
 
+	profile, hasProfile := openAIOutboundIdentityFromContext(ctx)
 	betaValue := openAIWSBetaV2Value
+	if hasProfile && profile.WSBetaV2 != "" {
+		betaValue = profile.WSBetaV2
+	}
 	if decision.Transport == OpenAIUpstreamTransportResponsesWebsocket {
 		betaValue = openAIWSBetaV1Value
+		if hasProfile && profile.WSBetaV1 != "" {
+			betaValue = profile.WSBetaV1
+		}
 	}
 	headers.Set("OpenAI-Beta", betaValue)
 
 	// Apply account overrides before the shared final identity stage. The
 	// identity resolver intentionally ignores inbound client User-Agent values.
 	account.ApplyHeaderOverrides(headers)
-	policy := openAIOutboundAPIKeyPolicy
 	if account != nil && account.Type == AccountTypeOAuth {
-		policy = openAIOutboundOAuthPolicy
-	}
-	s.applyOpenAIOutboundIdentityPolicy(ctx, account, headers, policy)
-	if account != nil && account.Type == AccountTypeOAuth {
-		applyCodexFingerprintHeaders(headers, codexFingerprintIDsFromContext(c))
-	}
-	s.applyOpenAIAccountScopedHeaders(ctx, c, account, headers, sessionResolution.SessionID)
-	if account != nil && account.Type == AccountTypeOAuth {
-		normalizeCodexOAuthHeaders(headers, resolveCodexSessionHeader(headers), resolveCodexThreadHeader(headers))
-		applyCodexOAuthStableEnvironmentHeaders(headers, account)
+		s.finalizeCodexOAuthHeaders(ctx, c, account, headers, codexFingerprintIDsFromContext(c), sessionResolution.SessionID)
+	} else {
+		s.applyOpenAIOutboundIdentityPolicy(ctx, account, headers, openAIOutboundAPIKeyPolicy)
 	}
 	setOpenAICodexRoutingHint(headers, account, routingModel, routingServiceTier)
 	logOpenAIRoutingDiagnostics(

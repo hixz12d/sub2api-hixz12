@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -25,6 +27,7 @@ type openAIWSStateOwnerContextKey struct{}
 var (
 	openAIWSStateOwnerKey   = openAIWSStateOwnerContextKey{}
 	openAIWSIngressScopeSeq atomic.Uint64
+	openAIWSLogHMACKey      = mustNewOpenAIWSLogHMACKey()
 )
 
 func (o openAIWSStateOwner) tenantKnown() bool { return o.APIKeyID > 0 }
@@ -129,13 +132,27 @@ func openAIWSSessionScopeForIngress(sessionHash string) string {
 	return "oas-conn-scope:" + hex.EncodeToString(sum[:])
 }
 
-func openAIWSStateIDDigest(value string) string {
+func mustNewOpenAIWSLogHMACKey() []byte {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		panic(fmt.Sprintf("initialize OpenAI WS log HMAC key: %v", err))
+	}
+	return key
+}
+
+func openAIWSSensitiveIDDigest(domain, value string) string {
 	normalized := strings.TrimSpace(value)
 	if normalized == "" {
 		return ""
 	}
-	sum := sha256.Sum256([]byte(normalized))
-	return hex.EncodeToString(sum[:6])
+	mac := hmac.New(sha256.New, openAIWSLogHMACKey)
+	_, _ = mac.Write([]byte("openai-ws-log-v1:" + strings.TrimSpace(domain) + ":"))
+	_, _ = mac.Write([]byte(normalized))
+	return hex.EncodeToString(mac.Sum(nil)[:6])
+}
+
+func openAIWSStateIDDigest(value string) string {
+	return openAIWSSensitiveIDDigest("response", value)
 }
 
 func bindOpenAIWSResponseAccount(ctx context.Context, store OpenAIWSStateStore, groupID int64, responseID string, accountID int64, ttl time.Duration) error {

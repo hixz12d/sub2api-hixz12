@@ -421,14 +421,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if c != nil && c.Request != nil {
 			clientHeaders = c.Request.Header
 		}
-		fpIDs := resolveCodexFingerprintIDsFromContext(account, c, clientHeaders, promptCacheKey)
-		if fpIDs != nil {
-			if !isCompactRequest && applyCodexFingerprintClientMetadata(decoded, fpIDs) {
-				markDecodedModified()
-			}
-			if c != nil {
-				c.Set("codex_fingerprint_ids", fpIDs)
-			}
+		fpIDs, identityErr := finalizeCodexOAuthIdentity(account, c, clientHeaders, promptCacheKey)
+		if identityErr != nil {
+			return nil, fmt.Errorf("finalize Codex OAuth identity: %w", identityErr)
+		}
+		if fpIDs != nil && c != nil {
+			c.Set("codex_fingerprint_ids", fpIDs)
 		}
 		if codexResult.NormalizedModel != "" {
 			upstreamModel = codexResult.NormalizedModel
@@ -1048,20 +1046,15 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		accountIdentitySessionID = resolveOpenAIWSSessionHeaders(c, promptCacheKey).SessionID
 	}
 	if account.Type == AccountTypeOAuth {
-		bodyFingerprintIDs := fingerprintIDs
+		bodySnapshot := fingerprintIDs
 		if isOpenAIResponsesCompactPath(c) && !gjson.GetBytes(body, "client_metadata").Exists() {
-			bodyFingerprintIDs = nil
+			bodySnapshot = nil
 		}
-		fingerprintedBody, fingerprintErr := applyCodexFingerprintToRawBody(body, bodyFingerprintIDs)
-		if fingerprintErr != nil {
-			return nil, fmt.Errorf("apply codex fingerprint to request body: %w", fingerprintErr)
-		}
-		body = fingerprintedBody
-		accountScopedBody, identityErr := s.applyOpenAIAccountScopedBody(ctx, c, account, body, accountIdentitySessionID)
+		finalizedBody, identityErr := s.finalizeCodexOAuthBody(ctx, c, account, body, bodySnapshot, accountIdentitySessionID)
 		if identityErr != nil {
-			return nil, identityErr
+			return nil, fmt.Errorf("finalize Codex OAuth request body: %w", identityErr)
 		}
-		body = accountScopedBody
+		body = finalizedBody
 	}
 	// Determine target URL based on account type
 	var targetURL string
@@ -1159,13 +1152,8 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		req.Header.Set("accept", "application/json")
 	}
 
-	// Apply upstream fingerprint convergence before the fork's final account-scoped
-	// identity stage below, so both features share the transformed request.
-	if account.Type == AccountTypeOAuth {
-		applyCodexFingerprintHeaders(req.Header, fingerprintIDs)
-		if compatMessagesBridge && clientConversationID == "" {
-			req.Header.Del("conversation_id")
-		}
+	if account.Type == AccountTypeOAuth && compatMessagesBridge && clientConversationID == "" {
+		req.Header.Del("conversation_id")
 	}
 	// Ensure required headers exist
 	if req.Header.Get("content-type") == "" {
@@ -1175,17 +1163,14 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// Apply account overrides before the final identity stage. Protected OpenAI
 	// identity/session headers are excluded by ApplyHeaderOverrides.
 	account.ApplyHeaderOverrides(req.Header)
-	policy := openAIOutboundAPIKeyPolicy
 	if account.Type == AccountTypeOAuth {
-		policy = openAIOutboundOAuthPolicy
-	} else if isOpenAIResponsesCompactPath(c) {
-		policy = openAIOutboundAPIKeyCodexVersionPolicy
-	}
-	s.applyOpenAIOutboundIdentityPolicy(ctx, account, req.Header, policy)
-	s.applyOpenAIAccountScopedHeaders(ctx, c, account, req.Header, accountIdentitySessionID)
-	if account.Type == AccountTypeOAuth {
-		normalizeCodexOAuthHeaders(req.Header, resolveCodexSessionHeader(req.Header), resolveCodexThreadHeader(req.Header))
-		applyCodexOAuthStableEnvironmentHeaders(req.Header, account)
+		s.finalizeCodexOAuthHeaders(ctx, c, account, req.Header, fingerprintIDs, accountIdentitySessionID)
+	} else {
+		policy := openAIOutboundAPIKeyPolicy
+		if isOpenAIResponsesCompactPath(c) {
+			policy = openAIOutboundAPIKeyCodexVersionPolicy
+		}
+		s.applyOpenAIOutboundIdentityPolicy(ctx, account, req.Header, policy)
 	}
 	setOpenAICodexRoutingHintFromBody(req.Header, account, body)
 	logOpenAIRoutingDiagnosticsFromBody(ctx, account, "http", req.Header, body, "not_applicable")

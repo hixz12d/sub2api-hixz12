@@ -295,7 +295,11 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		if c != nil && c.Request != nil {
 			clientHeaders = c.Request.Header
 		}
-		if ids := resolveCodexFingerprintIDsFromContext(account, c, clientHeaders, promptCacheKey); ids != nil && c != nil {
+		ids, identityErr := finalizeCodexOAuthIdentity(account, c, clientHeaders, promptCacheKey)
+		if identityErr != nil {
+			return nil, fmt.Errorf("finalize Codex OAuth identity for messages bridge: %w", identityErr)
+		}
+		if ids != nil && c != nil {
 			c.Set("codex_fingerprint_ids", ids)
 		}
 	}
@@ -344,25 +348,20 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		}
 	}
 	if account.Type == AccountTypeOAuth && account.Platform != PlatformGrok {
-		// buildUpstreamRequest 保留 Messages bridge 的 body/session 兼容行为，并会先
-		// 清除身份头。真正发送前恢复完整 Codex 身份，避免 ChatGPT Codex 上游因缺失
-		// originator/OpenAI-Beta 返回 404（issue #3901）。
-		upstreamReq.Header.Set("OpenAI-Beta", "responses=experimental")
-		s.applyOpenAIOutboundIdentityPolicy(ctx, account, upstreamReq.Header, openAIOutboundOAuthPolicy)
-		logger.L().Debug("openai messages: upstream identity restored",
-			zap.Int64("account_id", account.ID),
-			zap.String("upstream_model", upstreamModel),
-			zap.Bool("compat_identity_restored", true),
-		)
-	}
-	if account.Type == AccountTypeOAuth && promptCacheKey != "" && strings.TrimSpace(c.GetHeader("conversation_id")) == "" {
-		upstreamReq.Header.Del("conversation_id")
+		// Preserve the bridge-specific beta declaration, then run the same final
+		// identity boundary used by Responses, passthrough and WS.
+		upstreamReq.Header.Set("OpenAI-Beta", codexHTTPBetaValue)
 	}
 	if compatTurnState != "" && upstreamReq.Header.Get("x-codex-turn-state") == "" {
 		upstreamReq.Header.Set("x-codex-turn-state", compatTurnState)
 	}
 	if account.Type == AccountTypeOAuth && account.Platform != PlatformGrok {
-		normalizeCodexOAuthHeaders(upstreamReq.Header, resolveCodexSessionHeader(upstreamReq.Header), resolveCodexThreadHeader(upstreamReq.Header))
+		s.finalizeCodexOAuthHeaders(ctx, c, account, upstreamReq.Header, codexFingerprintIDsFromContext(c), promptCacheKey)
+		logger.L().Debug("openai messages: upstream identity restored",
+			zap.Int64("account_id", account.ID),
+			zap.String("upstream_model", upstreamModel),
+			zap.Bool("compat_identity_restored", true),
+		)
 	}
 
 	// 7. Send request

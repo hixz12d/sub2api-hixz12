@@ -353,27 +353,29 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		if c != nil && c.Request != nil {
 			clientHeaders = c.Request.Header
 		}
-		fingerprintIDs = resolveCodexFingerprintIDsFromContext(account, c, clientHeaders, accountIdentityPromptCacheKey)
+		var identityErr error
+		fingerprintIDs, identityErr = finalizeCodexOAuthIdentity(account, c, clientHeaders, accountIdentityPromptCacheKey)
+		if identityErr != nil {
+			return nil, fmt.Errorf("finalize Codex OAuth passthrough identity: %w", identityErr)
+		}
+		if c != nil {
+			c.Set("codex_fingerprint_ids", fingerprintIDs)
+		}
 	}
 	accountIdentitySessionID := resolveOpenAIWSSessionHeaders(c, accountIdentityPromptCacheKey).SessionID
 	if accountIdentitySessionID == "" && isOpenAIResponsesCompactPath(c) {
 		accountIdentitySessionID = resolveOpenAICompactSessionID(c, account)
 	}
 	if account.Type == AccountTypeOAuth {
-		bodyFingerprintIDs := fingerprintIDs
+		bodySnapshot := fingerprintIDs
 		if isOpenAIResponsesCompactPath(c) && !gjson.GetBytes(body, "client_metadata").Exists() {
-			bodyFingerprintIDs = nil
+			bodySnapshot = nil
 		}
-		fingerprintedBody, fingerprintErr := applyCodexFingerprintToRawBody(body, bodyFingerprintIDs)
-		if fingerprintErr != nil {
-			return nil, fmt.Errorf("apply codex fingerprint to passthrough body: %w", fingerprintErr)
-		}
-		body = fingerprintedBody
-		accountScopedBody, identityErr := s.applyOpenAIAccountScopedBody(ctx, c, account, body, accountIdentitySessionID)
+		finalizedBody, identityErr := s.finalizeCodexOAuthBody(ctx, c, account, body, bodySnapshot, accountIdentitySessionID)
 		if identityErr != nil {
-			return nil, identityErr
+			return nil, fmt.Errorf("finalize Codex OAuth passthrough body: %w", identityErr)
 		}
-		body = accountScopedBody
+		body = finalizedBody
 	}
 	targetURL := openaiPlatformAPIURL
 	switch account.Type {
@@ -477,18 +479,14 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 
 	// Apply account overrides before the shared final identity stage.
 	account.ApplyHeaderOverrides(req.Header)
-	policy := openAIOutboundAPIKeyPolicy
 	if account.Type == AccountTypeOAuth {
-		policy = openAIOutboundOAuthPolicy
-	} else if isOpenAIResponsesCompactPath(c) {
-		policy = openAIOutboundAPIKeyCodexVersionPolicy
-	}
-	s.applyOpenAIOutboundIdentityPolicy(ctx, account, req.Header, policy)
-	s.applyOpenAIAccountScopedHeaders(ctx, c, account, req.Header, accountIdentitySessionID)
-	if account.Type == AccountTypeOAuth {
-		applyCodexFingerprintHeaders(req.Header, fingerprintIDs)
-		normalizeCodexOAuthHeaders(req.Header, resolveCodexSessionHeader(req.Header), resolveCodexThreadHeader(req.Header))
-		applyCodexOAuthStableEnvironmentHeaders(req.Header, account)
+		s.finalizeCodexOAuthHeaders(ctx, c, account, req.Header, fingerprintIDs, accountIdentitySessionID)
+	} else {
+		policy := openAIOutboundAPIKeyPolicy
+		if isOpenAIResponsesCompactPath(c) {
+			policy = openAIOutboundAPIKeyCodexVersionPolicy
+		}
+		s.applyOpenAIOutboundIdentityPolicy(ctx, account, req.Header, policy)
 	}
 	setOpenAICodexRoutingHintFromBody(req.Header, account, body)
 	logOpenAIRoutingDiagnosticsFromBody(ctx, account, "http_passthrough", req.Header, body, "not_applicable")

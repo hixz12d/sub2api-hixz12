@@ -13,30 +13,29 @@ import (
 	"github.com/google/uuid"
 )
 
-// codexFingerprintMode 控制 OAuth 账号出站请求的设备指纹收敛强度。
-// 多人共享同一 OAuth 账号时，每个用户的 Codex 客户端会携带各自不同的
-// installation_id / session_id / thread_id，上游据此判定设备数和会话数。
-// 收敛模式将这些标识改写为账号级恒定值，减少上游可见的设备/会话指纹。
+// codexFingerprintMode is the legacy compatibility vocabulary for stable OAuth
+// identity normalization. It is retained during the Phase 1 migration; these
+// modes must not be used to synthesize random users or bypass protocol policy.
 type codexFingerprintMode string
 
 const (
-	// codexFingerprintOff 不做任何收敛，原样透传客户端标识（默认行为）。
+	// codexFingerprintOff 不做收敛，仅执行 canonical wire 规范化。
 	codexFingerprintOff codexFingerprintMode = "off"
 	// codexFingerprintDevice 仅收敛 installation_id 为账号级恒定值。
-	// 上游看到 1 台设备 + 多会话（每用户各自的 session）。
+	// session/thread 仍保持客户端原有边界。
 	codexFingerprintDevice codexFingerprintMode = "device"
 	// codexFingerprintSession 收敛 installation_id + session_id，
 	// thread_id 按客户端原始 session-id 确定性派生（每个真实 Codex 会话一个独立线程）。
-	// 上游看到 1 台设备 + 1 会话 + N 线程，最接近正常用户 spawn 子代理的模式。
+	// 这是历史兼容语义；新产品语义将迁移为 account_stable。
 	codexFingerprintSession codexFingerprintMode = "session"
-	// codexFingerprintWindow 是共享账号的风控折中：同一客户端在 UTC 8 小时窗口内
-	// 粘滞到 8 个槽之一，每个 UTC 日最多产生 24 个 thread，而非正常单用户模型。
+	// codexFingerprintWindow 保留历史 UTC 8 小时、8 槽兼容算法；Phase 1
+	// 不改变其分桶结果，后续迁移阶段再决定废弃映射。
 	codexFingerprintWindow codexFingerprintMode = "window"
 	// codexFingerprintWindow40 保持 8 小时粘滞，将每个 UTC 日的 thread
 	// 预算提高到 40（13 + 14 + 13 个槽）。
 	codexFingerprintWindow40 codexFingerprintMode = "window40"
 	// codexFingerprintFull 收敛所有标识：installation_id + session_id + thread_id。
-	// 上游看到 1 台设备 + 1 会话 + 1 线程，最激进。
+	// 仅为旧配置兼容保留，不作为新部署推荐模式。
 	codexFingerprintFull codexFingerprintMode = "full"
 )
 
@@ -60,11 +59,16 @@ func (a *Account) GetCodexFingerprintMode() codexFingerprintMode {
 		return codexFingerprintOff
 	}
 	raw := strings.TrimSpace(a.GetExtraString(codexFingerprintModeExtraKey))
+	if raw == "" {
+		return codexFingerprintSession
+	}
 	switch codexFingerprintMode(raw) {
 	case codexFingerprintOff, codexFingerprintDevice, codexFingerprintSession, codexFingerprintWindow, codexFingerprintWindow40, codexFingerprintFull:
 		return codexFingerprintMode(raw)
 	default:
-		return codexFingerprintSession
+		// Unknown configured values fail safe to off. The v2 finalizer returns a
+		// structured error instead; neither path silently enters a high-impact mode.
+		return codexFingerprintOff
 	}
 }
 
@@ -105,7 +109,7 @@ func resolveConvergedSessionID(account *Account) string {
 
 // resolveConvergedThreadID 按客户端原始 session-id 确定性派生 thread_id。
 // 每个真实 Codex 会话（不同客户端启动实例）获得一个独立线程，
-// 模拟正常用户 spawn 子代理或开多窗口的模式。
+// 保持历史“同客户端 session 对应同 thread”的兼容映射。
 func resolveConvergedThreadID(account *Account, clientSessionID string) string {
 	if account == nil || clientSessionID == "" {
 		return ""
@@ -170,16 +174,6 @@ func resolveWindow40ThreadID(account *Account, clientSeed string, now time.Time)
 // codexFingerprintIDs 收敛后的完整 ID 集合。
 // 由 resolveCodexFingerprintIDs 一次性生成，同一个实例在头改写和体改写之间共享，
 // 确保所有载体中的 turn_id 等随机字段一致。
-type codexFingerprintIDs struct {
-	mode                codexFingerprintMode
-	installationID      string
-	sessionID           string
-	threadID            string
-	turnID              string
-	windowID            string
-	turnStartedAtUnixMs int64
-}
-
 // resolveCodexFingerprintIDs 按收敛模式计算出站 ID 集合。
 // clientSessionID 是客户端线程种子。session 模式只会传入原始 session 头；window
 // 模式还可传入 conversation_id 或 prompt_cache_key，且只用于固定 8 槽哈希。
@@ -212,6 +206,8 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 			ids.threadID = ids.sessionID
 		}
 		ids.turnID = uuid.Must(uuid.NewV7()).String()
+		ids.clientRequestID = ids.turnID
+		ids.protocolProfile = codexProtocolProfileName
 		ids.windowID = ids.threadID + ":0"
 		return ids
 
@@ -219,6 +215,8 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 		ids.sessionID = resolveConvergedSessionID(account)
 		ids.threadID = resolveWindowThreadID(account, clientSessionID, now)
 		ids.turnID = uuid.Must(uuid.NewV7()).String()
+		ids.clientRequestID = ids.turnID
+		ids.protocolProfile = codexProtocolProfileName
 		ids.windowID = ids.threadID + ":0"
 		return ids
 
@@ -226,6 +224,8 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 		ids.sessionID = resolveConvergedSessionID(account)
 		ids.threadID = resolveWindow40ThreadID(account, clientSessionID, now)
 		ids.turnID = uuid.Must(uuid.NewV7()).String()
+		ids.clientRequestID = ids.turnID
+		ids.protocolProfile = codexProtocolProfileName
 		ids.windowID = ids.threadID + ":0"
 		return ids
 
@@ -233,6 +233,8 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 		ids.sessionID = resolveConvergedSessionID(account)
 		ids.threadID = ids.sessionID
 		ids.turnID = uuid.Must(uuid.NewV7()).String()
+		ids.clientRequestID = ids.turnID
+		ids.protocolProfile = codexProtocolProfileName
 		ids.windowID = ids.threadID + ":0"
 		return ids
 	}
@@ -402,7 +404,7 @@ func applyCodexFingerprintHeaders(h http.Header, ids *codexFingerprintIDs) {
 
 	// session / window / full 模式：改写所有相关头
 	h.Set("x-codex-window-id", ids.windowID)
-	h.Set("x-client-request-id", ids.turnID)
+	h.Set("x-client-request-id", ids.clientRequestID)
 	normalizeCodexOAuthHeaders(h, ids.sessionID, ids.threadID)
 	h.Set("conversation_id", ids.sessionID)
 
@@ -427,6 +429,9 @@ func rewriteCodexTurnMetadataFields(h http.Header, fields map[string]any) {
 	}
 	var metadata map[string]any
 	if err := json.Unmarshal([]byte(raw), &metadata); err != nil {
+		// Explicit sanitize policy: malformed managed metadata is removed rather
+		// than being combined with a newly finalized outer identity.
+		deleteOpenAIHeaderEqualFold(h, "x-codex-turn-metadata")
 		return
 	}
 	for k, v := range fields {
@@ -500,6 +505,9 @@ func rewriteClientMetadataEmbeddedTurnMetadata(clientMetadata map[string]any, fi
 	}
 	var metadata map[string]any
 	if err := json.Unmarshal([]byte(raw), &metadata); err != nil {
+		// Keep the body policy aligned with the header policy: malformed managed
+		// metadata is explicitly sanitized, never silently retained.
+		delete(clientMetadata, "x-codex-turn-metadata")
 		return
 	}
 	for k, v := range fields {

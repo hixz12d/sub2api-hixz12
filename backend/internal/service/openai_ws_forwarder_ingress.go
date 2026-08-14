@@ -67,7 +67,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	if account.Platform == PlatformOpenAI {
 		ctx = s.snapshotOpenAIOutboundIdentity(ctx, account, c.GetHeader("User-Agent"))
 		promptCacheKey := strings.TrimSpace(gjson.GetBytes(firstClientMessage, "prompt_cache_key").String())
-		if ids := resolveCodexFingerprintIDsFromContext(account, c, c.Request.Header, promptCacheKey); ids != nil {
+		ids, identityErr := finalizeCodexOAuthIdentity(account, c, c.Request.Header, promptCacheKey)
+		if identityErr != nil {
+			return fmt.Errorf("finalize Codex OAuth websocket identity: %w", identityErr)
+		}
+		if ids != nil {
 			c.Set("codex_fingerprint_ids", ids)
 		}
 	}
@@ -706,7 +710,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			truncateOpenAIWSLogValue(preferredConnID, openAIWSIDValueMaxLen),
 			truncateOpenAIWSLogValue(sessionHash, 12),
 			openAIWSSessionHeaderValueForLog(baseAcquireReq.Headers),
-			openAIWSHeaderValueForLog(baseAcquireReq.Headers, "conversation_id"),
+			openAIWSConversationHeaderValueForLog(baseAcquireReq.Headers),
 			turnState != "",
 			len(turnState),
 			firstPayload.promptCacheKey != "",
@@ -818,17 +822,12 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			return nil, errors.New("upstream websocket lease is nil")
 		}
 		payloadSessionID := resolveOpenAIWSSessionHeaders(c, openAIWSPayloadStringFromRaw(payload, "prompt_cache_key")).SessionID
-		accountScopedPayload, identityErr := s.applyOpenAIAccountScopedBody(ctx, c, account, payload, payloadSessionID)
-		if identityErr != nil {
-			return nil, wrapOpenAIWSIngressTurnError("account_scoped_identity", identityErr, false)
-		}
-		payload = accountScopedPayload
 		if account.IsOpenAIOAuth() {
-			fingerprintedPayload, fingerprintErr := applyCodexFingerprintToRawBody(payload, codexFingerprintIDsFromContext(c))
-			if fingerprintErr != nil {
-				return nil, wrapOpenAIWSIngressTurnError("codex_fingerprint", fingerprintErr, false)
+			finalizedPayload, identityErr := s.finalizeCodexOAuthBody(ctx, c, account, payload, codexFingerprintIDsFromContext(c), payloadSessionID)
+			if identityErr != nil {
+				return nil, wrapOpenAIWSIngressTurnError("codex_identity_finalizer", identityErr, false)
 			}
-			payload = fingerprintedPayload
+			payload = finalizedPayload
 		}
 		payloadBytes := len(payload)
 		turnStart := time.Now()
@@ -1295,6 +1294,18 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				return err
 			}
 		}
+		// A complete response.create gets one fresh immutable identity snapshot.
+		// Retries of the same turn keep the existing snapshot; a reconnect then
+		// clones these refreshed headers and remains consistent with the payload.
+		if !skipBeforeTurn && account.IsOpenAIOAuth() {
+			promptCacheKey := openAIWSPayloadStringFromRaw(currentPayload, "prompt_cache_key")
+			snapshot, identityErr := finalizeCodexOAuthIdentity(account, c, c.Request.Header, promptCacheKey)
+			if identityErr != nil {
+				return fmt.Errorf("finalize Codex OAuth websocket turn identity: %w", identityErr)
+			}
+			c.Set("codex_fingerprint_ids", snapshot)
+			applyCodexFingerprintHeaders(baseAcquireReq.Headers, snapshot)
+		}
 		skipBeforeTurn = false
 		currentPreviousResponseID := openAIWSPayloadStringFromRaw(currentPayload, "previous_response_id")
 		expectedPrev := strings.TrimSpace(lastTurnResponseID)
@@ -1581,7 +1592,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				chainedFromLast,
 				truncateOpenAIWSLogValue(preferredConnID, openAIWSIDValueMaxLen),
 				openAIWSSessionHeaderValueForLog(baseAcquireReq.Headers),
-				openAIWSHeaderValueForLog(baseAcquireReq.Headers, "conversation_id"),
+				openAIWSConversationHeaderValueForLog(baseAcquireReq.Headers),
 				turnState != "",
 				len(turnState),
 				openAIWSPayloadStringFromRaw(currentPayload, "prompt_cache_key") != "",
