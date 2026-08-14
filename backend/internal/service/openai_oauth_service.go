@@ -271,9 +271,9 @@ func (s *OpenAIOAuthService) RefreshTokenWithClientID(ctx context.Context, refre
 	return tokenInfo, nil
 }
 
-// enrichTokenInfo 通过 ChatGPT backend-api 补全 tokenInfo 并设置隐私（best-effort）。
-// 从 accounts/check 获取最新 plan_type、subscription_expires_at、email，
-// 然后尝试关闭训练数据共享。适用于所有获取/刷新 token 的路径。
+// enrichTokenInfo 通过 ChatGPT backend-api 补全 tokenInfo。
+// 从 accounts/check 获取最新 plan_type、subscription_expires_at、email。
+// 隐私设置写入只由 Ensure/Force 路径负责，token 获取与刷新不重复 PATCH。
 func (s *OpenAIOAuthService) enrichTokenInfo(ctx context.Context, tokenInfo *OpenAITokenInfo, proxyURL string, identities ...openAIOutboundIdentity) {
 	if tokenInfo.AccessToken == "" || s.privacyClientFactory == nil {
 		return
@@ -320,9 +320,6 @@ func (s *OpenAIOAuthService) enrichTokenInfo(ctx context.Context, tokenInfo *Ope
 			tokenInfo.SubscriptionExpiresAt = expiresAt
 		}
 	}
-
-	// 尝试设置隐私（关闭训练数据共享），best-effort
-	tokenInfo.PrivacyMode = disableOpenAITraining(ctx, s.privacyClientFactory, tokenInfo.AccessToken, proxyURL, identity)
 }
 
 func shouldApplyChatGPTAccountInfoPlanType(current, candidate string) bool {

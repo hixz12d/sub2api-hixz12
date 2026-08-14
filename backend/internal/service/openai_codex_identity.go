@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
-	"github.com/google/uuid"
 )
 
 // codexUpstreamMinVersion 上游 /backend-api/codex 接受的最低 version 头：
@@ -112,12 +111,37 @@ func ensureCodexIdentityHeaders(h http.Header) {
 }
 
 // applyOpenAICodexProbeHeaders 为合成探测请求补齐 Codex 身份和引擎指纹。
-func applyOpenAICodexProbeHeaders(h http.Header) {
+func applyOpenAICodexProbeHeaders(h http.Header, accounts ...*Account) {
 	if h == nil {
 		return
 	}
 	ensureCodexIdentityHeaders(h)
-	h.Set("X-Codex-Window-ID", uuid.NewString())
+	var accountID int64
+	if len(accounts) > 0 && accounts[0] != nil {
+		accountID = accounts[0].ID
+	}
+	h.Set("X-Codex-Window-ID", compactProbeSessionID(accountID)+":0")
+}
+
+const defaultCodexAcceptLanguage = "en-US"
+
+// applyCodexOAuthStableEnvironmentHeaders removes per-client environment
+// variation after all request/header overrides have run. Values are stable per
+// account and never randomized per request.
+func applyCodexOAuthStableEnvironmentHeaders(h http.Header, account *Account) {
+	if h == nil || account == nil || !account.IsOpenAIOAuth() {
+		return
+	}
+	acceptLanguage := strings.TrimSpace(account.GetExtraString("codex_accept_language"))
+	if acceptLanguage == "" {
+		acceptLanguage = defaultCodexAcceptLanguage
+	}
+	h.Set("accept-language", acceptLanguage)
+
+	deleteOpenAIHeaderEqualFold(h, "x-codex-beta-features")
+	if betaFeatures := strings.TrimSpace(account.GetExtraString("codex_beta_features")); betaFeatures != "" {
+		h.Set("x-codex-beta-features", betaFeatures)
+	}
 }
 
 // enforceCodexIdentityHeaders 收口 OAuth（ChatGPT 内部接口）出站请求的客户端身份头。

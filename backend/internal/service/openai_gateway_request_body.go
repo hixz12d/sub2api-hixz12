@@ -355,10 +355,12 @@ func normalizeOpenAICodexCompactReasoningEffort(body []byte, effectiveModel stri
 	return normalized, true, nil
 }
 
-func resolveOpenAICompactSessionID(c *gin.Context) string {
+func resolveOpenAICompactSessionID(c *gin.Context, accounts ...*Account) string {
 	if c != nil {
-		if sessionID := strings.TrimSpace(c.GetHeader("session_id")); sessionID != "" {
-			return sessionID
+		if c.Request != nil {
+			if sessionID := resolveCodexSessionHeader(c.Request.Header); sessionID != "" {
+				return sessionID
+			}
 		}
 		if conversationID := strings.TrimSpace(c.GetHeader("conversation_id")); conversationID != "" {
 			return conversationID
@@ -368,6 +370,9 @@ func resolveOpenAICompactSessionID(c *gin.Context) string {
 				return strings.TrimSpace(seedStr)
 			}
 		}
+	}
+	if len(accounts) > 0 && accounts[0] != nil {
+		return compactProbeSessionID(accounts[0].ID)
 	}
 	return uuid.NewString()
 }

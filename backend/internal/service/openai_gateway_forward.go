@@ -415,34 +415,18 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if !isCompactRequest && applyCodexClientMetadata(decoded, account) {
 			markDecodedModified()
 		}
-		// 指纹收敛：一次性解析收敛 ID，请求体和出站头共享同一份 IDs（保证 turn_id 等随机字段一致）。
-		// fingerprintIDs 在此处解析，后续 buildUpstreamRequest 中使用同一份。
-		if !isCompactRequest {
-			var clientHeaders http.Header
-			if c != nil && c.Request != nil {
-				clientHeaders = c.Request.Header
+		// 指纹收敛：compact 也解析并保存 IDs，确保出站头稳定；compact body
+		// 没有 client_metadata 时不额外注入该字段，保持其 unary 协议形态。
+		var clientHeaders http.Header
+		if c != nil && c.Request != nil {
+			clientHeaders = c.Request.Header
+		}
+		fpIDs := resolveCodexFingerprintIDsFromContext(account, c, clientHeaders, promptCacheKey)
+		if fpIDs != nil {
+			if !isCompactRequest && applyCodexFingerprintClientMetadata(decoded, fpIDs) {
+				markDecodedModified()
 			}
-			fpIDs := resolveCodexFingerprintIDsFromContext(account, c, clientHeaders, promptCacheKey)
-			if fpIDs != nil {
-				rawAccountScopedWindowID := ""
-				if s.isOpenAIAccountScopedIdentityEnabled(account) {
-					if metadata, ok := decoded["client_metadata"].(map[string]any); ok {
-						rawAccountScopedWindowID, _ = metadata[openAICodexWindowIDHeader].(string)
-					}
-				}
-				if applyCodexFingerprintClientMetadata(decoded, fpIDs) {
-					markDecodedModified()
-				}
-				// Account-scoped identity is the final isolation layer. Preserve the
-				// client's window seed so it does not hash the intermediate fingerprint.
-				if strings.TrimSpace(rawAccountScopedWindowID) != "" {
-					if metadata, ok := decoded["client_metadata"].(map[string]any); ok {
-						metadata[openAICodexWindowIDHeader] = rawAccountScopedWindowID
-					}
-				}
-			}
-			// 将 fpIDs 存入 gin context，供 buildUpstreamRequest 中头改写使用
-			if c != nil && fpIDs != nil {
+			if c != nil {
 				c.Set("codex_fingerprint_ids", fpIDs)
 			}
 		}
@@ -1058,13 +1042,17 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	fingerprintIDs := codexFingerprintIDsFromContext(c)
 	accountIdentitySessionID := strings.TrimSpace(promptCacheKey)
 	if isOpenAIResponsesCompactPath(c) {
-		accountIdentitySessionID = resolveOpenAICompactSessionID(c)
+		accountIdentitySessionID = resolveOpenAICompactSessionID(c, account)
 	}
 	if accountIdentitySessionID == "" {
 		accountIdentitySessionID = resolveOpenAIWSSessionHeaders(c, promptCacheKey).SessionID
 	}
 	if account.Type == AccountTypeOAuth {
-		fingerprintedBody, fingerprintErr := applyCodexFingerprintToRawBody(body, fingerprintIDs)
+		bodyFingerprintIDs := fingerprintIDs
+		if isOpenAIResponsesCompactPath(c) && !gjson.GetBytes(body, "client_metadata").Exists() {
+			bodyFingerprintIDs = nil
+		}
+		fingerprintedBody, fingerprintErr := applyCodexFingerprintToRawBody(body, bodyFingerprintIDs)
 		if fingerprintErr != nil {
 			return nil, fmt.Errorf("apply codex fingerprint to request body: %w", fingerprintErr)
 		}
@@ -1151,7 +1139,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		outboundSessionID := ""
 		if isOpenAIResponsesCompactPath(c) {
 			req.Header.Set("accept", "application/json")
-			clientSessionID = resolveOpenAICompactSessionID(c)
+			clientSessionID = resolveOpenAICompactSessionID(c, account)
 		} else {
 			req.Header.Set("accept", "text/event-stream")
 		}
@@ -1197,6 +1185,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	s.applyOpenAIAccountScopedHeaders(ctx, c, account, req.Header, accountIdentitySessionID)
 	if account.Type == AccountTypeOAuth {
 		normalizeCodexOAuthHeaders(req.Header, resolveCodexSessionHeader(req.Header), resolveCodexThreadHeader(req.Header))
+		applyCodexOAuthStableEnvironmentHeaders(req.Header, account)
 	}
 	setOpenAICodexRoutingHintFromBody(req.Header, account, body)
 	logOpenAIRoutingDiagnosticsFromBody(ctx, account, "http", req.Header, body, "not_applicable")

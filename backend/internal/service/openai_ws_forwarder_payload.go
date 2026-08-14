@@ -155,6 +155,7 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	s.applyOpenAIAccountScopedHeaders(ctx, c, account, headers, sessionResolution.SessionID)
 	if account != nil && account.Type == AccountTypeOAuth {
 		normalizeCodexOAuthHeaders(headers, resolveCodexSessionHeader(headers), resolveCodexThreadHeader(headers))
+		applyCodexOAuthStableEnvironmentHeaders(headers, account)
 	}
 	setOpenAICodexRoutingHint(headers, account, routingModel, routingServiceTier)
 	logOpenAIRoutingDiagnostics(
@@ -187,6 +188,7 @@ func (s *OpenAIGatewayService) buildOpenAIWSCreatePayload(reqBody map[string]any
 	// OAuth 默认保持 store=false，避免误依赖服务端历史。
 	if account != nil && account.Type == AccountTypeOAuth {
 		delete(payload, "prompt_cache_key")
+		sanitizeOpenAIOutboundBrandMarkers(payload)
 		if !s.isOpenAIWSStoreRecoveryAllowed(account) {
 			payload["store"] = false
 		}

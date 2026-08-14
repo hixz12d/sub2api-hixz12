@@ -30,6 +30,12 @@ func (s *OpenAIGatewayService) isOpenAIAccountScopedIdentityEnabled(account *Acc
 	if account == nil || !account.IsOpenAIOAuth() || account.IsOpenAIPersonalAccessToken() || account.IsOpenAIAgentIdentity() {
 		return false
 	}
+	// Fingerprint convergence already provides the account-level identity.
+	// Layering API-key-scoped rewriting on top would split its stable window and
+	// installation IDs again, so the two mechanisms are mutually exclusive.
+	if account.GetCodexFingerprintMode() != codexFingerprintOff {
+		return false
+	}
 	if override := openAIAccountScopedIdentityOverride(account); override != nil {
 		return *override
 	}

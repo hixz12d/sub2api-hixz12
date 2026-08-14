@@ -171,12 +171,13 @@ func resolveWindow40ThreadID(account *Account, clientSeed string, now time.Time)
 // 由 resolveCodexFingerprintIDs 一次性生成，同一个实例在头改写和体改写之间共享，
 // 确保所有载体中的 turn_id 等随机字段一致。
 type codexFingerprintIDs struct {
-	mode           codexFingerprintMode
-	installationID string
-	sessionID      string
-	threadID       string
-	turnID         string
-	windowID       string
+	mode                codexFingerprintMode
+	installationID      string
+	sessionID           string
+	threadID            string
+	turnID              string
+	windowID            string
+	turnStartedAtUnixMs int64
 }
 
 // resolveCodexFingerprintIDs 按收敛模式计算出站 ID 集合。
@@ -189,7 +190,11 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 		return nil
 	}
 
-	ids := &codexFingerprintIDs{mode: mode}
+	now := codexFingerprintNow()
+	ids := &codexFingerprintIDs{
+		mode:                mode,
+		turnStartedAtUnixMs: now.UnixMilli(),
+	}
 
 	ids.installationID = resolveConvergedInstallationID(account)
 	if ids.installationID == "" {
@@ -212,14 +217,14 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 
 	case codexFingerprintWindow:
 		ids.sessionID = resolveConvergedSessionID(account)
-		ids.threadID = resolveWindowThreadID(account, clientSessionID, codexFingerprintNow())
+		ids.threadID = resolveWindowThreadID(account, clientSessionID, now)
 		ids.turnID = uuid.Must(uuid.NewV7()).String()
 		ids.windowID = ids.threadID + ":0"
 		return ids
 
 	case codexFingerprintWindow40:
 		ids.sessionID = resolveConvergedSessionID(account)
-		ids.threadID = resolveWindow40ThreadID(account, clientSessionID, codexFingerprintNow())
+		ids.threadID = resolveWindow40ThreadID(account, clientSessionID, now)
 		ids.turnID = uuid.Must(uuid.NewV7()).String()
 		ids.windowID = ids.threadID + ":0"
 		return ids
@@ -365,6 +370,9 @@ func applyCodexFingerprintToRawBody(body []byte, ids *codexFingerprintIDs) ([]by
 		return nil, err
 	}
 	modified := applyCodexFingerprintClientMetadata(payload, ids)
+	if sanitizeOpenAIOutboundBrandMarkers(payload) {
+		modified = true
+	}
 	if _, ok := payload["prompt_cache_key"]; ok {
 		delete(payload, "prompt_cache_key")
 		modified = true
@@ -392,9 +400,9 @@ func applyCodexFingerprintHeaders(h http.Header, ids *codexFingerprintIDs) {
 		return
 	}
 
-	// session / full 模式：改写所有相关头
+	// session / window / full 模式：改写所有相关头
 	h.Set("x-codex-window-id", ids.windowID)
-	h.Set("x-client-request-id", ids.threadID)
+	h.Set("x-client-request-id", ids.turnID)
 	normalizeCodexOAuthHeaders(h, ids.sessionID, ids.threadID)
 	h.Set("conversation_id", ids.sessionID)
 
@@ -404,7 +412,9 @@ func applyCodexFingerprintHeaders(h http.Header, ids *codexFingerprintIDs) {
 		"thread_id":               ids.threadID,
 		"turn_id":                 ids.turnID,
 		"window_id":               ids.windowID,
-		"turn_started_at_unix_ms": codexFingerprintNow().UnixMilli(),
+		"turn_started_at_unix_ms": ids.turnStartedAtUnixMs,
+		"sandbox":                 "seccomp",
+		"thread_source":           "cli",
 	})
 }
 
@@ -458,11 +468,13 @@ func applyCodexFingerprintClientMetadata(reqBody map[string]any, ids *codexFinge
 		return modified
 	}
 
-	// session / full 模式
+	// session / window / full 模式
 	existing["session_id"] = ids.sessionID
 	existing["thread_id"] = ids.threadID
 	existing["turn_id"] = ids.turnID
 	existing["x-codex-window-id"] = ids.windowID
+	existing["sandbox"] = "seccomp"
+	existing["thread_source"] = "cli"
 
 	rewriteClientMetadataEmbeddedTurnMetadata(existing, map[string]any{
 		"installation_id":         ids.installationID,
@@ -470,7 +482,9 @@ func applyCodexFingerprintClientMetadata(reqBody map[string]any, ids *codexFinge
 		"thread_id":               ids.threadID,
 		"turn_id":                 ids.turnID,
 		"window_id":               ids.windowID,
-		"turn_started_at_unix_ms": codexFingerprintNow().UnixMilli(),
+		"turn_started_at_unix_ms": ids.turnStartedAtUnixMs,
+		"sandbox":                 "seccomp",
+		"thread_source":           "cli",
 	})
 
 	reqBody["client_metadata"] = existing

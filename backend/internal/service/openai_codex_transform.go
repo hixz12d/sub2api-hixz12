@@ -117,10 +117,12 @@ func compactCodexCallID(id string) string {
 const codexImageGenerationFunctionToolName = "image_gen.imagegen"
 
 const (
-	codexImageGenerationBridgeMarker = "<sub2api-codex-image-generation>"
-	codexImageGenerationBridgeText   = codexImageGenerationBridgeMarker + "\nWhen the user asks for raster image generation or editing, use the OpenAI Responses native `image_generation` tool attached to this request. The local Codex client may not expose an `image_gen` namespace, but that does not mean image generation is unavailable. Do not ask the user to switch to CLI fallback solely because `image_gen` is absent.\n</sub2api-codex-image-generation>"
-	codexSparkImageUnsupportedMarker = "<sub2api-codex-spark-image-unsupported>"
-	codexSparkImageUnsupportedText   = codexSparkImageUnsupportedMarker + "\nThe current model is gpt-5.3-codex-spark, which does not support image generation, image editing, image input, the `image_generation` tool, or Codex `image_gen`/`$imagegen` workflows. If the user asks for image generation or image editing, clearly explain this model limitation and ask them to switch to a non-Spark Codex model such as gpt-5.3-codex or gpt-5.4. Do not claim that the local environment merely lacks image_gen tooling, and do not suggest CLI fallback as the primary fix while the model remains Spark.\n</sub2api-codex-spark-image-unsupported>"
+	legacyCodexImageGenerationBridgeMarker = "<sub2api-codex-image-generation>"
+	legacyCodexSparkImageUnsupportedMarker = "<sub2api-codex-spark-image-unsupported>"
+	codexImageGenerationBridgeMarker       = "<codex-image-generation-guidance>"
+	codexImageGenerationBridgeText         = codexImageGenerationBridgeMarker + "\nWhen the user asks for raster image generation or editing, use the OpenAI Responses native `image_generation` tool attached to this request. The local Codex client may not expose an `image_gen` namespace, but that does not mean image generation is unavailable. Do not ask the user to switch to CLI fallback solely because `image_gen` is absent.\n</codex-image-generation-guidance>"
+	codexSparkImageUnsupportedMarker       = "<codex-spark-image-limit-guidance>"
+	codexSparkImageUnsupportedText         = codexSparkImageUnsupportedMarker + "\nThe current model is gpt-5.3-codex-spark, which does not support image generation, image editing, image input, the `image_generation` tool, or Codex `image_gen`/`$imagegen` workflows. If the user asks for image generation or image editing, clearly explain this model limitation and ask them to switch to a non-Spark Codex model such as gpt-5.3-codex or gpt-5.4. Do not claim that the local environment merely lacks image_gen tooling, and do not suggest CLI fallback as the primary fix while the model remains Spark.\n</codex-spark-image-limit-guidance>"
 )
 
 var openAIChatGPTInternalUnsupportedFields = []string{
@@ -147,8 +149,50 @@ func applyCodexOAuthTransform(reqBody map[string]any, isCodexCLI bool, isCompact
 	})
 }
 
+// sanitizeOpenAIOutboundBrandMarkers rewrites historical gateway-branded
+// instruction tags to neutral functional tags while preserving their guidance.
+func sanitizeOpenAIOutboundBrandMarkers(value any) bool {
+	modified := false
+	var walk func(any)
+	walk = func(current any) {
+		switch typed := current.(type) {
+		case map[string]any:
+			for key, child := range typed {
+				if text, ok := child.(string); ok {
+					normalized := text
+					for _, replacement := range [][2]string{
+						{legacyCodexImageGenerationBridgeMarker, codexImageGenerationBridgeMarker},
+						{"</sub2api-codex-image-generation>", "</codex-image-generation-guidance>"},
+						{legacyCodexSparkImageUnsupportedMarker, codexSparkImageUnsupportedMarker},
+						{"</sub2api-codex-spark-image-unsupported>", "</codex-spark-image-limit-guidance>"},
+						{legacyOpenAICompatClaudeCodeTodoGuardMarker, openAICompatClaudeCodeTodoGuardMarker},
+						{"</sub2api-claude-code-todo-guard>", "</claude-code-todo-guidance>"},
+					} {
+						normalized = strings.ReplaceAll(normalized, replacement[0], replacement[1])
+					}
+					if normalized != text {
+						typed[key] = normalized
+						modified = true
+					}
+					continue
+				}
+				walk(child)
+			}
+		case []any:
+			for _, child := range typed {
+				walk(child)
+			}
+		}
+	}
+	walk(value)
+	return modified
+}
+
 func applyCodexOAuthTransformWithOptions(reqBody map[string]any, opts codexOAuthTransformOptions) codexTransformResult {
 	result := codexTransformResult{}
+	if sanitizeOpenAIOutboundBrandMarkers(reqBody) {
+		result.Modified = true
+	}
 	// 工具续链需求会影响存储策略与 input 过滤逻辑。
 	needsToolContinuation := NeedsToolContinuation(reqBody)
 
@@ -939,6 +983,7 @@ func ensureOpenAIResponsesImageGenerationToolChoiceAuto(reqBody map[string]any) 
 }
 
 func applyCodexImageGenerationBridgeInstructions(reqBody map[string]any) bool {
+	sanitizeOpenAIOutboundBrandMarkers(reqBody)
 	if len(reqBody) == 0 || hasCodexImageGenerationFunctionTool(reqBody) || !hasOpenAIImageGenerationTool(reqBody) {
 		return false
 	}
@@ -962,6 +1007,7 @@ func applyCodexImageGenerationBridgeInstructions(reqBody map[string]any) bool {
 }
 
 func applyCodexSparkImageUnsupportedInstructions(reqBody map[string]any) bool {
+	sanitizeOpenAIOutboundBrandMarkers(reqBody)
 	if len(reqBody) == 0 {
 		return false
 	}

@@ -357,10 +357,14 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	}
 	accountIdentitySessionID := resolveOpenAIWSSessionHeaders(c, accountIdentityPromptCacheKey).SessionID
 	if accountIdentitySessionID == "" && isOpenAIResponsesCompactPath(c) {
-		accountIdentitySessionID = resolveOpenAICompactSessionID(c)
+		accountIdentitySessionID = resolveOpenAICompactSessionID(c, account)
 	}
 	if account.Type == AccountTypeOAuth {
-		fingerprintedBody, fingerprintErr := applyCodexFingerprintToRawBody(body, fingerprintIDs)
+		bodyFingerprintIDs := fingerprintIDs
+		if isOpenAIResponsesCompactPath(c) && !gjson.GetBytes(body, "client_metadata").Exists() {
+			bodyFingerprintIDs = nil
+		}
+		fingerprintedBody, fingerprintErr := applyCodexFingerprintToRawBody(body, bodyFingerprintIDs)
 		if fingerprintErr != nil {
 			return nil, fmt.Errorf("apply codex fingerprint to passthrough body: %w", fingerprintErr)
 		}
@@ -440,7 +444,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		if isOpenAIResponsesCompactPath(c) {
 			req.Header.Set("accept", "application/json")
 			if clientSessionID == "" {
-				clientSessionID = resolveOpenAICompactSessionID(c)
+				clientSessionID = resolveOpenAICompactSessionID(c, account)
 			}
 		} else if req.Header.Get("accept") == "" {
 			req.Header.Set("accept", "text/event-stream")
@@ -484,6 +488,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	if account.Type == AccountTypeOAuth {
 		applyCodexFingerprintHeaders(req.Header, fingerprintIDs)
 		normalizeCodexOAuthHeaders(req.Header, resolveCodexSessionHeader(req.Header), resolveCodexThreadHeader(req.Header))
+		applyCodexOAuthStableEnvironmentHeaders(req.Header, account)
 	}
 	setOpenAICodexRoutingHintFromBody(req.Header, account, body)
 	logOpenAIRoutingDiagnosticsFromBody(ctx, account, "http_passthrough", req.Header, body, "not_applicable")

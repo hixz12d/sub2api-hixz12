@@ -710,9 +710,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 
 	// Set common headers
 	req.Header.Set("Content-Type", "application/json")
-	if !isOAuth {
-		applyOpenAICodexProbeHeaders(req.Header)
-	}
+	applyOpenAICodexProbeHeaders(req.Header, account)
 	if credentialAccount.IsOpenAIAgentIdentity() {
 		authHeaders, authErr := buildAgentIdentityAuthenticationHeaders(ctx, s.accountRepo, s.agentIdentityWS, &s.agentIdentityTaskMu, credentialAccount)
 		if authErr != nil {
@@ -746,6 +744,9 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		policy = openAIOutboundOAuthPolicy
 	}
 	applyResolvedOpenAIOutboundIdentityWithPolicy(req.Header, identity, policy)
+	if isOAuth {
+		applyCodexOAuthStableEnvironmentHeaders(req.Header, credentialAccount)
+	}
 
 	// Get proxy URL
 	proxyURL := ""
@@ -2064,7 +2065,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	} else {
 		req.Header.Set("Authorization", "Bearer "+authToken)
 	}
-	applyOpenAICodexProbeHeaders(req.Header)
+	applyOpenAICodexProbeHeaders(req.Header, account)
 	probeSessionID := compactProbeSessionID(account.ID)
 	if isOAuth {
 		normalizeCodexOAuthHeaders(req.Header, probeSessionID, "")
@@ -2091,6 +2092,7 @@ func (s *AccountTestService) testOpenAICompactConnection(c *gin.Context, account
 	applyResolvedOpenAIOutboundIdentityWithPolicy(req.Header, identity, policy)
 	if isOAuth {
 		normalizeCodexOAuthHeaders(req.Header, resolveCodexSessionHeader(req.Header), resolveCodexThreadHeader(req.Header))
+		applyCodexOAuthStableEnvironmentHeaders(req.Header, credentialAccount)
 	}
 
 	proxyURL := ""

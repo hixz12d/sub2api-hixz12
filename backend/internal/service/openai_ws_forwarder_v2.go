@@ -89,6 +89,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		turnMetadata = strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader))
 	}
 	setOpenAIWSTurnMetadata(payload, turnMetadata)
+	if account.IsOpenAIOAuth() {
+		applyCodexFingerprintClientMetadata(payload, codexFingerprintIDsFromContext(c))
+	}
 	payloadEventType := openAIWSPayloadString(payload, "type")
 	if payloadEventType == "" {
 		payloadEventType = "response.create"

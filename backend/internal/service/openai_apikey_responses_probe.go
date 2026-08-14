@@ -154,7 +154,7 @@ func (s *AccountTestService) ProbeOpenAIAPIKeyResponsesSupport(ctx context.Conte
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Accept", "application/json")
-	applyOpenAICodexProbeHeaders(req.Header)
+	applyOpenAICodexProbeHeaders(req.Header, account)
 
 	// 账号级请求头覆写必须先于统一 API Key 身份收口。
 	account.ApplyHeaderOverrides(req.Header)
