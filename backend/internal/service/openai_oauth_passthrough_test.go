@@ -393,7 +393,7 @@ func TestOpenAIGatewayService_OAuthPassthrough_StreamKeepsToolNameAndBodyNormali
 		Type:           AccountTypeOAuth,
 		Concurrency:    1,
 		Credentials:    map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"},
-		Extra:          map[string]any{"openai_passthrough": true},
+		Extra:          map[string]any{"openai_passthrough": true, "codex_beta_features": "remote_compaction_v2"},
 		Status:         StatusActive,
 		Schedulable:    true,
 		RateMultiplier: f64p(1),

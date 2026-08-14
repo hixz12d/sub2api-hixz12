@@ -103,7 +103,7 @@ func TestOpenAIOAuthServiceEnrichmentReusesSnapshotIdentity(t *testing.T) {
 	}
 	svc.enrichTokenInfo(ctx, tokenInfo, "")
 
-	require.Len(t, requests, 2)
+	require.Len(t, requests, 1, "已有订阅到期时间时只需请求 accounts/check")
 	for _, headers := range requests {
 		require.Equal(t, identity.UserAgent, headers.Get("User-Agent"))
 		require.Equal(t, identity.Originator, headers.Get("Originator"))

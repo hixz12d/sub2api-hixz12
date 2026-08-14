@@ -733,6 +733,7 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStoreFalseByDefault(t *testing.T
 		},
 		Extra: map[string]any{
 			"responses_websockets_v2_enabled": true,
+			"codex_beta_features":             "remote_compaction_v2",
 		},
 	}
 

@@ -46,6 +46,29 @@ func TestCodexIdentityFinalizerSanitizesMalformedManagedMetadata(t *testing.T) {
 	require.False(t, retained)
 }
 
+func TestCodexOAuthStableEnvironmentHeadersUseAccountPolicy(t *testing.T) {
+	account := newTestOAuthAccount(46, map[string]any{
+		"codex_accept_language": "zh-CN",
+		"codex_beta_features":   "remote_compaction_v2",
+	})
+	headers := http.Header{
+		"Accept-Language":       {"client-language"},
+		"X-Codex-Beta-Features": {"client-feature"},
+	}
+	applyCodexOAuthStableEnvironmentHeaders(headers, account)
+	require.Equal(t, "zh-CN", headers.Get("accept-language"))
+	require.Equal(t, "remote_compaction_v2", headers.Get("x-codex-beta-features"))
+
+	account = newTestOAuthAccount(47, nil)
+	headers = http.Header{
+		"Accept-Language":       {"client-language"},
+		"X-Codex-Beta-Features": {"client-feature"},
+	}
+	applyCodexOAuthStableEnvironmentHeaders(headers, account)
+	require.Equal(t, defaultCodexAcceptLanguage, headers.Get("accept-language"))
+	require.Empty(t, headers.Get("x-codex-beta-features"))
+}
+
 func TestCodexIdentityFinalizerHTTPFinalWire(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	builders := []struct {

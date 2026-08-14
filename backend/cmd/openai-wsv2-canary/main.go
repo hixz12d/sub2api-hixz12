@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -184,7 +185,11 @@ func readAPIKey(path string) (string, error) {
 	if !info.Mode().IsRegular() {
 		return "", errors.New("key file must be a regular file")
 	}
-	if info.Mode().Perm()&0o077 != 0 {
+	// Windows os.FileMode does not model ACLs and commonly reports 0666 even
+	// when the file was created with 0600. Keep the Unix safety check where
+	// permission bits are authoritative; Windows deployments must secure the
+	// key file with an appropriate ACL.
+	if runtime.GOOS != "windows" && info.Mode().Perm()&0o077 != 0 {
 		return "", fmt.Errorf("key file permissions must not exceed 0600 (got %04o)", info.Mode().Perm())
 	}
 	contents, err := os.ReadFile(path)

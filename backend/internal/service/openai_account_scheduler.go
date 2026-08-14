@@ -562,6 +562,9 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		var err error
 		accountID, err = s.service.getStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		if err != nil {
+			if errors.Is(err, ErrStickySessionNotFound) {
+				return nil, false, nil
+			}
 			return nil, false, err
 		}
 		if accountID <= 0 {

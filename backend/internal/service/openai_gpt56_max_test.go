@@ -252,6 +252,7 @@ func TestOpenAIGatewayServiceForwardOAuthRemoteCompactV2PreservesResponsesWire(t
 				"gpt-5.6-sol": "gpt-5.6-sol-openai-compact",
 			},
 		},
+		Extra:       map[string]any{"codex_beta_features": "remote_compaction_v2"},
 		Status:      StatusActive,
 		Schedulable: true,
 	}
