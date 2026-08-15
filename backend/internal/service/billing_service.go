@@ -642,7 +642,7 @@ func (s *BillingService) initFallbackPricing() {
 
 // getFallbackPricing 根据模型系列获取回退价格
 func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
-	modelLower := strings.ToLower(model)
+	modelLower := strings.ToLower(strings.TrimSpace(xai.StripGrokProviderPrefix(model)))
 
 	// 按模型系列匹配
 	if strings.Contains(modelLower, "opus") {
@@ -907,14 +907,29 @@ func (s *BillingService) HasIdentifiedTokenPricing(model string) bool {
 	if model == "" {
 		return false
 	}
+
+	candidates := []string{model}
+	normalized := strings.ToLower(strings.TrimSpace(xai.StripGrokProviderPrefix(model)))
+	if normalized != model {
+		candidates = append(candidates, normalized)
+	}
+	if normalized == "grok-4.6-latest" {
+		candidates = append(candidates, "grok-4.6")
+	}
 	if s.pricingService != nil {
 		// 仅有图片价的条目不能用于 token 计费，口径与 GetModelPricing 保持一致。
-		if pricing := s.pricingService.GetIdentifiedModelPricing(model); pricing != nil && !pricing.TokenPricingAbsent {
+		for _, candidate := range candidates {
+			if pricing := s.pricingService.GetIdentifiedModelPricing(candidate); pricing != nil && !pricing.TokenPricingAbsent {
+				return true
+			}
+		}
+	}
+	for _, candidate := range candidates {
+		if pricing, ok := s.fallbackPrices[candidate]; ok && pricing != nil {
 			return true
 		}
 	}
-	pricing, ok := s.fallbackPrices[model]
-	return ok && pricing != nil
+	return false
 }
 
 // GetModelPricing 获取模型价格配置
@@ -1044,6 +1059,11 @@ func (s *BillingService) CalculateCostUnified(input CostInput) (*CostBreakdown, 
 		applyLongContextBilling := true
 		if input.LongContextBillingEnabled != nil {
 			applyLongContextBilling = *input.LongContextBillingEnabled
+			if isGrok46BillingModel(input.Model) {
+				// Grok 4.6 的官方长上下文价格是模型固有规则，不能被旧的
+				// OpenAI 账号开关或显式 false 门闩关闭。
+				applyLongContextBilling = true
+			}
 		}
 		return s.calculateCostInternalWithPolicy(
 			input.Model,
@@ -1099,8 +1119,9 @@ func (s *BillingService) calculateTokenCost(resolved *ResolvedPricing, input Cos
 	pricing = s.applyModelSpecificPricingPolicy(input.Model, pricing)
 
 	// 长上下文定价仅在无区间定价时应用（区间定价已包含上下文分层）
-	applyLongCtx := len(resolved.Intervals) == 0 && resolved.longContextPricingEnabled
-	if input.LongContextBillingEnabled != nil {
+	automaticLongContextPricing := isGrok46BillingModel(input.Model)
+	applyLongCtx := len(resolved.Intervals) == 0 && (resolved.longContextPricingEnabled || automaticLongContextPricing)
+	if input.LongContextBillingEnabled != nil && !automaticLongContextPricing {
 		applyLongCtx = applyLongCtx && *input.LongContextBillingEnabled
 	}
 

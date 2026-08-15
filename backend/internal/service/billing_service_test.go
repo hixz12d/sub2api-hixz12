@@ -1169,26 +1169,8 @@ func TestGetModelPricing_Grok45OfficialFallback(t *testing.T) {
 func TestGetModelPricing_Grok46OfficialFallback(t *testing.T) {
 	svc := newTestBillingService()
 
-	for _, model := range []string{"grok-4.6", "grok-4.6-latest"} {
+	for _, model := range []string{"grok-4.6", "grok-4.6-latest", "x-ai/grok-4.6"} {
 		model := model
-		t.Run(model, func(t *testing.T) {
-			pricing, err := svc.GetModelPricing(model)
-			require.NoError(t, err)
-			require.InDelta(t, 2e-6, pricing.InputPricePerToken, 1e-12)
-			require.InDelta(t, 6e-6, pricing.OutputPricePerToken, 1e-12)
-			require.InDelta(t, 0.5e-6, pricing.CacheReadPricePerToken, 1e-12)
-			require.Equal(t, 200000, pricing.LongContextInputThreshold)
-			require.InDelta(t, 2.0, pricing.LongContextInputMultiplier, 1e-12)
-			require.InDelta(t, 2.0, pricing.LongContextOutputMultiplier, 1e-12)
-			require.False(t, pricing.SupportsCacheBreakdown)
-		})
-	}
-}
-
-func TestGetModelPricing_Grok46OfficialFallback(t *testing.T) {
-	svc := newTestBillingService()
-
-	for _, model := range []string{"grok-4.6", "grok-4.6-latest"} {
 		t.Run(model, func(t *testing.T) {
 			pricing, err := svc.GetModelPricing(model)
 			require.NoError(t, err)
@@ -1200,6 +1182,7 @@ func TestGetModelPricing_Grok46OfficialFallback(t *testing.T) {
 			require.InDelta(t, 2.0, pricing.LongContextInputMultiplier, 1e-12)
 			require.InDelta(t, 2.0, pricing.LongContextOutputMultiplier, 1e-12)
 			require.True(t, svc.HasIdentifiedTokenPricing(model))
+			require.False(t, pricing.SupportsCacheBreakdown)
 		})
 	}
 }
@@ -1250,6 +1233,26 @@ func TestCalculateCostUnified_GroupLongContextToggleUsesPresetLadder(t *testing.
 	require.True(t, enabled.LongContextBillingApplied)
 	require.InDelta(t, disabled.InputCost*2, enabled.InputCost, 1e-12)
 	require.InDelta(t, disabled.OutputCost*2, enabled.OutputCost, 1e-12)
+}
+
+func TestCalculateCostUnified_Grok46OfficialLadderIgnoresGroupOptOut(t *testing.T) {
+	svc := newTestBillingService()
+	resolver := NewModelPricingResolver(nil, svc)
+	accountGate := false
+
+	cost, err := svc.CalculateCostUnified(CostInput{
+		Model:                     "x-ai/grok-4.6",
+		Group:                     &Group{LongContextPricingEnabled: false},
+		Tokens:                    UsageTokens{InputTokens: 200000, CacheReadTokens: 50000, OutputTokens: 1000},
+		RateMultiplier:            1,
+		Resolver:                  resolver,
+		LongContextBillingEnabled: &accountGate,
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 200000*4e-6, cost.InputCost, 1e-12)
+	require.InDelta(t, 50000*1e-6, cost.CacheReadCost, 1e-12)
+	require.InDelta(t, 1000*12e-6, cost.OutputCost, 1e-12)
+	require.True(t, cost.LongContextBillingApplied)
 }
 
 func TestGetModelPricing_UnknownGrokTextFallsBackToGrok45(t *testing.T) {

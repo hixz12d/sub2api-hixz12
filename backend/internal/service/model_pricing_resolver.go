@@ -69,10 +69,12 @@ type PricingInput struct {
 // 1. 获取基础定价（LiteLLM → Fallback）
 // 2. 如果指定了 GroupID，查找渠道定价并覆盖
 func (r *ModelPricingResolver) Resolve(ctx context.Context, input PricingInput) *ResolvedPricing {
-	longContextPricingEnabled := input.Group == nil || input.Group.LongContextPricingEnabled
+	// Grok 4.6 的 >=200K 官方阶梯是模型固有价格，不能因旧分组
+	// 配置为 false 而退回低档，否则订阅用量会被低估。
+	longContextPricingEnabled := input.Group == nil || input.Group.LongContextPricingEnabled || isGrok46BillingModel(input.Model)
 	if groupPricing := matchGroupModelPricing(input.Group, input.Model); groupPricing != nil {
 		// Group token cards only override the first-tier / flat rates.
-		// Long-context ladders come from official presets, gated by the checkbox.
+		// Long-context ladders come from official presets; Grok 4.6 is always governed by its official card.
 		if groupPricing.BillingMode == "" || groupPricing.BillingMode == BillingModeToken {
 			stripped := groupPricing.Clone()
 			stripped.Intervals = nil

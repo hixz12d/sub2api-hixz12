@@ -15,6 +15,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"go.uber.org/zap"
 )
 
@@ -666,7 +667,7 @@ func (s *OpenAIGatewayService) calculateOpenAIRecordUsageTokenCost(
 }
 
 func isGrok46BillingModel(model string) bool {
-	model = strings.ToLower(strings.TrimSpace(model))
+	model = strings.ToLower(strings.TrimSpace(xai.StripGrokProviderPrefix(model)))
 	return model == "grok-4.6" || model == "grok-4.6-latest"
 }
 
