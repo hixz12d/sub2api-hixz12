@@ -111,7 +111,7 @@ func (r *openAIEgressResolver) resolveProxy(proxy *Proxy) (OpenAIEgressRoute, er
 	if !proxy.IsActive() || proxy.IsExpired(time.Now()) {
 		return OpenAIEgressRoute{}, ErrOpenAIProxyUnavailable
 	}
-	if r.mode == OpenAIEgressProxyRequired && strings.EqualFold(strings.TrimSpace(proxy.FallbackMode), FallbackModeDirect) {
+	if strings.EqualFold(strings.TrimSpace(proxy.FallbackMode), FallbackModeDirect) {
 		return OpenAIEgressRoute{}, fmt.Errorf("%w: direct fallback is forbidden", ErrOpenAIProxyInvalid)
 	}
 	if proxy.Port < 1 || proxy.Port > 65535 || strings.TrimSpace(proxy.Host) == "" {

@@ -1010,7 +1010,13 @@ export default {
           failedToValidateRT: 'Failed to validate refresh token',
           errors: {
             OPENAI_OAUTH_PROXY_REQUIRED:
-              'No proxy is configured and this server could not reach OpenAI directly, so the OpenAI OAuth request failed. Select a proxy that can access OpenAI and retry; if the authorization code has expired, regenerate the authorization URL.'
+              'No proxy is configured and this server could not reach OpenAI directly, so the OpenAI OAuth request failed. Select a proxy that can access OpenAI and retry; if the authorization code has expired, regenerate the authorization URL.',
+            OPENAI_EGRESS_PROXY_REQUIRED:
+              'The current OpenAI egress policy requires a proxy, but this account has no proxy. Bind a proxy, or use optional mode to allow direct egress.',
+            OPENAI_EGRESS_PROXY_UNAVAILABLE:
+              'The OpenAI egress proxy is unavailable or invalid. Check its status, expiry, protocol, host, and port.',
+            OPENAI_EGRESS_PROXY_INVALID:
+              'The OpenAI egress proxy configuration is invalid. Check the protocol, host, port, and fallback setting.'
           },
           // Refresh Token auth
           refreshTokenAuth: 'Manual RT Input',

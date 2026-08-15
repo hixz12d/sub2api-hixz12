@@ -2,17 +2,17 @@
 
 ## 应用策略
 
-本 fork 的部署示例启用：
+本 fork 的部署示例采用“按账号选择出口”：
 
 ```yaml
 gateway:
   openai_egress:
-    mode: proxy_required
-    failover_route_policy: same_route
+    mode: optional
+    failover_route_policy: any
     invalidate_connections_on_proxy_change: true
 ```
 
-`proxy_required` 会在任何 OpenAI/Codex 上游拨号前校验账号代理。代理缺失、关系未加载且无法查询、停用、过期、协议/主机/端口非法，或配置为 `direct` fallback 时，请求会失败而不是改用服务器公网地址直连。通用默认仍是 `optional`，用于兼容上游部署；本 fork 的生产配置应显式保留上述严格值。
+`optional` 模式下，账号绑定了有效代理就必须经该代理；账号没有绑定代理时，resolver 会显式返回 direct 路由并允许直连。已配置但未加载、停用、过期、协议/主机/端口非法，或配置为 `direct` fallback 的代理仍会报错，不能静默改走直连。需要全局禁止直连时，可将 `mode` 改为 `proxy_required`。
 
 代理 URL 仅支持 `http`、`https`、`socks5` 和 `socks5h`。`socks5` 会规范化为 `socks5h`，使目标域名由代理侧解析。字面 IPv6 地址必须写成 URL 的方括号形式，例如：
 
@@ -27,13 +27,11 @@ HTTP 客户端缓存按完整规范化代理配置隔离。WebSocket 池额外�
 
 ## 网络层 kill switch
 
-应用层检查应配合网络层默认拒绝策略，防止未来新增代码遗漏 resolver：
+网络层策略必须与应用出口策略保持一致：
 
-- 应用容器只允许访问指定代理 IPv6 地址和端口；
-- 允许 PostgreSQL、Redis、DNS（仅在代理主机使用域名时）及必要内部服务；
-- 其他公网 IPv4 和 IPv6 出站默认拒绝；
+- 使用 `proxy_required` 时，可以只允许指定代理地址、PostgreSQL、Redis、必要 DNS 和内部服务，其余公网 IPv4/IPv6 默认拒绝；
+- 使用本 fork 默认的 `optional` 时，未绑定代理的账号允许 OpenAI/Codex 直连，因此网络层不能无条件封禁 OpenAI 目标；应按部署需要允许相应直连地址，或改用 `proxy_required`；
 - Docker bridge 的转发流量通常应在 `DOCKER-USER`、容器 network namespace、TUN/WireGuard sidecar 或云防火墙处理；宿主机普通 `OUTPUT` 链不一定覆盖容器转发；
-- 不要只封 IPv4，否则仍可能经 IPv6 直连；
 - 变更防火墙前保留独立管理连接并准备原子回滚。
 
 下面仅为验证思路，不含真实地址，也不会自动修改宿主机：
@@ -54,9 +52,9 @@ sudo ip6tables -S DOCKER-USER
 
 ## 验证清单
 
-1. 无代理、停用代理、过期代理和错误端口均不能触发上游请求；
+1. 无代理时应返回显式 direct 路由并允许请求；已配置的停用、过期或错误代理不得触发直连；
 2. IPv6 HTTP/HTTPS/SOCKS5H 代理均能规范解析；
-3. 断开代理后 HTTP、SSE、passthrough、WS、OAuth、usage、隐私和账号测试均失败或保持未知；
-4. fake OpenAI target 的非代理直连计数为零；
+3. 断开已配置代理后 HTTP、SSE、passthrough、WS、OAuth、usage、隐私和账号测试均失败或保持未知；
+4. optional 模式下无代理请求的 fake OpenAI target 直连计数符合预期；proxy_required 模式下计数必须为零；
 5. 代理 A 改为代理 B 后，WS 新请求建立新连接，旧连接不再复用；
 6. 同时检查 IPv4 与 IPv6 抓包，不能只验证一个地址族。

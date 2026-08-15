@@ -198,10 +198,11 @@ security:
 # 网关配置
 # =============================================================================
 gateway:
-  # This fork requires every OpenAI/Codex upstream request to use the account proxy.
+  # OpenAI/Codex requests use the account proxy when one is configured;
+  # accounts without a proxy use an explicit direct route.
   openai_egress:
-    mode: proxy_required
-    failover_route_policy: same_route
+    mode: optional
+    failover_route_policy: any
     invalidate_connections_on_proxy_change: true
   # Disable cross-account replay for one logical OpenAI request. Same-account
   # credential refresh remains governed by the request-local RetryBudget.

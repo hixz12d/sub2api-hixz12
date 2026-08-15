@@ -1072,7 +1072,13 @@ export default {
           failedToValidateRT: '验证 Refresh Token 失败',
           errors: {
             OPENAI_OAUTH_PROXY_REQUIRED:
-              '未设置代理，当前服务器无法直连 OpenAI，导致 OpenAI OAuth 请求失败。请先选择可访问 OpenAI 的代理后重试；如果授权码已失效，请重新生成授权链接。'
+              '未设置代理，当前服务器无法直连 OpenAI，导致 OpenAI OAuth 请求失败。请先选择可访问 OpenAI 的代理后重试；如果授权码已失效，请重新生成授权链接。',
+            OPENAI_EGRESS_PROXY_REQUIRED:
+              '当前 OpenAI 出口策略要求代理，但此账号未绑定代理；请绑定代理，或在配置中使用 optional 模式允许直连。',
+            OPENAI_EGRESS_PROXY_UNAVAILABLE:
+              'OpenAI 出口代理不可用或配置无效；请检查代理状态、有效期、协议、主机和端口。',
+            OPENAI_EGRESS_PROXY_INVALID:
+              'OpenAI 出口代理配置无效；请检查协议、主机、端口和 fallback 设置。'
           },
           // Refresh Token auth
           refreshTokenAuth: '手动输入 RT',

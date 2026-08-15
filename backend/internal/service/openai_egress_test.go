@@ -98,6 +98,21 @@ func TestOpenAIEgressResolverRejectsExpiredDisabledAndDirectFallback(t *testing.
 	require.ErrorIs(t, err, ErrOpenAIProxyInvalid)
 }
 
+func TestOpenAIEgressResolverOptionalRejectsConfiguredDirectFallback(t *testing.T) {
+	proxy := &Proxy{
+		ID:           2,
+		Protocol:     "http",
+		Host:         "2001:db8::2",
+		Port:         8080,
+		Status:       StatusActive,
+		FallbackMode: FallbackModeDirect,
+	}
+	resolver := newOpenAIEgressResolver(&config.Config{}, nil).(*openAIEgressResolver)
+
+	_, err := resolver.resolveProxy(proxy)
+	require.ErrorIs(t, err, ErrOpenAIProxyInvalid)
+}
+
 func TestOpenAIEgressRouteKeyChangesWithCredentialsAndVersion(t *testing.T) {
 	base := &Proxy{ID: 1, Protocol: "https", Host: "2001:db8::2", Port: 443, Username: "u", Password: "a", Status: StatusActive, UpdatedAt: time.Unix(1, 0)}
 	resolver := newOpenAIEgressResolver(strictOpenAIEgressConfig(), nil).(*openAIEgressResolver)
