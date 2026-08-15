@@ -1771,7 +1771,20 @@ func (s *OpenAIGatewayService) filterOpenAIAccountsByEgressPolicy(ctx context.Co
 	for i := range accounts {
 		candidate := &accounts[i]
 		if candidate.ProxyID == nil || *candidate.ProxyID <= 0 {
-			continue
+			// Scheduler metadata written before ProxyID became part of the slim
+			// projection has no proxy binding. Hydrate that legacy row before
+			// applying proxy_required so rolling upgrades do not empty the pool.
+			if s.accountRepo == nil || candidate.ID <= 0 {
+				continue
+			}
+			hydrated, err := s.accountRepo.GetByID(ctx, candidate.ID)
+			if err != nil || hydrated == nil || hydrated.ID != candidate.ID || hydrated.Platform != PlatformOpenAI || !hydrated.IsSchedulable() {
+				continue
+			}
+			candidate = hydrated
+			if candidate.ProxyID == nil || *candidate.ProxyID <= 0 {
+				continue
+			}
 		}
 		// Snapshot rows may intentionally omit the relation. Keep bound rows for
 		// hydration, but reject every loaded invalid/expired/direct-fallback proxy.

@@ -54,6 +54,42 @@ func TestOpenAIEgressResolverHydratesMissingProxyRelationFromAccountRepository(t
 	require.False(t, route.Direct)
 }
 
+func TestOpenAIEgressSchedulingHydratesLegacyMetadataWithoutProxyID(t *testing.T) {
+	proxyID := int64(73)
+	hydrated := &Account{
+		ID:          9001,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+		ProxyID:     &proxyID,
+		Proxy: &Proxy{
+			ID:       proxyID,
+			Protocol: "http",
+			Host:     "2001:db8::73",
+			Port:     8080,
+			Status:   StatusActive,
+		},
+	}
+	repo := &openAIEgressAccountRepoStub{account: hydrated}
+	svc := &OpenAIGatewayService{cfg: strictOpenAIEgressConfig(), accountRepo: repo}
+	legacySnapshotRow := Account{
+		ID:          hydrated.ID,
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	filtered := svc.filterOpenAIAccountsByEgressPolicy(context.Background(), PlatformOpenAI, []Account{legacySnapshotRow})
+
+	require.Len(t, filtered, 1)
+	require.NotNil(t, filtered[0].ProxyID)
+	require.Equal(t, proxyID, *filtered[0].ProxyID)
+	require.NotNil(t, filtered[0].Proxy)
+	require.Equal(t, proxyID, filtered[0].Proxy.ID)
+}
+
 func TestOpenAIEgressResolverRejectsHydratedProxyMismatch(t *testing.T) {
 	proxyID := int64(73)
 	otherProxyID := int64(74)

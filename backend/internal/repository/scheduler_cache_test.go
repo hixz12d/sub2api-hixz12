@@ -37,6 +37,36 @@ func TestSchedulerMetadataAccountKeepsOpenAISubscriptionIdentity(t *testing.T) {
 	require.Empty(t, metadata.GetCredential("access_token"))
 }
 
+func TestSchedulerMetadataAccountKeepsProxyBindingWithoutProxySecrets(t *testing.T) {
+	proxyID := int64(73)
+	account := service.Account{
+		ID:       73,
+		Platform: service.PlatformOpenAI,
+		Type:     service.AccountTypeOAuth,
+		ProxyID:  &proxyID,
+		Proxy: &service.Proxy{
+			ID:       proxyID,
+			Username: "proxy-user",
+			Password: "proxy-secret",
+		},
+	}
+
+	metadata := buildSchedulerMetadataAccount(account)
+	_, metaPayload, err := marshalSchedulerCacheAccount(account)
+	require.NoError(t, err)
+	decoded, err := decodeCachedAccount(metaPayload)
+	require.NoError(t, err)
+
+	require.NotNil(t, metadata.ProxyID)
+	require.Equal(t, proxyID, *metadata.ProxyID)
+	require.Nil(t, metadata.Proxy)
+	require.NotNil(t, decoded.ProxyID)
+	require.Equal(t, proxyID, *decoded.ProxyID)
+	require.Nil(t, decoded.Proxy)
+	require.NotContains(t, string(metaPayload), "proxy-user")
+	require.NotContains(t, string(metaPayload), "proxy-secret")
+}
+
 func TestSchedulerMetadataAccountProjectsUpstreamBillingProbe(t *testing.T) {
 	lastError := strings.Repeat("upstream diagnostic ", 512)
 	probe := map[string]any{
