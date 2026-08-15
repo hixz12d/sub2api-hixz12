@@ -1706,6 +1706,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 	if err != nil {
 		return nil, err
 	}
+	EnsureOpenAIRetryBudget(c, account, responsesBody)
 	upstreamReq, err := s.buildUpstreamRequest(upstreamCtx, c, account, responsesBody, token, true, parsed.StickySessionSeed(), false)
 	if err != nil {
 		return nil, err
@@ -1713,9 +1714,12 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 	upstreamReq.Header.Set("Content-Type", "application/json")
 	upstreamReq.Header.Set("Accept", "text/event-stream")
 
-	proxyURL := ""
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	proxyURL, err := s.resolveOpenAICompatibleProxyURL(upstreamCtx, account)
+	if err != nil {
+		return nil, err
+	}
+	if reserveErr := ReserveOpenAIUpstreamAttempt(c, account.ID); reserveErr != nil {
+		return nil, reserveErr
 	}
 	upstreamStart := time.Now()
 	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
@@ -1760,6 +1764,7 @@ func (s *OpenAIGatewayService) forwardOpenAIImagesOAuth(
 				Message:            upstreamMsg,
 			})
 			shouldDisable := s.handleFailoverSideEffects(upstreamCtx, resp, account, respBody, requestModel)
+			RecordOpenAIRetryFailure(c, resp.StatusCode, nil)
 			return nil, &UpstreamFailoverError{
 				StatusCode:             resp.StatusCode,
 				ResponseBody:           respBody,

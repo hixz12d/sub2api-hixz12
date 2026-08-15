@@ -41,11 +41,16 @@ type OpenAIEgressResolver interface {
 }
 
 type openAIEgressResolver struct {
-	mode      OpenAIEgressMode
-	proxyRepo ProxyRepository
+	mode        OpenAIEgressMode
+	proxyRepo   ProxyRepository
+	accountRepo AccountRepository
 }
 
 func newOpenAIEgressResolver(cfg *config.Config, proxyRepo ProxyRepository) OpenAIEgressResolver {
+	return newOpenAIEgressResolverWithAccountRepo(cfg, proxyRepo, nil)
+}
+
+func newOpenAIEgressResolverWithAccountRepo(cfg *config.Config, proxyRepo ProxyRepository, accountRepo AccountRepository) OpenAIEgressResolver {
 	mode := OpenAIEgressOptional
 	if cfg != nil {
 		mode = OpenAIEgressMode(strings.ToLower(strings.TrimSpace(cfg.Gateway.OpenAIEgress.Mode)))
@@ -53,7 +58,7 @@ func newOpenAIEgressResolver(cfg *config.Config, proxyRepo ProxyRepository) Open
 	if mode == "" {
 		mode = OpenAIEgressOptional
 	}
-	return &openAIEgressResolver{mode: mode, proxyRepo: proxyRepo}
+	return &openAIEgressResolver{mode: mode, proxyRepo: proxyRepo, accountRepo: accountRepo}
 }
 
 func (r *openAIEgressResolver) Resolve(ctx context.Context, account *Account) (OpenAIEgressRoute, error) {
@@ -70,16 +75,31 @@ func (r *openAIEgressResolver) Resolve(ctx context.Context, account *Account) (O
 		return directOpenAIEgressRoute(), nil
 	}
 
+	proxyID := *account.ProxyID
 	proxy := account.Proxy
 	if proxy == nil {
-		if r.proxyRepo == nil {
+		switch {
+		case r.proxyRepo != nil:
+			loadedProxy, err := r.proxyRepo.GetByID(ctx, proxyID)
+			if err != nil {
+				return OpenAIEgressRoute{}, fmt.Errorf("%w: proxy lookup failed", ErrOpenAIProxyUnavailable)
+			}
+			proxy = loadedProxy
+		case r.accountRepo != nil && account.ID > 0:
+			loadedAccount, err := r.accountRepo.GetByID(ctx, account.ID)
+			if err != nil || loadedAccount == nil {
+				return OpenAIEgressRoute{}, fmt.Errorf("%w: account hydration failed", ErrOpenAIProxyUnavailable)
+			}
+			if loadedAccount.ProxyID == nil || *loadedAccount.ProxyID != proxyID || loadedAccount.Proxy == nil {
+				return OpenAIEgressRoute{}, fmt.Errorf("%w: hydrated proxy relation is unavailable", ErrOpenAIProxyUnavailable)
+			}
+			proxy = loadedAccount.Proxy
+		default:
 			return OpenAIEgressRoute{}, fmt.Errorf("%w: proxy relation is not loaded", ErrOpenAIProxyUnavailable)
 		}
-		var err error
-		proxy, err = r.proxyRepo.GetByID(ctx, *account.ProxyID)
-		if err != nil {
-			return OpenAIEgressRoute{}, fmt.Errorf("%w: proxy lookup failed", ErrOpenAIProxyUnavailable)
-		}
+	}
+	if proxy == nil || proxy.ID != proxyID {
+		return OpenAIEgressRoute{}, fmt.Errorf("%w: proxy relation does not match account", ErrOpenAIProxyUnavailable)
 	}
 	return r.resolveProxy(proxy)
 }

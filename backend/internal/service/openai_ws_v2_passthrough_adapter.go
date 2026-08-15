@@ -823,15 +823,16 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	if buildHdrErr != nil {
 		return fmt.Errorf("build ws headers: %w", buildHdrErr)
 	}
-	proxyURL := ""
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	proxyURL, err := s.resolveOpenAICompatibleProxyURL(ctx, account)
+	if err != nil {
+		return err
 	}
 
 	dialer := s.getOpenAIWSPassthroughDialer()
 	if dialer == nil {
 		return errors.New("openai ws passthrough dialer is nil")
 	}
+	StartOpenAIRetryBudgetTurn(c, account, firstClientMessage)
 
 	agentTaskRecoveryTried := false
 	var upstreamConn openAIWSClientConn
@@ -841,6 +842,9 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 		headers, err = s.refreshOpenAIAgentIdentityHeaders(ctx, account, headers)
 		if err != nil {
 			return fmt.Errorf("refresh ws authentication headers: %w", err)
+		}
+		if reserveErr := ReserveOpenAIUpstreamAttempt(c, account.ID); reserveErr != nil {
+			return NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "upstream retry budget exhausted", reserveErr)
 		}
 		dialCtx, cancelDial := context.WithTimeout(ctx, s.openAIWSDialTimeout())
 		upstreamConn, statusCode, handshakeHeaders, err = dialer.Dial(dialCtx, wsURL, headers, proxyURL)
@@ -1098,6 +1102,10 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 				return msgType, payload, readErr
 			}
 			if msgType == coderws.MessageText && strings.TrimSpace(gjson.GetBytes(payload, "type").String()) == "response.create" {
+				StartOpenAIRetryBudgetTurn(c, account, payload)
+				if reserveErr := ReserveOpenAIUpstreamAttempt(c, account.ID); reserveErr != nil {
+					return msgType, payload, reserveErr
+				}
 				return msgType, payload, nil
 			}
 			if writeErr := upstreamFrameConn.WriteFrame(readCtx, msgType, payload); writeErr != nil {
@@ -1177,6 +1185,9 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 				}
 			},
 			AfterClientWrite: func(msgType coderws.MessageType, payload []byte, writeErr error) {
+				if writeErr == nil {
+					MarkOpenAIAttemptTransportCommitted(c)
+				}
 				if msgType == coderws.MessageText && openAIWSPassthroughIsTerminalOutput(payload) {
 					turnLifecycle.finishTerminalWrite(writeErr == nil, clientFrameConn.markTurnCompleted)
 				}

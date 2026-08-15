@@ -514,7 +514,7 @@ func NewOpenAIGatewayService(
 		userSubRepo:          userSubRepo,
 		cache:                cache,
 		cfg:                  cfg,
-		openAIEgressResolver: newOpenAIEgressResolver(cfg, nil),
+		openAIEgressResolver: newOpenAIEgressResolverWithAccountRepo(cfg, nil, accountRepo),
 		codexDetector:        NewOpenAICodexClientRestrictionDetector(cfg),
 		schedulerSnapshot:    schedulerSnapshot,
 		concurrencyService:   concurrencyService,
@@ -726,10 +726,31 @@ func (s *OpenAIGatewayService) resolveOpenAIEgress(ctx context.Context, account 
 		return s.openAIEgressResolver.Resolve(ctx, account)
 	}
 	var cfg *config.Config
+	var accountRepo AccountRepository
 	if s != nil {
 		cfg = s.cfg
+		accountRepo = s.accountRepo
 	}
-	return newOpenAIEgressResolver(cfg, nil).Resolve(ctx, account)
+	return newOpenAIEgressResolverWithAccountRepo(cfg, nil, accountRepo).Resolve(ctx, account)
+}
+
+// resolveOpenAICompatibleProxyURL keeps non-OpenAI compatibility paths on their
+// existing proxy behavior while forcing every PlatformOpenAI sink through the
+// explicit egress route boundary.
+func (s *OpenAIGatewayService) resolveOpenAICompatibleEgressRoute(ctx context.Context, account *Account) (OpenAIEgressRoute, error) {
+	if account != nil && account.Platform != PlatformOpenAI {
+		proxyURL := resolveAccountProxyURL(account)
+		return OpenAIEgressRoute{ProxyURL: proxyURL, Direct: proxyURL == ""}, nil
+	}
+	return s.resolveOpenAIEgress(ctx, account)
+}
+
+func (s *OpenAIGatewayService) resolveOpenAICompatibleProxyURL(ctx context.Context, account *Account) (string, error) {
+	route, err := s.resolveOpenAICompatibleEgressRoute(ctx, account)
+	if err != nil {
+		return "", err
+	}
+	return route.ProxyURL, nil
 }
 
 func classifyOpenAIWSReconnectReason(err error) (string, bool) {

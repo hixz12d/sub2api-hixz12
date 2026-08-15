@@ -203,6 +203,9 @@ gateway:
     mode: proxy_required
     failover_route_policy: same_route
     invalidate_connections_on_proxy_change: true
+  # Disable cross-account replay for one logical OpenAI request. Same-account
+  # credential refresh remains governed by the request-local RetryBudget.
+  max_account_switches: 0
 
   # Timeout for waiting upstream response headers (seconds)
   # 等待上游响应头超时时间（秒）

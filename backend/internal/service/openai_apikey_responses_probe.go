@@ -161,10 +161,12 @@ func (s *AccountTestService) ProbeOpenAIAPIKeyResponsesSupport(ctx context.Conte
 	identity := resolveOpenAIOutboundIdentityWithPolicy(ctx, account, s.accountRepo, s.settingService, s.cfg != nil && s.cfg.Gateway.ForceCodexCLI, req.Header.Get("User-Agent"))
 	applyResolvedOpenAIOutboundIdentityWithPolicy(req.Header, identity, openAIOutboundAPIKeyPolicy)
 
-	proxyURL := ""
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	route, routeErr := s.resolveOpenAIEgress(probeCtx, account)
+	if routeErr != nil {
+		logger.LegacyPrintf("service.openai_probe", "probe_skip_egress_unavailable: account_id=%d", accountID)
+		return
 	}
+	proxyURL := route.ProxyURL
 
 	resp, err := s.httpUpstream.DoWithTLS(req, proxyURL, account.ID, account.Concurrency, s.tlsFPProfileService.ResolveTLSProfile(account))
 	if err != nil {

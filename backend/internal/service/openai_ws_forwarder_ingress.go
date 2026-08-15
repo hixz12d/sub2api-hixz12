@@ -658,6 +658,10 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	if buildHdrErr != nil {
 		return fmt.Errorf("build ws headers: %w", buildHdrErr)
 	}
+	egressRoute, egressErr := s.resolveOpenAICompatibleEgressRoute(ctx, account)
+	if egressErr != nil {
+		return fmt.Errorf("resolve websocket egress: %w", egressErr)
+	}
 	baseAcquireReq := openAIWSAcquireRequest{
 		Account:          account,
 		WSURL:            wsURL,
@@ -666,12 +670,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		HeadersFactory: func(factoryCtx context.Context, headers http.Header) (http.Header, error) {
 			return s.refreshOpenAIAgentIdentityHeaders(factoryCtx, account, headers)
 		},
-		ProxyURL: func() string {
-			if account.ProxyID != nil && account.Proxy != nil {
-				return account.Proxy.URL()
-			}
-			return ""
-		}(),
+		ProxyURL:     egressRoute.ProxyURL,
+		RouteKey:     egressRoute.RouteKey,
 		ForceNewConn: false,
 	}
 	pool := s.getOpenAIWSConnPool()

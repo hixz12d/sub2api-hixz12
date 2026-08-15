@@ -189,3 +189,35 @@ func TestAccountUsageService_GetUsageBatch_BestEffortByAccount(t *testing.T) {
 		t.Fatalf("expected API key account error to be preserved, got %q", errorsByAccount[7003])
 	}
 }
+
+func TestAccountUsageService_GetUsageBatch_OpenAIOAuthRemainsPassiveWhenForced(t *testing.T) {
+	t.Parallel()
+
+	const accountID int64 = 7004
+	cache := NewUsageCache()
+	svc := &AccountUsageService{
+		accountRepo: &stubOpenAIAccountRepo{
+			accounts: []Account{{
+				ID:       accountID,
+				Platform: PlatformOpenAI,
+				Type:     AccountTypeOAuth,
+			}},
+		},
+		usageLogRepo: &usageBatchLogRepoStub{},
+		cache:        cache,
+	}
+
+	usageByAccount, errorsByAccount, err := svc.GetUsageBatch(context.Background(), []int64{accountID}, true)
+	if err != nil {
+		t.Fatalf("GetUsageBatch() error = %v", err)
+	}
+	if usageByAccount[accountID] == nil {
+		t.Fatalf("expected passive usage result, got %#v", usageByAccount)
+	}
+	if got := errorsByAccount[accountID]; got != "" {
+		t.Fatalf("expected no account error, got %q", got)
+	}
+	if _, probed := cache.openAIProbeCache.Load(accountID); probed {
+		t.Fatal("batch usage must not arm or execute an OpenAI OAuth usage probe")
+	}
+}

@@ -119,9 +119,10 @@ func (s *OpenAIGatewayService) ForwardCountTokensAsAnthropic(
 		return fmt.Errorf("build input_tokens request: %w", err)
 	}
 
-	proxyURL := ""
-	if account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	proxyURL, err := s.resolveOpenAICompatibleProxyURL(ctx, account)
+	if err != nil {
+		writeAnthropicCountTokensError(c, http.StatusServiceUnavailable, "egress_proxy_unavailable", "OpenAI egress proxy is unavailable")
+		return err
 	}
 	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 	if err != nil {

@@ -69,6 +69,8 @@ type TokenRefreshService struct {
 	// OpenAI privacy: 刷新成功后检查并设置 training opt-out
 	privacyClientFactory PrivacyClientFactory
 	proxyRepo            ProxyRepository
+	openAIEgressResolver OpenAIEgressResolver
+	gatewayConfig        *config.Config
 
 	stopCh        chan struct{}
 	stopOnce      sync.Once
@@ -104,15 +106,17 @@ func NewTokenRefreshService(
 	}
 	runCtx, runCancel := context.WithCancel(context.Background())
 	s := &TokenRefreshService{
-		accountRepo:      accountRepo,
-		refreshPolicy:    DefaultBackgroundRefreshPolicy(),
-		cfg:              refreshCfg,
-		cacheInvalidator: cacheInvalidator,
-		schedulerCache:   schedulerCache,
-		tempUnschedCache: tempUnschedCache,
-		stopCh:           make(chan struct{}),
-		runCtx:           runCtx,
-		runCancel:        runCancel,
+		accountRepo:          accountRepo,
+		refreshPolicy:        DefaultBackgroundRefreshPolicy(),
+		cfg:                  refreshCfg,
+		gatewayConfig:        cfg,
+		openAIEgressResolver: newOpenAIEgressResolverWithAccountRepo(cfg, nil, accountRepo),
+		cacheInvalidator:     cacheInvalidator,
+		schedulerCache:       schedulerCache,
+		tempUnschedCache:     tempUnschedCache,
+		stopCh:               make(chan struct{}),
+		runCtx:               runCtx,
+		runCancel:            runCancel,
 	}
 	if pager, ok := accountRepo.(OAuthRefreshCandidatePager); ok {
 		s.candidatePager = pager
@@ -168,6 +172,7 @@ func (s *TokenRefreshService) setCandidateAfterID(afterID int64) {
 func (s *TokenRefreshService) SetPrivacyDeps(factory PrivacyClientFactory, proxyRepo ProxyRepository) {
 	s.privacyClientFactory = factory
 	s.proxyRepo = proxyRepo
+	s.openAIEgressResolver = newOpenAIEgressResolverWithAccountRepo(s.gatewayConfig, proxyRepo, s.accountRepo)
 }
 
 // SetRefreshAPI 注入统一的 OAuth 刷新 API
@@ -1456,13 +1461,16 @@ func (s *TokenRefreshService) ensureOpenAIPrivacy(ctx context.Context, account *
 		return
 	}
 
-	var proxyURL string
-	if account.ProxyID != nil && s.proxyRepo != nil {
-		if p, err := s.proxyRepo.GetByID(ctx, *account.ProxyID); err == nil && p != nil {
-			proxyURL = p.URL()
-		}
+	egressResolver := s.openAIEgressResolver
+	if egressResolver == nil {
+		egressResolver = newOpenAIEgressResolverWithAccountRepo(s.gatewayConfig, s.proxyRepo, s.accountRepo)
 	}
-
+	route, routeErr := egressResolver.Resolve(ctx, account)
+	if routeErr != nil {
+		slog.Warn("token_refresh.openai_privacy_egress_unavailable", "account_id", account.ID)
+		return
+	}
+	proxyURL := route.ProxyURL
 	mode := disableOpenAITraining(ctx, s.privacyClientFactory, token, proxyURL, s.resolveOpenAIOutboundIdentity(ctx, account))
 	if mode == "" {
 		return

@@ -26,16 +26,16 @@ The old maximum was therefore configuration-dependent and multiplicative: handle
 ## Phase 2 ownership and propagation
 
 - Account feature flag: `openai_retry_budget_v2`.
-- Default: disabled. API-key/custom-upstream paths never create the OAuth budget even if the extra key is present.
-- HTTP owner: the first enabled OAuth `Forward` call stores one `*OpenAIRetryBudget` in the Gin request context; bridge, passthrough, internal HTTP retries, handler failover, and selected-account changes reuse that pointer.
+- Default: enabled for OpenAI OAuth accounts when the extra key is absent; an explicit boolean `false` disables it. API-key/custom-upstream paths never activate the OAuth budget even if the extra key is present.
+- HTTP owner: handlers may prepare one `*OpenAIRetryBudget` in the Gin request context before account selection; selecting an eligible OAuth account activates it, while selecting an ineligible or explicitly disabled account deactivates it. Bridge, passthrough, internal HTTP retries, handler failover, and selected-account changes reuse that pointer.
 - WS ingress owner: every genuine `response.create` turn calls `StartOpenAIRetryBudgetTurn`; `skipBeforeTurn` reconnect/recovery paths retain the same pointer.
-- Reserve points are immediately before a real HTTP upstream execution, WS execution/Dial path, or ingress turn execution. Local validation before those points does not consume an attempt.
+- Reserve points are immediately before a real HTTP upstream execution, WS execution/Dial path, ingress turn execution, or WSv2 passthrough turn write. Local validation before those points does not consume an attempt.
 - Defaults: `max attempts = 2`, `max elapsed = 20s`; stateful requests allow one account, and strictly classified stateless first turns allow at most two accounts.
 - The structure is mutex-protected and safe for concurrent reserve/output/refresh state changes.
 
 ## State and distinct-account policy
 
-The Phase 2 classifier is deliberately local and non-persistent. It treats malformed payloads, `previous_response_id`, `function_call_output`, encrypted content, and encrypted reasoning as stateful. Stateful requests cannot reserve a second account. A syntactically valid first-turn body without those state signals may reserve one fallback account, but no request can exceed two total executions or scan the pool.
+The Phase 2 classifier is deliberately local and non-persistent. It treats malformed payloads, `previous_response_id`, `function_call_output`, encrypted content, encrypted reasoning, and a nonblank `x-codex-turn-state` header as stateful. Stateful requests cannot reserve a second account. A syntactically valid first-turn body without those state signals may reserve one fallback account, but no request can exceed two total executions or scan the pool.
 
 A credential failure records `credential/account`; a subsequent reserve on a different account is rejected even for a stateless request.
 
@@ -85,11 +85,11 @@ The forced path compares the observed access token and `_token_version` after ac
 
 ## Compatibility and rollback
 
-- Disable account extra `openai_retry_budget_v2` to restore legacy retry behavior.
-- Flag-off retains legacy WS reconnect counts and handler retry behavior.
+- Set account extra `openai_retry_budget_v2: false` to deactivate RetryBudget for that OAuth account. This does not disable independent egress, affinity, stateful-request, or `max_account_switches` safeguards.
+- Explicit flag-off retains legacy inner reconnect/retry behavior only where no independent hardening rule blocks it; it is not a complete rollback to unrestricted cross-account replay.
 - API-key/custom upstream controls remain outside OAuth RetryBudget v2.
-- No schema, migration, persistent binding, frontend, scheduler rewrite, concurrency-default change, push, or deployment is included.
-- Rollback to legacy can restore full-pool/multiplicative retry behavior; operations must alert on attempts/request, distinct accounts/request, partial streams, and retries after output before enabling that rollback in production.
+- The RetryBudget mechanism requires no schema migration or persistent binding and does not change API-key/custom-upstream controls.
+- Re-enabling legacy retry behavior can restore multiplicative attempts; operations must alert on attempts/request, distinct accounts/request, partial streams, and retries after output before using that escape hatch in production.
 
 ## Verification boundary
 

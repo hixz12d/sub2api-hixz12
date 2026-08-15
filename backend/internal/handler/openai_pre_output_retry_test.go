@@ -24,16 +24,17 @@ func TestWaitOpenAIPreOutputAutoRetryOnlyRetriesUncommittedCapacity(t *testing.T
 	}
 	writerBefore := service.OpenAICompactKeepaliveAdjustedWrittenSize(c)
 
-	require.True(t, waitOpenAIPreOutputAutoRetry(c, nil, failoverErr, writerBefore, 0, 1))
+	require.True(t, waitOpenAIPreOutputAutoRetry(c, nil, failoverErr, writerBefore, 0, 1, 1))
 	require.Empty(t, firstRecorder.Body.String())
+	require.False(t, waitOpenAIPreOutputAutoRetry(c, nil, failoverErr, writerBefore, 0, 0, 0), "max_account_switches=0 must disable automatic account reacquisition")
 
 	secondRecorder := httptest.NewRecorder()
 	c, _ = gin.CreateTestContext(secondRecorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/openai/v1/responses", nil)
 	writerBefore = service.OpenAICompactKeepaliveAdjustedWrittenSize(c)
 	_, _ = c.Writer.Write([]byte("data: semantic output\n\n"))
-	require.False(t, waitOpenAIPreOutputAutoRetry(c, nil, failoverErr, writerBefore, 0, 1))
-	require.False(t, waitOpenAIPreOutputAutoRetry(c, nil, failoverErr, writerBefore, 1, 1))
+	require.False(t, waitOpenAIPreOutputAutoRetry(c, nil, failoverErr, writerBefore, 0, 1, 1))
+	require.False(t, waitOpenAIPreOutputAutoRetry(c, nil, failoverErr, writerBefore, 1, 1, 1))
 }
 
 func TestIsOpenAIPoolRetrySessionHash(t *testing.T) {

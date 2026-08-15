@@ -36,6 +36,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 ) (*OpenAIForwardResult, error) {
 	ctx = s.snapshotOpenAIOutboundIdentity(ctx, account, c.GetHeader("User-Agent"))
 	beginUpstreamResponseModelObservation(c)
+	EnsureOpenAIRetryBudget(c, account, body)
 
 	// 入口分流：APIKey 账号 + 上游不支持 Responses API → 走 CC 直转（与
 	// ForwardAsChatCompletions 对称）。缺少此分流时，/v1/messages 入站请求
@@ -365,9 +366,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	}
 
 	// 7. Send request
-	proxyURL := ""
-	if account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	proxyURL, err := s.resolveOpenAICompatibleProxyURL(ctx, account)
+	if err != nil {
+		return nil, err
 	}
 	// Grok may reject encrypted reasoning replayed under a different OAuth
 	// account/cache identity. Match forwardGrokResponses: one strip+retry before
@@ -385,9 +386,14 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 				return nil, fmt.Errorf("build grok retry request: %w", err)
 			}
 		}
+		if reserveErr := ReserveOpenAIUpstreamAttempt(c, account.ID); reserveErr != nil {
+			return nil, reserveErr
+		}
 		resp, err = s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 		if err != nil {
-			return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
+			transportErr := s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
+			RecordOpenAIRetryFailure(c, 0, transportErr)
+			return nil, transportErr
 		}
 		if account.Platform != PlatformGrok || attempt > 0 || resp.StatusCode != http.StatusBadRequest {
 			break
@@ -459,6 +465,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 			}
 		}
 		if foErr := s.failoverOpenAIUpstreamHTTPError(ctx, c, account, resp, respBody, upstreamMsg, upstreamModel); foErr != nil {
+			RecordOpenAIRetryFailure(c, resp.StatusCode, foErr)
 			return nil, foErr
 		}
 		// Non-failover error: return Anthropic-formatted error to client

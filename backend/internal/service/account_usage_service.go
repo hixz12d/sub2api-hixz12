@@ -333,7 +333,7 @@ func NewAccountUsageService(
 		grokQuotaFetcher:        grokQuotaFetcher,
 		grokQuotaService:        grokQuotaService,
 		openAIQuotaService:      openAIQuotaService,
-		openAIEgressResolver:    newOpenAIEgressResolver(cfg, nil),
+		openAIEgressResolver:    newOpenAIEgressResolverWithAccountRepo(cfg, nil, accountRepo),
 		cfg:                     cfg,
 		cache:                   cache,
 		identityCache:           identityCache,
@@ -345,7 +345,7 @@ func (s *AccountUsageService) resolveOpenAIEgress(ctx context.Context, account *
 	if s.openAIEgressResolver != nil {
 		return s.openAIEgressResolver.Resolve(ctx, account)
 	}
-	return newOpenAIEgressResolver(s.cfg, nil).Resolve(ctx, account)
+	return newOpenAIEgressResolverWithAccountRepo(s.cfg, nil, s.accountRepo).Resolve(ctx, account)
 }
 
 func supportsAnthropicPassiveUsage(account *Account) bool {
@@ -570,6 +570,11 @@ func (s *AccountUsageService) GetUsageBatch(ctx context.Context, accountIDs []in
 			var usageErr error
 			if supportsAnthropicPassiveUsage(account) {
 				usage, usageErr = s.getPassiveUsageForAccount(gctx, account)
+			} else if account.IsOpenAIOAuth() {
+				// A batch view must never fan out synthetic Codex requests. It reads the
+				// latest passive snapshot and local window statistics only; an explicit
+				// single-account action remains available for a manual refresh.
+				usage, usageErr = s.getOpenAIUsageWithProbe(gctx, account, false, false)
 			} else {
 				usage, usageErr = s.getUsageForAccount(gctx, account, force)
 			}
@@ -716,6 +721,10 @@ func (s *AccountUsageService) syncActiveToPassive(ctx context.Context, accountID
 }
 
 func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Account, force bool) (*UsageInfo, error) {
+	return s.getOpenAIUsageWithProbe(ctx, account, force, true)
+}
+
+func (s *AccountUsageService) getOpenAIUsageWithProbe(ctx context.Context, account *Account, force bool, allowProbe bool) (*UsageInfo, error) {
 	now := time.Now()
 	usage := &UsageInfo{UpdatedAt: &now}
 
@@ -725,7 +734,7 @@ func (s *AccountUsageService) getOpenAIUsage(ctx context.Context, account *Accou
 
 	applyExtraToUsage(usage, account.Extra, now)
 
-	if (force || shouldRefreshOpenAICodexSnapshot(account, usage, now)) && s.shouldProbeOpenAICodexSnapshot(account.ID, now, force) {
+	if allowProbe && (force || shouldRefreshOpenAICodexSnapshot(account, usage, now)) && s.shouldProbeOpenAICodexSnapshot(account.ID, now, force) {
 		if account.IsShadow() {
 			// Spark shadow accounts fetch usage from /wham/usage (bengalfox channel)
 			// via the shared OpenAIQuotaService, which resolves credentials from the
@@ -861,7 +870,7 @@ func (s *AccountUsageService) probeOpenAICodexSnapshot(ctx context.Context, acco
 	req.Host = "chatgpt.com"
 	req.Header.Set("Content-Type", "application/json")
 	if account.IsOpenAIAgentIdentity() {
-		authHeaders, authErr := buildAgentIdentityAuthenticationHeaders(ctx, s.accountRepo, s.agentIdentityWS, &s.agentIdentityTaskMu, account)
+		authHeaders, authErr := buildAgentIdentityAuthenticationHeaders(ctx, s.accountRepo, s.agentIdentityWS, &s.agentIdentityTaskMu, account, s.openAIEgressResolver)
 		if authErr != nil {
 			return nil, fmt.Errorf("build Agent Identity authentication: %w", authErr)
 		}

@@ -60,6 +60,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 ) (*OpenAIForwardResult, error) {
 	ctx = s.snapshotOpenAIOutboundIdentity(ctx, account, c.GetHeader("User-Agent"))
 	beginUpstreamResponseModelObservation(c)
+	EnsureOpenAIRetryBudget(c, account, body)
 
 	restrictionResult := s.detectCodexClientRestriction(c, account, body)
 	logCodexCLIOnlyDetection(ctx, c, account, getAPIKeyIDFromContext(c), restrictionResult, body)
@@ -291,13 +292,18 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 	}
 
 	// 7. Send request
-	proxyURL := ""
-	if account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	proxyURL, err := s.resolveOpenAICompatibleProxyURL(ctx, account)
+	if err != nil {
+		return nil, err
+	}
+	if reserveErr := ReserveOpenAIUpstreamAttempt(c, account.ID); reserveErr != nil {
+		return nil, reserveErr
 	}
 	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 	if err != nil {
-		return nil, s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
+		transportErr := s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
+		RecordOpenAIRetryFailure(c, 0, transportErr)
+		return nil, transportErr
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -322,6 +328,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 			return s.forwardAsRawChatCompletions(ctx, c, account, body, defaultMappedModel)
 		}
 		if foErr := s.failoverOpenAIUpstreamHTTPError(ctx, c, account, resp, respBody, upstreamMsg, upstreamModel); foErr != nil {
+			RecordOpenAIRetryFailure(c, resp.StatusCode, foErr)
 			return nil, foErr
 		}
 		return s.handleChatCompletionsErrorResponse(resp, c, account, billingModel)

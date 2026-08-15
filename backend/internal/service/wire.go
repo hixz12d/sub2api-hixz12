@@ -184,8 +184,9 @@ func ProvideOpenAIQuotaService(
 	tokenProvider *OpenAITokenProvider,
 	privacyClientFactory PrivacyClientFactory,
 	openAIGatewayService *OpenAIGatewayService,
+	cfg *config.Config,
 ) *OpenAIQuotaService {
-	service := NewOpenAIQuotaService(accountRepo, proxyRepo, tokenProvider, privacyClientFactory)
+	service := NewOpenAIQuotaService(accountRepo, proxyRepo, tokenProvider, privacyClientFactory, cfg)
 	service.agentIdentityWS = openAIGatewayService
 	return service
 }

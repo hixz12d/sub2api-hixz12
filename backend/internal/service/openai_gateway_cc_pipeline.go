@@ -227,9 +227,9 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 		s.applyOpenAIOutboundIdentityPolicy(ctx, account, upstreamReq.Header, policy)
 	}
 
-	proxyURL := ""
-	if account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	proxyURL, err := s.resolveOpenAICompatibleProxyURL(ctx, account)
+	if err != nil {
+		return nil, err
 	}
 	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 	if err != nil {

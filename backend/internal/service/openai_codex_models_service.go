@@ -305,9 +305,9 @@ func (s *OpenAIGatewayService) FetchCodexModelsManifest(ctx context.Context, acc
 	headers.Set("Accept", "application/json")
 	applyResolvedOpenAIOutboundIdentity(headers, identity, !useAPIKeyUpstream)
 
-	proxyURL := ""
-	if account.ProxyID != nil && account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	proxyURL, err := s.resolveOpenAICompatibleProxyURL(ctx, account)
+	if err != nil {
+		return nil, infraerrors.Newf(http.StatusServiceUnavailable, "OPENAI_CODEX_MODELS_EGRESS_UNAVAILABLE", "resolve Codex models egress: %v", err)
 	}
 
 	request := codexModelsManifestRequest{

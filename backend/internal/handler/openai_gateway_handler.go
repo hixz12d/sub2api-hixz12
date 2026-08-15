@@ -214,7 +214,7 @@ func NewOpenAIGatewayHandler(
 	cfg *config.Config,
 ) *OpenAIGatewayHandler {
 	pingInterval := time.Duration(0)
-	maxAccountSwitches := 3
+	maxAccountSwitches := 0
 	if cfg != nil {
 		pingInterval = time.Duration(cfg.Concurrency.PingInterval) * time.Second
 		if cfg.Gateway.MaxAccountSwitches > 0 {
@@ -440,7 +440,11 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	}
 	requireCompact := isOpenAIRemoteCompactPath(c)
 
+	service.PrepareOpenAIRetryBudget(c, body)
 	maxAccountSwitches := h.maxAccountSwitches
+	if service.OpenAIRetryRequestIsStateful(c, body) {
+		maxAccountSwitches = 0
+	}
 	accountSwitchLimit := maxAccountSwitches
 	switchCount := 0
 	attemptIndex := 0
@@ -522,7 +526,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 				return
 			}
 			if lastFailoverErr != nil {
-				if forwardAttemptCount < 2 && waitOpenAIPreOutputAutoRetry(c, reqLog, lastFailoverErr, -1, autoRetryRound, switchCount) {
+				if forwardAttemptCount < 2 && waitOpenAIPreOutputAutoRetry(c, reqLog, lastFailoverErr, -1, autoRetryRound, switchCount, accountSwitchLimit) {
 					autoRetryRound++
 					sessionHash = ""
 					failedAccountIDs = make(map[int64]struct{})
@@ -754,7 +758,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					// changes consume the tighter stream-failure / keepalive replay budget.
 					if switchCount >= accountSwitchLimit {
 						exhaustedSwitchCount := switchCount
-						if forwardAttemptCount < 2 && waitOpenAIPreOutputAutoRetry(c, reqLog, failoverErr, writerSizeBeforeForward, autoRetryRound, switchCount) {
+						if forwardAttemptCount < 2 && waitOpenAIPreOutputAutoRetry(c, reqLog, failoverErr, writerSizeBeforeForward, autoRetryRound, switchCount, accountSwitchLimit) {
 							autoRetryRound++
 							sessionHash = ""
 							failedAccountIDs = make(map[int64]struct{})
@@ -1150,7 +1154,11 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		return
 	}
 
+	service.PrepareOpenAIRetryBudget(c, body)
 	maxAccountSwitches := h.maxAccountSwitches
+	if service.OpenAIRetryRequestIsStateful(c, body) {
+		maxAccountSwitches = 0
+	}
 	switchCount := 0
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
@@ -1158,6 +1166,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
 	effectiveMappedModel := preferredMappedModel
+	requiredMessagesEgressRouteKey := ""
 
 	// 分组利润控制：Messages 文本入口同样请求级装门并固定 pricingAt。
 	msgPricingCtx, pricingAt := h.gatewayService.WithOpenAIRequestPricingContext(c.Request.Context(), apiKey.GroupID)
@@ -1239,6 +1248,27 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		}
 		if slotResult != openAISlotAcquireOK {
 			return
+		}
+		if requestPlatform == service.PlatformOpenAI {
+			route, routeErr := h.gatewayService.ResolveOpenAIEgressRoute(c.Request.Context(), account)
+			if routeErr != nil {
+				if accountReleaseFunc != nil {
+					accountReleaseFunc()
+				}
+				h.anthropicStreamingAwareError(c, http.StatusServiceUnavailable, "egress_proxy_unavailable", "OpenAI egress proxy is unavailable", streamStarted)
+				return
+			}
+			if h.gatewayService.OpenAIFailoverRequiresSameRoute() {
+				if requiredMessagesEgressRouteKey == "" {
+					requiredMessagesEgressRouteKey = route.RouteKey
+				} else if route.RouteKey != requiredMessagesEgressRouteKey {
+					if accountReleaseFunc != nil {
+						accountReleaseFunc()
+					}
+					failedAccountIDs[account.ID] = struct{}{}
+					continue
+				}
+			}
 		}
 
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())
@@ -1966,12 +1996,17 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		openAIWSIngressFallbackSessionSeed(subject.UserID, apiKey.ID, apiKey.GroupID),
 	)
 	ctx = service.WithOpenAIWSRequestOwner(ctx, c, sessionHash)
+	service.PrepareOpenAIRetryBudget(c, firstMessage)
 	maxAccountSwitches := h.maxAccountSwitches
+	if service.OpenAIRetryRequestIsStateful(c, firstMessage) {
+		maxAccountSwitches = 0
+	}
 	switchCount := 0
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
+	requiredEgressRouteKey := ""
 	handleWSFailover := func(account *service.Account, failoverErr *service.UpstreamFailoverError) bool {
 		if ctx.Err() != nil {
 			return false
@@ -2134,6 +2169,29 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			account = latest
 			selection.Account = latest
 			accountReleaseFunc = fastReleaseFunc
+		}
+		if requestPlatform == service.PlatformOpenAI {
+			route, routeErr := h.gatewayService.ResolveOpenAIEgressRoute(ctx, account)
+			if routeErr != nil {
+				if accountReleaseFunc != nil {
+					accountReleaseFunc()
+				}
+				reqLog.Warn("openai.websocket_egress_unavailable", zap.Int64("account_id", account.ID), zap.Error(routeErr))
+				closeOpenAIClientWS(wsConn, coderws.StatusTryAgainLater, "OpenAI egress proxy is unavailable")
+				return
+			}
+			if h.gatewayService.OpenAIFailoverRequiresSameRoute() {
+				if requiredEgressRouteKey == "" {
+					requiredEgressRouteKey = route.RouteKey
+				} else if route.RouteKey != requiredEgressRouteKey {
+					if accountReleaseFunc != nil {
+						accountReleaseFunc()
+					}
+					failedAccountIDs[account.ID] = struct{}{}
+					reqLog.Warn("openai.websocket_egress_route_mismatch", zap.Int64("account_id", account.ID))
+					continue
+				}
+			}
 		}
 		// 准入完成：门并入连接 ctx，turn 级复核与 failover 重选共用。
 		ctx = admissionCtx
@@ -2947,8 +3005,9 @@ func waitOpenAIPreOutputAutoRetry(
 	writerSizeBeforeForward int,
 	retryRound int,
 	switchCount int,
+	accountSwitchLimit int,
 ) bool {
-	if retryRound > 0 || failoverErr == nil || service.ClassifyOpenAIAttemptFailure(failoverErr) != "capacity" {
+	if accountSwitchLimit <= 0 || retryRound > 0 || failoverErr == nil || service.ClassifyOpenAIAttemptFailure(failoverErr) != "capacity" {
 		return false
 	}
 	if !openAIForwardMayFailover(c, writerSizeBeforeForward, failoverErr) || failoverClientGone(c) {

@@ -146,7 +146,10 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	sessionHash := h.gatewayService.GenerateExplicitSessionHash(c, body)
 	requestCtx := service.WithOpenAIImagesEndpoint(service.WithOpenAIImageGenerationIntent(c.Request.Context()))
 
-	maxAccountSwitches := h.maxAccountSwitches
+	// Image generation may already incur upstream cost before a transport failure;
+	// never replay one logical image request on a different account.
+	service.PrepareOpenAIRetryBudget(c, body)
+	maxAccountSwitches := 0
 	switchCount := 0
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})

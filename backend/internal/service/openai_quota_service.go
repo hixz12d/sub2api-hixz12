@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/imroc/req/v3"
 )
@@ -144,6 +145,7 @@ type OpenAIQuotaResetResult struct {
 type OpenAIQuotaService struct {
 	accountRepo          AccountRepository
 	proxyRepo            ProxyRepository
+	openAIEgressResolver OpenAIEgressResolver
 	tokenProvider        *OpenAITokenProvider
 	privacyClientFactory PrivacyClientFactory
 	agentIdentityTaskMu  sync.Mutex
@@ -158,10 +160,16 @@ func NewOpenAIQuotaService(
 	proxyRepo ProxyRepository,
 	tokenProvider *OpenAITokenProvider,
 	privacyClientFactory PrivacyClientFactory,
+	configs ...*config.Config,
 ) *OpenAIQuotaService {
+	var cfg *config.Config
+	if len(configs) > 0 {
+		cfg = configs[0]
+	}
 	return &OpenAIQuotaService{
 		accountRepo:          accountRepo,
 		proxyRepo:            proxyRepo,
+		openAIEgressResolver: newOpenAIEgressResolverWithAccountRepo(cfg, proxyRepo, accountRepo),
 		tokenProvider:        tokenProvider,
 		privacyClientFactory: privacyClientFactory,
 	}
@@ -533,21 +541,15 @@ func (s *OpenAIQuotaService) prepareUpstreamCall(ctx context.Context, accountID 
 	}
 	fedRAMP = account.IsChatGPTAccountFedRAMP()
 
-	// account.Proxy is eager-loaded by accountRepo.GetByID (see
-	// repository.accountsToService), so we can read the proxy URL directly
-	// instead of round-tripping the DB again. Fall back to proxyRepo only
-	// when Proxy isn't pre-populated (defensive — e.g. callers that built
-	// the Account by hand).
-	if account.ProxyID != nil {
-		switch {
-		case account.Proxy != nil:
-			proxyURL = account.Proxy.URL()
-		case s.proxyRepo != nil:
-			if proxy, perr := s.proxyRepo.GetByID(ctx, *account.ProxyID); perr == nil && proxy != nil {
-				proxyURL = proxy.URL()
-			}
-		}
+	egressResolver := s.openAIEgressResolver
+	if egressResolver == nil {
+		egressResolver = newOpenAIEgressResolverWithAccountRepo(nil, s.proxyRepo, s.accountRepo)
 	}
+	route, routeErr := egressResolver.Resolve(ctx, account)
+	if routeErr != nil {
+		return "", "", "", false, infraerrors.Newf(http.StatusServiceUnavailable, "OPENAI_QUOTA_EGRESS_UNAVAILABLE", "OpenAI egress proxy is unavailable: %v", routeErr)
+	}
+	proxyURL = route.ProxyURL
 
 	return accessToken, chatGPTAccountID, proxyURL, fedRAMP, nil
 }
@@ -569,7 +571,7 @@ func (s *OpenAIQuotaService) recoverAgentIdentityTask(ctx context.Context, accou
 	if !account.IsOpenAIAgentIdentity() {
 		return nil
 	}
-	return ensureAgentIdentityTaskForAccount(ctx, s.accountRepo, s.agentIdentityWS, &s.agentIdentityTaskMu, account, expectedTaskID)
+	return ensureAgentIdentityTaskForAccount(ctx, s.accountRepo, s.agentIdentityWS, &s.agentIdentityTaskMu, account, expectedTaskID, s.openAIEgressResolver)
 }
 
 func (s *OpenAIQuotaService) isAgentIdentityAccount(ctx context.Context, accountID int64) bool {
@@ -612,7 +614,7 @@ func (s *OpenAIQuotaService) buildCodexQuotaHeaders(ctx context.Context, account
 	if !account.IsOpenAIAgentIdentity() {
 		return headers, "", nil
 	}
-	if err := ensureAgentIdentityTaskForAccount(ctx, s.accountRepo, s.agentIdentityWS, &s.agentIdentityTaskMu, account, ""); err != nil {
+	if err := ensureAgentIdentityTaskForAccount(ctx, s.accountRepo, s.agentIdentityWS, &s.agentIdentityTaskMu, account, "", s.openAIEgressResolver); err != nil {
 		return nil, "", err
 	}
 	key, err := agentIdentityKeyFromAccount(account)

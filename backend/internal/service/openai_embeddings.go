@@ -83,9 +83,10 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 	account.ApplyHeaderOverrides(upstreamReq.Header)
 	s.applyOpenAIOutboundIdentityPolicy(ctx, account, upstreamReq.Header, openAIOutboundAPIKeyPolicy)
 
-	proxyURL := ""
-	if account.Proxy != nil {
-		proxyURL = account.Proxy.URL()
+	proxyURL, err := s.resolveOpenAICompatibleProxyURL(ctx, account)
+	if err != nil {
+		writeOpenAIEmbeddingsError(c, http.StatusServiceUnavailable, "egress_proxy_unavailable", "OpenAI egress proxy is unavailable")
+		return nil, err
 	}
 	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
 	if err != nil {

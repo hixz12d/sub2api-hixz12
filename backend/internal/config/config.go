@@ -2597,6 +2597,9 @@ func (c *Config) Validate() error {
 	}
 	c.Security.ForwardedClientIPHeaders = forwardedClientIPHeaders
 	c.SetForwardedClientIPSettings(c.Security.TrustForwardedIPForAPIKeyACL, forwardedClientIPHeaders)
+	if c.Gateway.MaxAccountSwitches < 0 {
+		return fmt.Errorf("gateway.max_account_switches must be non-negative")
+	}
 	c.Gateway.OpenAIEgress.Mode = strings.ToLower(strings.TrimSpace(c.Gateway.OpenAIEgress.Mode))
 	if c.Gateway.OpenAIEgress.Mode == "" {
 		c.Gateway.OpenAIEgress.Mode = "optional"

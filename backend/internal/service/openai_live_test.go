@@ -85,6 +85,13 @@ func TestLiveCapabilityOnlyAllowsOpenAIOAuth(t *testing.T) {
 	}).SupportsOpenAIEndpointCapability(OpenAIEndpointCapabilityLive))
 }
 
+func TestOpenAILiveCreateMaxAttemptsHonorsAccountSwitchLimit(t *testing.T) {
+	require.Equal(t, 1, (*OpenAIGatewayService)(nil).liveCreateMaxAttempts())
+	require.Equal(t, 1, (&OpenAIGatewayService{cfg: &config.Config{}}).liveCreateMaxAttempts())
+	require.Equal(t, 2, (&OpenAIGatewayService{cfg: &config.Config{Gateway: config.GatewayConfig{MaxAccountSwitches: 1}}}).liveCreateMaxAttempts())
+	require.Equal(t, 4, (&OpenAIGatewayService{cfg: &config.Config{Gateway: config.GatewayConfig{MaxAccountSwitches: 10}}}).liveCreateMaxAttempts())
+}
+
 func TestValidateLiveCallRequestDoesNotRequireDelegation(t *testing.T) {
 	request := &LiveCallRequest{
 		SDP:     "v=0\r\n",

@@ -140,13 +140,18 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	sessionHash := h.gatewayService.GenerateSessionHash(c, body)
 	promptCacheKey := h.gatewayService.ExtractSessionID(c, body)
 
+	service.PrepareOpenAIRetryBudget(c, body)
 	maxAccountSwitches := h.maxAccountSwitches
+	if service.OpenAIRetryRequestIsStateful(c, body) {
+		maxAccountSwitches = 0
+	}
 	switchCount := 0
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	sameAccountRetryCount := make(map[int64]int)
 	var lastFailoverErr *service.UpstreamFailoverError
 	var oauth429FailoverState service.OpenAIOAuth429FailoverState
+	requiredEgressRouteKey := ""
 
 	// 分组利润控制：chat completions 文本入口请求级装门并固定 pricingAt。
 	ccPricingCtx, pricingAt := h.gatewayService.WithOpenAIRequestPricingContext(c.Request.Context(), apiKey.GroupID)
@@ -221,6 +226,27 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		}
 		if slotResult != openAISlotAcquireOK {
 			return
+		}
+		if requestPlatform == service.PlatformOpenAI {
+			route, routeErr := h.gatewayService.ResolveOpenAIEgressRoute(c.Request.Context(), account)
+			if routeErr != nil {
+				if accountReleaseFunc != nil {
+					accountReleaseFunc()
+				}
+				h.handleStreamingAwareError(c, http.StatusServiceUnavailable, "egress_proxy_unavailable", "OpenAI egress proxy is unavailable", streamStarted)
+				return
+			}
+			if h.gatewayService.OpenAIFailoverRequiresSameRoute() {
+				if requiredEgressRouteKey == "" {
+					requiredEgressRouteKey = route.RouteKey
+				} else if route.RouteKey != requiredEgressRouteKey {
+					if accountReleaseFunc != nil {
+						accountReleaseFunc()
+					}
+					failedAccountIDs[account.ID] = struct{}{}
+					continue
+				}
+			}
 		}
 
 		service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(routingStart).Milliseconds())

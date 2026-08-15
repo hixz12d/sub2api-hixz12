@@ -421,6 +421,14 @@ func TestValidateOpenAIFirstOutputTimeoutMinimum(t *testing.T) {
 	require.NoError(t, cfg.Validate())
 }
 
+func TestValidateMaxAccountSwitchesRejectsNegative(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	cfg, err := Load()
+	require.NoError(t, err)
+	cfg.Gateway.MaxAccountSwitches = -1
+	require.EqualError(t, cfg.Validate(), "gateway.max_account_switches must be non-negative")
+}
+
 func TestLoadDefaultOpenAIWSConfig(t *testing.T) {
 	resetViperWithJWTSecret(t)
 

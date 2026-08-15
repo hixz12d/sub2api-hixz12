@@ -16,6 +16,7 @@ import (
 const (
 	openAIRetryBudgetV2ExtraKey = "openai_retry_budget_v2"
 	openAIRetryBudgetContextKey = "openai_retry_budget_v2_state"
+	openAIRetryBudgetActiveKey  = "openai_retry_budget_v2_active"
 )
 
 var ErrOpenAIRetryBudgetExhausted = errors.New("openai retry budget exhausted")
@@ -149,11 +150,18 @@ func NewOpenAIRetryBudget(stateful bool) *OpenAIRetryBudget {
 }
 
 func openAIRetryBudgetV2Enabled(account *Account) bool {
-	if account == nil || account.Extra == nil {
+	if account == nil || !account.IsOpenAIOAuth() {
 		return false
 	}
-	enabled, _ := account.Extra[openAIRetryBudgetV2ExtraKey].(bool)
-	return enabled
+	if account.Extra == nil {
+		return true
+	}
+	raw, exists := account.Extra[openAIRetryBudgetV2ExtraKey]
+	if !exists {
+		return true
+	}
+	enabled, ok := raw.(bool)
+	return ok && enabled
 }
 
 func openAIRetryRequestIsStateful(body []byte) bool {
@@ -170,40 +178,59 @@ func openAIRetryRequestIsStateful(body []byte) bool {
 		strings.Contains(lower, "encrypted_reasoning")
 }
 
-func openAIRetryRequestIsStatefulForContext(c *gin.Context, body []byte) bool {
+func OpenAIRetryRequestIsStateful(c *gin.Context, body []byte) bool {
+	if c != nil && c.Request != nil && strings.TrimSpace(c.GetHeader(openAIWSTurnStateHeader)) != "" {
+		return true
+	}
 	if value, ok := openAIAffinityFromGin(c); ok {
 		return value.Identity.Stateful || value.Identity.Strength == AffinityStrong
 	}
 	return openAIRetryRequestIsStateful(body)
 }
 
+func PrepareOpenAIRetryBudget(c *gin.Context, body []byte) *OpenAIRetryBudget {
+	if c == nil {
+		return nil
+	}
+	if existing := openAIRetryBudgetFromContextRaw(c); existing != nil {
+		return existing
+	}
+	budget := NewOpenAIRetryBudget(OpenAIRetryRequestIsStateful(c, body))
+	c.Set(openAIRetryBudgetContextKey, budget)
+	c.Set(openAIRetryBudgetActiveKey, false)
+	return budget
+}
+
 func EnsureOpenAIRetryBudget(c *gin.Context, account *Account, body []byte) *OpenAIRetryBudget {
 	if c == nil {
 		return nil
 	}
-	if existing := OpenAIRetryBudgetFromContext(c); existing != nil {
-		return existing
-	}
 	if account == nil || !account.IsOpenAIOAuth() || !openAIRetryBudgetV2Enabled(account) {
+		c.Set(openAIRetryBudgetActiveKey, false)
 		return nil
 	}
-	budget := NewOpenAIRetryBudget(openAIRetryRequestIsStatefulForContext(c, body))
-	c.Set(openAIRetryBudgetContextKey, budget)
+	budget := PrepareOpenAIRetryBudget(c, body)
+	c.Set(openAIRetryBudgetActiveKey, budget != nil)
 	return budget
 }
 
 // StartOpenAIRetryBudgetTurn replaces the previous WS turn's budget. Retries
 // of the same turn must keep using the returned object and must not call this.
 func StartOpenAIRetryBudgetTurn(c *gin.Context, account *Account, body []byte) *OpenAIRetryBudget {
-	if c == nil || account == nil || !account.IsOpenAIOAuth() || !openAIRetryBudgetV2Enabled(account) {
+	if c == nil {
 		return nil
 	}
-	budget := NewOpenAIRetryBudget(openAIRetryRequestIsStatefulForContext(c, body))
+	if account == nil || !account.IsOpenAIOAuth() || !openAIRetryBudgetV2Enabled(account) {
+		c.Set(openAIRetryBudgetActiveKey, false)
+		return nil
+	}
+	budget := NewOpenAIRetryBudget(OpenAIRetryRequestIsStateful(c, body))
 	c.Set(openAIRetryBudgetContextKey, budget)
+	c.Set(openAIRetryBudgetActiveKey, true)
 	return budget
 }
 
-func OpenAIRetryBudgetFromContext(c *gin.Context) *OpenAIRetryBudget {
+func openAIRetryBudgetFromContextRaw(c *gin.Context) *OpenAIRetryBudget {
 	if c == nil {
 		return nil
 	}
@@ -215,7 +242,25 @@ func OpenAIRetryBudgetFromContext(c *gin.Context) *OpenAIRetryBudget {
 	return budget
 }
 
+func OpenAIRetryBudgetFromContext(c *gin.Context) *OpenAIRetryBudget {
+	if c == nil {
+		return nil
+	}
+	active, _ := c.Get(openAIRetryBudgetActiveKey)
+	if enabled, _ := active.(bool); !enabled {
+		return nil
+	}
+	return openAIRetryBudgetFromContextRaw(c)
+}
+
 func ReserveOpenAIUpstreamAttempt(c *gin.Context, accountID int64) error {
+	if c == nil {
+		return nil
+	}
+	active, _ := c.Get(openAIRetryBudgetActiveKey)
+	if enabled, _ := active.(bool); !enabled {
+		return nil
+	}
 	budget := OpenAIRetryBudgetFromContext(c)
 	if budget == nil {
 		return nil

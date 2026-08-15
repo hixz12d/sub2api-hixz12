@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -96,8 +97,25 @@ func TestOpenAIRetryBudgetFeatureFlagAndAPIKeyControl(t *testing.T) {
 	require.Nil(t, EnsureOpenAIRetryBudget(c2, apiKey, []byte(`{"input":"hello"}`)))
 
 	c3, _ := gin.CreateTestContext(nil)
-	legacyOAuth := &Account{ID: 3, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
-	require.Nil(t, EnsureOpenAIRetryBudget(c3, legacyOAuth, []byte(`{"input":"hello"}`)))
+	defaultOAuth := &Account{ID: 3, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	require.NotNil(t, EnsureOpenAIRetryBudget(c3, defaultOAuth, []byte(`{"input":"hello"}`)))
+
+	c4, _ := gin.CreateTestContext(nil)
+	disabledOAuth := &Account{ID: 4, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Extra: map[string]any{openAIRetryBudgetV2ExtraKey: false}}
+	require.Nil(t, EnsureOpenAIRetryBudget(c4, disabledOAuth, []byte(`{"input":"hello"}`)))
+}
+
+func TestOpenAIRetryBudgetTreatsTurnStateHeaderAsStateful(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	c.Request.Header.Set(openAIWSTurnStateHeader, "opaque-upstream-state")
+
+	account := &Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	budget := EnsureOpenAIRetryBudget(c, account, []byte(`{"input":"otherwise stateless"}`))
+	require.NotNil(t, budget)
+	require.Equal(t, 1, budget.Snapshot().MaxDistinctAccounts)
 }
 
 func TestOpenAIRetryBudgetConcurrentReserveIsBounded(t *testing.T) {
