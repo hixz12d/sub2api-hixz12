@@ -17,6 +17,7 @@ import (
 const (
 	EndpointMessages          = "/v1/messages"
 	EndpointChatCompletions   = "/v1/chat/completions"
+	EndpointCompletions       = "/v1/completions"
 	EndpointEmbeddings        = "/v1/embeddings"
 	EndpointAlphaSearch       = "/v1/alpha/search"
 	EndpointResponses         = "/v1/responses"
@@ -84,6 +85,8 @@ func NormalizeInboundEndpoint(path string) string {
 		return EndpointEmbeddings
 	case strings.Contains(path, EndpointAlphaSearch) || isBareOrSubpathOf(strings.TrimRight(path, "/"), "/alpha/search") || isBareOrSubpathOf(strings.TrimRight(path, "/"), "/backend-api/codex/alpha/search"):
 		return EndpointAlphaSearch
+	case strings.Contains(path, EndpointCompletions) || isBareOrSubpathOf(strings.TrimRight(path, "/"), "/completions"):
+		return EndpointCompletions
 	case strings.Contains(path, EndpointChatCompletions):
 		return EndpointChatCompletions
 	case strings.Contains(path, EndpointMessages):

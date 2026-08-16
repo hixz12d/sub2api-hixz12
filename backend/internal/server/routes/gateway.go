@@ -228,6 +228,21 @@ func RegisterGatewayRoutes(
 			}
 			h.Gateway.ChatCompletions(c)
 		})
+		// Legacy OpenAI Completions API: expose the text-completion wire format
+		// while reusing the OpenAI-compatible account scheduler and Chat bridge.
+		gateway.POST("/completions", func(c *gin.Context) {
+			if isOpenAIResponsesCompatibleGatewayPlatform(c) {
+				h.OpenAIGateway.Completions(c)
+				return
+			}
+			service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": gin.H{
+					"type":    "not_found_error",
+					"message": "Completions API is not supported for this platform",
+				},
+			})
+		})
 		gateway.POST("/embeddings", textBodyLimit, func(c *gin.Context) {
 			if !isOpenAIOnlyEndpointGatewayPlatform(c) {
 				service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
@@ -377,6 +392,20 @@ func RegisterGatewayRoutes(
 			return
 		}
 		h.Gateway.ChatCompletions(c)
+	})
+	// Legacy OpenAI Completions API（不带v1前缀的别名）
+	r.POST("/completions", bodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
+		if isOpenAIResponsesCompatibleGatewayPlatform(c) {
+			h.OpenAIGateway.Completions(c)
+			return
+		}
+		service.MarkOpsClientBusinessLimited(c, service.OpsClientBusinessLimitedReasonLocalFeatureGate)
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": gin.H{
+				"type":    "not_found_error",
+				"message": "Completions API is not supported for this platform",
+			},
+		})
 	})
 	r.POST("/embeddings", textBodyLimit, clientRequestID, opsErrorLogger, endpointNorm, gin.HandlerFunc(apiKeyAuth), compositeTarget, requireGroupAnthropic, func(c *gin.Context) {
 		if !isOpenAIOnlyEndpointGatewayPlatform(c) {
@@ -671,6 +700,8 @@ func compositeRouteEndpointForPath(path string) string {
 	case strings.Contains(path, "/responses"):
 		return service.CompositeRouteEndpointResponses
 	case strings.Contains(path, "/chat/completions"):
+		return service.CompositeRouteEndpointChatCompletions
+	case strings.Contains(path, "/completions"):
 		return service.CompositeRouteEndpointChatCompletions
 	case strings.Contains(path, "/embeddings"):
 		return service.CompositeRouteEndpointEmbeddings

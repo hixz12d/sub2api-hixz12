@@ -108,7 +108,7 @@ export default {
       types: {
         oauth: 'OAuth',
         chatgptOauth: 'ChatGPT OAuth',
-        responsesApi: 'OpenAI-compatible API',
+        responsesApi: 'OpenAI-compatible API (Responses / Completions)',
         googleOauth: 'Google OAuth',
         codeAssist: 'Code Assist',
         antigravityOauth: 'Antigravity OAuth',
@@ -550,14 +550,16 @@ export default {
         responsesModeForceChatCompletions: 'Chat Completions compatible',
         responsesModeTextDisabledHint:
           'Not applicable when the Responses / Chat Completions endpoint is not enabled.',
+        completionsApiHint:
+          'This gateway also accepts legacy OpenAI text completions at /v1/completions and converts them through the same compatible routing path.',
         endpointCapabilities: 'Endpoint capabilities',
         endpointCapabilitiesDesc:
-          'Used by account routing. The text endpoint follows the Responses API support setting above and is shown as Responses, Chat Completions, or auto mode; Embeddings independently controls /v1/embeddings.',
+          'Used by account routing. The text endpoint follows the Responses API support setting above and is shown as Responses, Chat Completions, or auto mode; legacy /v1/completions uses the same text capability; Embeddings independently controls /v1/embeddings.',
         capabilityResponses: 'Responses',
-        capabilityTextAuto: 'Responses / Chat Completions (Auto)',
+        capabilityTextAuto: 'Responses / Chat Completions / Completions (Auto)',
         capabilityResponsesAuto: 'Responses (auto probe)',
-        capabilityChatCompletions: 'Chat Completions',
-        capabilityChatCompletionsAuto: 'Chat Completions (auto probe)',
+        capabilityChatCompletions: 'Chat Completions / Completions',
+        capabilityChatCompletionsAuto: 'Chat Completions / Completions (auto probe)',
         capabilityEmbeddings: 'Embeddings',
         responsesStatusAutoSupported: 'Auto probe: Responses',
         responsesStatusAutoUnsupported: 'Auto probe: Chat Completions',

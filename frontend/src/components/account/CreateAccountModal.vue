@@ -1177,6 +1177,9 @@
               />
             </div>
           </div>
+          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.openai.completionsApiHint') }}
+          </p>
         </div>
 
         <!-- 上游倍率自动探测：全部 API-key 平台可用（所在区块已限定 apikey 类型） -->

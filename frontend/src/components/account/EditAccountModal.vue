@@ -98,6 +98,9 @@
               />
             </div>
           </div>
+          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.openai.completionsApiHint') }}
+          </p>
           <div
             v-if="openAITextGenerationCapabilityEnabled"
             class="mt-3 rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 dark:bg-dark-700 dark:text-gray-300"
