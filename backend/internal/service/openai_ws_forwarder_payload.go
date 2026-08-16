@@ -83,7 +83,8 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 		headers.Set("authorization", "Bearer "+token)
 	}
 
-	sessionResolution := resolveOpenAIWSSessionHeaders(c, promptCacheKey)
+	sessionResolution := resolveOpenAIWSSessionHeaders(c, "")
+	bodyIdentitySessionID := resolveOpenAIWSSessionHeaders(c, promptCacheKey).SessionID
 	if c != nil && c.Request != nil {
 		if v := strings.TrimSpace(c.Request.Header.Get("accept-language")); v != "" {
 			headers.Set("accept-language", v)
@@ -152,10 +153,12 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	// identity resolver intentionally ignores inbound client User-Agent values.
 	account.ApplyHeaderOverrides(headers)
 	if account != nil && account.Type == AccountTypeOAuth {
-		s.finalizeCodexOAuthHeaders(ctx, c, account, headers, codexFingerprintIDsFromContext(c), sessionResolution.SessionID)
+		s.finalizeCodexOAuthHeaders(ctx, c, account, headers, codexFingerprintIDsFromContext(c), bodyIdentitySessionID)
 	} else {
 		s.applyOpenAIOutboundIdentityPolicy(ctx, account, headers, openAIOutboundAPIKeyPolicy)
 	}
+	applyOpenAICodexBetaFeatures(c, account, headers)
+	s.guardOpenAICodexTurnStateEcho(c, account, headers)
 	setOpenAICodexRoutingHint(headers, account, routingModel, routingServiceTier)
 	logOpenAIRoutingDiagnostics(
 		ctx,
@@ -186,7 +189,6 @@ func (s *OpenAIGatewayService) buildOpenAIWSCreatePayload(reqBody map[string]any
 
 	// OAuth 默认保持 store=false，避免误依赖服务端历史。
 	if account != nil && account.Type == AccountTypeOAuth {
-		delete(payload, "prompt_cache_key")
 		sanitizeOpenAIOutboundBrandMarkers(payload)
 		if !s.isOpenAIWSStoreRecoveryAllowed(account) {
 			payload["store"] = false

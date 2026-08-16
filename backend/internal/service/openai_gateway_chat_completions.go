@@ -257,7 +257,7 @@ func (s *OpenAIGatewayService) ForwardAsChatCompletions(
 		if identityErr != nil {
 			return nil, fmt.Errorf("finalize Codex OAuth identity for chat completions bridge: %w", identityErr)
 		}
-		if ids != nil && c != nil {
+		if c != nil {
 			c.Set("codex_fingerprint_ids", ids)
 		}
 	}

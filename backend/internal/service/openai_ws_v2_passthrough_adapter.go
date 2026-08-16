@@ -754,7 +754,8 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	}
 	firstClientMessage = updatedFirst
 	if account.IsOpenAIOAuth() {
-		fingerprinted, fingerprintErr := applyCodexFingerprintToRawBody(firstClientMessage, codexFingerprintIDsFromContext(c))
+		identitySessionID := resolveOpenAIWSSessionHeaders(c, promptCacheKey).SessionID
+		fingerprinted, fingerprintErr := s.finalizeCodexOAuthBody(ctx, c, account, firstClientMessage, codexFingerprintIDsFromContext(c), identitySessionID)
 		if fingerprintErr != nil {
 			return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", fingerprintErr)
 		}
@@ -1058,10 +1059,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 				if identityErr != nil {
 					return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid Codex identity mode", identityErr)
 				}
-				if ids != nil && c != nil {
+				if c != nil {
 					c.Set("codex_fingerprint_ids", ids)
 				}
-				out, filterErr = applyCodexFingerprintToRawBody(out, ids)
+				identitySessionID := resolveOpenAIWSSessionHeaders(c, promptCacheKey).SessionID
+				out, filterErr = s.finalizeCodexOAuthBody(ctx, c, account, out, ids, identitySessionID)
 				if filterErr != nil {
 					return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", filterErr)
 				}

@@ -56,11 +56,16 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	}
 	guardFirstOutput := firstOutputTimeout > 0
 	attemptWriterSizeBefore := OpenAICompactKeepaliveAdjustedWrittenSize(c)
-	var attemptResponseHeaders http.Header
+	attemptResponseHeaders := make(http.Header)
 	if s.responseHeaderFilter != nil {
 		attemptResponseHeaders = responseheaders.FilterHeaders(resp.Header, s.responseHeaderFilter)
 	} else if requestID := strings.TrimSpace(resp.Header.Get("x-request-id")); requestID != "" {
 		attemptResponseHeaders = http.Header{"X-Request-Id": []string{requestID}}
+	}
+	if guardFirstOutput {
+		stageOpenAICodexTurnState(&attemptResponseHeaders, resp.Header)
+	} else {
+		s.relayOpenAICodexTurnState(c, account, resp.Header)
 	}
 
 	// Set stable SSE response headers. Account-specific headers remain staged
@@ -71,15 +76,17 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	c.Header("X-Accel-Buffering", "no")
 
 	applyAttemptResponseHeaders := func() {
-		if len(attemptResponseHeaders) == 0 || c.Writer.Written() {
+		if c.Writer.Written() {
 			return
 		}
+		c.Writer.Header().Del(http.CanonicalHeaderKey(openAICodexTurnStateHeader))
 		for key, values := range attemptResponseHeaders {
 			c.Writer.Header().Del(key)
 			for _, value := range values {
 				c.Writer.Header().Add(key, value)
 			}
 		}
+		s.noteStagedOpenAICodexTurnStateCommitted(c, account, attemptResponseHeaders)
 		// These headers describe this gateway's SSE stream and are stable across
 		// account attempts. Keep them authoritative over upstream values.
 		c.Header("Content-Type", "text/event-stream")
@@ -1264,6 +1271,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 		return nil, fmt.Errorf("restore OpenAI namespace response: %w", err)
 	}
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	s.relayOpenAICodexTurnState(c, account, resp.Header)
 
 	contentType := "application/json"
 	if s.cfg != nil && !s.cfg.Security.ResponseHeaders.Enabled {
@@ -1369,6 +1377,7 @@ func (s *OpenAIGatewayService) handleSSEToJSONWithAffinity(ctx context.Context, 
 	}
 
 	responseheaders.WriteFilteredHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	s.relayOpenAICodexTurnState(c, account, resp.Header)
 
 	contentType := "application/json; charset=utf-8"
 	if !ok {

@@ -56,8 +56,8 @@ func TestGetCodexFingerprintMode(t *testing.T) {
 	}{
 		{"nil 账号", nil, codexFingerprintOff},
 		{"非 OAuth 账号", &Account{Platform: PlatformOpenAI, Type: "api_key"}, codexFingerprintOff},
-		{"无 extra 默认 session", newTestOAuthAccount(1, nil), codexFingerprintSession},
-		{"空值默认 session", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: ""}), codexFingerprintSession},
+		{"无 extra 默认 off", newTestOAuthAccount(1, nil), codexFingerprintOff},
+		{"空值默认 off", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: ""}), codexFingerprintOff},
 		{"非法值安全关闭", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "invalid"}), codexFingerprintOff},
 		{"显式 off", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "off"}), codexFingerprintOff},
 		{"device", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "device"}), codexFingerprintDevice},
@@ -283,13 +283,9 @@ func TestResolveCodexFingerprintIDsFromRequest_ExplicitOff(t *testing.T) {
 	assert.Nil(t, ids, "显式 off 模式应返回 nil")
 }
 
-func TestResolveCodexFingerprintIDsFromRequest_DefaultIsSession(t *testing.T) {
+func TestResolveCodexFingerprintIDsFromRequest_DefaultIsOff(t *testing.T) {
 	account := newTestOAuthAccount(1, nil)
-	ids := resolveCodexFingerprintIDsFromRequest(account, nil)
-	require.NotNil(t, ids, "无 extra 默认 session 模式，应返回非 nil")
-	assert.Equal(t, codexFingerprintSession, ids.mode)
-	assert.NotEmpty(t, ids.sessionID)
-	assert.NotEmpty(t, ids.turnID)
+	assert.Nil(t, resolveCodexFingerprintIDsFromRequest(account, nil), "无 extra 应视为 off")
 }
 
 // --- applyCodexFingerprintHeaders: off 模式 ---
@@ -628,10 +624,10 @@ func TestExtractClientSessionID(t *testing.T) {
 	}
 }
 
-func TestApplyCodexFingerprintToRawBody_StripsPromptCacheKeyEvenWhenOff(t *testing.T) {
+func TestApplyCodexFingerprintToRawBody_PreservesPromptCacheKeyWhenOff(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.4","prompt_cache_key":"client-cache","input":[]}`)
 	out, err := applyCodexFingerprintToRawBody(body, nil)
 	require.NoError(t, err)
-	assert.False(t, gjson.GetBytes(out, "prompt_cache_key").Exists())
+	assert.Equal(t, "client-cache", gjson.GetBytes(out, "prompt_cache_key").String())
 	assert.Equal(t, "gpt-5.4", gjson.GetBytes(out, "model").String())
 }

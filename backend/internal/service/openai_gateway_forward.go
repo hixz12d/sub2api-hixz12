@@ -110,7 +110,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		return s.forwardGrokResponses(ctx, c, account, body, originalModel, reqStream, startTime)
 	}
 
-	if account.Type == AccountTypeAPIKey && !openai_compat.ShouldUseResponsesAPI(account.Extra) {
+	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
 		return s.forwardResponsesViaRawChatCompletions(ctx, c, account, body)
 	}
 	if account.Platform == PlatformOpenAI && account.Type == AccountTypeAPIKey {
@@ -426,7 +426,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if identityErr != nil {
 			return nil, fmt.Errorf("finalize Codex OAuth identity: %w", identityErr)
 		}
-		if fpIDs != nil && c != nil {
+		if c != nil {
 			c.Set("codex_fingerprint_ids", fpIDs)
 		}
 		if codexResult.NormalizedModel != "" {
@@ -1065,6 +1065,12 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 }
 
+func shouldForwardOpenAIResponsesViaRawChatCompletions(account *Account) bool {
+	return account != nil &&
+		account.Type == AccountTypeAPIKey &&
+		!openai_compat.ShouldUseResponsesAPI(account.Extra)
+}
+
 func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Context, account *Account, body []byte, token string, isStream bool, promptCacheKey string, isCodexCLI bool) (*http.Request, error) {
 	fingerprintIDs := codexFingerprintIDsFromContext(c)
 	accountIdentitySessionID := strings.TrimSpace(promptCacheKey)
@@ -1165,15 +1171,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		} else {
 			req.Header.Set("accept", "text/event-stream")
 		}
-		if promptCacheKey != "" {
-			clientSessionID = promptCacheKey
-			outboundSessionID = s.openAIOutboundSessionID(account, apiKeyID, clientSessionID)
-			if !compatMessagesBridge || clientConversationID != "" {
-				req.Header.Set("conversation_id", outboundSessionID)
-			}
-		} else if clientSessionID != "" {
+		if clientSessionID != "" {
 			outboundSessionID = s.openAIOutboundSessionID(account, apiKeyID, clientSessionID)
 		}
+		normalizeCodexOAuthHeaders(req.Header, outboundSessionID, clientThreadID)
 		normalizeCodexOAuthHeaders(req.Header, outboundSessionID, clientThreadID)
 	} else if isOpenAIResponsesCompactPath(c) {
 		// compact 上游是 unary JSON 协议：API-key 账号也显式声明 Accept，
@@ -1201,6 +1202,8 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		}
 		s.applyOpenAIOutboundIdentityPolicy(ctx, account, req.Header, policy)
 	}
+	s.guardOpenAICodexTurnStateEcho(c, account, req.Header)
+	applyOpenAICodexBetaFeatures(c, account, req.Header)
 	setOpenAICodexRoutingHintFromBody(req.Header, account, body)
 	logOpenAIRoutingDiagnosticsFromBody(ctx, account, "http", req.Header, body, "not_applicable")
 

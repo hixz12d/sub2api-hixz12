@@ -407,6 +407,10 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 	delete(accountExtra, OllamaCloudUsageSessionExtraKey)
 	delete(accountExtra, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(accountExtra, OllamaCloudUsageSnapshotExtraKey)
+	priority := input.Priority
+	if priority <= 0 {
+		priority = 1
+	}
 	account := &Account{
 		Name:        input.Name,
 		Notes:       normalizeAccountNotes(input.Notes),
@@ -416,7 +420,7 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 		Extra:       accountExtra,
 		ProxyID:     input.ProxyID,
 		Concurrency: normalizeAccountConcurrency(input.Platform, input.Type, input.Concurrency),
-		Priority:    input.Priority,
+		Priority:    priority,
 		Status:      StatusActive,
 		Schedulable: true,
 	}

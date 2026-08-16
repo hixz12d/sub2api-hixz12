@@ -217,7 +217,6 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		if codexResult.PromptCacheKey != "" {
 			promptCacheKey = codexResult.PromptCacheKey
 		}
-		delete(reqBody, "prompt_cache_key")
 		if shouldAutoInjectPromptCacheKeyForCompat(upstreamModel) {
 			compatTurnState = s.getOpenAICompatSessionTurnState(ctx, c, account, promptCacheKey)
 		}
@@ -300,7 +299,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		if identityErr != nil {
 			return nil, fmt.Errorf("finalize Codex OAuth identity for messages bridge: %w", identityErr)
 		}
-		if ids != nil && c != nil {
+		if c != nil {
 			c.Set("codex_fingerprint_ids", ids)
 		}
 	}
@@ -330,22 +329,14 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		return nil, fmt.Errorf("build upstream request: %w", err)
 	}
 
-	// Override the session with a deterministic UUID derived from the isolated
-	// session key, ensuring different API keys produce different upstream sessions.
-	if account.Platform != PlatformGrok && promptCacheKey != "" {
+	// API-key compatibility paths retain their legacy cache-key session header;
+	// OAuth identity is finalized in buildUpstreamRequest so prompt_cache_key
+	// and any client-provided session header share one boundary.
+	if account.Platform != PlatformGrok && account.Type != AccountTypeOAuth && promptCacheKey != "" {
 		isolatedSessionID := generateSessionUUID(s.openAIOutboundSessionID(account, apiKeyID, promptCacheKey))
-		if account.Type == AccountTypeOAuth {
-			if codexFingerprintIDsFromContext(c) == nil {
-				normalizeCodexOAuthHeaders(upstreamReq.Header, isolatedSessionID, resolveCodexThreadHeader(upstreamReq.Header))
-				if upstreamReq.Header.Get("conversation_id") != "" {
-					upstreamReq.Header.Set("conversation_id", isolatedSessionID)
-				}
-			}
-		} else {
-			upstreamReq.Header.Set(legacyCodexSessionHeader, isolatedSessionID)
-			if upstreamReq.Header.Get("conversation_id") != "" {
-				upstreamReq.Header.Set("conversation_id", isolatedSessionID)
-			}
+		upstreamReq.Header.Set(legacyCodexSessionHeader, isolatedSessionID)
+		if upstreamReq.Header.Get("conversation_id") != "" {
+			upstreamReq.Header.Set("conversation_id", isolatedSessionID)
 		}
 	}
 	if account.Type == AccountTypeOAuth && account.Platform != PlatformGrok {

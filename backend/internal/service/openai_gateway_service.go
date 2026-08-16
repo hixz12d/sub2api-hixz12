@@ -474,6 +474,9 @@ type OpenAIGatewayService struct {
 	codexModelsManifestCache            codexModelsManifestCache
 	openaiCompatSessionResponses        sync.Map
 	openaiCompatAnthropicDigestSessions sync.Map
+	// Downstream session seed -> account that minted its latest turn-state token.
+	openaiCodexTurnStateOrigins sync.Map
+	openaiCodexTurnStateWrites  atomic.Uint64
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService

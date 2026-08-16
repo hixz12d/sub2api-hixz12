@@ -1224,13 +1224,14 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughHeade
 		t.Fatal("等待 passthrough websocket 结束超时")
 	}
 
-	require.Equal(t, resolveConvergedSessionID(account), captureDialer.lastHeaders.Get(codexSessionHeader))
+	require.Empty(t, captureDialer.lastHeaders.Get(codexSessionHeader))
 	require.Empty(t, captureDialer.lastHeaders.Get(legacyCodexSessionHeader))
 	require.Equal(t, "turn-state-1", captureDialer.lastHeaders.Get(openAIWSTurnStateHeader))
-	require.Empty(t, captureDialer.lastHeaders.Get(openAIWSTurnMetadataHeader), "格式非法的客户端 turn metadata 必须在最终身份边界删除")
+	require.Equal(t, "turn-meta-1", captureDialer.lastHeaders.Get(openAIWSTurnMetadataHeader), "fingerprint off 时保留客户端 turn metadata")
 	require.Len(t, upstreamConn.writes, 1)
 	forwarded := requestToJSONString(upstreamConn.writes[0])
-	require.Equal(t, captureDialer.lastHeaders.Get(codexSessionHeader), gjson.Get(forwarded, "client_metadata.session_id").String())
+	require.Empty(t, gjson.Get(forwarded, "client_metadata.session_id").String())
+	require.Equal(t, svc.openAIOutboundSessionID(account, 0, "pcache_passthrough"), gjson.Get(forwarded, "prompt_cache_key").String())
 	require.Empty(t, gjson.Get(forwarded, "client_metadata.x-codex-turn-metadata").String())
 	require.False(t, gjson.Get(forwarded, `tools.#(type=="namespace")`).Exists())
 	require.Equal(t, "collaboration", gjson.Get(forwarded, `input.#(type=="additional_tools").tools.0.name`).String())

@@ -3008,7 +3008,7 @@ const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OF
 const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAppServerEnabled = ref(false)
 type CodexFingerprintMode = 'off' | 'device' | 'session' | 'window' | 'window40' | 'full'
-const codexFingerprintMode = ref<CodexFingerprintMode>('session')
+const codexFingerprintMode = ref<CodexFingerprintMode>('off')
 type CodexImageToolMode = 'inherit' | 'enabled' | 'disabled' | 'block'
 const codexImageToolMode = ref<CodexImageToolMode>('inherit')
 type AnthropicAPIKeyAuthScheme = 'x_api_key' | 'authorization_bearer'
@@ -3446,7 +3446,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   form.proxy_id = newAccount.proxy_id
   form.concurrency = newAccount.concurrency
   form.load_factor = newAccount.load_factor ?? null
-  form.priority = newAccount.priority
+  form.priority = Number.isFinite(newAccount.priority) && newAccount.priority > 0 ? newAccount.priority : 1
   form.rate_multiplier = newAccount.rate_multiplier ?? 1
   form.status = (newAccount.status === 'active' || newAccount.status === 'inactive' || newAccount.status === 'error')
     ? newAccount.status
@@ -3496,7 +3496,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   openaiAPIKeyResponsesWebSocketV2Mode.value = OPENAI_WS_MODE_OFF
   codexCLIOnlyEnabled.value = false
   codexCLIOnlyAppServerEnabled.value = false
-  codexFingerprintMode.value = 'session'
+  codexFingerprintMode.value = 'off'
   codexImageToolMode.value = 'inherit'
   anthropicPassthroughEnabled.value = false
   anthropicAPIKeyAuthScheme.value = 'x_api_key'
@@ -3552,7 +3552,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       const fpMode = extra?.codex_fingerprint_mode as string | undefined
       codexFingerprintMode.value = (['off', 'device', 'session', 'window', 'window40', 'full'].includes(fpMode || '')
         ? fpMode as CodexFingerprintMode
-        : 'session')
+        : 'off')
     }
     const credentials = newAccount.credentials as Record<string, unknown> | undefined
     const compactMappings = credentials?.compact_model_mapping as Record<string, string> | undefined
@@ -4947,9 +4947,9 @@ const handleSubmit = async () => {
         }
       }
 
-      // 指纹收敛模式：默认 session，不写入；非默认值显式写入（包括 off）
+      // 指纹收敛默认关闭；仅显式启用时写入模式。
       if (props.account.type === 'oauth') {
-        if (codexFingerprintMode.value !== 'session') {
+        if (codexFingerprintMode.value !== 'off') {
           newExtra.codex_fingerprint_mode = codexFingerprintMode.value
         } else {
           delete newExtra.codex_fingerprint_mode

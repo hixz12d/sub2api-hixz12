@@ -138,7 +138,9 @@ func applyCodexOAuthStableEnvironmentHeaders(h http.Header, account *Account) {
 	}
 	h.Set("accept-language", acceptLanguage)
 
-	deleteOpenAIHeaderEqualFold(h, "x-codex-beta-features")
+	// An explicit account value is authoritative. Otherwise preserve the
+	// client's non-empty declaration; the shared beta helper supplies the
+	// default only when the client did not declare one.
 	if betaFeatures := strings.TrimSpace(account.GetExtraString("codex_beta_features")); betaFeatures != "" {
 		h.Set("x-codex-beta-features", betaFeatures)
 	}

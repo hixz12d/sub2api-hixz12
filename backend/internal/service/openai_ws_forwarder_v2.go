@@ -61,13 +61,19 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	)
 
 	payload := s.buildOpenAIWSCreatePayload(reqBody, account)
+	rawPromptCacheKey := openAIWSPayloadString(payload, "prompt_cache_key")
 	if account.IsOpenAIOAuth() {
-		applyCodexFingerprintClientMetadata(payload, codexFingerprintIDsFromContext(c))
+		snapshot := codexFingerprintIDsFromContext(c)
+		applyCodexFingerprintClientMetadata(payload, snapshot)
+		identitySessionID := resolveOpenAIWSSessionHeaders(c, rawPromptCacheKey).SessionID
+		if cacheKey := s.resolveCodexOutboundPromptCacheKey(c, account, snapshot, identitySessionID); cacheKey != "" {
+			payload["prompt_cache_key"] = cacheKey
+		}
 	}
 	payloadStrategy, removedKeys := applyOpenAIWSRetryPayloadStrategy(payload, attempt)
 	previousResponseID := openAIWSPayloadString(payload, "previous_response_id")
 	previousResponseIDKind := ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
-	promptCacheKey := openAIWSPayloadString(payload, "prompt_cache_key")
+	promptCacheKey := rawPromptCacheKey
 	_, hasTools := payload["tools"]
 	debugEnabled := isOpenAIWSModeDebugEnabled()
 	payloadBytes := -1

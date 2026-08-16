@@ -71,7 +71,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		if identityErr != nil {
 			return fmt.Errorf("finalize Codex OAuth websocket identity: %w", identityErr)
 		}
-		if ids != nil {
+		if c != nil {
 			c.Set("codex_fingerprint_ids", ids)
 		}
 	}

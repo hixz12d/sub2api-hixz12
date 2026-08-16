@@ -978,15 +978,15 @@ func TestOpenAIGatewayService_Forward_WSv2_HeaderSessionFallbackFromPromptCacheK
 	require.NotNil(t, result)
 	require.Equal(t, "resp_prompt_cache_key", result.RequestID)
 
-	// 默认 session 指纹模式仍使用 prompt_cache_key 作为线程派生种子，
-	// 但握手与 body 的 session 均使用同一账号级收敛值。
-	require.Equal(t, resolveConvergedSessionID(account), captureDialer.lastHeaders.Get(codexSessionHeader))
+	// Unset fingerprint mode is off: prompt_cache_key remains stable, but no
+	// session/conversation headers are fabricated from that body field.
+	require.Empty(t, captureDialer.lastHeaders.Get(codexSessionHeader))
 	require.Empty(t, captureDialer.lastHeaders.Get(legacyCodexSessionHeader))
-	require.Equal(t, resolveConvergedSessionID(account), captureDialer.lastHeaders.Get("conversation_id"))
+	require.Empty(t, captureDialer.lastHeaders.Get("conversation_id"))
 	require.NotNil(t, captureConn.lastWrite)
 	requestJSON := requestToJSONString(captureConn.lastWrite)
 	require.True(t, gjson.Get(requestJSON, "stream").Exists())
-	require.False(t, gjson.Get(requestJSON, "prompt_cache_key").Exists())
+	require.Equal(t, svc.openAIOutboundSessionID(account, 0, "pcache_123"), gjson.Get(requestJSON, "prompt_cache_key").String())
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_ResponseDoneUsageParsed(t *testing.T) {

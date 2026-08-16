@@ -891,6 +891,20 @@ func isOpenAIRemoteCompactPath(c *gin.Context) bool {
 	return strings.HasSuffix(normalizedPath, "/responses/compact")
 }
 
+func isOpenAILegacyCompactPath(c *gin.Context) bool {
+	if c == nil || c.Request == nil || c.Request.URL == nil {
+		return false
+	}
+	path := strings.TrimRight(strings.TrimSpace(c.Request.URL.Path), "/")
+	const marker = "/responses/compact"
+	idx := strings.Index(path, marker)
+	if idx < 0 {
+		return false
+	}
+	suffix := path[idx+len(marker):]
+	return suffix == "" || strings.HasPrefix(suffix, "/")
+}
+
 // isBareOpenAIResponsesPath 仅匹配裸 /responses 端点（无 /compact 等子路径），
 // body-signal 提升只允许发生在这里，避免误伤 /responses/{id}/... 形态的请求。
 func isBareOpenAIResponsesPath(c *gin.Context) bool {
@@ -901,19 +915,9 @@ func isBareOpenAIResponsesPath(c *gin.Context) bool {
 	return strings.HasSuffix(normalizedPath, "/responses")
 }
 
-func isOpenAIRemoteCompactionV2Request(c *gin.Context, body []byte) bool {
+func isOpenAIRemoteCompactionV2Request(body []byte) bool {
 	stream, valid := parseOpenAICompatibleStream(body)
-	if !valid || !stream || c == nil || c.Request == nil {
-		return false
-	}
-	for _, header := range c.Request.Header.Values("x-codex-beta-features") {
-		for _, feature := range strings.Split(header, ",") {
-			if strings.TrimSpace(feature) == "remote_compaction_v2" {
-				return true
-			}
-		}
-	}
-	return false
+	return valid && stream && service.HasCompactionTriggerInInput(body)
 }
 
 // normalizeOpenAIResponsesCompactRequest keeps Codex remote compaction v2 on
@@ -921,9 +925,10 @@ func isOpenAIRemoteCompactionV2Request(c *gin.Context, body []byte) bool {
 // promotion for clients that do not explicitly advertise that protocol.
 // 返回归一化后的 body；ok=false 表示错误响应已写出，调用方应直接 return。
 func (h *OpenAIGatewayHandler) normalizeOpenAIResponsesCompactRequest(c *gin.Context, reqLog *zap.Logger, body []byte) ([]byte, bool) {
-	isCompactRequest := service.IsOpenAIResponsesCompactPathForTest(c)
+	isCompactRequest := service.IsOpenAIResponsesCompactPath(c)
 	if !isCompactRequest && isBareOpenAIResponsesPath(c) && service.HasCompactionTriggerInInput(body) {
-		if isOpenAIRemoteCompactionV2Request(c, body) {
+		if isOpenAIRemoteCompactionV2Request(body) {
+			service.MarkOpenAINativeCompactionV2(c)
 			return body, true
 		}
 		c.Request.URL.Path = strings.TrimRight(c.Request.URL.Path, "/") + "/compact"

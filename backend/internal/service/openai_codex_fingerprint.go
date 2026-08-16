@@ -53,14 +53,14 @@ const (
 var codexFingerprintNow = time.Now
 
 // GetCodexFingerprintMode 从账号 extra JSON 读取指纹收敛模式。
-// 未设置时默认 session（设备+会话收敛），显式设为 "off" 才关闭。
+// 未设置、为空或非法时默认 off；device/session/window/window40/full 仅显式启用。
 func (a *Account) GetCodexFingerprintMode() codexFingerprintMode {
 	if a == nil || !a.IsOpenAIOAuth() {
 		return codexFingerprintOff
 	}
 	raw := strings.TrimSpace(a.GetExtraString(codexFingerprintModeExtraKey))
 	if raw == "" {
-		return codexFingerprintSession
+		return codexFingerprintOff
 	}
 	switch codexFingerprintMode(raw) {
 	case codexFingerprintOff, codexFingerprintDevice, codexFingerprintSession, codexFingerprintWindow, codexFingerprintWindow40, codexFingerprintFull:
@@ -375,10 +375,6 @@ func applyCodexFingerprintToRawBody(body []byte, ids *codexFingerprintIDs) ([]by
 	if sanitizeOpenAIOutboundBrandMarkers(payload) {
 		modified = true
 	}
-	if _, ok := payload["prompt_cache_key"]; ok {
-		delete(payload, "prompt_cache_key")
-		modified = true
-	}
 	if !modified {
 		return body, nil
 	}
@@ -476,6 +472,9 @@ func applyCodexFingerprintClientMetadata(reqBody map[string]any, ids *codexFinge
 	// session / window / full 模式
 	existing["session_id"] = ids.sessionID
 	existing["thread_id"] = ids.threadID
+	if ids.sessionID != "" {
+		reqBody["prompt_cache_key"] = ids.sessionID
+	}
 	existing["turn_id"] = ids.turnID
 	existing["x-codex-window-id"] = ids.windowID
 	existing["sandbox"] = "seccomp"

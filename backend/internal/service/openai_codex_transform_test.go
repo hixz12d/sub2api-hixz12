@@ -44,7 +44,7 @@ func TestApplyCodexOAuthTransform_ToolContinuationPreservesInput(t *testing.T) {
 	require.Equal(t, "fc_1", second["call_id"])
 }
 
-func TestApplyCodexOAuthTransform_MessagesBridgePromptCacheKeyIsHeaderOnly(t *testing.T) {
+func TestApplyCodexOAuthTransform_MessagesBridgePromptCacheKeyIsPreserved(t *testing.T) {
 	reqBody := map[string]any{
 		"model":            "gpt-5.5",
 		"prompt_cache_key": "anthropic-metadata-session-1",
@@ -74,7 +74,7 @@ func TestApplyCodexOAuthTransform_MessagesBridgePromptCacheKeyIsHeaderOnly(t *te
 
 	require.Equal(t, "anthropic-metadata-session-1", result.PromptCacheKey)
 	require.True(t, result.Modified)
-	require.NotContains(t, reqBody, "prompt_cache_key")
+	require.Equal(t, "anthropic-metadata-session-1", reqBody["prompt_cache_key"])
 }
 
 func TestApplyCodexOAuthTransform_ToolContinuationPreservesNativeMessageAndReasoningIDs(t *testing.T) {
@@ -1953,7 +1953,7 @@ func TestFilterCodexInput_PreservesReasoningInMixedInput(t *testing.T) {
 	}
 }
 
-func TestApplyCodexOAuthTransform_StripsPromptCacheKeyAfterCapturingSeed(t *testing.T) {
+func TestApplyCodexOAuthTransform_PreservesPromptCacheKeyAfterCapturingSeed(t *testing.T) {
 	reqBody := map[string]any{
 		"model":            "gpt-5.4",
 		"prompt_cache_key": "client-cache-seed",
@@ -1964,5 +1964,5 @@ func TestApplyCodexOAuthTransform_StripsPromptCacheKeyAfterCapturingSeed(t *test
 
 	require.Equal(t, "client-cache-seed", result.PromptCacheKey)
 	require.True(t, result.Modified)
-	require.NotContains(t, reqBody, "prompt_cache_key")
+	require.Equal(t, "client-cache-seed", reqBody["prompt_cache_key"])
 }

@@ -2,11 +2,13 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/sjson"
 )
 
 const (
@@ -68,8 +70,8 @@ func codexIdentityFinalizerV2Enabled(account *Account) bool {
 	return enabled
 }
 
-// resolveCodexFingerprintModeForFinalizer preserves the historical unset
-// default, but a malformed configured value can never silently enter session,
+// resolveCodexFingerprintModeForFinalizer uses off for an unset mode, making
+// convergence explicit opt-in. A malformed value can never silently enter session,
 // window40 or full. Legacy accounts fail safe to off; accounts that explicitly
 // enable finalizer v2 receive a structured request error.
 func resolveCodexFingerprintModeForFinalizer(account *Account) (codexFingerprintMode, error) {
@@ -78,7 +80,7 @@ func resolveCodexFingerprintModeForFinalizer(account *Account) (codexFingerprint
 	}
 	raw := strings.TrimSpace(account.GetExtraString(codexFingerprintModeExtraKey))
 	if raw == "" {
-		return codexFingerprintSession, nil
+		return codexFingerprintOff, nil
 	}
 	mode := codexFingerprintMode(raw)
 	switch mode {
@@ -124,6 +126,17 @@ func finalizeCodexOAuthIdentity(account *Account, c *gin.Context, clientHeaders 
 	return snapshot, nil
 }
 
+func (s *OpenAIGatewayService) resolveCodexOutboundPromptCacheKey(c *gin.Context, account *Account, snapshot *CodexIdentitySnapshot, rawSessionID string) string {
+	if snapshot != nil && strings.TrimSpace(snapshot.sessionID) != "" {
+		return strings.TrimSpace(snapshot.sessionID)
+	}
+	rawSessionID = strings.TrimSpace(rawSessionID)
+	if rawSessionID == "" {
+		return ""
+	}
+	return s.openAIOutboundSessionID(account, getAPIKeyIDFromContext(c), rawSessionID)
+}
+
 // finalizeCodexOAuthBody is the sole OAuth body identity boundary. Fingerprint
 // and account-scoped modes are mutually exclusive, but both are kept here so
 // request builders cannot accidentally change their relative order.
@@ -138,6 +151,15 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthBody(
 	updated, err := applyCodexFingerprintToRawBody(body, snapshot)
 	if err != nil {
 		return nil, err
+	}
+	if !isOpenAIResponsesCompactPath(c) {
+		cacheKey := s.resolveCodexOutboundPromptCacheKey(c, account, snapshot, accountIdentitySessionID)
+		if cacheKey != "" {
+			updated, err = sjson.SetBytes(updated, "prompt_cache_key", cacheKey)
+			if err != nil {
+				return nil, fmt.Errorf("set Codex prompt cache key: %w", err)
+			}
+		}
 	}
 	return s.applyOpenAIAccountScopedBody(ctx, c, account, updated, accountIdentitySessionID)
 }
@@ -163,4 +185,5 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthHeaders(
 		deleteOpenAIHeaderEqualFold(headers, "conversation_id")
 	}
 	applyCodexOAuthStableEnvironmentHeaders(headers, account)
+	applyOpenAICodexBetaFeatures(c, account, headers)
 }

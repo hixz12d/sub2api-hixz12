@@ -83,8 +83,10 @@ type OpenAIAccountScheduleRequest struct {
 	RequiredTransport       OpenAIUpstreamTransport
 	RequiredCapability      OpenAIEndpointCapability
 	RequiredImageCapability OpenAIImagesCapability
-	RequireCompact          bool
-	ExcludedIDs             map[int64]struct{}
+	// RequireCompact is only for legacy /responses/compact capability filtering
+	// and compact_model_mapping; native remote compaction v2 leaves it false.
+	RequireCompact bool
+	ExcludedIDs    map[int64]struct{}
 }
 
 type OpenAIAccountScheduleDecision struct {
@@ -180,30 +182,64 @@ func (m *openAIAccountSchedulerMetrics) recordSwitch() {
 	m.accountSwitchTotal.Add(1)
 }
 
+const (
+	openAIAccountRuntimeStatsDefaultMax = 4096
+	openAIAccountRuntimeStatsStaleAfter = 30 * time.Minute
+)
+
 type openAIAccountRuntimeStats struct {
 	accounts     sync.Map
 	accountCount atomic.Int64
+	createMu     sync.Mutex
+	maxEntries   int
 }
 
 type openAIAccountRuntimeStat struct {
-	errorRateEWMABits atomic.Uint64
-	ttftEWMABits      atomic.Uint64
+	mu                  sync.Mutex
+	errorRateEWMABits   atomic.Uint64
+	ttftEWMABits        atomic.Uint64
+	lastReportUnixNano  atomic.Int64
+	lastTouchedUnixNano atomic.Int64
 }
 
-func newOpenAIAccountRuntimeStats() *openAIAccountRuntimeStats {
-	return &openAIAccountRuntimeStats{}
+func newOpenAIAccountRuntimeStats(maxEntries ...int) *openAIAccountRuntimeStats {
+	limit := openAIAccountRuntimeStatsDefaultMax
+	if len(maxEntries) > 0 && maxEntries[0] > 0 {
+		limit = maxEntries[0]
+	}
+	return &openAIAccountRuntimeStats{maxEntries: limit}
 }
 
 func (s *openAIAccountRuntimeStats) loadOrCreate(accountID int64) *openAIAccountRuntimeStat {
 	if value, ok := s.accounts.Load(accountID); ok {
 		stat, _ := value.(*openAIAccountRuntimeStat)
 		if stat != nil {
+			stat.touch(time.Now())
 			return stat
 		}
 	}
 
+	s.createMu.Lock()
+	defer s.createMu.Unlock()
+	if value, ok := s.accounts.Load(accountID); ok {
+		stat, _ := value.(*openAIAccountRuntimeStat)
+		if stat != nil {
+			stat.touch(time.Now())
+			return stat
+		}
+	}
+
+	if s.maxEntries <= 0 {
+		s.maxEntries = openAIAccountRuntimeStatsDefaultMax
+	}
+	if s.accountCount.Load() >= int64(s.maxEntries) {
+		s.evictOldestLocked()
+	}
+
+	now := time.Now()
 	stat := &openAIAccountRuntimeStat{}
 	stat.ttftEWMABits.Store(math.Float64bits(math.NaN()))
+	stat.lastTouchedUnixNano.Store(now.UnixNano())
 	actual, loaded := s.accounts.LoadOrStore(accountID, stat)
 	if !loaded {
 		s.accountCount.Add(1)
@@ -211,9 +247,62 @@ func (s *openAIAccountRuntimeStats) loadOrCreate(accountID int64) *openAIAccount
 	}
 	existing, _ := actual.(*openAIAccountRuntimeStat)
 	if existing != nil {
+		existing.touch(now)
 		return existing
 	}
 	return stat
+}
+
+func (s *openAIAccountRuntimeStat) touch(now time.Time) {
+	if s == nil || now.IsZero() {
+		return
+	}
+	s.lastTouchedUnixNano.Store(now.UnixNano())
+}
+
+// resetIfStaleLocked prevents an old error sample from permanently forcing
+// sticky escape after an account has been idle. Callers hold the account lock
+// so a stale reset cannot erase a concurrent fresh observation.
+func (s *openAIAccountRuntimeStat) resetIfStaleLocked(now time.Time) bool {
+	if s == nil || now.IsZero() {
+		return false
+	}
+	lastUnixNano := s.lastReportUnixNano.Load()
+	if lastUnixNano == 0 {
+		return false
+	}
+	last := time.Unix(0, lastUnixNano)
+	if !now.Before(last) && now.Sub(last) <= openAIAccountRuntimeStatsStaleAfter {
+		return false
+	}
+	s.lastReportUnixNano.Store(now.UnixNano())
+	s.errorRateEWMABits.Store(0)
+	s.ttftEWMABits.Store(math.Float64bits(math.NaN()))
+	s.touch(now)
+	return true
+}
+
+func (s *openAIAccountRuntimeStats) evictOldestLocked() {
+	var oldestKey any
+	var oldestTouched int64
+	found := false
+	s.accounts.Range(func(key, value any) bool {
+		stat, _ := value.(*openAIAccountRuntimeStat)
+		if stat == nil {
+			return true
+		}
+		touched := stat.lastTouchedUnixNano.Load()
+		if !found || touched < oldestTouched {
+			oldestKey = key
+			oldestTouched = touched
+			found = true
+		}
+		return true
+	})
+	if found {
+		s.accounts.Delete(oldestKey)
+		s.accountCount.Add(-1)
+	}
 }
 
 func updateEWMAAtomic(target *atomic.Uint64, sample float64, alpha float64) {
@@ -228,11 +317,22 @@ func updateEWMAAtomic(target *atomic.Uint64, sample float64, alpha float64) {
 }
 
 func (s *openAIAccountRuntimeStats) report(accountID int64, success bool, firstTokenMs *int) {
+	s.reportAt(accountID, success, firstTokenMs, time.Now())
+}
+
+func (s *openAIAccountRuntimeStats) reportAt(accountID int64, success bool, firstTokenMs *int, now time.Time) {
 	if s == nil || accountID <= 0 {
 		return
 	}
 	const alpha = 0.2
 	stat := s.loadOrCreate(accountID)
+	if stat == nil {
+		return
+	}
+
+	stat.mu.Lock()
+	defer stat.mu.Unlock()
+	stat.resetIfStaleLocked(now)
 
 	errorSample := 1.0
 	if success {
@@ -258,9 +358,15 @@ func (s *openAIAccountRuntimeStats) report(accountID int64, success bool, firstT
 			}
 		}
 	}
+	stat.lastReportUnixNano.Store(now.UnixNano())
+	stat.touch(now)
 }
 
 func (s *openAIAccountRuntimeStats) snapshot(accountID int64) (errorRate float64, ttft float64, hasTTFT bool) {
+	return s.snapshotAt(accountID, time.Now())
+}
+
+func (s *openAIAccountRuntimeStats) snapshotAt(accountID int64, now time.Time) (errorRate float64, ttft float64, hasTTFT bool) {
 	if s == nil || accountID <= 0 {
 		return 0, 0, false
 	}
@@ -270,6 +376,13 @@ func (s *openAIAccountRuntimeStats) snapshot(accountID int64) (errorRate float64
 	}
 	stat, _ := value.(*openAIAccountRuntimeStat)
 	if stat == nil {
+		return 0, 0, false
+	}
+
+	stat.mu.Lock()
+	defer stat.mu.Unlock()
+	stat.touch(now)
+	if stat.resetIfStaleLocked(now) {
 		return 0, 0, false
 	}
 	errorRate = clamp01(math.Float64frombits(stat.errorRateEWMABits.Load()))
@@ -2481,11 +2594,9 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 	// 入口已在请求开始经 WithOpenAIRequestPricingContext 装门并固定 pricingAt，
 	// 此处对同分组门直接复用（failover 重入阈值稳定），仅为不经 handler 装配的
 	// 内部调用兜底。图片/视频调度不在利润门范围：requiredImageCapability 非空的
-	// Images 调度不装门；requiredCapability == OpenAIEndpointCapabilityResponses
-	// 当前仅显式生图意图的 /v1/responses 设置（HTTP openAIResponsesRequiredCapability
-	// 与 WS 桥同款判定），同样不装门——若未来把该 capability 用于非生图流量，
-	// 需要同步收窄本条件（有测试钉死该映射）。
-	if requiredImageCapability == "" && requiredCapability != OpenAIEndpointCapabilityResponses {
+	// Images 调度不装门；其他使用 Responses 能力的文本请求（包括原生远程压缩）
+	// 仍须装门。其余媒体路径通过 WithOpenAIProfitControlSuppressed 显式跳过。
+	if requiredImageCapability == "" {
 		ctx = s.withOpenAIProfitControlGate(ctx, groupID)
 	}
 	platform = normalizeOpenAICompatiblePlatform(platform)

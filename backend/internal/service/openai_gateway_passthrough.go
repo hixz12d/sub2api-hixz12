@@ -453,7 +453,6 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		// experiment. Passthrough may receive it from an older client, so remove
 		// only that token while preserving any independent beta negotiation.
 		stripOpenAILegacyResponsesBeta(req.Header)
-		promptCacheKey := accountIdentityPromptCacheKey
 		req.Host = "chatgpt.com"
 		if err := resolveAndSetOpenAIChatGPTAccountHeaders(ctx, s.accountRepo, req.Header, account); err != nil {
 			return nil, fmt.Errorf("resolve chatgpt account headers: %w", err)
@@ -472,12 +471,9 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 			req.Header.Set("accept", "text/event-stream")
 		}
 		// 用隔离后的 session 标识符覆盖客户端透传值，防止跨用户会话碰撞。
-		if clientSessionID == "" {
-			clientSessionID = promptCacheKey
-		}
-		if clientConversationID == "" {
-			clientConversationID = promptCacheKey
-		}
+		// Do not synthesize session/conversation headers from prompt_cache_key.
+		// The body cache key remains the stable routing signal; protocol headers
+		// are emitted only when the client supplied them or compact requires one.
 		outboundSessionID := ""
 		if clientSessionID != "" {
 			outboundSessionID = s.openAIOutboundSessionID(account, apiKeyID, clientSessionID)
@@ -508,6 +504,8 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		}
 		s.applyOpenAIOutboundIdentityPolicy(ctx, account, req.Header, policy)
 	}
+	s.guardOpenAICodexTurnStateEcho(c, account, req.Header)
+	applyOpenAICodexBetaFeatures(c, account, req.Header)
 	setOpenAICodexRoutingHintFromBody(req.Header, account, body)
 	logOpenAIRoutingDiagnosticsFromBody(ctx, account, "http_passthrough", req.Header, body, "not_applicable")
 
@@ -1334,15 +1332,17 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no")
 	applyAttemptResponseHeaders := func() {
-		if len(attemptResponseHeaders) == 0 || c.Writer.Written() {
+		if c.Writer.Written() {
 			return
 		}
+		c.Writer.Header().Del(http.CanonicalHeaderKey(openAICodexTurnStateHeader))
 		for key, values := range attemptResponseHeaders {
 			c.Writer.Header().Del(key)
 			for _, value := range values {
 				c.Writer.Header().Add(key, value)
 			}
 		}
+		s.noteStagedOpenAICodexTurnStateCommitted(c, account, attemptResponseHeaders)
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")
@@ -1678,6 +1678,7 @@ func (s *OpenAIGatewayService) handleNonStreamingResponsePassthroughWithAffinity
 	}
 
 	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	s.relayOpenAICodexTurnState(c, account, resp.Header)
 
 	contentType := resp.Header.Get("Content-Type")
 	if contentType == "" {
@@ -1763,6 +1764,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSONWithAffinity(ctx contex
 	}
 
 	writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
+	s.relayOpenAICodexTurnState(c, account, resp.Header)
 
 	contentType := "application/json; charset=utf-8"
 	if !ok {
@@ -1835,5 +1837,10 @@ func writeOpenAIPassthroughResponseHeaders(dst http.Header, src http.Header, fil
 		for _, v := range vals {
 			dst.Add(key, v)
 		}
+	}
+	turnStateKey := http.CanonicalHeaderKey(openAICodexTurnStateHeader)
+	dst.Del(turnStateKey)
+	for _, v := range getCaseInsensitiveValues(src, openAICodexTurnStateHeader) {
+		dst.Add(turnStateKey, v)
 	}
 }
