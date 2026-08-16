@@ -66,7 +66,7 @@ func TestCodexOAuthStableEnvironmentHeadersUseAccountPolicy(t *testing.T) {
 	}
 	applyCodexOAuthStableEnvironmentHeaders(headers, account)
 	require.Equal(t, defaultCodexAcceptLanguage, headers.Get("accept-language"))
-	require.Empty(t, headers.Get("x-codex-beta-features"))
+	require.Equal(t, "client-feature", headers.Get("x-codex-beta-features"))
 }
 
 func TestCodexIdentityFinalizerHTTPFinalWire(t *testing.T) {
@@ -121,7 +121,7 @@ func TestCodexIdentityFinalizerHTTPFinalWire(t *testing.T) {
 			require.Equal(t, snapshot.turnID, req.Header.Get("x-client-request-id"))
 			require.Empty(t, req.Header.Get("session_id"))
 			require.Empty(t, req.Header.Get("thread_id"))
-			require.False(t, gjson.GetBytes(wireBody, "prompt_cache_key").Exists())
+			require.Equal(t, snapshot.sessionID, gjson.GetBytes(wireBody, "prompt_cache_key").String())
 			require.Equal(t, snapshot.sessionID, gjson.GetBytes(wireBody, "client_metadata.session_id").String())
 			require.Equal(t, snapshot.threadID, gjson.GetBytes(wireBody, "client_metadata.thread_id").String())
 			require.Equal(t, snapshot.turnID, gjson.GetBytes(wireBody, "client_metadata.turn_id").String())

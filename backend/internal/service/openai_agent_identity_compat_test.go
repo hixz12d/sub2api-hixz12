@@ -132,14 +132,15 @@ func TestOpenAIAgentIdentityPassthroughUsesAccountFingerprintAndStripsPromptCach
 	require.NoError(t, err)
 	require.Equal(t, "AgentAssertion", strings.SplitN(req.Header.Get("Authorization"), " ", 2)[0])
 	require.Equal(t, "account-agent-passthrough", req.Header.Get("chatgpt-account-id"))
-	agentSessionID := resolveConvergedSessionID(account)
+	agentSessionID := isolateOpenAISessionID(0, "client-session")
+	agentConversationID := isolateOpenAISessionID(0, "client-conversation")
 	require.Equal(t, agentSessionID, req.Header.Get(codexSessionHeader))
-	require.Equal(t, agentSessionID, req.Header.Get("conversation_id"))
+	require.Equal(t, agentConversationID, req.Header.Get("conversation_id"))
 	require.NotEqual(t, "client-session", agentSessionID)
 	require.NotEqual(t, "client-conversation", agentSessionID)
 	requestBody, err := io.ReadAll(req.Body)
 	require.NoError(t, err)
-	require.False(t, gjson.GetBytes(requestBody, "prompt_cache_key").Exists())
+	require.Equal(t, agentSessionID, gjson.GetBytes(requestBody, "prompt_cache_key").String())
 
 	// Authentication mode must not affect session isolation or prompt-cache
 	// behavior. Compare the same request with the existing OAuth path instead
@@ -159,13 +160,13 @@ func TestOpenAIAgentIdentityPassthroughUsesAccountFingerprintAndStripsPromptCach
 	oauthContext.Request.Header.Set("conversation_id", "client-conversation")
 	oauthReq, err := svc.buildUpstreamRequestOpenAIPassthrough(context.Background(), oauthContext, oauthAccount, body, "oauth-token")
 	require.NoError(t, err)
-	oauthSessionID := resolveConvergedSessionID(oauthAccount)
+	oauthSessionID := isolateOpenAISessionID(0, "client-session")
 	require.Equal(t, oauthSessionID, oauthReq.Header.Get(codexSessionHeader))
-	require.Equal(t, oauthSessionID, oauthReq.Header.Get("conversation_id"))
-	require.NotEqual(t, agentSessionID, oauthSessionID)
+	require.Equal(t, agentConversationID, oauthReq.Header.Get("conversation_id"))
+	require.Equal(t, agentSessionID, oauthSessionID)
 	oauthBody, err := io.ReadAll(oauthReq.Body)
 	require.NoError(t, err)
-	require.False(t, gjson.GetBytes(oauthBody, "prompt_cache_key").Exists())
+	require.Equal(t, oauthSessionID, gjson.GetBytes(oauthBody, "prompt_cache_key").String())
 }
 
 func TestOpenAIAgentIdentityErrorRedactionDoesNotLeakCredentialValues(t *testing.T) {

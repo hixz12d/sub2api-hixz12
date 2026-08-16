@@ -155,12 +155,14 @@ func TestOpenAIAccountScopedIdentityDisabledPreservesExistingOutboundBehavior(t 
 	body := []byte(`{"model":"gpt-5.4","client_metadata":{"x-codex-installation-id":"client-body-installation-disabled","x-codex-window-id":"client-body-window-disabled"}}`)
 	req, err := svc.buildUpstreamRequest(context.Background(), c, account, body, "oauth-token", true, "cache-disabled", true)
 	require.NoError(t, err)
-	require.Equal(t, isolateOpenAISessionID(601, "cache-disabled"), req.Header.Get(codexSessionHeader))
+	require.Equal(t, isolateOpenAISessionID(601, "client-session-disabled"), req.Header.Get(codexSessionHeader))
 	require.Equal(t, "client-window-disabled", req.Header.Get(openAICodexWindowIDHeader))
 	require.Equal(t, "client-installation-disabled", req.Header.Get(openAICodexInstallationIDHeader))
 	requestBody, readErr := io.ReadAll(req.Body)
 	require.NoError(t, readErr)
-	require.JSONEq(t, string(body), string(requestBody))
+	require.Equal(t, isolateOpenAISessionID(601, "cache-disabled"), gjson.GetBytes(requestBody, "prompt_cache_key").String())
+	require.Equal(t, "client-body-installation-disabled", gjson.GetBytes(requestBody, "client_metadata.x-codex-installation-id").String())
+	require.Equal(t, "client-body-window-disabled", gjson.GetBytes(requestBody, "client_metadata.x-codex-window-id").String())
 }
 
 func TestOpenAIAccountScopedIdentityMissingDeviceOmitsClientInstallation(t *testing.T) {

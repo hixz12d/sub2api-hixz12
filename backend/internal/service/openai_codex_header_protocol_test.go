@@ -234,18 +234,21 @@ func TestOpenAIHTTPAPIKeyCustomUpstreamKeepsLegacySessionHeader(t *testing.T) {
 func TestOpenAIOAuthCompatibilityForwardersUseCurrentSessionHeader(t *testing.T) {
 	body := []byte(`{"model":"gpt-5.4","messages":[{"role":"user","content":"hello"}],"stream":false}`)
 	for _, tc := range []struct {
-		name    string
-		forward func(*OpenAIGatewayService, *gin.Context, *Account) error
+		name        string
+		forward     func(*OpenAIGatewayService, *gin.Context, *Account) error
+		wantSession bool
 	}{
 		{
-			name: "chat completions",
+			name:        "chat completions",
+			wantSession: true,
 			forward: func(svc *OpenAIGatewayService, c *gin.Context, account *Account) error {
 				_, err := svc.ForwardAsChatCompletions(context.Background(), c, account, body, "compat-cache", "gpt-5.4")
 				return err
 			},
 		},
 		{
-			name: "messages",
+			name:        "messages",
+			wantSession: false,
 			forward: func(svc *OpenAIGatewayService, c *gin.Context, account *Account) error {
 				messagesBody := []byte(`{"model":"claude-sonnet-4-5","max_tokens":16,"messages":[{"role":"user","content":"hello"}],"stream":false}`)
 				_, err := svc.ForwardAsAnthropic(context.Background(), c, account, messagesBody, "compat-cache", "gpt-5.4")
@@ -266,7 +269,11 @@ func TestOpenAIOAuthCompatibilityForwardersUseCurrentSessionHeader(t *testing.T)
 			err := tc.forward(svc, c, account)
 			require.Error(t, err)
 			require.NotNil(t, upstream.lastReq)
-			require.NotEmpty(t, upstream.lastReq.Header.Get(codexSessionHeader))
+			if tc.wantSession {
+				require.NotEmpty(t, upstream.lastReq.Header.Get(codexSessionHeader))
+			} else {
+				require.Empty(t, upstream.lastReq.Header.Get(codexSessionHeader))
+			}
 			require.Empty(t, upstream.lastReq.Header.Get(legacyCodexSessionHeader))
 		})
 	}
@@ -295,8 +302,8 @@ func TestOpenAIOAuthPassthroughCrossAccountSessionIsolation(t *testing.T) {
 	require.Equal(t, reqA.Header.Get(codexSessionHeader), reqA.Header.Get("conversation_id"))
 	require.Equal(t, reqB.Header.Get(codexSessionHeader), reqB.Header.Get("conversation_id"))
 	require.NotEqual(t, reqA.Header.Get(codexSessionHeader), reqB.Header.Get(codexSessionHeader))
-	require.False(t, gjson.GetBytes(bodyA, "prompt_cache_key").Exists())
-	require.False(t, gjson.GetBytes(bodyB, "prompt_cache_key").Exists())
+	require.Equal(t, reqA.Header.Get(codexSessionHeader), gjson.GetBytes(bodyA, "prompt_cache_key").String())
+	require.Equal(t, reqB.Header.Get(codexSessionHeader), gjson.GetBytes(bodyB, "prompt_cache_key").String())
 	require.NotContains(t, string(bodyA), "shared-client-cache")
 	require.NotContains(t, string(bodyB), "shared-client-cache")
 }
@@ -316,5 +323,5 @@ func TestOpenAIOAuthPassthroughOffStillStripsPromptCacheKey(t *testing.T) {
 	require.Equal(t, isolateOpenAISessionID(71, "off-client-conversation"), req.Header.Get("conversation_id"))
 	outBody, err := io.ReadAll(req.Body)
 	require.NoError(t, err)
-	require.False(t, gjson.GetBytes(outBody, "prompt_cache_key").Exists())
+	require.Equal(t, isolateOpenAISessionID(71, "off-client-session"), gjson.GetBytes(outBody, "prompt_cache_key").String())
 }

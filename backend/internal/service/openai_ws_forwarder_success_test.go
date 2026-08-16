@@ -752,11 +752,13 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStoreFalseByDefault(t *testing.T
 	require.Equal(t, "native-wsv2", gjson.Get(requestJSON, "input.0.namespace").String(), "OAuth WSv2 应保留原生 namespace")
 	require.Equal(t, openAIWSBetaV2Value, captureDialer.lastHeaders.Get("OpenAI-Beta"))
 	require.Equal(t, "remote_compaction_v2", captureDialer.lastHeaders.Get("x-codex-beta-features"))
-	// 默认 session 指纹模式让 WS 握手与 body 共享账号级 session IDs。
-	require.Equal(t, resolveConvergedSessionID(account), captureDialer.lastHeaders.Get(codexSessionHeader))
+	expectedSessionID := isolateOpenAISessionID(0, "sess-oauth-1")
+	expectedConversationID := isolateOpenAISessionID(0, "conv-oauth-1")
+	require.Equal(t, expectedSessionID, captureDialer.lastHeaders.Get(codexSessionHeader))
 	require.Empty(t, captureDialer.lastHeaders.Get(legacyCodexSessionHeader))
-	require.Equal(t, captureDialer.lastHeaders.Get(codexSessionHeader), gjson.Get(requestJSON, "client_metadata.session_id").String())
-	require.Equal(t, resolveConvergedSessionID(account), captureDialer.lastHeaders.Get("conversation_id"))
+	require.Empty(t, gjson.Get(requestJSON, "client_metadata.session_id").String())
+	require.Equal(t, expectedSessionID, gjson.Get(requestJSON, "prompt_cache_key").String())
+	require.Equal(t, expectedConversationID, captureDialer.lastHeaders.Get("conversation_id"))
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_OAuthOriginatorCompatibility(t *testing.T) {

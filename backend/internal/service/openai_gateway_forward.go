@@ -1175,7 +1175,6 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 			outboundSessionID = s.openAIOutboundSessionID(account, apiKeyID, clientSessionID)
 		}
 		normalizeCodexOAuthHeaders(req.Header, outboundSessionID, clientThreadID)
-		normalizeCodexOAuthHeaders(req.Header, outboundSessionID, clientThreadID)
 	} else if isOpenAIResponsesCompactPath(c) {
 		// compact 上游是 unary JSON 协议：API-key 账号也显式声明 Accept，
 		// 避免 OpenAI 兼容网关按 SSE 返回（#3777 期望行为 4）。
