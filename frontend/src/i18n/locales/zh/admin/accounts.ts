@@ -311,7 +311,7 @@ export default {
       types: {
         oauth: 'OAuth',
         chatgptOauth: 'ChatGPT OAuth',
-        responsesApi: 'Responses API',
+        responsesApi: 'OpenAI 兼容 API',
         googleOauth: 'Google OAuth',
         codeAssist: 'Code Assist',
         antigravityOauth: 'Antigravity OAuth',
@@ -588,8 +588,9 @@ export default {
       apiKeyHint: '您的 Claude Console API Key',
       // OpenAI specific hints
       openai: {
-        baseUrlHint: '留空使用官方 OpenAI API',
-        apiKeyHint: '您的 OpenAI API Key',
+        baseUrlHint:
+          '留空使用官方 OpenAI API；兼容聚合可填写 https://host.example/v1。若填写 http://，需在安全设置中显式允许不安全 HTTP。',
+        apiKeyHint: '您的 OpenAI API Key；填写后可在模型白名单中从上游获取模型。',
         oauthPassthrough: '自动透传（仅替换认证）',
         oauthPassthroughDesc:
           '开启后，该 OpenAI 账号将自动透传请求与响应，仅替换认证并保留计费/并发/审计及必要安全过滤；如遇兼容性问题可随时关闭回滚。',
@@ -619,12 +620,12 @@ export default {
         apiKeyResponsesWebsocketsV2Desc:
           '仅对 OpenAI API Key 生效。开启后该账号才允许使用 OpenAI WebSocket Mode 协议。',
         responsesWebsocketsV2PassthroughHint: '当前已开启自动透传：仅影响 HTTP 透传链路，不影响 WS mode。',
-        responsesMode: 'Responses API 支持',
+        responsesMode: '文本 API 协议',
         responsesModeDesc:
-          '仅对 OpenAI API Key 的文本转发链路生效。自动跟随探测结果，强制模式会覆盖自动探测。',
-        responsesModeAuto: '自动',
-        responsesModeForceResponses: '强制 Responses',
-        responsesModeForceChatCompletions: '强制 Chat Completions',
+          '选择上游实际支持的文本协议。CPA 等兼容聚合通常选择 Chat Completions；自动模式会先按探测结果路由。',
+        responsesModeAuto: '自动探测',
+        responsesModeForceResponses: 'Responses API',
+        responsesModeForceChatCompletions: 'Chat Completions 兼容',
         responsesModeTextDisabledHint: '未启用 Responses / Chat Completions 端点时，此设置不适用。',
         endpointCapabilities: '端点能力',
         endpointCapabilitiesDesc:
@@ -771,7 +772,7 @@ export default {
       searchModels: '搜索模型...',
       noMatchingModels: '没有匹配的模型',
       fillRelatedModels: '同步最新支持模型',
-      syncUpstreamModels: '同步上游支持的模型',
+      syncUpstreamModels: '从上游获取模型',
       syncUpstreamModelsLoading: '同步上游中...',
       syncUpstreamModelsSuccess: '已从上游同步 {count} 个新模型（上游共 {total} 个）',
       syncUpstreamModelsNoChanges: '上游 {count} 个模型均已在白名单中',

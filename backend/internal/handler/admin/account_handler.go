@@ -24,6 +24,7 @@ import (
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/geminicli"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai_compat"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
@@ -1018,14 +1019,23 @@ func (h *AccountHandler) Update(c *gin.Context) {
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
 }
 
-// scheduleOpenAIResponsesProbe 异步触发 OpenAI APIKey 账号的 Responses API 能力探测。
-//
-// 仅对 platform=openai && type=apikey 账号生效；其他账号无操作。
-// 探测本身在 goroutine 中执行（会发一次 HTTP 请求到上游），不会阻塞
-// 当前请求。探测错误仅记录日志，不向上下文传播：探测失败时标记保持缺失，
-// 网关会按"现状即证据"默认走 Responses。
-func (h *AccountHandler) scheduleOpenAIResponsesProbe(account *service.Account) {
+// shouldScheduleOpenAIResponsesProbe reports whether automatic Responses capability
+// detection is useful for this account. Explicit protocol choices are authoritative,
+// so they must not cause a probe request to an endpoint the operator deliberately
+// excluded.
+func shouldScheduleOpenAIResponsesProbe(account *service.Account) bool {
 	if account == nil || account.Platform != service.PlatformOpenAI || account.Type != service.AccountTypeAPIKey {
+		return false
+	}
+	mode, _ := account.Extra[openai_compat.ExtraKeyResponsesMode].(string)
+	return openai_compat.NormalizeResponsesSupportMode(mode) == openai_compat.ResponsesSupportModeAuto
+}
+
+// scheduleOpenAIResponsesProbe asynchronously detects Responses support for OpenAI API Key accounts
+// that use automatic protocol selection. Explicit force modes already define the route and do not
+// need an extra request to the upstream.
+func (h *AccountHandler) scheduleOpenAIResponsesProbe(account *service.Account) {
+	if !shouldScheduleOpenAIResponsesProbe(account) {
 		return
 	}
 	if h.accountTestService == nil {

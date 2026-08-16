@@ -2,6 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 const copyToClipboard = vi.fn().mockResolvedValue(true)
+const { syncUpstreamModelsPreview } = vi.hoisted(() => ({
+  syncUpstreamModelsPreview: vi.fn()
+}))
+
+vi.mock('@/api/admin/accounts', () => ({
+  accountsAPI: {
+    syncUpstreamModelsPreview
+  }
+}))
 
 vi.mock('vue-i18n', async () => {
   const actual = await vi.importActual<typeof import('vue-i18n')>('vue-i18n')
@@ -29,11 +38,12 @@ vi.mock('@/composables/useClipboard', () => ({
 
 import ModelWhitelistSelector from '../ModelWhitelistSelector.vue'
 
-function mountSelector() {
+function mountSelector(syncCredentials?: { platform: string; type: string; base_url?: string; api_key: string }) {
   return mount(ModelWhitelistSelector, {
     props: {
       modelValue: [],
-      platform: 'openai'
+      platform: 'openai',
+      syncCredentials
     },
     global: {
       stubs: {
@@ -58,6 +68,7 @@ function findModelRow(wrapper: ReturnType<typeof mountSelector>, modelId: string
 describe('ModelWhitelistSelector', () => {
   beforeEach(() => {
     copyToClipboard.mockClear()
+    syncUpstreamModelsPreview.mockReset()
   })
 
   it('copies a model ID without selecting the model', async () => {
@@ -85,5 +96,27 @@ describe('ModelWhitelistSelector', () => {
 
     expect(wrapper.emitted('update:modelValue')).toEqual([[['gpt-5.6-sol']]])
     expect(copyToClipboard).not.toHaveBeenCalled()
+  })
+
+
+  it('fetches and emits model IDs from an OpenAI-compatible upstream', async () => {
+    syncUpstreamModelsPreview.mockResolvedValueOnce({ models: ['cpa-model', 'gpt-5.6-sol'] })
+    const wrapper = mountSelector({
+      platform: 'openai',
+      type: 'apikey',
+      base_url: 'http://127.0.0.1:8317/v1',
+      api_key: 'sk-test'
+    })
+
+    await wrapper.get('[data-testid="sync-upstream-models"]').trigger('click')
+    await flushPromises()
+
+    expect(syncUpstreamModelsPreview).toHaveBeenCalledWith({
+      platform: 'openai',
+      type: 'apikey',
+      base_url: 'http://127.0.0.1:8317/v1',
+      api_key: 'sk-test'
+    })
+    expect(wrapper.emitted('update:modelValue')).toEqual([[['cpa-model', 'gpt-5.6-sol']]])
   })
 })

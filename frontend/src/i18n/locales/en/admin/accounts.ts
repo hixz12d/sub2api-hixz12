@@ -108,7 +108,7 @@ export default {
       types: {
         oauth: 'OAuth',
         chatgptOauth: 'ChatGPT OAuth',
-        responsesApi: 'Responses API',
+        responsesApi: 'OpenAI-compatible API',
         googleOauth: 'Google OAuth',
         codeAssist: 'Code Assist',
         antigravityOauth: 'Antigravity OAuth',
@@ -507,8 +507,9 @@ export default {
       apiKeyHint: 'Your Claude Console API Key',
       // OpenAI specific hints
       openai: {
-        baseUrlHint: 'Leave default for official OpenAI API',
-        apiKeyHint: 'Your OpenAI API Key',
+        baseUrlHint:
+          'Leave empty for the official OpenAI API; compatible aggregators can use https://host.example/v1. For http:// upstreams, explicitly allow insecure HTTP in Security settings.',
+        apiKeyHint: 'Your OpenAI API Key; once filled, fetch models from the upstream in the model whitelist.',
         oauthPassthrough: 'Auto passthrough (auth only)',
         oauthPassthroughDesc:
           'When enabled, this OpenAI account uses automatic passthrough: the gateway forwards request/response as-is and only swaps auth, while keeping billing/concurrency/audit and necessary safety filtering.',
@@ -541,12 +542,12 @@ export default {
           'Only applies to OpenAI API Key. This account can use OpenAI WebSocket Mode only when enabled.',
         responsesWebsocketsV2PassthroughHint:
           'Automatic passthrough is currently enabled: it only affects HTTP passthrough and does not disable WS mode.',
-        responsesMode: 'Responses API support',
+        responsesMode: 'Text API protocol',
         responsesModeDesc:
-          'Only applies to the OpenAI API Key text forwarding path. Auto follows probe results; force modes override probing.',
-        responsesModeAuto: 'Auto',
-        responsesModeForceResponses: 'Force Responses',
-        responsesModeForceChatCompletions: 'Force Chat Completions',
+          'Choose the text protocol supported by the upstream. CPA-style compatible aggregators usually use Chat Completions; Auto follows the probe result.',
+        responsesModeAuto: 'Auto-detect',
+        responsesModeForceResponses: 'Responses API',
+        responsesModeForceChatCompletions: 'Chat Completions compatible',
         responsesModeTextDisabledHint:
           'Not applicable when the Responses / Chat Completions endpoint is not enabled.',
         endpointCapabilities: 'Endpoint capabilities',
@@ -699,7 +700,7 @@ export default {
       searchModels: 'Search models...',
       noMatchingModels: 'No matching models',
       fillRelatedModels: 'Sync latest supported models',
-      syncUpstreamModels: 'Sync upstream supported models',
+      syncUpstreamModels: 'Fetch models from upstream',
       syncUpstreamModelsLoading: 'Syncing upstream...',
       syncUpstreamModelsSuccess: 'Synced {count} new model(s) from upstream ({total} upstream total)',
       syncUpstreamModelsNoChanges: 'All {count} upstream model(s) are already in the whitelist',
