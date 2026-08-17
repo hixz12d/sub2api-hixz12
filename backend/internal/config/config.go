@@ -962,7 +962,7 @@ type GatewayConfig struct {
 	// compact 端点支持模型滞后于普通 /responses 时，可用该配置降级规避上游错误。
 	OpenAICompactModel string `mapstructure:"openai_compact_model"`
 	// OpenAIAccountScopedIdentity isolates OAuth protocol identity by the selected upstream account.
-	// The account extra key openai_account_scoped_identity_enabled can override this for canary rollout.
+	// Enabled by default; the account extra key openai_account_scoped_identity_enabled can override it.
 	OpenAIAccountScopedIdentity GatewayOpenAIAccountScopedIdentityConfig `mapstructure:"openai_account_scoped_identity"`
 	// OpenAIAffinity is read before account selection; it therefore cannot be an
 	// account-only feature flag. Disabled is the compatibility default.
@@ -2323,7 +2323,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_egress.mode", "optional")
 	viper.SetDefault("gateway.openai_egress.failover_route_policy", "any")
 	viper.SetDefault("gateway.openai_egress.invalidate_connections_on_proxy_change", true)
-	viper.SetDefault("gateway.openai_account_scoped_identity.enabled", false)
+	viper.SetDefault("gateway.openai_account_scoped_identity.enabled", true)
 	viper.SetDefault("gateway.live.max_session_duration_seconds", 3600)
 	// OpenAI Responses WebSocket（默认开启；可通过 force_http 紧急回滚）
 	viper.SetDefault("gateway.openai_ws.enabled", true)

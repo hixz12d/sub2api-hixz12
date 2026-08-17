@@ -409,12 +409,12 @@ func TestLoadDefaultOpenAIFirstOutputTimeoutsDisabled(t *testing.T) {
 	require.Zero(t, cfg.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds)
 }
 
-func TestLoadOpenAIAccountScopedIdentityDefaultDisabled(t *testing.T) {
+func TestLoadOpenAIAccountScopedIdentityDefaultEnabled(t *testing.T) {
 	resetViperWithJWTSecret(t)
 
 	cfg, err := Load()
 	require.NoError(t, err)
-	require.False(t, cfg.Gateway.OpenAIAccountScopedIdentity.Enabled)
+	require.True(t, cfg.Gateway.OpenAIAccountScopedIdentity.Enabled)
 }
 
 func TestLoadOpenAIAccountScopedIdentityFromEnv(t *testing.T) {
