@@ -1269,7 +1269,11 @@ func (s *OpenAIGatewayService) InvalidateOpenAIRouteAccount(accountID int64) {
 
 // ResolveOpenAIEgressRoute exposes the sanitized route decision to request schedulers.
 func (s *OpenAIGatewayService) ResolveOpenAIEgressRoute(ctx context.Context, account *Account) (OpenAIEgressRoute, error) {
-	return s.resolveOpenAIEgress(ctx, account)
+	route, err := s.resolveOpenAIEgress(ctx, account)
+	if err == nil {
+		SetOpenAIAttemptRouteKeyFromContext(ctx, route.RouteKey)
+	}
+	return route, err
 }
 
 func (s *OpenAIGatewayService) OpenAIFailoverRequiresSameRoute() bool {

@@ -141,6 +141,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 	promptCacheKey := h.gatewayService.ExtractSessionID(c, body)
 
 	service.PrepareOpenAIRetryBudget(c, body)
+	service.SetOpenAIAttemptRouting(c, sessionHash, "", promptCacheKey)
 	maxAccountSwitches := h.maxAccountSwitches
 	if service.OpenAIRetryRequestIsStateful(c, body) {
 		maxAccountSwitches = 0
@@ -348,6 +349,11 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 						zap.Int("switch_count", switchCount),
 						zap.Int("max_switches", maxAccountSwitches),
 					)
+					if resetErr := h.gatewayService.ResetForAccountSwitch(c.Request.Context(), c, 0); resetErr != nil {
+						reqLog.Error("openai_chat_completions.account_switch_state_reset_failed", zap.Error(resetErr))
+						h.handleFailoverExhausted(c, failoverErr, streamStarted)
+						return
+					}
 					continue
 				}
 				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), false, nil)

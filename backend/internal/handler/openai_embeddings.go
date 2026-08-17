@@ -107,6 +107,9 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 		return
 	}
 
+	sessionHash := h.gatewayService.GenerateSessionHash(c, body)
+	service.PrepareOpenAIRetryBudget(c, body)
+	service.SetOpenAIAttemptRouting(c, sessionHash, "", "")
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	var lastFailoverErr *service.UpstreamFailoverError
@@ -237,6 +240,11 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 					zap.Int("switch_count", switchCount),
 					zap.Int("max_switches", maxAccountSwitches),
 				)
+				if resetErr := h.gatewayService.ResetForAccountSwitch(c.Request.Context(), c, 0); resetErr != nil {
+					reqLog.Error("openai_embeddings.account_switch_state_reset_failed", zap.Error(resetErr))
+					h.handleFailoverExhausted(c, failoverErr, false)
+					return
+				}
 				continue
 			}
 			h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), false, nil)

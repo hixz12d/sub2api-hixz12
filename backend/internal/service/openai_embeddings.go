@@ -25,6 +25,7 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
 	ctx = s.snapshotOpenAIOutboundIdentity(ctx, account, c.GetHeader("User-Agent"))
+	BeginOpenAIAttempt(c, account.ID, body)
 	startTime := time.Now()
 
 	originalModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())

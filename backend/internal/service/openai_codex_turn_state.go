@@ -93,6 +93,9 @@ func (s *OpenAIGatewayService) noteOpenAICodexTurnStateProvenance(c *gin.Context
 		accountID: account.ID,
 		expiresAt: time.Now().Add(s.openAIWSSessionStickyTTL()),
 	})
+	if state := OpenAIAttemptStateFromContext(c); state != nil {
+		state.TurnState = strings.TrimSpace(c.Writer.Header().Get(openAICodexTurnStateHeader))
+	}
 	s.sweepOpenAICodexTurnStateOrigins()
 }
 

@@ -62,6 +62,7 @@ type OpenAIWSStateStore interface {
 	DeleteResponseConn(responseID string)
 	BindResponseConnOwned(responseID string, owner openAIWSStateOwner, connID string, ttl time.Duration)
 	GetResponseConnOwned(responseID string, owner openAIWSStateOwner) (string, bool)
+	DeleteResponseConnOwned(responseID string, owner openAIWSStateOwner)
 
 	BindSessionTurnState(groupID int64, sessionHash, turnState string, ttl time.Duration)
 	GetSessionTurnState(groupID int64, sessionHash string) (string, bool)
@@ -284,6 +285,19 @@ func (s *defaultOpenAIWSStateStore) DeleteResponseConn(responseID string) {
 	}
 	s.responseToConnMu.Lock()
 	delete(s.responseToConn, id)
+	s.responseToConnMu.Unlock()
+}
+
+func (s *defaultOpenAIWSStateStore) DeleteResponseConnOwned(responseID string, owner openAIWSStateOwner) {
+	id := normalizeOpenAIWSResponseID(responseID)
+	owner = owner.normalized()
+	ownerKey := owner.tenantKey()
+	if id == "" || ownerKey == "" || owner.AccountID <= 0 || owner.SessionScopeHash == "" {
+		return
+	}
+	key := openAIWSResponseConnOwnedMapKey(id, ownerKey, owner.AccountID, owner.SessionScopeHash)
+	s.responseToConnMu.Lock()
+	delete(s.responseToConn, key)
 	s.responseToConnMu.Unlock()
 }
 

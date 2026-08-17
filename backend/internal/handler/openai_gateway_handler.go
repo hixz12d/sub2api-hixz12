@@ -441,6 +441,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	requireCompact := isOpenAIRemoteCompactPath(c)
 
 	service.PrepareOpenAIRetryBudget(c, body)
+	service.SetOpenAIAttemptRouting(c, sessionHash, previousResponseID, "")
 	maxAccountSwitches := h.maxAccountSwitches
 	if service.OpenAIRetryRequestIsStateful(c, body) {
 		maxAccountSwitches = 0
@@ -800,6 +801,11 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					}
 					reqLog.Warn("openai.upstream_failover_switching", failoverSwitchFields...)
 					currentAttemptTelemetry.recordDecision("switch_account", true, switchCount)
+					if resetErr := h.gatewayService.ResetForAccountSwitch(c.Request.Context(), c, 0); resetErr != nil {
+						reqLog.Error("openai.account_switch_state_reset_failed", zap.Error(resetErr))
+						h.handleFailoverExhausted(c, failoverErr, streamStarted)
+						return
+					}
 					continue
 				}
 				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), false, nil)
@@ -1160,6 +1166,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	}
 
 	service.PrepareOpenAIRetryBudget(c, body)
+	service.SetOpenAIAttemptRouting(c, sessionHash, "", promptCacheKey)
 	maxAccountSwitches := h.maxAccountSwitches
 	if service.OpenAIRetryRequestIsStateful(c, body) {
 		maxAccountSwitches = 0
@@ -1376,6 +1383,11 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 						zap.Int("switch_count", switchCount),
 						zap.Int("max_switches", maxAccountSwitches),
 					)
+					if resetErr := h.gatewayService.ResetForAccountSwitch(c.Request.Context(), c, 0); resetErr != nil {
+						reqLog.Error("openai_messages.account_switch_state_reset_failed", zap.Error(resetErr))
+						h.handleAnthropicFailoverExhausted(c, failoverErr, streamStarted)
+						return
+					}
 					continue
 				}
 				if result != nil && result.ClientDisconnect {
@@ -2002,6 +2014,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	)
 	ctx = service.WithOpenAIWSRequestOwner(ctx, c, sessionHash)
 	service.PrepareOpenAIRetryBudget(c, firstMessage)
+	service.SetOpenAIAttemptRouting(c, sessionHash, previousResponseID, "")
 	maxAccountSwitches := h.maxAccountSwitches
 	if service.OpenAIRetryRequestIsStateful(c, firstMessage) {
 		maxAccountSwitches = 0
@@ -2048,6 +2061,11 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 			zap.Int("switch_count", switchCount),
 			zap.Int("max_switches", maxAccountSwitches),
 		)
+		if resetErr := h.gatewayService.ResetForAccountSwitch(ctx, c, 0); resetErr != nil {
+			reqLog.Error("openai.websocket_account_switch_state_reset_failed", zap.Error(resetErr))
+			closeOpenAIWSFailoverExhausted(wsConn, failoverErr)
+			return false
+		}
 		if ctx.Err() != nil {
 			return false
 		}

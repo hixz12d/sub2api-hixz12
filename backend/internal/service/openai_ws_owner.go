@@ -159,6 +159,7 @@ func bindOpenAIWSResponseAccount(ctx context.Context, store OpenAIWSStateStore, 
 	if store == nil {
 		return nil
 	}
+	TrackOpenAIResponseIDFromContext(ctx, responseID)
 	if owner, ok := openAIWSStateOwnerFromContext(ctx); ok {
 		return store.BindResponseAccountOwned(ctx, groupID, responseID, owner, accountID, ttl)
 	}
@@ -189,6 +190,8 @@ func bindOpenAIWSResponseConn(ctx context.Context, store OpenAIWSStateStore, res
 	if store == nil {
 		return
 	}
+	TrackOpenAIResponseIDFromContext(ctx, responseID)
+	TrackOpenAIResponseConnIDFromContext(ctx, connID)
 	if owner.tenantKnown() {
 		store.BindResponseConnOwned(responseID, owner, connID, ttl)
 		return

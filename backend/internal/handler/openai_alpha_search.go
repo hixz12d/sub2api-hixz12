@@ -107,6 +107,8 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 
 	searchID := strings.TrimSpace(gjson.GetBytes(body, "id").String())
 	sessionHash := h.gatewayService.GenerateSessionHashWithFallback(c, nil, searchID)
+	service.PrepareOpenAIRetryBudget(c, body)
+	service.SetOpenAIAttemptRouting(c, sessionHash, "", "")
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})
 	var lastFailoverErr *service.UpstreamFailoverError
@@ -228,6 +230,11 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 			zap.Int("upstream_status", failoverErr.StatusCode),
 			zap.Int("switch_count", switchCount),
 		)
+		if resetErr := h.gatewayService.ResetForAccountSwitch(c.Request.Context(), c, 0); resetErr != nil {
+			reqLog.Error("openai_alpha_search.account_switch_state_reset_failed", zap.Error(resetErr))
+			h.handleFailoverExhausted(c, failoverErr, false)
+			return
+		}
 	}
 }
 

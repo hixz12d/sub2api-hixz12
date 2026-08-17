@@ -192,6 +192,7 @@ func PrepareOpenAIRetryBudget(c *gin.Context, body []byte) *OpenAIRetryBudget {
 	if c == nil {
 		return nil
 	}
+	PrepareOpenAIAttemptState(c, body, "", "", "")
 	if existing := openAIRetryBudgetFromContextRaw(c); existing != nil {
 		return existing
 	}
@@ -205,11 +206,15 @@ func EnsureOpenAIRetryBudget(c *gin.Context, account *Account, body []byte) *Ope
 	if c == nil {
 		return nil
 	}
+	PrepareOpenAIRetryBudget(c, body)
+	if account != nil {
+		BeginOpenAIAttempt(c, account.ID, body)
+	}
 	if account == nil || !account.IsOpenAIOAuth() || !openAIRetryBudgetV2Enabled(account) {
 		c.Set(openAIRetryBudgetActiveKey, false)
 		return nil
 	}
-	budget := PrepareOpenAIRetryBudget(c, body)
+	budget := openAIRetryBudgetFromContextRaw(c)
 	c.Set(openAIRetryBudgetActiveKey, budget != nil)
 	return budget
 }

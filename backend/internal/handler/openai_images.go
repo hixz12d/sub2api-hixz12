@@ -149,6 +149,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 	// Image generation may already incur upstream cost before a transport failure;
 	// never replay one logical image request on a different account.
 	service.PrepareOpenAIRetryBudget(c, body)
+	service.SetOpenAIAttemptRouting(c, sessionHash, "", "")
 	maxAccountSwitches := 0
 	switchCount := 0
 	profitVetoCount := 0
@@ -342,6 +343,11 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 						zap.Int("switch_count", switchCount),
 						zap.Int("max_switches", maxAccountSwitches),
 					)
+					if resetErr := h.gatewayService.ResetForAccountSwitch(requestCtx, c, 0); resetErr != nil {
+						reqLog.Error("openai.images.account_switch_state_reset_failed", zap.Error(resetErr))
+						h.handleFailoverExhausted(c, failoverErr, streamStarted)
+						return
+					}
 					continue
 				}
 				h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(requestModel), false, nil)
