@@ -269,6 +269,12 @@ func (s *OpenAIGatewayService) shouldFailoverOpenAIUpstreamResponse(statusCode i
 	if isOpenAIContextWindowError(upstreamMsg, upstreamBody) {
 		return false
 	}
+	// CPA/compatible aggregators commonly encode model capability misses as
+	// HTTP 400 (model_not_found or unknown provider for model). Exclude the
+	// failing account/model pair and let the handler select another account.
+	if isUpstreamModelNotFoundError(statusCode, upstreamBody) {
+		return true
+	}
 	if isOpenAIRequestBodyTooLargeError(statusCode, upstreamMsg, upstreamBody) {
 		return true
 	}

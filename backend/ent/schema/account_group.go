@@ -31,7 +31,7 @@ func (AccountGroup) Fields() []ent.Field {
 		field.Int64("account_id"),
 		field.Int64("group_id"),
 		field.Int("priority").
-			Default(50),
+			Default(1),
 		field.Time("created_at").
 			Immutable().
 			Default(time.Now).

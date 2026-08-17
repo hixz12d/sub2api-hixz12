@@ -222,7 +222,7 @@ var (
 	}
 	// AccountGroupsColumns holds the columns for the "account_groups" table.
 	AccountGroupsColumns = []*schema.Column{
-		{Name: "priority", Type: field.TypeInt, Default: 50},
+		{Name: "priority", Type: field.TypeInt, Default: 1},
 		{Name: "created_at", Type: field.TypeTime, SchemaType: map[string]string{"postgres": "timestamptz"}},
 		{Name: "account_id", Type: field.TypeInt64},
 		{Name: "group_id", Type: field.TypeInt64},

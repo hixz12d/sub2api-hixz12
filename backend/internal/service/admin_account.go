@@ -180,7 +180,7 @@ func duplicateAccountGroups(source *Account) ([]AccountGroup, []int64) {
 	groups := make([]AccountGroup, 0, len(source.GroupIDs))
 	groupIDs := append([]int64(nil), source.GroupIDs...)
 	for _, groupID := range groupIDs {
-		groups = append(groups, AccountGroup{GroupID: groupID, Priority: 50})
+		groups = append(groups, AccountGroup{GroupID: groupID, Priority: 1})
 	}
 	return groups, groupIDs
 }
@@ -465,7 +465,42 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 	return account, nil
 }
 
+const (
+	defaultAccountProxyName     = "ipv6 6"
+	defaultAccountProxyProtocol = "http"
+	defaultAccountProxyHost     = "45.61.148.226"
+	defaultAccountProxyPort     = 18006
+)
+
+// resolveDefaultAccountProxyID resolves the screenshot-selected proxy by stable
+// endpoint identity instead of a database ID, which may differ per deployment.
+// A missing proxy is non-fatal so account synchronization can continue; the
+// warning makes the missing default visible to operators.
+func (s *adminServiceImpl) resolveDefaultAccountProxyID(ctx context.Context, explicit *int64) *int64 {
+	if explicit != nil || s == nil || s.proxyRepo == nil {
+		return explicit
+	}
+	proxies, err := s.proxyRepo.ListActive(ctx)
+	if err != nil {
+		slog.Warn("resolve_default_account_proxy_failed", "error", err)
+		return nil
+	}
+	for i := range proxies {
+		p := &proxies[i]
+		if p.ID > 0 && p.Name == defaultAccountProxyName &&
+			strings.EqualFold(strings.TrimSpace(p.Protocol), defaultAccountProxyProtocol) &&
+			p.Host == defaultAccountProxyHost && p.Port == defaultAccountProxyPort {
+			id := p.ID
+			return &id
+		}
+	}
+	slog.Warn("default_account_proxy_not_found", "name", defaultAccountProxyName, "host", defaultAccountProxyHost, "port", defaultAccountProxyPort)
+	return nil
+}
+
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
+	// 未显式指定代理时，自动绑定固定的默认出口代理；显式 ProxyID 保持调用方选择。
+	input.ProxyID = s.resolveDefaultAccountProxyID(ctx, input.ProxyID)
 	accountExtra, err := normalizeOpenAILongContextBillingExtra(input.Platform, input.Extra)
 	if err != nil {
 		return nil, err
@@ -1351,7 +1386,7 @@ func (s *adminServiceImpl) CreateShadow(ctx context.Context, parentID int64, opt
 	}
 	accountGroups := make([]AccountGroup, 0, len(groupIDs))
 	for _, groupID := range groupIDs {
-		priority := 50
+		priority := 1
 		if inheritedPriority, ok := bindingPriorityByGroup[groupID]; ok {
 			priority = inheritedPriority
 		}

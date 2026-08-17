@@ -1,21 +1,62 @@
 package service
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 )
 
-var upstreamModelNotFoundKeywords = []string{"model not found", "unknown model", "not found"}
+var upstreamModelNotFoundKeywords = []string{"model not found", "unknown model", "unknown provider for model", "not found"}
 
 func isUpstreamModelNotFoundError(statusCode int, body []byte) bool {
-	if statusCode != http.StatusNotFound {
-		return false
-	}
 	normalized := normalizeModelNotFoundBody(body)
-	if normalized == "" || !strings.Contains(normalized, "model") {
+	if normalized == "" {
 		return false
 	}
-	return containsModelNotFoundKeyword(normalized)
+	if statusCode == http.StatusNotFound {
+		if !strings.Contains(normalized, "model") {
+			return false
+		}
+		return containsModelNotFoundKeyword(normalized)
+	}
+	if statusCode != http.StatusBadRequest {
+		return false
+	}
+	// Compatible aggregators use HTTP 400 for an account/model capability miss.
+	// Require a provider-specific phrase or an explicit structured error code so
+	// ordinary client-side 400 messages do not trigger account failover.
+	return strings.Contains(normalized, "unknown provider for model") || hasModelNotFoundCode(body)
+}
+
+func hasModelNotFoundCode(body []byte) bool {
+	var payload any
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return false
+	}
+	return containsModelNotFoundCode(payload)
+}
+
+func containsModelNotFoundCode(value any) bool {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, nested := range typed {
+			if strings.EqualFold(key, "code") {
+				if code, ok := nested.(string); ok && strings.EqualFold(code, "model_not_found") {
+					return true
+				}
+			}
+			if containsModelNotFoundCode(nested) {
+				return true
+			}
+		}
+	case []any:
+		for _, nested := range typed {
+			if containsModelNotFoundCode(nested) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func isModelNotFoundError(statusCode int, body []byte) bool {
