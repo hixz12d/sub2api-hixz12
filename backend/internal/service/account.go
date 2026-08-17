@@ -178,6 +178,10 @@ func (a *Account) EffectiveLoadFactor() int {
 }
 
 func (a *Account) IsSchedulable() bool {
+	return a.isSchedulableForModel("")
+}
+
+func (a *Account) isSchedulableForModel(requestedModel string) bool {
 	if !a.IsActive() || !a.Schedulable {
 		return false
 	}
@@ -194,7 +198,7 @@ func (a *Account) IsSchedulable() bool {
 	if a.TempUnschedulableUntil != nil && now.Before(*a.TempUnschedulableUntil) {
 		return false
 	}
-	if a.IsAPIKeyOrBedrock() && a.IsQuotaExceeded() {
+	if a.IsQuotaExceededForModel(requestedModel) {
 		return false
 	}
 	return true
@@ -1235,6 +1239,12 @@ func (a *Account) IsBedrockAPIKey() bool {
 // IsAPIKeyOrBedrock 返回账号类型是否支持配额和池模式等特性
 func (a *Account) IsAPIKeyOrBedrock() bool {
 	return a.Type == AccountTypeAPIKey || a.Type == AccountTypeBedrock
+}
+
+// SupportsQuotaLimit reports whether account-level spend limits are enforced.
+// OAuth accounts use the same local billing counters as API-key accounts.
+func (a *Account) SupportsQuotaLimit() bool {
+	return a != nil && (a.IsAPIKeyOrBedrock() || a.IsOAuth())
 }
 
 func (a *Account) IsOpenAI() bool {
@@ -2586,7 +2596,62 @@ func (a *Account) IsWeeklyQuotaPeriodExpired() bool {
 	return isPeriodExpired(start, 7*24*time.Hour)
 }
 
-// IsQuotaExceeded 检查 API Key 账号配额是否已超限（任一维度超限即返回 true）
+// GetQuotaExemptModels returns normalized model names allowed after a quota is exhausted.
+func (a *Account) GetQuotaExemptModels() []string {
+	if a == nil || a.Extra == nil {
+		return nil
+	}
+	raw, ok := a.Extra["quota_exempt_models"]
+	if !ok {
+		return nil
+	}
+	var values []string
+	switch v := raw.(type) {
+	case string:
+		values = strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == '\n' || r == '\r' })
+	case []string:
+		values = v
+	case []any:
+		for _, item := range v {
+			if value, ok := item.(string); ok {
+				values = append(values, value)
+			}
+		}
+	}
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
+}
+
+func (a *Account) IsQuotaModelExempt(requestedModel string) bool {
+	requestedModel = strings.ToLower(strings.TrimSpace(requestedModel))
+	if requestedModel == "" {
+		return false
+	}
+	for _, exemptModel := range a.GetQuotaExemptModels() {
+		if requestedModel == exemptModel {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *Account) IsQuotaExceededForModel(requestedModel string) bool {
+	return a.SupportsQuotaLimit() && !a.IsQuotaModelExempt(requestedModel) && a.IsQuotaExceeded()
+}
+
+// IsQuotaExceeded 检查账号配额是否已超限（任一维度超限即返回 true）
 func (a *Account) IsQuotaExceeded() bool {
 	// 总额度
 	if limit := a.GetQuotaLimit(); limit > 0 && a.GetQuotaUsed() >= limit {

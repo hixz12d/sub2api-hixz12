@@ -625,7 +625,7 @@ func (s *defaultOpenAIAccountScheduler) bestEligibleBindingPriority(ctx context.
 				continue
 			}
 		}
-		if !account.IsSchedulable() || account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() {
+		if !account.IsSchedulableForModel(req.RequestedModel) || account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() {
 			continue
 		}
 		if !s.isAccountRequestCompatible(ctx, account, req) || !s.isAccountTransportCompatible(account, req.RequiredTransport) {
@@ -720,7 +720,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		return nil, false, nil
 	}
 	if persistentStrong {
-		if account.Status != StatusActive || account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() ||
+		if account.Status != StatusActive || !account.IsSchedulableForModel(req.RequestedModel) || account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() ||
 			(req.RequestedModel != "" && !account.IsModelSupported(req.RequestedModel)) ||
 			!account.SupportsOpenAIEndpointCapability(req.RequiredCapability) ||
 			!s.service.openAIAccountMatchesSchedulingGroup(account, req.GroupID) ||
@@ -740,7 +740,7 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		}
 		return nil, false, fmt.Errorf("%w: strong-bound account %d has no capacity", ErrOpenAIAffinityStateUnbound, accountID)
 	}
-	if !persistentStrong && (shouldClearStickySession(account, req.RequestedModel) || account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() || !account.IsSchedulable()) {
+	if !persistentStrong && (shouldClearStickySession(account, req.RequestedModel) || account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() || !account.IsSchedulableForModel(req.RequestedModel)) {
 		_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		return nil, false, nil
 	}
@@ -1803,7 +1803,7 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 				continue
 			}
 		}
-		if !account.IsSchedulable() {
+		if !account.IsSchedulableForModel(req.RequestedModel) {
 			filterStats.exclude("not_schedulable")
 			continue
 		}

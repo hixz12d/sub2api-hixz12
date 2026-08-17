@@ -1892,6 +1892,7 @@
           :weeklyResetDay="editWeeklyResetDay"
           :weeklyResetHour="editWeeklyResetHour"
           :resetTimezone="editResetTimezone"
+          :quotaExemptModels="editQuotaExemptModels"
           @update:totalLimit="editQuotaLimit = $event"
           @update:dailyLimit="editQuotaDailyLimit = $event"
           @update:weeklyLimit="editQuotaWeeklyLimit = $event"
@@ -1910,12 +1911,13 @@
           @update:weeklyResetDay="editWeeklyResetDay = $event"
           @update:weeklyResetHour="editWeeklyResetHour = $event"
           @update:resetTimezone="editResetTimezone = $event"
+          @update:quotaExemptModels="editQuotaExemptModels = $event"
         />
       </div>
 
       <!-- 配额控制 (非 Anthropic apikey/bedrock) -->
       <div
-        v-else-if="form.type === 'apikey' || form.type === 'bedrock'"
+        v-else-if="form.type === 'apikey' || form.type === 'bedrock' || form.type === 'oauth' || form.type === 'setup-token'"
         class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
       >
         <div class="mb-3">
@@ -1944,6 +1946,7 @@
           :weeklyResetDay="editWeeklyResetDay"
           :weeklyResetHour="editWeeklyResetHour"
           :resetTimezone="editResetTimezone"
+          :quotaExemptModels="editQuotaExemptModels"
           @update:totalLimit="editQuotaLimit = $event"
           @update:dailyLimit="editQuotaDailyLimit = $event"
           @update:weeklyLimit="editQuotaWeeklyLimit = $event"
@@ -1962,6 +1965,7 @@
           @update:weeklyResetDay="editWeeklyResetDay = $event"
           @update:weeklyResetHour="editWeeklyResetHour = $event"
           @update:resetTimezone="editResetTimezone = $event"
+          @update:quotaExemptModels="editQuotaExemptModels = $event"
         />
       </div>
 
@@ -3781,6 +3785,7 @@ const editWeeklyResetMode = ref<'rolling' | 'fixed' | null>(null)
 const editWeeklyResetDay = ref<number | null>(null)
 const editWeeklyResetHour = ref<number | null>(null)
 const editResetTimezone = ref<string | null>(null)
+const editQuotaExemptModels = ref('')
 const modelMappings = ref<ModelMapping[]>([])
 const openAICompactModelMappings = ref<ModelMapping[]>([])
 const modelRestrictionMode = ref<'whitelist' | 'mapping'>('whitelist')
@@ -4712,6 +4717,7 @@ const resetForm = () => {
   upstreamBillingAutoProbeEnabled.value = true
   editQuotaLimit.value = null
   editQuotaDailyLimit.value = null
+  editQuotaExemptModels.value = ''
   editQuotaWeeklyLimit.value = null
   editDailyResetMode.value = null
   editDailyResetHour.value = null
@@ -5283,15 +5289,22 @@ const createAccountAndFinish = async (
   if (!applyTempUnschedConfig(credentials)) {
     return
   }
-  // Inject quota limits for apikey/bedrock accounts
+  // Inject account quota for API key, Bedrock, and OAuth accounts.
   let finalExtra = extra
-  if (type === 'apikey' || type === 'bedrock') {
+  if (type === 'apikey' || type === 'bedrock' || type === 'oauth' || type === 'setup-token') {
     const quotaExtra: Record<string, unknown> = { ...(extra || {}) }
     if (editQuotaLimit.value != null && editQuotaLimit.value > 0) {
       quotaExtra.quota_limit = editQuotaLimit.value
     }
     if (editQuotaDailyLimit.value != null && editQuotaDailyLimit.value > 0) {
       quotaExtra.quota_daily_limit = editQuotaDailyLimit.value
+    }
+    const exemptModels = editQuotaExemptModels.value
+      .split(/[\n,\r]+/)
+      .map((model) => model.trim())
+      .filter(Boolean)
+    if (exemptModels.length > 0) {
+      quotaExtra.quota_exempt_models = exemptModels
     }
     if (editQuotaWeeklyLimit.value != null && editQuotaWeeklyLimit.value > 0) {
       quotaExtra.quota_weekly_limit = editQuotaWeeklyLimit.value

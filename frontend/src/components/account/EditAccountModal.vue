@@ -1841,6 +1841,7 @@
           :weeklyResetDay="editWeeklyResetDay"
           :weeklyResetHour="editWeeklyResetHour"
           :resetTimezone="editResetTimezone"
+          :quotaExemptModels="editQuotaExemptModels"
           :quotaNotifyGlobalEnabled="quotaNotifyGlobalEnabled"
           :quotaNotifyDailyEnabled="quotaNotifyState.daily.enabled"
           :quotaNotifyDailyThreshold="quotaNotifyState.daily.threshold"
@@ -1860,6 +1861,7 @@
           @update:weeklyResetDay="editWeeklyResetDay = $event"
           @update:weeklyResetHour="editWeeklyResetHour = $event"
           @update:resetTimezone="editResetTimezone = $event"
+          @update:quotaExemptModels="editQuotaExemptModels = $event"
           @update:quotaNotifyDailyEnabled="quotaNotifyState.daily.enabled = $event"
           @update:quotaNotifyDailyThreshold="quotaNotifyState.daily.threshold = $event"
           @update:quotaNotifyDailyThresholdType="quotaNotifyState.daily.thresholdType = $event"
@@ -1873,7 +1875,7 @@
       </div>
       <!-- 配额控制 (非 Anthropic apikey/bedrock) -->
       <div
-        v-else-if="account?.type === 'apikey' || account?.type === 'bedrock'"
+        v-else-if="account?.type === 'apikey' || account?.type === 'bedrock' || account?.type === 'oauth' || account?.type === 'setup-token'"
         class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4"
       >
         <div class="mb-3">
@@ -1892,6 +1894,7 @@
           :weeklyResetDay="editWeeklyResetDay"
           :weeklyResetHour="editWeeklyResetHour"
           :resetTimezone="editResetTimezone"
+          :quotaExemptModels="editQuotaExemptModels"
           :quotaNotifyGlobalEnabled="quotaNotifyGlobalEnabled"
           :quotaNotifyDailyEnabled="quotaNotifyState.daily.enabled"
           :quotaNotifyDailyThreshold="quotaNotifyState.daily.threshold"
@@ -1911,6 +1914,7 @@
           @update:weeklyResetDay="editWeeklyResetDay = $event"
           @update:weeklyResetHour="editWeeklyResetHour = $event"
           @update:resetTimezone="editResetTimezone = $event"
+          @update:quotaExemptModels="editQuotaExemptModels = $event"
           @update:quotaNotifyDailyEnabled="quotaNotifyState.daily.enabled = $event"
           @update:quotaNotifyDailyThreshold="quotaNotifyState.daily.threshold = $event"
           @update:quotaNotifyDailyThresholdType="quotaNotifyState.daily.thresholdType = $event"
@@ -3050,6 +3054,7 @@ const editWeeklyResetMode = ref<'rolling' | 'fixed' | null>(null)
 const editWeeklyResetDay = ref<number | null>(null)
 const editWeeklyResetHour = ref<number | null>(null)
 const editResetTimezone = ref<string | null>(null)
+const editQuotaExemptModels = ref('')
 const codexFingerprintModeOptions = computed(() => [
   { value: 'off' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintOff') },
   { value: 'device' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintDevice') },
@@ -3586,14 +3591,18 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     }
   }
 
-  // Load quota limit for apikey/bedrock accounts (bedrock quota is also loaded in its own branch above)
-  if (newAccount.type === 'apikey' || newAccount.type === 'bedrock') {
+  // Load account quota for API key, Bedrock, and OAuth accounts.
+  if (newAccount.type === 'apikey' || newAccount.type === 'bedrock' || newAccount.type === 'oauth' || newAccount.type === 'setup-token') {
     const quotaVal = extra?.quota_limit as number | undefined
     editQuotaLimit.value = (quotaVal && quotaVal > 0) ? quotaVal : null
     const dailyVal = extra?.quota_daily_limit as number | undefined
     editQuotaDailyLimit.value = (dailyVal && dailyVal > 0) ? dailyVal : null
     const weeklyVal = extra?.quota_weekly_limit as number | undefined
     editQuotaWeeklyLimit.value = (weeklyVal && weeklyVal > 0) ? weeklyVal : null
+    const exemptModels = extra?.quota_exempt_models
+    editQuotaExemptModels.value = Array.isArray(exemptModels)
+      ? exemptModels.filter((value): value is string => typeof value === 'string').join('\n')
+      : (typeof exemptModels === 'string' ? exemptModels : '')
     // Load quota reset mode config
     editDailyResetMode.value = (extra?.quota_daily_reset_mode as 'rolling' | 'fixed') || null
     editDailyResetHour.value = (extra?.quota_daily_reset_hour as number) ?? null
@@ -3613,6 +3622,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     editWeeklyResetDay.value = null
     editWeeklyResetHour.value = null
     editResetTimezone.value = null
+    editQuotaExemptModels.value = ''
     resetQuotaNotify()
   }
 
@@ -4969,8 +4979,8 @@ const handleSubmit = async () => {
       updatePayload.extra = newExtra
     }
 
-    // For apikey/bedrock accounts, handle quota_limit in extra
-    if (props.account.type === 'apikey' || props.account.type === 'bedrock') {
+    // Persist account quota for API key, Bedrock, and OAuth accounts.
+    if (props.account.type === 'apikey' || props.account.type === 'bedrock' || props.account.type === 'oauth' || props.account.type === 'setup-token') {
       const currentExtra = (updatePayload.extra as Record<string, unknown>) ||
         (props.account.extra as Record<string, unknown>) || {}
       const newExtra: Record<string, unknown> = { ...currentExtra }
@@ -4993,6 +5003,16 @@ const handleSubmit = async () => {
         delete newExtra.quota_daily_limit
         delete newExtra.quota_daily_used
         delete newExtra.quota_daily_start
+      }
+      // Models allowed after the quota is exhausted.
+      const exemptModels = editQuotaExemptModels.value
+        .split(/[\n,\r]+/)
+        .map((model) => model.trim())
+        .filter(Boolean)
+      if (exemptModels.length > 0) {
+        newExtra.quota_exempt_models = exemptModels
+      } else {
+        delete newExtra.quota_exempt_models
       }
       // Weekly quota
       if (editQuotaWeeklyLimit.value != null && editQuotaWeeklyLimit.value > 0) {

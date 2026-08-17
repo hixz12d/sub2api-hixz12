@@ -1806,7 +1806,7 @@ func (s *OpenAIGatewayService) filterOpenAIAccountsByEgressPolicy(ctx context.Co
 				continue
 			}
 			hydrated, err := s.accountRepo.GetByID(ctx, candidate.ID)
-			if err != nil || hydrated == nil || hydrated.ID != candidate.ID || hydrated.Platform != PlatformOpenAI || !hydrated.IsSchedulable() {
+			if err != nil || hydrated == nil || hydrated.ID != candidate.ID || hydrated.Platform != PlatformOpenAI {
 				continue
 			}
 			candidate = hydrated

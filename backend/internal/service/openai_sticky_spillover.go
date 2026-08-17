@@ -394,7 +394,7 @@ func (s *OpenAIGatewayService) selectSpecificOpenAIOAuthAccount(
 	account *Account,
 	preserveSticky bool,
 ) (*AccountSelectionResult, bool, error) {
-	if account == nil || account.ID <= 0 || account.Platform != PlatformOpenAI || account.Type != AccountTypeOAuth || !account.IsSchedulable() {
+	if account == nil || account.ID <= 0 || account.Platform != PlatformOpenAI || account.Type != AccountTypeOAuth || !account.IsSchedulableForModel(req.requestedModel) {
 		return nil, false, nil
 	}
 	if req.excludedIDs != nil {

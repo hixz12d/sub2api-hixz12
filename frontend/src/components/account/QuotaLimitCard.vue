@@ -16,6 +16,7 @@ const props = withDefaults(defineProps<{
   weeklyResetDay: number | null
   weeklyResetHour: number | null
   resetTimezone: string | null
+  quotaExemptModels?: string
   quotaNotifyGlobalEnabled?: boolean
   quotaNotifyDailyEnabled?: boolean | null
   quotaNotifyDailyThreshold?: number | null
@@ -49,6 +50,7 @@ const emit = defineEmits<{
   'update:weeklyResetDay': [value: number | null]
   'update:weeklyResetHour': [value: number | null]
   'update:resetTimezone': [value: string | null]
+  'update:quotaExemptModels': [value: string]
   'update:quotaNotifyDailyEnabled': [value: boolean | null]
   'update:quotaNotifyDailyThreshold': [value: number | null]
   'update:quotaNotifyDailyThresholdType': [value: QuotaThresholdType | null]
@@ -218,6 +220,21 @@ const dailyFixedHint = computed(() =>
           @update:reset-day="emit('update:weeklyResetDay', $event)"
           @update:reset-timezone="emit('update:resetTimezone', $event)"
         />
+
+        <!-- Models allowed after the account quota is exhausted -->
+        <div class="rounded-md border border-gray-200 p-3 dark:border-dark-600">
+          <label class="input-label mb-1">{{ t('admin.accounts.quotaExemptModels') }}</label>
+          <textarea
+            :value="props.quotaExemptModels || ''"
+            rows="2"
+            class="input min-h-[3.5rem] resize-y text-sm"
+            :placeholder="t('admin.accounts.quotaExemptModelsPlaceholder')"
+            @input="emit('update:quotaExemptModels', ($event.target as HTMLTextAreaElement).value)"
+          />
+          <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.quotaExemptModelsHint') }}
+          </p>
+        </div>
 
         <!-- Total quota -->
         <QuotaDimensionRow
