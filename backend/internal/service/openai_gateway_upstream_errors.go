@@ -19,9 +19,36 @@ import (
 
 const openAIOAuthAuthorizedAPIKeyGroupsMessage = "this openai oauth account is restricted to authorized api key groups"
 const openAIOAuthAuthorizedAPIKeyGroupsReason = GatewayFailureReason("openai_oauth_authorized_api_key_groups")
+const openAIImageGenerationCapabilityMessage = "image generation is not enabled for this group"
 
 func normalizeOpenAIErrorText(value string) string {
 	return strings.Join(strings.Fields(strings.ToLower(strings.TrimSpace(value))), " ")
+}
+
+// IsOpenAIImageGenerationCapabilityError recognizes a group/request-scoped
+// image capability denial. It must not be treated as evidence that the
+// selected account is unhealthy or should be temporarily unscheduled.
+func IsOpenAIImageGenerationCapabilityError(upstreamMsg string, responseBody []byte) bool {
+	messageCandidates := []string{upstreamMsg}
+	for _, path := range []string{
+		"response.error.message",
+		"error.message",
+		"response.error.detail",
+		"error.detail",
+		"message",
+		"detail",
+	} {
+		if value := strings.TrimSpace(gjson.GetBytes(responseBody, path).String()); value != "" {
+			messageCandidates = append(messageCandidates, value)
+		}
+	}
+
+	for _, candidate := range messageCandidates {
+		if strings.Contains(normalizeOpenAIErrorText(candidate), openAIImageGenerationCapabilityMessage) {
+			return true
+		}
+	}
+	return false
 }
 
 // IsOpenAIOAuthAuthorizedAPIKeyGroupsError recognizes the upstream restriction

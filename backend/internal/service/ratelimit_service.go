@@ -268,6 +268,10 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 // 返回是否应该停止该账号的调度
 func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) (shouldDisable bool) {
 	ctx = withTempUnschedulableModel(ctx, requestedModel)
+	if account.Platform == PlatformOpenAI && IsOpenAIImageGenerationCapabilityError("", responseBody) {
+		slog.Warn("openai_image_generation_capability_request_scoped", "account_id", account.ID)
+		return false
+	}
 	if account.Platform == PlatformOpenAI && account.Type == AccountTypeOAuth && statusCode == http.StatusForbidden &&
 		IsOpenAIOAuthAuthorizedAPIKeyGroupsError("", responseBody) {
 		slog.Warn("openai_oauth_authorized_api_key_groups_request_scoped", "account_id", account.ID)
