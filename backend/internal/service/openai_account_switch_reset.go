@@ -25,7 +25,6 @@ func (s *OpenAIGatewayService) ResetForAccountSwitch(ctx context.Context, c *gin
 
 	previousAccountID := state.CurrentAccountID
 	groupID := getOpenAIGroupIDFromContext(c)
-	apiKeyID := getAPIKeyIDFromContext(c)
 	var resetErr error
 
 	if sessionHash := strings.TrimSpace(state.SessionHash); sessionHash != "" {
@@ -68,21 +67,18 @@ func (s *OpenAIGatewayService) ResetForAccountSwitch(ctx context.Context, c *gin
 		}
 	}
 
-	// Compatibility continuation and prompt-cache anchors are account-scoped in
-	// memory. Clear the complete previous-account namespace for this API key so
-	// no stale response or cache anchor can be attached to the next account.
-	s.resetOpenAICompatState(previousAccountID, apiKeyID)
+	// Keep compatibility continuation and prompt-cache anchors here. Their keys
+	// include the previous account ID and API key ID, so retaining them cannot
+	// attach state to the next account; it lets a later request recover the
+	// previous account's cache immediately if that account becomes eligible again.
 
-	// Do not let a downstream client header from the failed account leak into the
-	// next attempt. The next account's identity finalizer will derive fresh values.
+	// Remove only opaque turn/continuation tokens minted by the failed account.
+	// Client session/conversation headers are stable routing and cache seeds; on
+	// a WebSocket request they must survive this reset for all later turns.
 	if c.Request != nil {
 		for _, header := range []string{
-			legacyCodexSessionHeader,
-			codexSessionHeader,
 			legacyCodexThreadHeader,
 			codexThreadHeader,
-			"conversation_id",
-			"session_id",
 			"x-codex-turn-state",
 			"x-codex-turn-metadata",
 		} {
@@ -101,25 +97,4 @@ func (s *OpenAIGatewayService) ResetForAccountSwitch(ctx context.Context, c *gin
 	state.attemptActive = false
 
 	return resetErr
-}
-
-func (s *OpenAIGatewayService) resetOpenAICompatState(accountID, apiKeyID int64) {
-	if s == nil || accountID <= 0 || apiKeyID <= 0 {
-		return
-	}
-	prefix := fmt.Sprintf("%d\x00%d\x00", accountID, apiKeyID)
-	s.openaiCompatSessionResponses.Range(func(key, _ any) bool {
-		if value, ok := key.(string); ok && strings.HasPrefix(value, prefix) {
-			s.openaiCompatSessionResponses.Delete(key)
-		}
-		return true
-	})
-
-	digestPrefix := fmt.Sprintf("%d|%d|", accountID, apiKeyID)
-	s.openaiCompatAnthropicDigestSessions.Range(func(key, _ any) bool {
-		if value, ok := key.(string); ok && strings.HasPrefix(value, digestPrefix) {
-			s.openaiCompatAnthropicDigestSessions.Delete(key)
-		}
-		return true
-	})
 }

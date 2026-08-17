@@ -38,7 +38,10 @@ func TestResetForAccountSwitchClearsAllRequestLocalContinuationState(t *testing.
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 	c.Request.Header.Set("x-codex-turn-state", "old-turn")
+	c.Request.Header.Set("x-codex-turn-metadata", "old-metadata")
 	c.Request.Header.Set("session_id", "old-session")
+	c.Request.Header.Set("conversation_id", "old-conversation")
+	c.Request.Header.Set("thread-id", "old-thread")
 
 	PrepareOpenAIAttemptState(c, []byte(`{"input":"hello"}`), "session-a", "resp-a", "cache-a")
 	BeginOpenAIAttempt(c, 11, []byte(`{"input":"hello"}`))
@@ -60,7 +63,10 @@ func TestResetForAccountSwitchClearsAllRequestLocalContinuationState(t *testing.
 	require.Empty(t, snapshot.ResponseIDs)
 	require.Empty(t, snapshot.ResponseConnIDs)
 	require.Empty(t, c.GetHeader("x-codex-turn-state"))
-	require.Empty(t, c.GetHeader("session_id"))
+	require.Empty(t, c.GetHeader("x-codex-turn-metadata"))
+	require.Equal(t, "old-session", c.GetHeader("session_id"))
+	require.Equal(t, "old-conversation", c.GetHeader("conversation_id"))
+	require.Empty(t, c.GetHeader("thread-id"))
 
 	accountID, err := store.GetResponseAccount(context.Background(), 0, "resp-a")
 	require.NoError(t, err)
@@ -71,4 +77,26 @@ func TestResetForAccountSwitchClearsAllRequestLocalContinuationState(t *testing.
 	require.False(t, ok)
 	_, ok = store.GetSessionConn(0, "session-a")
 	require.False(t, ok)
+}
+
+func TestResetForAccountSwitchPreservesAccountScopedPromptCacheAnchors(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	c.Request.Header.Set("session-id", "client-session")
+	c.Set("api_key", &APIKey{ID: 21})
+
+	svc := &OpenAIGatewayService{}
+	account := &Account{ID: 11, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
+	svc.bindOpenAICompatSessionResponseID(context.Background(), c, account, "cache-a", "resp-compat")
+	svc.bindOpenAICompatAnthropicDigestPromptCacheKey(account, 21, "s:system-u:user", "cache-a", "")
+
+	PrepareOpenAIAttemptState(c, []byte(`{"input":"hello"}`), "session-a", "resp-a", "cache-a")
+	BeginOpenAIAttempt(c, account.ID, []byte(`{"input":"hello"}`))
+
+	require.NoError(t, svc.ResetForAccountSwitch(context.Background(), c, 12))
+	require.Equal(t, "resp-compat", svc.getOpenAICompatSessionResponseID(context.Background(), c, account, "cache-a"))
+	cacheKey, chain := svc.findOpenAICompatAnthropicDigestPromptCacheKey(account, 21, "s:system-u:user-follow-up")
+	require.Equal(t, "cache-a", cacheKey)
+	require.Equal(t, "s:system-u:user", chain)
 }
