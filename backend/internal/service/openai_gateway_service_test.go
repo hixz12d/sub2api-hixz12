@@ -626,6 +626,10 @@ func TestOpenAIGatewayService_GenerateSessionHash_ContentFallback(t *testing.T) 
 	hashExtended := svc.GenerateSessionHash(c, bodyExtended)
 	require.Equal(t, hash, hashExtended, "hash should be stable across later turns")
 
+	bodyIndependent := []byte(`{"model":"gpt-5.4","messages":[{"role":"system","content":"You are helpful."},{"role":"user","content":"Different question"}]}`)
+	hashIndependent := svc.GenerateSessionHash(c, bodyIndependent)
+	require.Equal(t, hash, hashIndependent, "same reusable prefix should keep the account routing hash stable")
+
 	bodyDifferent := []byte(`{"model":"gpt-5.4","messages":[{"role":"user","content":"Different question"}]}`)
 	hashDifferent := svc.GenerateSessionHash(c, bodyDifferent)
 	require.NotEqual(t, hash, hashDifferent, "different content should produce different hash")

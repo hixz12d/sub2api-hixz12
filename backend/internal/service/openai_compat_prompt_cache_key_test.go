@@ -38,8 +38,19 @@ func TestDeriveOpenAIResponsesPromptCacheKey_StableAcrossLaterTurns(t *testing.T
 	require.Len(t, key1, len(responsesPromptCacheKeyPrefix)+16)
 }
 
-func TestDeriveOpenAIResponsesPromptCacheKey_RequiresUserAnchor(t *testing.T) {
-	require.Empty(t, deriveOpenAIResponsesPromptCacheKey([]byte(`{"model":"gpt-5.4","instructions":"You are helpful."}`)))
+func TestDeriveOpenAIResponsesPromptCacheKey_UsesStablePrefixAcrossPrompts(t *testing.T) {
+	first := []byte(`{"model":"gpt-5.4","instructions":"You are helpful.","input":[{"role":"user","content":"Question A"}]}`)
+	second := []byte(`{"model":"gpt-5.4","instructions":"You are helpful.","input":[{"role":"user","content":"Question B"}]}`)
+
+	key1 := deriveOpenAIResponsesPromptCacheKey(first)
+	key2 := deriveOpenAIResponsesPromptCacheKey(second)
+	require.NotEmpty(t, key1)
+	require.Equal(t, key1, key2, "Responses cache key should follow the reusable prefix, not changing user content")
+}
+
+func TestDeriveOpenAIResponsesPromptCacheKey_RequiresStablePrefixOrUserAnchor(t *testing.T) {
+	require.Empty(t, deriveOpenAIResponsesPromptCacheKey([]byte(`{"model":"gpt-5.4"}`)))
+	require.NotEmpty(t, deriveOpenAIResponsesPromptCacheKey([]byte(`{"model":"gpt-5.4","instructions":"You are helpful."}`)))
 	require.NotEmpty(t, deriveOpenAIResponsesPromptCacheKey([]byte(`{"model":"gpt-5.4","input":"Hello"}`)))
 }
 
@@ -65,6 +76,31 @@ func TestDeriveCompatPromptCacheKey_StableAcrossLaterTurns(t *testing.T) {
 	k2 := deriveCompatPromptCacheKey(extended, "gpt-5.4")
 	require.Equal(t, k1, k2, "cache key should be stable across later turns")
 	require.NotEmpty(t, k1)
+}
+
+func TestDeriveCompatPromptCacheKey_StableAcrossIndependentPrompts(t *testing.T) {
+	first := &apicompat.ChatCompletionsRequest{
+		Model: "gpt-5.4",
+		Messages: []apicompat.ChatMessage{
+			{Role: "system", Content: mustRawJSON(t, `"You are helpful."`)},
+			{Role: "developer", Content: mustRawJSON(t, `"Use the repository tools."`)},
+			{Role: "user", Content: mustRawJSON(t, `"Question A"`)},
+		},
+	}
+	second := &apicompat.ChatCompletionsRequest{
+		Model: "gpt-5.4",
+		Messages: []apicompat.ChatMessage{
+			{Role: "system", Content: mustRawJSON(t, `"You are helpful."`)},
+			{Role: "developer", Content: mustRawJSON(t, `"Use the repository tools."`)},
+			{Role: "user", Content: mustRawJSON(t, `"Question B"`)},
+		},
+	}
+
+	key1 := deriveCompatPromptCacheKey(first, "gpt-5.4")
+	key2 := deriveCompatPromptCacheKey(second, "gpt-5.4")
+	require.NotEmpty(t, key1)
+	require.Equal(t, key1, key2, "a reusable system/developer prefix should ignore changing user content")
+	require.Empty(t, deriveCompatPromptCacheKey(&apicompat.ChatCompletionsRequest{Model: "gpt-5.4"}, "gpt-5.4"))
 }
 
 func TestDeriveCompatPromptCacheKey_DiffersAcrossSessions(t *testing.T) {

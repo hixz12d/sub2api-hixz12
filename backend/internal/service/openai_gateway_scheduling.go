@@ -139,7 +139,8 @@ func (s *OpenAIGatewayService) GenerateExplicitSessionHash(c *gin.Context, body 
 //  5. Header: x-conversation-id (CodeBuddy)
 //  6. Header: x-grok-conv-id (Grok groups only)
 //  7. Body:   prompt_cache_key
-//  8. Body:   content-based fallback (model + system + tools + first user message)
+//  8. Body:   stable prefix fallback (tools + system/developer + instructions), then
+//     content-based fallback (model + system + tools + first user message)
 //
 // Grok sticky affinity is intentionally separate from the upstream
 // prompt_cache_key identity (resolveGrokCacheIdentity): sticky pins an OAuth
@@ -154,7 +155,10 @@ func (s *OpenAIGatewayService) GenerateSessionHash(c *gin.Context, body []byte) 
 
 	sessionID := explicitOpenAIRequestSessionID(c, body)
 	if sessionID == "" && len(body) > 0 {
-		sessionID = deriveOpenAIContentSessionSeed(body)
+		sessionID = deriveOpenAIStablePrefixSessionSeed(body)
+		if sessionID == "" {
+			sessionID = deriveOpenAIContentSessionSeed(body)
+		}
 	}
 	if sessionID == "" {
 		_ = s.prepareOpenAIAffinityIdentity(c, body, "")

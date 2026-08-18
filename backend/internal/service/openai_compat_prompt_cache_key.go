@@ -28,7 +28,10 @@ const responsesPromptCacheKeyPrefix = "compat_cr_"
 // stable upstream cache identity without exposing prompt contents in the
 // request body. The seed intentionally contains only the stable prefix anchor.
 func deriveOpenAIResponsesPromptCacheKey(body []byte) string {
-	seed := deriveOpenAIAnchoredContentSessionSeed(body)
+	seed := deriveOpenAIStablePrefixSessionSeed(body)
+	if seed == "" {
+		seed = deriveOpenAIAnchoredContentSessionSeed(body)
+	}
 	if seed == "" {
 		return ""
 	}
@@ -55,28 +58,50 @@ func deriveCompatPromptCacheKey(req *apicompat.ChatCompletionsRequest, mappedMod
 	if len(req.ToolChoice) > 0 {
 		seedParts = append(seedParts, "tool_choice="+normalizeCompatSeedJSON(req.ToolChoice))
 	}
+
+	hasStablePrefix := false
+	appendStableJSON := func(label string, raw json.RawMessage) bool {
+		normalized := normalizeCompatSeedJSON(raw)
+		switch normalized {
+		case "", `""`, "[]", "{}", "null":
+			return false
+		default:
+			seedParts = append(seedParts, label+"="+normalized)
+			hasStablePrefix = true
+			return true
+		}
+	}
 	if len(req.Tools) > 0 {
 		if raw, err := json.Marshal(req.Tools); err == nil {
-			seedParts = append(seedParts, "tools="+normalizeCompatSeedJSON(raw))
+			appendStableJSON("tools", raw)
 		}
 	}
 	if len(req.Functions) > 0 {
 		if raw, err := json.Marshal(req.Functions); err == nil {
-			seedParts = append(seedParts, "functions="+normalizeCompatSeedJSON(raw))
+			appendStableJSON("functions", raw)
 		}
 	}
 
-	firstUserCaptured := false
+	var firstUser json.RawMessage
 	for _, msg := range req.Messages {
 		switch strings.TrimSpace(msg.Role) {
-		case "system":
-			seedParts = append(seedParts, "system="+normalizeCompatSeedJSON(msg.Content))
+		case "system", "developer":
+			appendStableJSON(strings.TrimSpace(msg.Role), msg.Content)
 		case "user":
-			if !firstUserCaptured {
-				seedParts = append(seedParts, "first_user="+normalizeCompatSeedJSON(msg.Content))
-				firstUserCaptured = true
+			if len(firstUser) == 0 {
+				firstUser = msg.Content
 			}
 		}
+	}
+
+	// A reusable system/developer/tool prefix must be shared across independent
+	// prompts. Only use the first user message when no such prefix exists; this
+	// keeps one-off requests isolated without making every later turn a new key.
+	if hasStablePrefix {
+		return compatPromptCacheKeyPrefix + hashSensitiveValueForLog(strings.Join(seedParts, "|"))
+	}
+	if !appendStableJSON("first_user", firstUser) {
+		return ""
 	}
 
 	return compatPromptCacheKeyPrefix + hashSensitiveValueForLog(strings.Join(seedParts, "|"))
