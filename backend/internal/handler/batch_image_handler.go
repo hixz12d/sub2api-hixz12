@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -10,6 +11,7 @@ import (
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
+	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 
@@ -45,6 +47,32 @@ func (h *BatchImageHandler) Submit(c *gin.Context) {
 	if sessionID := service.ExtractClientSessionID(c); sessionID != "" {
 		req.SessionID = &sessionID
 	}
+
+	var selectedDecision *securityaudit.Decision
+	apiKey, apiKeyOK := middleware.GetAPIKeyFromContext(c)
+	subject, subjectOK := middleware.GetAuthSubjectFromContext(c)
+	body, bodyErr := batchImageModerationBody(&req)
+	if h != nil && h.openAI != nil && apiKeyOK && subjectOK && bodyErr == nil && len(body) > 0 {
+		reqLog := requestLogger(c, "handler.batch_image.selected_account_security_audit",
+			zap.Int64("user_id", subject.UserID), zap.Int64("api_key_id", apiKey.ID), zap.String("model", req.Model))
+		got, err := h.service.Submit(c.Request.Context(), owner, req, c.GetHeader("Idempotency-Key"), func(_ context.Context, account *service.Account) error {
+			selectedDecision = h.openAI.checkSelectedAccountContentModeration(c, reqLog, apiKey, subject, account, service.ContentModerationProtocolOpenAIImages, req.Model, body)
+			if selectedDecision != nil && !selectedDecision.AllowNextStage {
+				return errors.New("selected account content moderation blocked")
+			}
+			return nil
+		})
+		if selectedDecision != nil && !selectedDecision.AllowNextStage {
+			h.openAI.openAISecurityAuditError(c, selectedDecision)
+			return
+		}
+		if err != nil {
+			batchImageError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, got)
+		return
+	}
 	got, err := h.service.Submit(c.Request.Context(), owner, req, c.GetHeader("Idempotency-Key"))
 	if err != nil {
 		batchImageError(c, err)
@@ -67,19 +95,13 @@ func (h *BatchImageHandler) checkSecurityAuditBeforeSubmit(c *gin.Context, req *
 		batchImageError(c, infraerrors.New(http.StatusInternalServerError, "USER_CONTEXT_REQUIRED", "User context not found"))
 		return false
 	}
-	items := make([]map[string]string, 0, len(req.Items))
-	for _, item := range req.Items {
-		if prompt := strings.TrimSpace(item.Prompt); prompt != "" {
-			items = append(items, map[string]string{"prompt": prompt})
-		}
-	}
-	if len(items) == 0 {
-		return true
-	}
-	body, err := json.Marshal(map[string]any{"request": map[string]any{"items": items}})
+	body, err := batchImageModerationBody(req)
 	if err != nil {
 		batchImageError(c, infraerrors.New(http.StatusBadRequest, "INVALID_BATCH_PROMPT", "batch prompts are invalid"))
 		return false
+	}
+	if len(body) == 0 {
+		return true
 	}
 	reqLog := requestLogger(c, "handler.batch_image.security_audit",
 		zap.Int64("user_id", subject.UserID), zap.Int64("api_key_id", apiKey.ID), zap.String("model", req.Model))
@@ -89,6 +111,22 @@ func (h *BatchImageHandler) checkSecurityAuditBeforeSubmit(c *gin.Context, req *
 		return false
 	}
 	return true
+}
+
+func batchImageModerationBody(req *service.BatchImageSubmitRequest) ([]byte, error) {
+	if req == nil {
+		return nil, nil
+	}
+	prompts := make([]string, 0, len(req.Items))
+	for _, item := range req.Items {
+		if prompt := strings.TrimSpace(item.Prompt); prompt != "" {
+			prompts = append(prompts, prompt)
+		}
+	}
+	if len(prompts) == 0 {
+		return nil, nil
+	}
+	return json.Marshal(map[string]string{"prompt": strings.Join(prompts, "\n")})
 }
 
 func (h *BatchImageHandler) Get(c *gin.Context) {

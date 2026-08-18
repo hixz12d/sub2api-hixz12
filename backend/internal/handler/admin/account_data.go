@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -18,10 +19,11 @@ import (
 )
 
 const (
-	dataType       = "sub2api-data"
-	legacyDataType = "sub2api-bundle"
-	dataVersion    = 1
-	dataPageCap    = 1000
+	dataType                = "sub2api-data"
+	legacyDataType          = "sub2api-bundle"
+	dataVersion             = 1
+	dataPageCap             = 1000
+	defaultImportProxyIDEnv = "ACCOUNT_IMPORT_DEFAULT_PROXY_ID"
 )
 
 type DataPayload struct {
@@ -268,6 +270,11 @@ func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) 
 		}
 	}
 
+	defaultProxyID := resolveDefaultImportProxyID(existingProxies)
+	if defaultProxyID == nil {
+		return result, fmt.Errorf("account import default proxy is not configured or unavailable")
+	}
+
 	for i := range dataPayload.Proxies {
 		item := dataPayload.Proxies[i]
 		key := item.ProxyKey
@@ -411,21 +418,9 @@ func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) 
 			continue
 		}
 
-		var proxyID *int64
-		if item.ProxyKey != nil && *item.ProxyKey != "" {
-			if id, ok := proxyKeyToID[*item.ProxyKey]; ok {
-				proxyID = &id
-			} else {
-				result.AccountFailed++
-				result.Errors = append(result.Errors, DataImportError{
-					Kind:     "account",
-					Name:     item.Name,
-					ProxyKey: *item.ProxyKey,
-					Message:  "proxy_key not found",
-				})
-				continue
-			}
-		}
+		// All accounts created by this data-import path must use the configured
+		// import proxy. Ignore any proxy_key carried by the source backup.
+		proxyID := defaultProxyID
 
 		enrichCredentialsFromIDToken(&item)
 
@@ -482,6 +477,28 @@ func (h *AccountHandler) importData(ctx context.Context, req DataImportRequest) 
 	}
 
 	return result, nil
+}
+
+func resolveDefaultImportProxyID(proxies []service.Proxy) *int64 {
+	raw := strings.TrimSpace(os.Getenv(defaultImportProxyIDEnv))
+	if raw == "" {
+		return nil
+	}
+
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || id <= 0 {
+		slog.Warn("account_import_default_proxy_invalid", "value", raw)
+		return nil
+	}
+	for i := range proxies {
+		if proxies[i].ID == id {
+			resolved := id
+			return &resolved
+		}
+	}
+
+	slog.Warn("account_import_default_proxy_not_found", "proxy_id", id)
+	return nil
 }
 
 func (h *AccountHandler) listAllProxies(ctx context.Context) ([]service.Proxy, error) {

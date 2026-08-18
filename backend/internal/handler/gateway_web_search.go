@@ -162,6 +162,13 @@ func (h *GatewayHandler) WebSearch(c *gin.Context) {
 			}
 			break
 		}
+		if decision := h.checkSelectedAccountContentModeration(c, reqLog, apiKey, subject, selected.Account, service.ContentModerationProtocolOpenAIChat, searchModel, auditBody); decision != nil && !decision.AllowNextStage {
+			if selected.ReleaseFunc != nil {
+				selected.ReleaseFunc()
+			}
+			h.openAISecurityAuditError(c, decision)
+			return
+		}
 
 		release, acquireOK, acquireErr := h.acquireWebSearchAccountSlot(c, selected)
 		if !acquireOK {

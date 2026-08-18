@@ -170,6 +170,16 @@ func TestBatchImagePromptGuardRunsBeforePersistenceOrBilling(t *testing.T) {
 	require.NotContains(t, string(requests[0].Body), "QklOQVJZX0NBTkFSWQ==")
 }
 
+func TestBatchImageModerationBodyUsesRootPrompt(t *testing.T) {
+	body, err := batchImageModerationBody(&service.BatchImageSubmitRequest{Items: []service.BatchImageSubmitItem{
+		{Prompt: "first prompt"},
+		{Prompt: "  second prompt  "},
+	}})
+	require.NoError(t, err)
+	input := service.ExtractContentModerationInput(service.ContentModerationProtocolOpenAIImages, body)
+	require.Equal(t, "first prompt second prompt", input.Text)
+}
+
 func TestSecurityAuditBlockingFailuresLeaveAllDownstreamCountersAtZero(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, kind := range []securityaudit.DecisionKind{securityaudit.DecisionBlock, securityaudit.DecisionUnavailable, securityaudit.DecisionInvalid} {

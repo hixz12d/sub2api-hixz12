@@ -197,7 +197,7 @@ func NewBatchImagePublicService(repo BatchImageRepository, accountRepo AccountRe
 	}
 }
 
-func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOwner, req BatchImageSubmitRequest, idempotencyKey string) (*BatchImagePublicBatch, error) {
+func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOwner, req BatchImageSubmitRequest, idempotencyKey string, accountChecks ...func(context.Context, *Account) error) (*BatchImagePublicBatch, error) {
 	if !s.enabled() {
 		return nil, ErrBatchImageDisabled
 	}
@@ -234,6 +234,11 @@ func (s *BatchImagePublicService) Submit(ctx context.Context, owner BatchImageOw
 	provider, account, err := s.selectProviderAndAccount(ctx, owner, normalized.Provider, normalized.Model)
 	if err != nil {
 		return nil, err
+	}
+	if len(accountChecks) > 0 && accountChecks[0] != nil {
+		if err := accountChecks[0](ctx, account); err != nil {
+			return nil, err
+		}
 	}
 	pricingSnapshot, err := s.resolvePricingSnapshot(ctx, owner, normalized, provider.Name(), account)
 	if err != nil {

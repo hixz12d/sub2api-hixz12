@@ -280,6 +280,17 @@ func (h *OpenAIGatewayHandler) handleGrokMedia(c *gin.Context, endpoint service.
 
 		account := selection.Account
 		if endpoint.IsGenerationRequest() {
+			if moderationBody := requestInfo.ModerationBody(); len(moderationBody) > 0 {
+				if decision := h.checkSelectedAccountContentModeration(c, reqLog, apiKey, subject, account, service.ContentModerationProtocolOpenAIImages, requestModel, moderationBody); decision != nil && !decision.AllowNextStage {
+					if selection.ReleaseFunc != nil {
+						selection.ReleaseFunc()
+					}
+					h.openAISecurityAuditError(c, decision)
+					return
+				}
+			}
+		}
+		if endpoint.IsGenerationRequest() {
 			eligible, eligibilityReason, eligibilityErr := h.ensureGrokMediaAccountEligibility(requestCtx, account)
 			if !eligible {
 				mediaEligibilityRejected = true

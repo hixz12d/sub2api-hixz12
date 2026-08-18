@@ -22,6 +22,19 @@ func shouldAutoInjectPromptCacheKeyForCompat(model string) bool {
 	return strings.HasPrefix(normalized, "gpt-5") || strings.Contains(normalized, "codex")
 }
 
+const responsesPromptCacheKeyPrefix = "compat_cr_"
+
+// deriveOpenAIResponsesPromptCacheKey keeps native Responses requests on one
+// stable upstream cache identity without exposing prompt contents in the
+// request body. The seed intentionally contains only the stable prefix anchor.
+func deriveOpenAIResponsesPromptCacheKey(body []byte) string {
+	seed := deriveOpenAIAnchoredContentSessionSeed(body)
+	if seed == "" {
+		return ""
+	}
+	return responsesPromptCacheKeyPrefix + hashSensitiveValueForLog(seed)
+}
+
 func deriveCompatPromptCacheKey(req *apicompat.ChatCompletionsRequest, mappedModel string) string {
 	if req == nil {
 		return ""

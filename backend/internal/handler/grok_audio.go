@@ -153,12 +153,13 @@ func (h *OpenAIGatewayHandler) GrokVoice(c *gin.Context, endpoint string) {
 		h.errorResponse(c, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}
+	subject, _ := middleware2.GetAuthSubjectFromContext(c)
+	var auditBody []byte
 	if endpoint == "tts" {
-		subject, _ := middleware2.GetAuthSubjectFromContext(c)
 		reqLog := requestLogger(c, "handler.openai_gateway.grok_voice", zap.String("endpoint", endpoint))
 		// TTS bodies use {"input":"..."} (and variants). Normalize to chat messages so
 		// content moderation extractors see the spoken text.
-		auditBody := body
+		auditBody = body
 		if input := extractGrokTTSInputText(body); input != "" {
 			if b, err := json.Marshal(map[string]any{
 				"messages": []map[string]any{{"role": "user", "content": input}},
@@ -205,6 +206,15 @@ func (h *OpenAIGatewayHandler) GrokVoice(c *gin.Context, endpoint string) {
 			return
 		}
 		account := selection.Account
+		if len(auditBody) > 0 {
+			if decision := h.checkSelectedAccountContentModeration(c, reqLog, apiKey, subject, account, service.ContentModerationProtocolOpenAIChat, selectionModel, auditBody); decision != nil && !decision.AllowNextStage {
+				if selection.ReleaseFunc != nil {
+					selection.ReleaseFunc()
+				}
+				h.openAISecurityAuditError(c, decision)
+				return
+			}
+		}
 		var started bool
 		release, status := h.acquireResponsesAccountSlot(c, apiKey.GroupID, "", selection, false, &started, reqLog)
 		if status == openAISlotAcquireProfitVetoed {

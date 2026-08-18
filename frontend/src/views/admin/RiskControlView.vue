@@ -703,30 +703,38 @@
           <div v-else-if="activeSettingsTab === 'scope'" class="space-y-5">
             <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.groupScope') }}</h3>
-                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.groupScopeHint') }}</p>
+                <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.riskControl.auditScope') }}</h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.auditScopeHint') }}</p>
               </div>
-              <div class="inline-flex rounded-lg bg-gray-100 p-1 dark:bg-dark-700">
+              <div class="inline-flex flex-wrap rounded-lg bg-gray-100 p-1 dark:bg-dark-700">
                 <button
                   type="button"
                   class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
-                  :class="configForm.all_groups ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-800 dark:text-white' : 'text-gray-500 dark:text-gray-400'"
-                  @click="configForm.all_groups = true"
+                  :class="configForm.scope_mode === 'all' ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-800 dark:text-white' : 'text-gray-500 dark:text-gray-400'"
+                  @click="setAuditScopeMode('all')"
                 >
                   {{ t('admin.riskControl.allGroups') }}
                 </button>
                 <button
                   type="button"
                   class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
-                  :class="!configForm.all_groups ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-800 dark:text-white' : 'text-gray-500 dark:text-gray-400'"
-                  @click="configForm.all_groups = false"
+                  :class="configForm.scope_mode === 'groups' ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-800 dark:text-white' : 'text-gray-500 dark:text-gray-400'"
+                  @click="setAuditScopeMode('groups')"
                 >
                   {{ t('admin.riskControl.selectedGroups') }}
+                </button>
+                <button
+                  type="button"
+                  class="rounded-md px-3 py-1.5 text-sm font-medium transition-colors"
+                  :class="configForm.scope_mode === 'accounts' ? 'bg-white text-gray-900 shadow-sm dark:bg-dark-800 dark:text-white' : 'text-gray-500 dark:text-gray-400'"
+                  @click="setAuditScopeMode('accounts')"
+                >
+                  {{ t('admin.riskControl.selectedAccounts') }}
                 </button>
               </div>
             </div>
 
-            <div v-if="!configForm.all_groups" class="space-y-4">
+            <div v-if="configForm.scope_mode === 'groups'" class="space-y-4">
               <div class="relative">
                 <Icon name="search" size="sm" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                 <input v-model.trim="groupSearch" type="search" class="input pl-9" :placeholder="t('admin.riskControl.searchGroups')" />
@@ -752,6 +760,35 @@
                   </span>
                 </button>
                 <p v-if="filteredGroups.length === 0" class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.noGroups') }}</p>
+              </div>
+            </div>
+
+            <div v-else-if="configForm.scope_mode === 'accounts'" class="space-y-4">
+              <div class="relative">
+                <Icon name="search" size="sm" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                <input v-model.trim="accountSearch" type="search" class="input pl-9" :placeholder="t('admin.riskControl.searchAccounts')" />
+              </div>
+              <div class="grid max-h-[420px] grid-cols-1 gap-3 overflow-y-auto pr-1 md:grid-cols-2 xl:grid-cols-3">
+                <button
+                  v-for="account in filteredAccounts"
+                  :key="account.id"
+                  type="button"
+                  class="flex min-h-20 items-center justify-between gap-3 rounded-lg border p-4 text-left transition-colors"
+                  :class="isAccountSelected(account.id) ? 'border-primary-300 bg-primary-50 dark:border-primary-700 dark:bg-primary-900/20' : 'border-gray-100 hover:bg-gray-50 dark:border-dark-700 dark:hover:bg-dark-700/60'"
+                  @click="toggleAccount(account.id)"
+                >
+                  <span class="min-w-0">
+                    <span class="block truncate text-sm font-semibold text-gray-900 dark:text-white">{{ account.name }}</span>
+                    <span class="mt-1 block truncate text-xs text-gray-500 dark:text-gray-400">{{ account.platform }} / {{ account.type }}</span>
+                  </span>
+                  <span
+                    class="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full border"
+                    :class="isAccountSelected(account.id) ? 'border-primary-500 bg-primary-500 text-white' : 'border-gray-300 text-transparent dark:border-dark-500'"
+                  >
+                    <Icon name="check" size="xs" :stroke-width="2" />
+                  </span>
+                </button>
+                <p v-if="filteredAccounts.length === 0" class="text-sm text-gray-500 dark:text-gray-400">{{ t('admin.riskControl.noAccounts') }}</p>
               </div>
             </div>
 
@@ -1143,12 +1180,13 @@ import type {
   ModerationMode,
   UpdateContentModerationConfig,
 } from '@/api/admin/riskControl'
-import type { AdminGroup, Proxy, SelectOption } from '@/types'
+import type { Account, AdminGroup, Proxy, SelectOption } from '@/types'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
 import { formatDateTime as formatDateTimeValue } from '@/utils/format'
 
 type SettingsTab = 'basic' | 'scope' | 'runtime' | 'response' | 'riskThresholds' | 'retention' | 'keywords'
+type AuditScopeMode = 'all' | 'groups' | 'accounts'
 type WorkerSlotState = 'active' | 'idle' | 'disabled'
 type APIKeysWriteMode = 'append' | 'replace'
 type OverviewIcon = 'shield' | 'key' | 'users' | 'document'
@@ -1209,8 +1247,10 @@ const unbanningUserID = ref<number | null>(null)
 const settingsOpen = ref(false)
 const activeSettingsTab = ref<SettingsTab>('basic')
 const groupSearch = ref('')
+const accountSearch = ref('')
 const flaggedHashInput = ref('')
 const groups = ref<AdminGroup[]>([])
+const accounts = ref<Account[]>([])
 const proxies = ref<Proxy[]>([])
 const logs = ref<ContentModerationLog[]>([])
 const status = ref<ContentModerationRuntimeStatus | null>(null)
@@ -1241,7 +1281,9 @@ const configForm = reactive({
   retry_count: 2,
   sample_rate: 100,
   all_groups: true,
+  scope_mode: 'all' as AuditScopeMode,
   group_ids: [] as number[],
+  account_ids: [] as number[],
   record_non_hits: false,
   worker_count: 4,
   queue_size: 32768,
@@ -1411,6 +1453,17 @@ const groupFilterOptions = computed<SelectOption[]>(() => [
 ])
 
 const selectedGroupCount = computed(() => String(configForm.group_ids.length))
+const selectedAccountCount = computed(() => String(configForm.account_ids.length))
+
+const selectedScopeSummary = computed(() => {
+  if (configForm.scope_mode === 'accounts') {
+    return t('admin.riskControl.selectedAccountCount', { count: selectedAccountCount.value })
+  }
+  if (configForm.scope_mode === 'groups') {
+    return t('admin.riskControl.selectedGroupCount', { count: selectedGroupCount.value })
+  }
+  return t('admin.riskControl.allGroups')
+})
 
 const modelFilterModelCount = computed(() => configForm.model_filter_models.length)
 
@@ -1433,6 +1486,17 @@ const filteredGroups = computed(() => {
   if (!keyword) return groups.value
   return groups.value.filter((group) => {
     return group.name.toLowerCase().includes(keyword) || String(group.platform).toLowerCase().includes(keyword)
+  })
+})
+
+const filteredAccounts = computed(() => {
+  const keyword = accountSearch.value.trim().toLowerCase()
+  if (!keyword) return accounts.value
+  return accounts.value.filter((account) => {
+    return account.name.toLowerCase().includes(keyword)
+      || String(account.platform).toLowerCase().includes(keyword)
+      || String(account.type).toLowerCase().includes(keyword)
+      || String(account.id).includes(keyword)
   })
 })
 
@@ -1544,8 +1608,8 @@ const overviewItems = computed<OverviewItem[]>(() => [
   },
   {
     key: 'scope',
-    label: t('admin.riskControl.overview.groupScope'),
-    value: configForm.all_groups ? t('admin.riskControl.allGroups') : selectedGroupCount.value,
+    label: t('admin.riskControl.overview.auditScope'),
+    value: selectedScopeSummary.value,
     meta: modelFilterSummary.value,
     icon: 'users',
     iconClass: 'bg-violet-50 text-violet-600 dark:bg-violet-900/20 dark:text-violet-300',
@@ -1718,8 +1782,10 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.timeout_ms = config.timeout_ms || 3000
   configForm.retry_count = config.retry_count ?? 2
   configForm.sample_rate = config.sample_rate ?? 100
-  configForm.all_groups = config.all_groups
   configForm.group_ids = Array.isArray(config.group_ids) ? [...config.group_ids] : []
+  configForm.account_ids = Array.isArray(config.account_ids) ? [...config.account_ids] : []
+  configForm.scope_mode = configForm.account_ids.length > 0 ? 'accounts' : config.all_groups ? 'all' : 'groups'
+  configForm.all_groups = configForm.scope_mode === 'all'
   configForm.record_non_hits = config.record_non_hits
   configForm.worker_count = config.worker_count || 4
   configForm.queue_size = config.queue_size || 32768
@@ -1741,18 +1807,33 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.model_filter_models = modelFilter.models
 }
 
+async function loadRiskControlAccounts(): Promise<Account[]> {
+  const result: Account[] = []
+  let page = 1
+  let pages = 1
+  do {
+    const response = await adminAPI.accounts.list(page, 100, { lite: 'true' })
+    result.push(...response.items)
+    pages = Math.max(1, Number(response.pages) || Math.ceil(response.total / Math.max(1, response.page_size)))
+    page += 1
+  } while (page <= pages)
+  return result.sort((left, right) => left.name.localeCompare(right.name) || left.id - right.id)
+}
+
 async function loadAll() {
   loading.value = true
   try {
-    const [config, groupItems, runtimeStatus, proxyItems] = await Promise.all([
+    const [config, groupItems, accountItems, runtimeStatus, proxyItems] = await Promise.all([
       adminAPI.riskControl.getConfig(),
       adminAPI.groups.getAll(),
+      loadRiskControlAccounts().catch(() => [] as Account[]),
       adminAPI.riskControl.getStatus(),
       // 代理列表加载失败不阻塞风控页面（仅影响下拉可选项）
       adminAPI.proxies.getAll().catch(() => [] as Proxy[]),
     ])
     applyConfig(config)
     groups.value = groupItems
+    accounts.value = accountItems
     status.value = runtimeStatus
     proxies.value = proxyItems
     if (Array.isArray(runtimeStatus.api_key_statuses)) {
@@ -1793,6 +1874,10 @@ async function saveConfig() {
       appStore.showError(t('admin.riskControl.modelFilterModelsRequired'))
       return
     }
+    if (configForm.scope_mode === 'accounts' && configForm.account_ids.length === 0) {
+      appStore.showError(t('admin.riskControl.selectedAccountsRequired'))
+      return
+    }
     const payload: UpdateContentModerationConfig = {
       enabled: configForm.enabled,
       mode: configForm.mode,
@@ -1803,8 +1888,9 @@ async function saveConfig() {
       timeout_ms: Number(configForm.timeout_ms) || 3000,
       retry_count: Number(configForm.retry_count) || 0,
       sample_rate: Number(configForm.sample_rate) || 0,
-      all_groups: configForm.all_groups,
-      group_ids: configForm.all_groups ? [] : [...configForm.group_ids],
+      all_groups: configForm.scope_mode === 'all',
+      group_ids: configForm.scope_mode === 'groups' ? [...configForm.group_ids] : [],
+      account_ids: configForm.scope_mode === 'accounts' ? [...configForm.account_ids] : [],
       record_non_hits: configForm.record_non_hits,
       clear_api_key: configForm.clear_api_key,
       worker_count: Number(configForm.worker_count) || 4,
@@ -2103,6 +2189,11 @@ function fileToDataURL(file: File): Promise<string> {
   })
 }
 
+function setAuditScopeMode(mode: AuditScopeMode) {
+  configForm.scope_mode = mode
+  configForm.all_groups = mode === 'all'
+}
+
 function toggleGroup(groupID: number) {
   const index = configForm.group_ids.indexOf(groupID)
   if (index >= 0) {
@@ -2114,6 +2205,19 @@ function toggleGroup(groupID: number) {
 
 function isGroupSelected(groupID: number): boolean {
   return configForm.group_ids.includes(groupID)
+}
+
+function toggleAccount(accountID: number) {
+  const index = configForm.account_ids.indexOf(accountID)
+  if (index >= 0) {
+    configForm.account_ids.splice(index, 1)
+  } else {
+    configForm.account_ids.push(accountID)
+  }
+}
+
+function isAccountSelected(accountID: number): boolean {
+  return configForm.account_ids.includes(accountID)
 }
 
 function modeLabel(mode: ModerationMode): string {

@@ -13,14 +13,24 @@ import (
 )
 
 const securityAuditCompletedContextKey = "sub2api.security_audit.completed"
+const selectedAccountContentModerationCompletedContextKey = "sub2api.content_moderation.selected_account.completed"
 const securityAuditWSTurnContextKey = "sub2api.security_audit.ws_turn"
 const securityAuditWSDedupeContextKey = "sub2api.security_audit.ws_dedupe"
+const selectedAccountContentModerationWSDedupeContextKey = "sub2api.content_moderation.selected_account.ws_dedupe"
 
 type securityAuditWSDedupeEntry struct {
 	stage    string
 	turn     int
 	bodyHash [sha256.Size]byte
 	decision securityaudit.Decision
+}
+
+type selectedAccountContentModerationWSDedupeEntry struct {
+	accountID int64
+	stage     string
+	turn      int
+	bodyHash  [sha256.Size]byte
+	decision  securityaudit.Decision
 }
 
 // cachesSecurityAuditCompletion reports whether a successful audit may be
@@ -65,6 +75,88 @@ func (h *OpenAIGatewayHandler) checkSecurityAuditStage(c *gin.Context, reqLog *z
 	return runSecurityAudit(c, reqLog, h.securityAuditCoordinator, h.contentModerationService, apiKey, subject, protocol, model, body, stage)
 }
 
+func (h *GatewayHandler) checkSelectedAccountContentModeration(c *gin.Context, reqLog *zap.Logger, apiKey *service.APIKey, subject middleware2.AuthSubject, account *service.Account, protocol, model string, body []byte) *securityaudit.Decision {
+	if h == nil {
+		return nil
+	}
+	return runSelectedAccountSecurityAudit(c, reqLog, h.contentModerationService, apiKey, subject, account, protocol, model, body, "http")
+}
+
+func (h *OpenAIGatewayHandler) checkSelectedAccountContentModeration(c *gin.Context, reqLog *zap.Logger, apiKey *service.APIKey, subject middleware2.AuthSubject, account *service.Account, protocol, model string, body []byte) *securityaudit.Decision {
+	return h.checkSelectedAccountContentModerationStage(c, reqLog, apiKey, subject, account, protocol, model, body, "http")
+}
+
+func (h *OpenAIGatewayHandler) checkSelectedAccountContentModerationStage(c *gin.Context, reqLog *zap.Logger, apiKey *service.APIKey, subject middleware2.AuthSubject, account *service.Account, protocol, model string, body []byte, stage string) *securityaudit.Decision {
+	if h == nil {
+		return nil
+	}
+	return runSelectedAccountSecurityAudit(c, reqLog, h.contentModerationService, apiKey, subject, account, protocol, model, body, stage)
+}
+
+func runSelectedAccountSecurityAudit(c *gin.Context, reqLog *zap.Logger, legacy *service.ContentModerationService, apiKey *service.APIKey, subject middleware2.AuthSubject, account *service.Account, protocol, model string, body []byte, stage string) *securityaudit.Decision {
+	if c == nil || c.Request == nil || legacy == nil || account == nil {
+		return nil
+	}
+	cacheCompletion := cachesSecurityAuditCompletion(stage)
+	if cacheCompletion {
+		if completed, exists := c.Get(selectedAccountContentModerationCompletedContextKey); exists && completed == true {
+			return nil
+		}
+	}
+	if isSecurityAuditWebSocketStage(stage) {
+		turnNo, ok := securityAuditWSTurn(c)
+		if !ok && strings.TrimSpace(stage) == "first_turn" {
+			turnNo, ok = 1, true
+		}
+		if ok {
+			bodyHash := sha256.Sum256(body)
+			if cached, exists := c.Get(selectedAccountContentModerationWSDedupeContextKey); exists {
+				if entry, ok := cached.(selectedAccountContentModerationWSDedupeEntry); ok &&
+					entry.accountID == account.ID && entry.stage == strings.TrimSpace(stage) && entry.turn == turnNo && entry.bodyHash == bodyHash {
+					decision := entry.decision
+					return &decision
+				}
+			}
+			legacyDecision, inScope := runSelectedAccountContentModeration(c, reqLog, legacy, apiKey, subject, account, protocol, model, body)
+			if !inScope || legacyDecision == nil {
+				return nil
+			}
+			decision := securityDecisionFromContentModeration(legacyDecision)
+			if decision.AllowNextStage {
+				c.Set(selectedAccountContentModerationWSDedupeContextKey, selectedAccountContentModerationWSDedupeEntry{
+					accountID: account.ID, stage: strings.TrimSpace(stage), turn: turnNo, bodyHash: bodyHash, decision: *decision,
+				})
+			}
+			return decision
+		}
+	}
+	legacyDecision, inScope := runSelectedAccountContentModeration(c, reqLog, legacy, apiKey, subject, account, protocol, model, body)
+	if !inScope || legacyDecision == nil {
+		return nil
+	}
+	decision := securityDecisionFromContentModeration(legacyDecision)
+	if decision.AllowNextStage && cacheCompletion {
+		c.Set(selectedAccountContentModerationCompletedContextKey, true)
+	}
+	return decision
+}
+
+func securityDecisionFromContentModeration(legacyDecision *service.ContentModerationDecision) *securityaudit.Decision {
+	if legacyDecision == nil {
+		return nil
+	}
+	decision := &securityaudit.Decision{Kind: securityaudit.DecisionAllow, HTTPStatus: http.StatusOK, AllowNextStage: true}
+	decision.Legacy = &securityaudit.LegacyDecision{
+		Allowed: legacyDecision.Allowed, Blocked: legacyDecision.Blocked, Flagged: legacyDecision.Flagged,
+		Message: legacyDecision.Message, StatusCode: legacyDecision.StatusCode,
+		ErrorCode: "content_policy_violation", Action: legacyDecision.Action,
+	}
+	if legacyDecision.Blocked {
+		decision.Kind, decision.HTTPStatus, decision.ErrorCode, decision.ClientMessage, decision.AllowNextStage = securityaudit.DecisionBlock, contentModerationStatus(legacyDecision), "content_policy_violation", legacyDecision.Message, false
+	}
+	return decision
+}
+
 func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securityaudit.Coordinator, legacy *service.ContentModerationService, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol, model string, body []byte, stage string) *securityaudit.Decision {
 	if c == nil || c.Request == nil {
 		return nil
@@ -80,19 +172,11 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 		if legacyDecision == nil {
 			return nil
 		}
-		decision := securityaudit.Decision{Kind: securityaudit.DecisionAllow, HTTPStatus: http.StatusOK, AllowNextStage: true}
-		decision.Legacy = &securityaudit.LegacyDecision{
-			Allowed: legacyDecision.Allowed, Blocked: legacyDecision.Blocked, Flagged: legacyDecision.Flagged,
-			Message: legacyDecision.Message, StatusCode: legacyDecision.StatusCode,
-			ErrorCode: "content_policy_violation", Action: legacyDecision.Action,
-		}
-		if legacyDecision.Blocked {
-			decision.Kind, decision.HTTPStatus, decision.ErrorCode, decision.ClientMessage, decision.AllowNextStage = securityaudit.DecisionBlock, contentModerationStatus(legacyDecision), "content_policy_violation", legacyDecision.Message, false
-		}
+		decision := securityDecisionFromContentModeration(legacyDecision)
 		if decision.AllowNextStage && cacheCompletion {
 			c.Set(securityAuditCompletedContextKey, true)
 		}
-		return &decision
+		return decision
 	}
 	request := buildSecurityAuditRequest(c, apiKey, subject, protocol, model, body, stage)
 	if isSecurityAuditWebSocketStage(request.Stage) {

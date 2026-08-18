@@ -138,6 +138,7 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 	request *LiveCallRequest,
 	identity LiveCallIdentity,
 	userMaxConcurrency int,
+	accountChecks ...func(context.Context, *Account) error,
 ) (*LiveCallCreated, error) {
 	if err := ValidateLiveCallRequest(request); err != nil {
 		return nil, err
@@ -188,6 +189,14 @@ func (s *OpenAIGatewayService) CreateLiveCall(
 		}
 
 		account := selection.Account
+		if len(accountChecks) > 0 && accountChecks[0] != nil {
+			if checkErr := accountChecks[0](ctx, account); checkErr != nil {
+				if selection.ReleaseFunc != nil {
+					selection.ReleaseFunc()
+				}
+				return nil, checkErr
+			}
+		}
 		attemptCtx := withoutOpenAIOutboundIdentitySnapshot(baseCtx)
 		attemptCtx = s.snapshotOpenAIOutboundIdentity(attemptCtx, account, identity.UserAgent)
 		leaseID := generateRequestID()

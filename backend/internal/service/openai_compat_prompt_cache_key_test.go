@@ -26,6 +26,23 @@ func TestShouldAutoInjectPromptCacheKeyForCompat(t *testing.T) {
 	require.False(t, shouldAutoInjectPromptCacheKeyForCompat("gpt-4o"))
 }
 
+func TestDeriveOpenAIResponsesPromptCacheKey_StableAcrossLaterTurns(t *testing.T) {
+	first := []byte(`{"model":"gpt-5.4","instructions":"You are helpful.","input":[{"role":"user","content":"Hello"}]}`)
+	later := []byte(`{"model":"gpt-5.4","instructions":"You are helpful.","input":[{"role":"user","content":"Hello"},{"role":"assistant","content":"Hi"},{"role":"user","content":"Continue"}]}`)
+
+	key1 := deriveOpenAIResponsesPromptCacheKey(first)
+	key2 := deriveOpenAIResponsesPromptCacheKey(later)
+	require.NotEmpty(t, key1)
+	require.Equal(t, key1, key2, "Responses cache key should be stable across later turns")
+	require.True(t, strings.HasPrefix(key1, responsesPromptCacheKeyPrefix))
+	require.Len(t, key1, len(responsesPromptCacheKeyPrefix)+16)
+}
+
+func TestDeriveOpenAIResponsesPromptCacheKey_RequiresUserAnchor(t *testing.T) {
+	require.Empty(t, deriveOpenAIResponsesPromptCacheKey([]byte(`{"model":"gpt-5.4","instructions":"You are helpful."}`)))
+	require.NotEmpty(t, deriveOpenAIResponsesPromptCacheKey([]byte(`{"model":"gpt-5.4","input":"Hello"}`)))
+}
+
 func TestDeriveCompatPromptCacheKey_StableAcrossLaterTurns(t *testing.T) {
 	base := &apicompat.ChatCompletionsRequest{
 		Model: "gpt-5.4",

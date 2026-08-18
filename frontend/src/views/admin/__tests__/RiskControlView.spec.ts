@@ -12,6 +12,7 @@ const {
   getStatus,
   listLogs,
   getGroups,
+  getAccounts,
   getProxies,
   showError,
   showSuccess,
@@ -21,6 +22,7 @@ const {
   getStatus: vi.fn(),
   listLogs: vi.fn(),
   getGroups: vi.fn(),
+  getAccounts: vi.fn(),
   getProxies: vi.fn(),
   showError: vi.fn(),
   showSuccess: vi.fn(),
@@ -40,6 +42,9 @@ vi.mock('@/api/admin', () => ({
     },
     groups: {
       getAll: getGroups,
+    },
+    accounts: {
+      list: getAccounts,
     },
     proxies: {
       getAll: getProxies,
@@ -88,6 +93,7 @@ const baseConfig = (): ContentModerationConfig => ({
   sample_rate: 100,
   all_groups: true,
   group_ids: [],
+  account_ids: [],
   record_non_hits: false,
   worker_count: 4,
   queue_size: 32768,
@@ -197,6 +203,7 @@ describe('admin RiskControlView', () => {
     getStatus.mockReset()
     listLogs.mockReset()
     getGroups.mockReset()
+    getAccounts.mockReset()
     showError.mockReset()
     showSuccess.mockReset()
 
@@ -204,6 +211,7 @@ describe('admin RiskControlView', () => {
     getStatus.mockResolvedValue(runtimeStatus())
     listLogs.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 20, pages: 1 })
     getGroups.mockResolvedValue([])
+    getAccounts.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 100, pages: 1 })
     getProxies.mockResolvedValue([])
     updateConfig.mockImplementation(async (payload: UpdateContentModerationConfig) => ({
       ...baseConfig(),
@@ -247,6 +255,46 @@ describe('admin RiskControlView', () => {
         type: 'include',
         models: ['gpt-5.5', 'gpt-5.4'],
       },
+    }))
+    expect(showError).not.toHaveBeenCalled()
+  })
+
+  it('saves selected upstream accounts as an exclusive audit scope', async () => {
+    getAccounts.mockResolvedValue({
+      items: [{ id: 20, name: 'Pro .20', platform: 'openai', type: 'oauth' }],
+      total: 1,
+      page: 1,
+      page_size: 100,
+      pages: 1,
+    })
+
+    const wrapper = mount(RiskControlView, {
+      global: {
+        stubs: {
+          AppLayout: AppLayoutStub,
+          BaseDialog: BaseDialogStub,
+          Icon: true,
+          Select: true,
+          Toggle: true,
+          Pagination: true,
+          ModelWhitelistSelector: ModelWhitelistSelectorStub,
+          ProxySelector: true,
+        },
+      },
+    })
+
+    await flushPromises()
+    await findButtonByText(wrapper, 'admin.riskControl.openSettings').trigger('click')
+    await findButtonByText(wrapper, 'admin.riskControl.tabs.scope').trigger('click')
+    await findButtonByText(wrapper, 'admin.riskControl.selectedAccounts').trigger('click')
+    await findButtonByText(wrapper, 'Pro .20').trigger('click')
+    await findButtonByText(wrapper, 'admin.riskControl.saveConfig').trigger('click')
+    await flushPromises()
+
+    expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
+      all_groups: false,
+      group_ids: [],
+      account_ids: [20],
     }))
     expect(showError).not.toHaveBeenCalled()
   })

@@ -355,6 +355,13 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			}
 			account := selection.Account
 			setOpsSelectedAccount(c, account.ID, account.Platform)
+			if decision := h.checkSelectedAccountContentModeration(c, reqLog, apiKey, subject, account, service.ContentModerationProtocolAnthropicMessages, reqModel, body); decision != nil && !decision.AllowNextStage {
+				if selection.ReleaseFunc != nil {
+					selection.ReleaseFunc()
+				}
+				h.anthropicSecurityAuditError(c, decision)
+				return
+			}
 
 			// 检查请求拦截（预热请求、SUGGESTION MODE等）
 			if account.IsInterceptWarmupEnabled() {
@@ -668,6 +675,13 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			}
 			account := selection.Account
 			setOpsSelectedAccount(c, account.ID, account.Platform)
+			if decision := h.checkSelectedAccountContentModeration(c, reqLog, currentAPIKey, subject, account, service.ContentModerationProtocolAnthropicMessages, reqModel, body); decision != nil && !decision.AllowNextStage {
+				if selection.ReleaseFunc != nil {
+					selection.ReleaseFunc()
+				}
+				h.anthropicSecurityAuditError(c, decision)
+				return
+			}
 
 			// [DEBUG-STICKY] 打印账号选择结果
 			reqLog.Info("sticky.account_selected",

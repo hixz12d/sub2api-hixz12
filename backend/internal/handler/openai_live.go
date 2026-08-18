@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/ip"
+	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	coderws "github.com/coder/websocket"
@@ -100,7 +102,18 @@ func (h *OpenAIGatewayHandler) Live(c *gin.Context) {
 	defer userRelease()
 
 	identity := liveCallIdentity(c, apiKey, subject.UserID, subscription)
-	created, err := h.gatewayService.CreateLiveCall(c.Request.Context(), request, identity, subject.Concurrency)
+	var selectedDecision *securityaudit.Decision
+	created, err := h.gatewayService.CreateLiveCall(c.Request.Context(), request, identity, subject.Concurrency, func(_ context.Context, account *service.Account) error {
+		selectedDecision = h.checkSelectedAccountContentModeration(c, reqLog, apiKey, subject, account, service.ContentModerationProtocolOpenAIResponses, model, request.Session)
+		if selectedDecision != nil && !selectedDecision.AllowNextStage {
+			return errors.New("selected account content moderation blocked")
+		}
+		return nil
+	})
+	if selectedDecision != nil && !selectedDecision.AllowNextStage {
+		h.openAISecurityAuditError(c, selectedDecision)
+		return
+	}
 	if err != nil {
 		h.writeLiveCreateError(c, err)
 		return

@@ -259,18 +259,29 @@ func TestExportDataSelectedIDsOverrideFilters(t *testing.T) {
 	require.Equal(t, 0, adminSvc.lastListAccounts.calls)
 }
 
-func TestImportDataReusesProxyAndSkipsDefaultGroup(t *testing.T) {
+func TestImportDataForcesConfiguredProxyAndSkipsDefaultGroup(t *testing.T) {
+	t.Setenv(defaultImportProxyIDEnv, "25")
 	router, adminSvc := setupAccountDataRouter()
 
 	adminSvc.proxies = []service.Proxy{
 		{
 			ID:       1,
-			Name:     "proxy",
+			Name:     "imported-proxy",
 			Protocol: "socks5",
 			Host:     "1.2.3.4",
 			Port:     1080,
 			Username: "u",
 			Password: "p",
+			Status:   service.StatusActive,
+		},
+		{
+			ID:       25,
+			Name:     "default-import-proxy",
+			Protocol: "http",
+			Host:     "5.6.7.8",
+			Port:     8080,
+			Username: "default-user",
+			Password: "default-pass",
 			Status:   service.StatusActive,
 		},
 	}
@@ -282,7 +293,7 @@ func TestImportDataReusesProxyAndSkipsDefaultGroup(t *testing.T) {
 			"proxies": []map[string]any{
 				{
 					"proxy_key": "socks5|1.2.3.4|1080|u|p",
-					"name":      "proxy",
+					"name":      "imported-proxy",
 					"protocol":  "socks5",
 					"host":      "1.2.3.4",
 					"port":      1080,
@@ -297,6 +308,7 @@ func TestImportDataReusesProxyAndSkipsDefaultGroup(t *testing.T) {
 					"platform":    service.PlatformOpenAI,
 					"type":        service.AccountTypeOAuth,
 					"credentials": map[string]any{"token": "x"},
+					// The source backup points to proxy 1, but import must force proxy 25.
 					"proxy_key":   "socks5|1.2.3.4|1080|u|p",
 					"concurrency": 3,
 					"priority":    50,
@@ -315,5 +327,7 @@ func TestImportDataReusesProxyAndSkipsDefaultGroup(t *testing.T) {
 
 	require.Len(t, adminSvc.createdProxies, 0)
 	require.Len(t, adminSvc.createdAccounts, 1)
+	require.NotNil(t, adminSvc.createdAccounts[0].ProxyID)
+	require.Equal(t, int64(25), *adminSvc.createdAccounts[0].ProxyID)
 	require.True(t, adminSvc.createdAccounts[0].SkipDefaultGroupBind)
 }

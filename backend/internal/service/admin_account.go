@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -467,6 +468,7 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 
 const (
 	defaultAccountProxyName     = "ipv6 6"
+	defaultAccountProxyIDEnv    = "ACCOUNT_IMPORT_DEFAULT_PROXY_ID"
 	defaultAccountProxyProtocol = "http"
 	defaultAccountProxyHost     = "45.61.148.226"
 	defaultAccountProxyPort     = 18006
@@ -477,7 +479,34 @@ const (
 // A missing proxy is non-fatal so account synchronization can continue; the
 // warning makes the missing default visible to operators.
 func (s *adminServiceImpl) resolveDefaultAccountProxyID(ctx context.Context, explicit *int64) *int64 {
-	if explicit != nil || s == nil || s.proxyRepo == nil {
+	if s == nil || s.proxyRepo == nil {
+		return explicit
+	}
+
+	// The deployment-configured proxy is authoritative for all newly created
+	// accounts, including imports that send an older proxy_id value.
+	if raw := strings.TrimSpace(os.Getenv(defaultAccountProxyIDEnv)); raw != "" {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || id <= 0 {
+			slog.Warn("default_account_proxy_invalid", "value", raw)
+			return nil
+		}
+		proxies, err := s.proxyRepo.ListActive(ctx)
+		if err != nil {
+			slog.Warn("resolve_default_account_proxy_failed", "error", err)
+			return nil
+		}
+		for i := range proxies {
+			if proxies[i].ID == id {
+				resolved := id
+				return &resolved
+			}
+		}
+		slog.Warn("default_account_proxy_not_found", "proxy_id", id)
+		return nil
+	}
+
+	if explicit != nil {
 		return explicit
 	}
 	proxies, err := s.proxyRepo.ListActive(ctx)
@@ -499,7 +528,7 @@ func (s *adminServiceImpl) resolveDefaultAccountProxyID(ctx context.Context, exp
 }
 
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
-	// 未显式指定代理时，自动绑定固定的默认出口代理；显式 ProxyID 保持调用方选择。
+	// The configured default proxy is authoritative for every newly created account.
 	input.ProxyID = s.resolveDefaultAccountProxyID(ctx, input.ProxyID)
 	accountExtra, err := normalizeOpenAILongContextBillingExtra(input.Platform, input.Extra)
 	if err != nil {

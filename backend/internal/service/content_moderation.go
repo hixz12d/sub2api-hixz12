@@ -151,6 +151,7 @@ type ContentModerationConfig struct {
 	SampleRate           int                          `json:"sample_rate"`
 	AllGroups            bool                         `json:"all_groups"`
 	GroupIDs             []int64                      `json:"group_ids"`
+	AccountIDs           []int64                      `json:"account_ids"`
 	RecordNonHits        bool                         `json:"record_non_hits"`
 	Thresholds           map[string]float64           `json:"thresholds"`
 	WorkerCount          int                          `json:"worker_count"`
@@ -189,6 +190,7 @@ type ContentModerationConfigView struct {
 	SampleRate                     int                             `json:"sample_rate"`
 	AllGroups                      bool                            `json:"all_groups"`
 	GroupIDs                       []int64                         `json:"group_ids"`
+	AccountIDs                     []int64                         `json:"account_ids"`
 	RecordNonHits                  bool                            `json:"record_non_hits"`
 	Thresholds                     map[string]float64              `json:"thresholds"`
 	WorkerCount                    int                             `json:"worker_count"`
@@ -281,6 +283,7 @@ type UpdateContentModerationConfigInput struct {
 	SampleRate                     *int                          `json:"sample_rate"`
 	AllGroups                      *bool                         `json:"all_groups"`
 	GroupIDs                       *[]int64                      `json:"group_ids"`
+	AccountIDs                     *[]int64                      `json:"account_ids"`
 	RecordNonHits                  *bool                         `json:"record_non_hits"`
 	Thresholds                     *map[string]float64           `json:"thresholds"`
 	WorkerCount                    *int                          `json:"worker_count"`
@@ -307,18 +310,20 @@ type ContentModerationModelFilter struct {
 }
 
 type ContentModerationCheckInput struct {
-	RequestID  string
-	UserID     int64
-	UserEmail  string
-	APIKeyID   int64
-	APIKeyName string
-	GroupID    *int64
-	GroupName  string
-	Endpoint   string
-	Provider   string
-	Model      string
-	Protocol   string
-	Body       []byte
+	RequestID   string
+	UserID      int64
+	UserEmail   string
+	APIKeyID    int64
+	APIKeyName  string
+	GroupID     *int64
+	GroupName   string
+	AccountID   int64
+	AccountName string
+	Endpoint    string
+	Provider    string
+	Model       string
+	Protocol    string
+	Body        []byte
 }
 
 type ContentModerationInput struct {
@@ -693,6 +698,9 @@ func (s *ContentModerationService) UpdateConfig(ctx context.Context, input Updat
 	if input.GroupIDs != nil {
 		cfg.GroupIDs = normalizeInt64IDs(*input.GroupIDs)
 	}
+	if input.AccountIDs != nil {
+		cfg.AccountIDs = normalizeInt64IDs(*input.AccountIDs)
+	}
 	if input.RecordNonHits != nil {
 		cfg.RecordNonHits = *input.RecordNonHits
 	}
@@ -811,6 +819,24 @@ func (s *ContentModerationService) TestAPIKeys(ctx context.Context, input TestCo
 	return &TestContentModerationAPIKeysResult{Items: items, AuditResult: auditResult, ImageCount: imageCount}, nil
 }
 
+// CheckSelectedAccount runs the existing moderation engine only when account-level
+// scope is configured and the locally selected upstream account is in that scope.
+func (s *ContentModerationService) CheckSelectedAccount(ctx context.Context, input ContentModerationCheckInput) (*ContentModerationDecision, bool, error) {
+	if s == nil || s.settingRepo == nil || s.repo == nil || input.AccountID <= 0 {
+		return nil, false, nil
+	}
+	runtimeSnapshot, err := s.loadRuntimeSnapshot(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	cfg := runtimeSnapshot.config
+	if !runtimeSnapshot.riskControlEnabled || cfg == nil || !cfg.Enabled || cfg.Mode == ContentModerationModeOff || !cfg.usesAccountScope() || !cfg.includesAccount(input.AccountID) {
+		return nil, false, nil
+	}
+	decision, err := s.Check(ctx, input)
+	return decision, true, err
+}
+
 func (s *ContentModerationService) Check(ctx context.Context, input ContentModerationCheckInput) (*ContentModerationDecision, error) {
 	allow := &ContentModerationDecision{Allowed: true, Action: ContentModerationActionAllow}
 	if s == nil || s.settingRepo == nil || s.repo == nil {
@@ -843,7 +869,7 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		return allow, nil
 	}
 	cfg := runtimeSnapshot.config
-	inGroupScope := cfg.includesGroup(input.GroupID)
+	inScope := cfg.includesScope(input.GroupID, input.AccountID)
 	inModelScope := cfg.includesModel(input.Model)
 	slog.Info("content_moderation.config_loaded",
 		"user_id", input.UserID,
@@ -858,7 +884,10 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 		"mode", cfg.Mode,
 		"all_groups", cfg.AllGroups,
 		"configured_group_ids", cfg.GroupIDs,
-		"in_group_scope", inGroupScope,
+		"configured_account_ids", cfg.AccountIDs,
+		"account_id", input.AccountID,
+		"account_name", input.AccountName,
+		"in_scope", inScope,
 		"model_filter_type", cfg.ModelFilter.Type,
 		"configured_models", cfg.ModelFilter.Models,
 		"in_model_scope", inModelScope,
@@ -884,8 +913,8 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"protocol", input.Protocol)
 		return allow, nil
 	}
-	if !inGroupScope {
-		slog.Info("content_moderation.skip_group_out_of_scope",
+	if !inScope {
+		slog.Info("content_moderation.skip_scope_out_of_scope",
 			"user_id", input.UserID,
 			"api_key_id", input.APIKeyID,
 			"group_id", contentModerationLogGroupID(input.GroupID),
@@ -893,7 +922,10 @@ func (s *ContentModerationService) Check(ctx context.Context, input ContentModer
 			"endpoint", input.Endpoint,
 			"protocol", input.Protocol,
 			"all_groups", cfg.AllGroups,
-			"configured_group_ids", cfg.GroupIDs)
+			"configured_group_ids", cfg.GroupIDs,
+			"configured_account_ids", cfg.AccountIDs,
+			"account_id", input.AccountID,
+			"account_name", input.AccountName)
 		return allow, nil
 	}
 	if !inModelScope {
@@ -1260,7 +1292,7 @@ func (s *ContentModerationService) worker(id int) {
 			if !cfg.Enabled || cfg.Mode == ContentModerationModeOff || len(cfg.apiKeys()) == 0 {
 				return
 			}
-			if !cfg.includesGroup(task.input.GroupID) {
+			if !cfg.includesScope(task.input.GroupID, task.input.AccountID) {
 				return
 			}
 			if !cfg.includesModel(task.input.Model) {
@@ -2086,6 +2118,7 @@ func defaultContentModerationConfig() *ContentModerationConfig {
 		SampleRate:           100,
 		AllGroups:            true,
 		GroupIDs:             []int64{},
+		AccountIDs:           []int64{},
 		RecordNonHits:        false,
 		Thresholds:           ContentModerationDefaultThresholds(),
 		WorkerCount:          defaultContentModerationWorkerCount,
@@ -2118,6 +2151,7 @@ func cloneContentModerationConfig(cfg *ContentModerationConfig) *ContentModerati
 	clone.ProxyID = cloneInt64Ptr(cfg.ProxyID)
 	clone.APIKeys = append([]string(nil), cfg.APIKeys...)
 	clone.GroupIDs = append([]int64(nil), cfg.GroupIDs...)
+	clone.AccountIDs = append([]int64(nil), cfg.AccountIDs...)
 	clone.BlockedKeywords = append([]string(nil), cfg.BlockedKeywords...)
 	clone.Thresholds = cloneFloatMap(cfg.Thresholds)
 	clone.ModelFilter = ContentModerationModelFilter{
@@ -2204,6 +2238,11 @@ func (cfg *ContentModerationConfig) normalize() {
 		cfg.NonHitRetentionDays = maxContentModerationNonHitRetentionDays
 	}
 	cfg.GroupIDs = normalizeInt64IDs(cfg.GroupIDs)
+	cfg.AccountIDs = normalizeInt64IDs(cfg.AccountIDs)
+	if len(cfg.AccountIDs) > 0 {
+		cfg.AllGroups = false
+		cfg.GroupIDs = nil
+	}
 	cfg.Thresholds = mergeContentModerationThresholds(ContentModerationDefaultThresholds(), cfg.Thresholds)
 	cfg.BlockedKeywords = normalizeBlockedKeywords(cfg.BlockedKeywords)
 	cfg.KeywordBlockingMode = normalizeKeywordBlockingMode(cfg.KeywordBlockingMode)
@@ -2223,6 +2262,29 @@ func (cfg *ContentModerationConfig) includesGroup(groupID *int64) bool {
 		}
 	}
 	return false
+}
+
+func (cfg *ContentModerationConfig) usesAccountScope() bool {
+	return cfg != nil && len(cfg.AccountIDs) > 0
+}
+
+func (cfg *ContentModerationConfig) includesAccount(accountID int64) bool {
+	if cfg == nil || accountID <= 0 {
+		return false
+	}
+	for _, id := range cfg.AccountIDs {
+		if id == accountID {
+			return true
+		}
+	}
+	return false
+}
+
+func (cfg *ContentModerationConfig) includesScope(groupID *int64, accountID int64) bool {
+	if cfg.usesAccountScope() {
+		return cfg.includesAccount(accountID)
+	}
+	return cfg.includesGroup(groupID)
 }
 
 func (cfg *ContentModerationConfig) includesModel(model string) bool {
@@ -2421,6 +2483,7 @@ func (s *ContentModerationService) configView(cfg *ContentModerationConfig) *Con
 		SampleRate:                     cfg.SampleRate,
 		AllGroups:                      cfg.AllGroups,
 		GroupIDs:                       append([]int64(nil), cfg.GroupIDs...),
+		AccountIDs:                     append([]int64(nil), cfg.AccountIDs...),
 		RecordNonHits:                  cfg.RecordNonHits,
 		Thresholds:                     cloneFloatMap(cfg.Thresholds),
 		WorkerCount:                    cfg.WorkerCount,

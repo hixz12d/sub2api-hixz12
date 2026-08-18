@@ -105,6 +105,13 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	requestView := newOpenAIRequestView(body)
 	reqModel, reqStream, promptCacheKey := requestView.Model, requestView.Stream, requestView.PromptCacheKey
 	originalModel := reqModel
+	autoPromptCacheKey := false
+	if promptCacheKey == "" && account.IsOpenAIOAuth() && !compactPath &&
+		explicitOpenAIRequestSessionID(c, body) == "" &&
+		shouldAutoInjectPromptCacheKeyForCompat(reqModel) {
+		promptCacheKey = deriveOpenAIResponsesPromptCacheKey(body)
+		autoPromptCacheKey = promptCacheKey != ""
+	}
 
 	if account.Platform == PlatformGrok {
 		return s.forwardGrokResponses(ctx, c, account, body, originalModel, reqStream, startTime)
@@ -245,6 +252,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	markDecodedModified := func() {
 		bodyModified = true
 		disablePatch()
+	}
+	if autoPromptCacheKey {
+		// Keep the generated key in the actual payload so HTTP and WSv2 share
+		// the same upstream cache identity.
+		markPatchSet("prompt_cache_key", promptCacheKey)
 	}
 
 	apiKey := getAPIKeyFromContext(c)

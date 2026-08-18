@@ -80,6 +80,35 @@ func runContentModeration(c *gin.Context, reqLog *zap.Logger, svc *service.Conte
 	return decision
 }
 
+func runSelectedAccountContentModeration(c *gin.Context, reqLog *zap.Logger, svc *service.ContentModerationService, apiKey *service.APIKey, subject middleware2.AuthSubject, account *service.Account, protocol string, model string, body []byte) (*service.ContentModerationDecision, bool) {
+	if svc == nil || c == nil || c.Request == nil || account == nil {
+		return nil, false
+	}
+	input := buildContentModerationInput(c, apiKey, subject, protocol, model, body)
+	input.AccountID = account.ID
+	input.AccountName = account.Name
+	decision, inScope, err := svc.CheckSelectedAccount(c.Request.Context(), input)
+	if err != nil {
+		if reqLog != nil {
+			reqLog.Warn("content_moderation.selected_account_check_failed",
+				zap.Int64("account_id", input.AccountID),
+				zap.String("account_name", input.AccountName),
+				zap.Error(err))
+		}
+		return nil, false
+	}
+	if reqLog != nil && inScope && decision != nil {
+		reqLog.Info("content_moderation.selected_account_check_done",
+			zap.String("request_id", input.RequestID),
+			zap.Int64("account_id", input.AccountID),
+			zap.String("account_name", input.AccountName),
+			zap.Bool("allowed", decision.Allowed),
+			zap.Bool("blocked", decision.Blocked),
+			zap.String("action", decision.Action))
+	}
+	return decision, inScope
+}
+
 func buildContentModerationInput(c *gin.Context, apiKey *service.APIKey, subject middleware2.AuthSubject, protocol string, model string, body []byte) service.ContentModerationCheckInput {
 	input := service.ContentModerationCheckInput{
 		RequestID: contentModerationRequestID(c.Request.Context()),

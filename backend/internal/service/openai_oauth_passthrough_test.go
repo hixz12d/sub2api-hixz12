@@ -437,6 +437,82 @@ func TestOpenAIGatewayService_OAuthPassthrough_StreamKeepsToolNameAndBodyNormali
 	require.NotContains(t, body, "\"name\":\"edit\"")
 }
 
+func TestOpenAIGatewayService_OAuthPassthrough_AutoInjectsResponsesPromptCacheKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.1.0")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(`data: {"type":"response.completed","response":{"id":"resp_cache_key","model":"gpt-5.4","usage":{"input_tokens":10,"output_tokens":2}}}` + "\n\ndata: [DONE]\n\n")),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: false}},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          124,
+		Name:        "acc",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"},
+		Extra:       map[string]any{"openai_passthrough": true},
+	}
+	body := []byte(`{"model":"gpt-5.4","stream":true,"instructions":"You are helpful.","input":[{"role":"user","content":"Hello"}]}`)
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq)
+
+	generatedKey := deriveOpenAIResponsesPromptCacheKey(body)
+	require.NotEmpty(t, generatedKey)
+	require.Equal(t, svc.openAIOutboundSessionID(account, 0, generatedKey), gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
+}
+
+func TestOpenAIGatewayService_Forward_NativeResponsesAutoInjectsPromptCacheKey(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(nil))
+	c.Request.Header.Set("User-Agent", "codex_cli_rs/0.1.0")
+
+	upstream := &httpUpstreamRecorder{resp: &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(strings.NewReader(`{"id":"resp_native_cache","model":"gpt-5.4","usage":{"input_tokens":10,"output_tokens":2}}`)),
+	}}
+	svc := &OpenAIGatewayService{
+		cfg:          &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: false}},
+		httpUpstream: upstream,
+	}
+	account := &Account{
+		ID:          125,
+		Name:        "acc",
+		Platform:    PlatformOpenAI,
+		Type:        AccountTypeOAuth,
+		Concurrency: 1,
+		Credentials: map[string]any{"access_token": "oauth-token", "chatgpt_account_id": "chatgpt-acc"},
+		Extra:       map[string]any{"openai_responses_supported": true},
+	}
+	body := []byte(`{"model":"gpt-5.4","stream":false,"instructions":"You are helpful.","input":[{"role":"user","content":"Hello"}]}`)
+
+	result, err := svc.Forward(context.Background(), c, account, body)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.NotNil(t, upstream.lastReq)
+
+	generatedKey := deriveOpenAIResponsesPromptCacheKey(body)
+	require.NotEmpty(t, generatedKey)
+	require.Equal(t, svc.openAIOutboundSessionID(account, 0, generatedKey), gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
+}
+
 // 「自动透传（仅替换认证）」的默认行为必须真的只替换认证：namespace 声明、
 // namespace 形态的 tool_choice、历史调用项上的 namespace 都原样转发，只清掉
 // 非调用项上的残留 namespace（Codex 协议里只有调用项会带该字段）。

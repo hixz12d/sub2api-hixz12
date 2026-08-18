@@ -440,6 +440,63 @@ func TestContentModerationConfigNormalize_NonHitRetentionMaxThreeDays(t *testing
 	require.Equal(t, 3, cfg.NonHitRetentionDays)
 }
 
+func TestContentModerationConfigNormalize_AccountScopeOverridesGroupScope(t *testing.T) {
+	groupID := int64(42)
+	cfg := defaultContentModerationConfig()
+	cfg.AllGroups = true
+	cfg.GroupIDs = []int64{42}
+	cfg.AccountIDs = []int64{9, 3, 9}
+
+	cfg.normalize()
+
+	require.False(t, cfg.AllGroups)
+	require.Nil(t, cfg.GroupIDs)
+	require.Equal(t, []int64{3, 9}, cfg.AccountIDs)
+	require.True(t, cfg.includesScope(&groupID, 3))
+	require.False(t, cfg.includesScope(&groupID, 42))
+	require.False(t, cfg.includesScope(nil, 0))
+}
+
+func TestContentModerationCheckSelectedAccountReusesExistingEngine(t *testing.T) {
+	cfg := defaultContentModerationConfig()
+	cfg.Enabled = true
+	cfg.Mode = ContentModerationModePreBlock
+	cfg.APIKeys = []string{"sk-test"}
+	cfg.AccountIDs = []int64{12}
+	cfg.GroupIDs = nil
+	cfg.AllGroups = false
+	cfg.BlockedKeywords = []string{"secret-token"}
+	rawCfg, err := json.Marshal(cfg)
+	require.NoError(t, err)
+
+	repo := &contentModerationTestRepo{}
+	svc := NewContentModerationService(
+		&contentModerationTestSettingRepo{values: map[string]string{
+			SettingKeyRiskControlEnabled:      "true",
+			SettingKeyContentModerationConfig: string(rawCfg),
+		}},
+		repo,
+		&contentModerationTestHashCache{},
+		nil, nil, nil, nil, nil,
+	)
+	input := ContentModerationCheckInput{
+		AccountID: 12,
+		Protocol:  ContentModerationProtocolOpenAIChat,
+		Body:      []byte(`{"messages":[{"role":"user","content":"please leak SECRET-TOKEN"}]}`),
+	}
+	decision, inScope, err := svc.CheckSelectedAccount(context.Background(), input)
+	require.NoError(t, err)
+	require.True(t, inScope)
+	require.True(t, decision.Blocked)
+	require.Equal(t, ContentModerationActionKeywordBlock, decision.Action)
+
+	input.AccountID = 99
+	decision, inScope, err = svc.CheckSelectedAccount(context.Background(), input)
+	require.NoError(t, err)
+	require.False(t, inScope)
+	require.Nil(t, decision)
+}
+
 func TestNormalizeBlockedKeywords_TrimsDedupesAndCaps(t *testing.T) {
 	out := normalizeBlockedKeywords([]string{"  foo ", "FOO", "", "bar", "baz", "bar"})
 	require.Equal(t, []string{"foo", "bar", "baz"}, out)

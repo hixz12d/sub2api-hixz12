@@ -80,6 +80,17 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			body = normalizedBody
 		}
 		reqStream = gjson.GetBytes(body, "stream").Bool()
+		if !isOpenAIResponsesCompactPath(c) &&
+			gjson.GetBytes(body, "prompt_cache_key").String() == "" &&
+			explicitOpenAIRequestSessionID(c, body) == "" &&
+			shouldAutoInjectPromptCacheKeyForCompat(reqModel) {
+			if cacheKey := deriveOpenAIResponsesPromptCacheKey(body); cacheKey != "" {
+				body, err = sjson.SetBytes(body, "prompt_cache_key", cacheKey)
+				if err != nil {
+					return nil, fmt.Errorf("set Responses prompt cache key: %w", err)
+				}
+			}
+		}
 	}
 
 	sanitizedBody, sanitized, err := sanitizeEmptyBase64InputImagesInOpenAIBody(body)
