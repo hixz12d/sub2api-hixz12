@@ -562,6 +562,7 @@ type AccountSelectionResult struct {
 	ReleaseFunc           func()
 	WaitPlan              *AccountWaitPlan // nil means no wait allowed
 	PreserveStickyBinding bool             // scheduler selected an escape account; keep the original sticky binding
+	stickySessionHit      bool             // legacy OpenAI scheduler selected the effective sticky binding
 	// profitGate carries the admission gate used by this selection. The handler
 	// replays it outside the scheduler for post-slot validation and sticky binding.
 	profitGate *openAIProfitControlGate

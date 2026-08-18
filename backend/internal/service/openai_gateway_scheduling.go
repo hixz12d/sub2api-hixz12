@@ -1033,7 +1033,7 @@ func (s *OpenAIGatewayService) tryAcquireLegacyStickyOverflow(
 	}
 }
 
-func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Context, groupID *int64, platform string, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, requiredCapability OpenAIEndpointCapability, useUpstreamTokenCost bool) (*AccountSelectionResult, error) {
+func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Context, groupID *int64, platform string, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}, requireCompact bool, requiredCapability OpenAIEndpointCapability, useUpstreamTokenCost bool) (selection *AccountSelectionResult, err error) {
 	platform = normalizeOpenAICompatiblePlatform(platform)
 	priorityMode, priorityModeErr := s.resolveOpenAIAccountPriorityMode(ctx, groupID)
 	if priorityModeErr != nil {
@@ -1055,6 +1055,12 @@ func (s *OpenAIGatewayService) selectAccountWithLoadAwareness(ctx context.Contex
 			stickyAccountID = accountID
 		}
 	}
+	defer func() {
+		if selection == nil || selection.Account == nil || stickyAccountID <= 0 {
+			return
+		}
+		selection.stickySessionHit = selection.Account.ID == stickyAccountID && !selection.PreserveStickyBinding
+	}()
 	if s.concurrencyService == nil || !cfg.LoadBatchEnabled {
 		account, err := s.selectAccountForModelWithExclusions(ctx, groupID, platform, sessionHash, requestedModel, excludedIDs, requireCompact, stickyAccountID, requiredCapability, preferLowUpstreamRate)
 		if err != nil {

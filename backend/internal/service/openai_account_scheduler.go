@@ -2611,6 +2611,10 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 		}
 		decision.SelectedAccountID = selection.Account.ID
 		decision.SelectedAccountType = selection.Account.Type
+		if selection.stickySessionHit {
+			decision.Layer = openAIAccountScheduleLayerSessionSticky
+			decision.StickySessionHit = true
+		}
 		if priorityMode == OpenAIAccountPriorityModeBinding {
 			if priority, ok := openAIAccountBindingPriority(selection.Account, groupID); ok {
 				decision.SelectedBindingPriority = priority
