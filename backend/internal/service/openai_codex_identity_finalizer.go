@@ -177,7 +177,11 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthHeaders(
 	s.applyOpenAIOutboundIdentityPolicy(ctx, account, headers, openAIOutboundOAuthPolicy)
 	s.applyOpenAIAccountScopedHeaders(ctx, c, account, headers, accountIdentitySessionID)
 	applyCodexFingerprintHeaders(headers, snapshot)
-	normalizeCodexOAuthHeaders(headers, resolveCodexSessionHeader(headers), resolveCodexThreadHeader(headers))
+	outboundSessionID := resolveCodexSessionHeader(headers)
+	if outboundSessionID == "" && strings.TrimSpace(accountIdentitySessionID) != "" {
+		outboundSessionID = s.resolveCodexOutboundPromptCacheKey(c, account, snapshot, accountIdentitySessionID)
+	}
+	normalizeCodexOAuthHeaders(headers, outboundSessionID, resolveCodexThreadHeader(headers))
 	// Messages compatibility intentionally has no synthetic conversation when
 	// the client did not provide one. Keep this policy inside the final boundary
 	// so no bridge needs a post-finalizer identity deletion.

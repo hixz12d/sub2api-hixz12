@@ -190,6 +190,24 @@ func TestOpenAIWSHeaderProtocolAndAPIKeyCompatibility(t *testing.T) {
 		requireCodexOAuthHeaderProtocol(t, headers, ids.sessionID, ids.threadID)
 	})
 
+	t.Run("oauth maps OpenCode affinity to isolated session", func(t *testing.T) {
+		const rawSession = "opencode-session-affinity"
+		c := newCodexHeaderProtocolContext(t, "/v1/responses", map[string]string{
+			openCodeSessionAffinityHeader: rawSession,
+		})
+		account := newCodexHeaderProtocolOAuthAccount(codexFingerprintOff)
+		headers, resolution, err := svc.buildOpenAIWSHeaders(
+			context.Background(), c, account, "oauth-token", decision, true,
+			"", "", "body-cache-key", "gpt-5.4", "default",
+		)
+		require.NoError(t, err)
+		require.Equal(t, rawSession, resolution.SessionID)
+		require.Equal(t, "header_compatible_session", resolution.SessionSource)
+		require.Equal(t, isolateOpenAISessionID(71, rawSession), headers.Get(codexSessionHeader))
+		require.Empty(t, headers.Get(legacyCodexSessionHeader))
+		require.Empty(t, headers.Get("conversation_id"))
+	})
+
 	t.Run("api key keeps legacy upstream contract", func(t *testing.T) {
 		c := newCodexHeaderProtocolContext(t, "/v1/responses", map[string]string{
 			"session_id": "api-key-session",
@@ -248,7 +266,7 @@ func TestOpenAIOAuthCompatibilityForwardersUseCurrentSessionHeader(t *testing.T)
 		},
 		{
 			name:        "messages",
-			wantSession: false,
+			wantSession: true,
 			forward: func(svc *OpenAIGatewayService, c *gin.Context, account *Account) error {
 				messagesBody := []byte(`{"model":"claude-sonnet-4-5","max_tokens":16,"messages":[{"role":"user","content":"hello"}],"stream":false}`)
 				_, err := svc.ForwardAsAnthropic(context.Background(), c, account, messagesBody, "compat-cache", "gpt-5.4")
@@ -275,6 +293,50 @@ func TestOpenAIOAuthCompatibilityForwardersUseCurrentSessionHeader(t *testing.T)
 				require.Empty(t, upstream.lastReq.Header.Get(codexSessionHeader))
 			}
 			require.Empty(t, upstream.lastReq.Header.Get(legacyCodexSessionHeader))
+		})
+	}
+}
+
+func TestOpenAIOAuthOpenCodeSessionConvergesWithPromptCacheKey(t *testing.T) {
+	const rawSession = "opencode-session-affinity"
+	builders := []struct {
+		name  string
+		build func(*OpenAIGatewayService, *gin.Context, *Account, []byte, string) (*http.Request, error)
+	}{
+		{
+			name: "responses",
+			build: func(svc *OpenAIGatewayService, c *gin.Context, account *Account, body []byte, cacheKey string) (*http.Request, error) {
+				return svc.buildUpstreamRequest(context.Background(), c, account, body, "oauth-token", true, cacheKey, true)
+			},
+		},
+		{
+			name: "passthrough",
+			build: func(svc *OpenAIGatewayService, c *gin.Context, account *Account, body []byte, _ string) (*http.Request, error) {
+				return svc.buildUpstreamRequestOpenAIPassthrough(context.Background(), c, account, body, "oauth-token")
+			},
+		},
+	}
+
+	for _, builder := range builders {
+		t.Run(builder.name, func(t *testing.T) {
+			for _, input := range []string{"first turn", "different second turn"} {
+				c := newCodexHeaderProtocolContext(t, "/v1/responses", map[string]string{
+					openCodeSessionAffinityHeader: rawSession,
+				})
+				account := newCodexHeaderProtocolOAuthAccount(codexFingerprintOff)
+				body := []byte(`{"model":"gpt-5.4","prompt_cache_key":"` + rawSession + `","input":"` + input + `","client_metadata":{}}`)
+				req, err := builder.build(&OpenAIGatewayService{}, c, account, body, rawSession)
+				require.NoError(t, err)
+				wireBody, err := io.ReadAll(req.Body)
+				require.NoError(t, err)
+
+				want := isolateOpenAISessionID(71, rawSession)
+				require.Equal(t, want, req.Header.Get(codexSessionHeader))
+				require.Equal(t, want, gjson.GetBytes(wireBody, "prompt_cache_key").String())
+				require.Empty(t, req.Header.Get(legacyCodexSessionHeader))
+				require.Empty(t, req.Header.Get("conversation_id"))
+				require.NotContains(t, string(wireBody), rawSession)
+			}
 		})
 	}
 }

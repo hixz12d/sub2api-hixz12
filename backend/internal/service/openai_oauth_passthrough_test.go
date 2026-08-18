@@ -221,7 +221,7 @@ func TestOpenAIGatewayService_OAuthMessagesBridgeDoesNotInjectDefaultInstruction
 	require.NotNil(t, upstream.lastReq)
 	require.Equal(t, "", gjson.GetBytes(upstream.lastBody, "instructions").String())
 	require.Equal(t, isolateOpenAISessionID(0, "anthropic-metadata-session-1"), gjson.GetBytes(upstream.lastBody, "prompt_cache_key").String())
-	require.Empty(t, upstream.lastReq.Header.Get(codexSessionHeader))
+	require.Equal(t, isolateOpenAISessionID(0, "anthropic-metadata-session-1"), upstream.lastReq.Header.Get(codexSessionHeader))
 	require.Empty(t, upstream.lastReq.Header.Get("Conversation_Id"))
 	require.Empty(t, upstream.lastReq.Header.Get("OpenAI-Beta"))
 	require.Equal(t, DefaultOpenAICodexUserAgent, upstream.lastReq.Header.Get("User-Agent"))

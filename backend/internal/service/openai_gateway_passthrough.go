@@ -482,9 +482,9 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 			req.Header.Set("accept", "text/event-stream")
 		}
 		// 用隔离后的 session 标识符覆盖客户端透传值，防止跨用户会话碰撞。
-		// Do not synthesize session/conversation headers from prompt_cache_key.
-		// The body cache key remains the stable routing signal; protocol headers
-		// are emitted only when the client supplied them or compact requires one.
+		// Normalize client protocol IDs here. The final OAuth identity boundary
+		// fills a missing session-id from the isolated prompt-cache identity while
+		// conversation_id remains client-supplied only.
 		outboundSessionID := ""
 		if clientSessionID != "" {
 			outboundSessionID = s.openAIOutboundSessionID(account, apiKeyID, clientSessionID)

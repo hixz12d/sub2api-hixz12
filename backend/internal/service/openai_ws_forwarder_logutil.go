@@ -106,6 +106,12 @@ func resolveOpenAIWSSessionHeaders(c *gin.Context, promptCacheKey string) openAI
 			}
 		}
 	}
+	if resolution.SessionID == "" {
+		if sessionID := explicitOpenAIHeaderSessionID(c); sessionID != "" {
+			resolution.SessionID = sessionID
+			resolution.SessionSource = "header_compatible_session"
+		}
+	}
 
 	cacheKey := strings.TrimSpace(promptCacheKey)
 	if cacheKey != "" {

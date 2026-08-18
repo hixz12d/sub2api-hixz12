@@ -980,9 +980,9 @@ func TestOpenAIGatewayService_Forward_WSv2_HeaderSessionFallbackFromPromptCacheK
 	require.NotNil(t, result)
 	require.Equal(t, "resp_prompt_cache_key", result.RequestID)
 
-	// Unset fingerprint mode is off: prompt_cache_key remains stable, but no
-	// session/conversation headers are fabricated from that body field.
-	require.Empty(t, captureDialer.lastHeaders.Get(codexSessionHeader))
+	// Unset fingerprint mode is off: prompt_cache_key remains stable and becomes
+	// the isolated session-id fallback, without fabricating conversation_id.
+	require.Equal(t, svc.openAIOutboundSessionID(account, 0, "pcache_123"), captureDialer.lastHeaders.Get(codexSessionHeader))
 	require.Empty(t, captureDialer.lastHeaders.Get(legacyCodexSessionHeader))
 	require.Empty(t, captureDialer.lastHeaders.Get("conversation_id"))
 	require.NotNil(t, captureConn.lastWrite)

@@ -1224,7 +1224,7 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_PassthroughHeade
 		t.Fatal("等待 passthrough websocket 结束超时")
 	}
 
-	require.Empty(t, captureDialer.lastHeaders.Get(codexSessionHeader))
+	require.Equal(t, svc.openAIOutboundSessionID(account, 0, "pcache_passthrough"), captureDialer.lastHeaders.Get(codexSessionHeader))
 	require.Empty(t, captureDialer.lastHeaders.Get(legacyCodexSessionHeader))
 	require.Equal(t, "turn-state-1", captureDialer.lastHeaders.Get(openAIWSTurnStateHeader))
 	require.Equal(t, "turn-meta-1", captureDialer.lastHeaders.Get(openAIWSTurnMetadataHeader), "fingerprint off 时保留客户端 turn metadata")

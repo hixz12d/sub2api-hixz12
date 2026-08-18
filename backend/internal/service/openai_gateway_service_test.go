@@ -3043,7 +3043,7 @@ func TestOpenAIBuildUpstreamRequestOAuthMessagesBridgeUsesSessionOnly(t *testing
 
 	req, err := svc.buildUpstreamRequest(c.Request.Context(), c, account, body, "token", true, "anthropic-metadata-session-1", false)
 	require.NoError(t, err)
-	require.Empty(t, req.Header.Get(codexSessionHeader))
+	require.Equal(t, isolateOpenAISessionID(0, "anthropic-metadata-session-1"), req.Header.Get(codexSessionHeader))
 	wireBody, err := io.ReadAll(req.Body)
 	require.NoError(t, err)
 	require.Equal(t, isolateOpenAISessionID(0, "anthropic-metadata-session-1"), gjson.GetBytes(wireBody, "prompt_cache_key").String())
