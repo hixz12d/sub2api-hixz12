@@ -117,6 +117,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		return s.forwardGrokResponses(ctx, c, account, body, originalModel, reqStream, startTime)
 	}
 
+	if IsCNProvider(account.Platform) && account.GetAPIProtocol() == APIProtocolAnthropic {
+		return s.forwardResponsesViaNativeAnthropic(ctx, c, account, body, reqModel)
+	}
+
 	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
 		return s.forwardResponsesViaRawChatCompletions(ctx, c, account, body)
 	}

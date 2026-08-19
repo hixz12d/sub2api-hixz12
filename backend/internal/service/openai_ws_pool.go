@@ -79,9 +79,15 @@ type openAIWSAcquireRequest struct {
 }
 
 type openAIWSHandshakeCompatibilityKey struct {
-	betaFeatures     string
-	sessionScopeHash string
-	routeKey         string
+	betaFeatures        string
+	sessionScopeHash    string
+	routeKey            string
+	codexInstallationID string
+	sessionIDHyphen     string
+	sessionIDUnderscore string
+	threadID            string
+	clientRequestID     string
+	codexWindowID       string
 }
 
 type openAIWSConnLease struct {
@@ -864,7 +870,7 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 
 retryAcquire:
 	accountID := req.Account.ID
-	compatibility := normalizeOpenAIWSHandshakeCompatibility(req.Headers, req.SessionScopeHash, req.RouteKey)
+	compatibility := normalizeOpenAIWSHandshakeCompatibilityForAccount(req.Account, req.Headers, req.SessionScopeHash, req.RouteKey)
 	routingAffinity := normalizeOpenAIWSRoutingAffinity(req.Headers)
 	effectiveMaxConns := p.effectiveMaxConnsByAccount(req.Account)
 	if effectiveMaxConns <= 0 {
@@ -1028,30 +1034,32 @@ retryAcquire:
 			p.ensureTargetIdleAsync(accountID)
 			return lease, nil
 		}
-		for _, conn := range ap.conns {
-			if conn == nil || conn == best || !conn.matchesHandshakeCompatibility(compatibility) || !conn.matchesRoutingAffinity(routingAffinity) {
-				continue
-			}
-			if conn.tryAcquire() {
-				connPick := time.Since(pickStartedAt)
-				p.recordConnPickDuration(connPick)
-				ap.mu.Unlock()
-				closeOpenAIWSConns(evicted)
-				if p.shouldHealthCheckConn(conn) {
-					if err := conn.pingWithTimeout(openAIWSConnHealthCheckTO); err != nil {
-						conn.close()
-						p.evictConn(accountID, conn.id)
-						if retry < 1 {
-							return p.acquire(ctx, req, retry+1)
-						}
-						return nil, err
-					}
+		if routingAffinity == "" || len(ap.conns)+ap.creating >= effectiveMaxConns {
+			for _, conn := range ap.conns {
+				if conn == nil || conn == best || !conn.matchesHandshakeCompatibility(compatibility) {
+					continue
 				}
-				lease := &openAIWSConnLease{pool: p, accountID: accountID, conn: conn, connPick: connPick, reused: true}
-				p.metrics.acquireReuseTotal.Add(1)
-				p.recordLastSuccessfulAcquire(accountID, acquireGeneration, req)
-				p.ensureTargetIdleAsync(accountID)
-				return lease, nil
+				if conn.tryAcquire() {
+					connPick := time.Since(pickStartedAt)
+					p.recordConnPickDuration(connPick)
+					ap.mu.Unlock()
+					closeOpenAIWSConns(evicted)
+					if p.shouldHealthCheckConn(conn) {
+						if err := conn.pingWithTimeout(openAIWSConnHealthCheckTO); err != nil {
+							conn.close()
+							p.evictConn(accountID, conn.id)
+							if retry < 1 {
+								return p.acquire(ctx, req, retry+1)
+							}
+							return nil, err
+						}
+					}
+					lease := &openAIWSConnLease{pool: p, accountID: accountID, conn: conn, connPick: connPick, reused: true}
+					p.metrics.acquireReuseTotal.Add(1)
+					p.recordLastSuccessfulAcquire(accountID, acquireGeneration, req)
+					p.ensureTargetIdleAsync(accountID)
+					return lease, nil
+				}
 			}
 		}
 	}
@@ -1815,7 +1823,7 @@ func (p *openAIWSConnPool) dialConn(ctx context.Context, req openAIWSAcquireRequ
 	}
 	id := p.nextConnID(req.Account.ID)
 	pooledConn := newOpenAIWSConn(id, req.Account.ID, conn, handshakeHeaders)
-	pooledConn.handshakeCompatibility = normalizeOpenAIWSHandshakeCompatibility(req.Headers, req.SessionScopeHash, req.RouteKey)
+	pooledConn.handshakeCompatibility = normalizeOpenAIWSHandshakeCompatibilityForAccount(req.Account, req.Headers, req.SessionScopeHash, req.RouteKey)
 	pooledConn.routingAffinity = normalizeOpenAIWSRoutingAffinity(req.Headers)
 	pooledConn.routeKey = stringsTrim(req.RouteKey)
 	return pooledConn, nil
@@ -2000,7 +2008,7 @@ func cloneOpenAIWSAcquireRequestPtr(req *openAIWSAcquireRequest) *openAIWSAcquir
 func sameOpenAIWSPrewarmTarget(a, b openAIWSAcquireRequest) bool {
 	return stringsTrim(a.WSURL) == stringsTrim(b.WSURL) &&
 		stringsTrim(a.RouteKey) == stringsTrim(b.RouteKey) &&
-		normalizeOpenAIWSHandshakeCompatibility(a.Headers, a.SessionScopeHash, a.RouteKey) == normalizeOpenAIWSHandshakeCompatibility(b.Headers, b.SessionScopeHash, b.RouteKey)
+		normalizeOpenAIWSHandshakeCompatibilityForAccount(a.Account, a.Headers, a.SessionScopeHash, a.RouteKey) == normalizeOpenAIWSHandshakeCompatibilityForAccount(b.Account, b.Headers, b.SessionScopeHash, b.RouteKey)
 }
 
 func normalizeOpenAIWSBetaFeatures(headers http.Header) string {
@@ -2028,7 +2036,7 @@ func normalizeOpenAIWSBetaFeatures(headers http.Header) string {
 	return strings.Join(normalized, ",")
 }
 
-func normalizeOpenAIWSHandshakeCompatibility(headers http.Header, sessionScopeHash ...string) openAIWSHandshakeCompatibilityKey {
+func normalizeOpenAIWSHandshakeCompatibilityForAccount(account *Account, headers http.Header, sessionScopeHash ...string) openAIWSHandshakeCompatibilityKey {
 	scope := ""
 	routeKey := ""
 	if len(sessionScopeHash) > 0 {
@@ -2037,11 +2045,46 @@ func normalizeOpenAIWSHandshakeCompatibility(headers http.Header, sessionScopeHa
 	if len(sessionScopeHash) > 1 {
 		routeKey = stringsTrim(sessionScopeHash[1])
 	}
-	return openAIWSHandshakeCompatibilityKey{
+	key := openAIWSHandshakeCompatibilityKey{
 		betaFeatures:     normalizeOpenAIWSBetaFeatures(headers),
 		sessionScopeHash: scope,
 		routeKey:         routeKey,
 	}
+	mode := activeCodexFingerprintMode(account)
+	if mode == codexFingerprintOff {
+		return key
+	}
+	key.codexInstallationID = normalizeOpenAIWSStableIdentityHeader(headers, "x-codex-installation-id")
+	if mode == codexFingerprintDevice {
+		return key
+	}
+	key.sessionIDHyphen = normalizeOpenAIWSStableIdentityHeader(headers, "session-id")
+	key.sessionIDUnderscore = normalizeOpenAIWSStableIdentityHeader(headers, "session_id")
+	key.threadID = normalizeOpenAIWSStableIdentityHeader(headers, "thread-id")
+	key.clientRequestID = normalizeOpenAIWSStableIdentityHeader(headers, "x-client-request-id")
+	key.codexWindowID = normalizeOpenAIWSStableIdentityHeader(headers, "x-codex-window-id")
+	return key
+}
+
+func normalizeOpenAIWSHandshakeCompatibility(headers http.Header, sessionScopeHash ...string) openAIWSHandshakeCompatibilityKey {
+	return normalizeOpenAIWSHandshakeCompatibilityForAccount(nil, headers, sessionScopeHash...)
+}
+
+func activeCodexFingerprintMode(account *Account) codexFingerprintMode {
+	if account == nil || account.GetCodexFingerprintMode() == codexFingerprintOff {
+		return codexFingerprintOff
+	}
+	if _, ok := codexFingerprintSeed(account.Extra); !ok {
+		return codexFingerprintOff
+	}
+	return account.GetCodexFingerprintMode()
+}
+
+func normalizeOpenAIWSStableIdentityHeader(headers http.Header, name string) string {
+	if headers == nil {
+		return ""
+	}
+	return strings.TrimSpace(headers.Get(name))
 }
 
 func normalizeOpenAIWSRoutingAffinity(headers http.Header) string {

@@ -1024,7 +1024,13 @@ func (h *AccountHandler) Update(c *gin.Context) {
 // so they must not cause a probe request to an endpoint the operator deliberately
 // excluded.
 func shouldScheduleOpenAIResponsesProbe(account *service.Account) bool {
-	if account == nil || account.Platform != service.PlatformOpenAI || account.Type != service.AccountTypeAPIKey {
+	if account == nil || account.Type != service.AccountTypeAPIKey {
+		return false
+	}
+	if service.IsCNProvider(account.Platform) {
+		return true
+	}
+	if account.Platform != service.PlatformOpenAI {
 		return false
 	}
 	mode, _ := account.Extra[openai_compat.ExtraKeyResponsesMode].(string)

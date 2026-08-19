@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 	"time"
@@ -41,6 +42,7 @@ const (
 
 const (
 	codexFingerprintModeExtraKey = "codex_fingerprint_mode"
+	codexFingerprintSeedExtraKey = "codex_fingerprint_seed"
 	codexThreadWindowHours       = 8
 	codexThreadWindowSlots       = 8
 
@@ -51,6 +53,111 @@ const (
 )
 
 var codexFingerprintNow = time.Now
+
+const codexFingerprintIDsContextKey = "codex_fingerprint_ids"
+
+// stageCodexFingerprintIDs stores the per-attempt snapshot shared by body and headers.
+func stageCodexFingerprintIDs(c *gin.Context, ids *codexFingerprintIDs) {
+	if c != nil {
+		c.Set(codexFingerprintIDsContextKey, ids)
+	}
+}
+
+func canonicalCodexFingerprintSeed(value any) (string, bool) {
+	raw, ok := value.(string)
+	if !ok {
+		return "", false
+	}
+	trimmed := strings.TrimSpace(raw)
+	parsed, err := uuid.Parse(trimmed)
+	if err != nil || parsed == uuid.Nil || trimmed != parsed.String() {
+		return "", false
+	}
+	return trimmed, true
+}
+
+func newCodexFingerprintSeed() string {
+	return uuid.NewString()
+}
+
+func stripCodexFingerprintSeed(extra map[string]any) map[string]any {
+	if extra == nil {
+		return nil
+	}
+	stripped := maps.Clone(extra)
+	delete(stripped, codexFingerprintSeedExtraKey)
+	return stripped
+}
+
+func codexFingerprintModeFromExtra(extra map[string]any) codexFingerprintMode {
+	if extra == nil {
+		return codexFingerprintOff
+	}
+	raw, _ := extra[codexFingerprintModeExtraKey].(string)
+	switch mode := codexFingerprintMode(strings.TrimSpace(raw)); mode {
+	case codexFingerprintOff, codexFingerprintDevice, codexFingerprintSession, codexFingerprintWindow, codexFingerprintWindow40, codexFingerprintFull:
+		return mode
+	default:
+		return codexFingerprintOff
+	}
+}
+
+func codexFingerprintModeRequiresSeed(mode codexFingerprintMode) bool {
+	return mode == codexFingerprintDevice || mode == codexFingerprintSession || mode == codexFingerprintWindow || mode == codexFingerprintWindow40 || mode == codexFingerprintFull
+}
+
+func codexFingerprintSeed(extra map[string]any) (string, bool) {
+	if extra == nil {
+		return "", false
+	}
+	return canonicalCodexFingerprintSeed(extra[codexFingerprintSeedExtraKey])
+}
+
+func prepareCodexFingerprintExtraForCreate(platform, accountType string, extra map[string]any) map[string]any {
+	prepared := stripCodexFingerprintSeed(extra)
+	if platform != PlatformOpenAI || accountType != AccountTypeOAuth || !codexFingerprintModeRequiresSeed(codexFingerprintModeFromExtra(prepared)) {
+		return prepared
+	}
+	if prepared == nil {
+		prepared = make(map[string]any, 1)
+	}
+	prepared[codexFingerprintSeedExtraKey] = newCodexFingerprintSeed()
+	return prepared
+}
+
+func prepareCodexFingerprintExtraForUpdate(account *Account, extra map[string]any) map[string]any {
+	prepared := stripCodexFingerprintSeed(extra)
+	if account == nil || account.Platform != PlatformOpenAI || account.Type != AccountTypeOAuth {
+		return prepared
+	}
+	if seed, ok := codexFingerprintSeed(account.Extra); ok {
+		if prepared == nil {
+			prepared = make(map[string]any, 1)
+		}
+		prepared[codexFingerprintSeedExtraKey] = seed
+		return prepared
+	}
+	if codexFingerprintModeRequiresSeed(codexFingerprintModeFromExtra(prepared)) {
+		if prepared == nil {
+			prepared = make(map[string]any, 1)
+		}
+		prepared[codexFingerprintSeedExtraKey] = newCodexFingerprintSeed()
+	}
+	return prepared
+}
+
+func sanitizedCodexFingerprintExtraUpdates(updates map[string]any) map[string]any {
+	if updates == nil {
+		return nil
+	}
+	sanitized := maps.Clone(updates)
+	delete(sanitized, codexFingerprintSeedExtraKey)
+	return sanitized
+}
+
+func ShouldEnsureCodexFingerprintSeedForExtraUpdates(updates map[string]any) bool {
+	return updates != nil && codexFingerprintModeRequiresSeed(codexFingerprintModeFromExtra(updates))
+}
 
 // GetCodexFingerprintMode 从账号 extra JSON 读取指纹收敛模式。
 // 未设置、为空或非法时默认 off；device/session/window/window40/full 仅显式启用。
@@ -87,34 +194,63 @@ func deriveStableUUIDv4(seed string) string {
 		b[10:16])
 }
 
-// resolveConvergedInstallationID 返回账号级恒定的 installation_id。
-// 优先使用管理员配置的真实 device_id，无则从 accountID 确定性派生。
-func resolveConvergedInstallationID(account *Account) string {
+// fingerprintDerivationSeed accepts both the account form used by the legacy
+// window helpers and the durable seed form used by the 0.1.178 protocol.
+func fingerprintDerivationSeed(source any) (string, string) {
+	switch value := source.(type) {
+	case string:
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value), "v2"
+		}
+	case *Account:
+		if value == nil {
+			return "", ""
+		}
+		if seed, ok := codexFingerprintSeed(value.Extra); ok {
+			return seed, "v2"
+		}
+		return fmt.Sprintf("%d", value.ID), "v1"
+	}
+	return "", ""
+}
+
+// resolveConvergedInstallationID returns an account-stable installation ID.
+// The optional seed keeps source compatibility with the pre-seed helpers while
+// ensuring seeded accounts use the durable, non-ID-derived protocol identity.
+func resolveConvergedInstallationID(account *Account, seeds ...string) string {
 	if account == nil {
 		return ""
 	}
 	if deviceID := account.GetOpenAIDeviceID(); deviceID != "" {
 		return deviceID
 	}
-	return deriveStableUUIDv4(fmt.Sprintf("sub2api:codex-install-id:v1:%d", account.ID))
-}
-
-// resolveConvergedSessionID 返回账号级恒定的 session_id。
-func resolveConvergedSessionID(account *Account) string {
-	if account == nil {
+	seed, version := fingerprintDerivationSeed(account)
+	if len(seeds) > 0 && strings.TrimSpace(seeds[0]) != "" {
+		seed, version = strings.TrimSpace(seeds[0]), "v2"
+	}
+	if seed == "" {
 		return ""
 	}
-	return deriveStableUUIDv4(fmt.Sprintf("sub2api:codex-session-id:v1:%d", account.ID))
+	return deriveStableUUIDv4("sub2api:codex-install-id:" + version + ":" + seed)
 }
 
-// resolveConvergedThreadID 按客户端原始 session-id 确定性派生 thread_id。
-// 每个真实 Codex 会话（不同客户端启动实例）获得一个独立线程，
-// 保持历史“同客户端 session 对应同 thread”的兼容映射。
-func resolveConvergedThreadID(account *Account, clientSessionID string) string {
-	if account == nil || clientSessionID == "" {
+// resolveConvergedSessionID accepts either an account (legacy callers) or the
+// durable seed string used by the official 0.1.178 callers.
+func resolveConvergedSessionID(source any) string {
+	seed, version := fingerprintDerivationSeed(source)
+	if seed == "" {
 		return ""
 	}
-	return deriveStableUUIDv4(fmt.Sprintf("sub2api:codex-thread-id:v1:%d:%s", account.ID, clientSessionID))
+	return deriveStableUUIDv4("sub2api:codex-session-id:" + version + ":" + seed)
+}
+
+// resolveConvergedThreadID accepts either an account or durable seed.
+func resolveConvergedThreadID(source any, clientSessionID string) string {
+	seed, version := fingerprintDerivationSeed(source)
+	if seed == "" || clientSessionID == "" {
+		return ""
+	}
+	return deriveStableUUIDv4("sub2api:codex-thread-id:" + version + ":" + seed + ":" + clientSessionID)
 }
 
 func codexThreadWindowKey(now time.Time) string {
@@ -132,15 +268,14 @@ func resolveWindowSlot(clientSessionID string) int {
 	return int(binary.BigEndian.Uint64(hash[:8]) % uint64(codexThreadWindowSlots))
 }
 
-func resolveWindowThreadID(account *Account, clientSessionID string, now time.Time) string {
-	if account == nil {
+func resolveWindowThreadID(source any, clientSessionID string, now time.Time) string {
+	seed, version := fingerprintDerivationSeed(source)
+	if seed == "" {
 		return ""
 	}
 	return deriveStableUUIDv4(fmt.Sprintf(
-		"sub2api:codex-thread-id:v2-window:%d:%s:%d",
-		account.ID,
-		codexThreadWindowKey(now),
-		resolveWindowSlot(clientSessionID),
+		"sub2api:codex-thread-id:%s-window:%s:%s:%d",
+		version, seed, codexThreadWindowKey(now), resolveWindowSlot(clientSessionID),
 	))
 }
 
@@ -159,15 +294,14 @@ func resolveWindow40Slot(clientSeed string, now time.Time) int {
 	return int(binary.BigEndian.Uint64(hash[:8]) % uint64(codexThreadWindow40Slots(now)))
 }
 
-func resolveWindow40ThreadID(account *Account, clientSeed string, now time.Time) string {
-	if account == nil {
+func resolveWindow40ThreadID(source any, clientSeed string, now time.Time) string {
+	seed, version := fingerprintDerivationSeed(source)
+	if seed == "" {
 		return ""
 	}
 	return deriveStableUUIDv4(fmt.Sprintf(
-		"sub2api:codex-thread-id:v3-window40:%d:%s:%d",
-		account.ID,
-		codexThreadWindowKey(now),
-		resolveWindow40Slot(clientSeed, now),
+		"sub2api:codex-thread-id:%s-window40:%s:%s:%d",
+		version, seed, codexThreadWindowKey(now), resolveWindow40Slot(clientSeed, now),
 	))
 }
 
@@ -190,7 +324,11 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 		turnStartedAtUnixMs: now.UnixMilli(),
 	}
 
-	ids.installationID = resolveConvergedInstallationID(account)
+	seed, seeded := codexFingerprintSeed(account.Extra)
+	if !seeded {
+		return nil
+	}
+	ids.installationID = resolveConvergedInstallationID(account, seed)
 	if ids.installationID == "" {
 		return nil
 	}
@@ -200,8 +338,8 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 		return ids
 
 	case codexFingerprintSession:
-		ids.sessionID = resolveConvergedSessionID(account)
-		ids.threadID = resolveConvergedThreadID(account, clientSessionID)
+		ids.sessionID = resolveConvergedSessionID(seed)
+		ids.threadID = resolveConvergedThreadID(seed, clientSessionID)
 		if ids.threadID == "" {
 			ids.threadID = ids.sessionID
 		}
@@ -212,8 +350,8 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 		return ids
 
 	case codexFingerprintWindow:
-		ids.sessionID = resolveConvergedSessionID(account)
-		ids.threadID = resolveWindowThreadID(account, clientSessionID, now)
+		ids.sessionID = resolveConvergedSessionID(seed)
+		ids.threadID = resolveWindowThreadID(seed, clientSessionID, now)
 		ids.turnID = uuid.Must(uuid.NewV7()).String()
 		ids.clientRequestID = ids.turnID
 		ids.protocolProfile = codexProtocolProfileName
@@ -221,8 +359,8 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 		return ids
 
 	case codexFingerprintWindow40:
-		ids.sessionID = resolveConvergedSessionID(account)
-		ids.threadID = resolveWindow40ThreadID(account, clientSessionID, now)
+		ids.sessionID = resolveConvergedSessionID(seed)
+		ids.threadID = resolveWindow40ThreadID(seed, clientSessionID, now)
 		ids.turnID = uuid.Must(uuid.NewV7()).String()
 		ids.clientRequestID = ids.turnID
 		ids.protocolProfile = codexProtocolProfileName
@@ -230,7 +368,7 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 		return ids
 
 	case codexFingerprintFull:
-		ids.sessionID = resolveConvergedSessionID(account)
+		ids.sessionID = resolveConvergedSessionID(seed)
 		ids.threadID = ids.sessionID
 		ids.turnID = uuid.Must(uuid.NewV7()).String()
 		ids.clientRequestID = ids.turnID
@@ -355,7 +493,7 @@ func codexFingerprintIDsFromContext(c *gin.Context) *codexFingerprintIDs {
 	if c == nil {
 		return nil
 	}
-	value, ok := c.Get("codex_fingerprint_ids")
+	value, ok := c.Get(codexFingerprintIDsContextKey)
 	if !ok {
 		return nil
 	}

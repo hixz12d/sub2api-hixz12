@@ -191,10 +191,12 @@ func allowOpenAICompatibleMessagesDispatch(apiKey *service.APIKey) bool {
 	if apiKey == nil || apiKey.Group == nil {
 		return true
 	}
-	if apiKey.Group.Platform == service.PlatformGrok {
+	switch apiKey.Group.Platform {
+	case service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek:
 		return true
+	default:
+		return apiKey.Group.AllowMessagesDispatch
 	}
-	return apiKey.Group.AllowMessagesDispatch
 }
 
 func openAICompatibleTextTargetAllowed(c *gin.Context, apiKey *service.APIKey, model string) bool {
@@ -1610,10 +1612,9 @@ const (
 // 由 BeforeTurn 在每个 turn 开始时冻结，AfterTurn 的用量提交读取它；turn 在
 // 连接内串行推进，互斥锁只为跨用量提交 goroutine 的读取安全。
 //
-// 零值语义（重要）：ws_v2 passthrough ingress 只实现了 AfterTurn，没有任何
-// turn 起始回调，BeforeTurn 永远不会被调用。此时本值保持零，RecordUsage 经
-// openAIUsagePricingAt 回退到记录时刻——与引入分组利润控制前的基线一致。
-// 绝不能用建连时刻初始化：那会把透传连接的所有 turn 钉死在建连时的高峰因子，
+// 零值语义（重要）：ws_v2 passthrough ingress 不执行 BeforeTurn，因此本值保持
+// 零，并由 currentOr 回退到 ingress 报告的当前 turn 开始时刻。绝不能用建连
+// 时刻初始化，否则会把透传连接的所有 turn 钉死在首轮的高峰因子。
 // 客户端只要峰前一分钟建连并保活，整条连接就能全程按谷价结算，正是利润控制
 // 想堵的漏洞。透传 ingress 目前不做 turn 级利润复核，只有建连时的准入门。
 type openAIWSTurnPricing struct {
@@ -1630,6 +1631,15 @@ func (p *openAIWSTurnPricing) freeze(at time.Time) {
 func (p *openAIWSTurnPricing) current() time.Time {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	return p.at
+}
+
+func (p *openAIWSTurnPricing) currentOr(fallback time.Time) time.Time {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.at.IsZero() {
+		return fallback
+	}
 	return p.at
 }
 
@@ -1910,6 +1920,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "model is required in first response.create payload")
 		return
 	}
+	firstTurnStartedAt := time.Now()
 	ensureCompositeTargetPlatform(c, apiKey, reqModel)
 	ctx = c.Request.Context()
 	if apiKey.Group != nil && apiKey.Group.Platform == service.PlatformComposite {
@@ -2282,13 +2293,18 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		turnChannelMapping.Store(&openAIWSTurnChannelMappingSnapshot{turn: 1, mapping: channelMappingWS})
 		// turn 级定价：BeforeTurn 重新冻结 pricingAt 并按最新门复核当前账号，
 		// AfterTurn 的计费读取所属 turn 的时刻。零值起步的语义见
-		// openAIWSTurnPricing 的注释——绝不能用建连时刻初始化。
+		// openAIWSTurnPricing 的注释；透传模式回退到 ingress 报告的 turn 开始时刻。
 		var turnPricing openAIWSTurnPricing
+		var turnStartedAt openAIWSTurnPricing
 		hooks := &service.OpenAIWSIngressHooks{
 			ClientLifecycleContext:  clientLifecycleCtx,
 			InitialRequestModel:     reqModel,
 			MaxReasoningEffort:      maxReasoningEffort,
 			ReasoningEffortMappings: reasoningEffortMappings,
+			InitialTurnStartedAt:    firstTurnStartedAt,
+			TurnStarted: func(_ int, startedAt time.Time) {
+				turnStartedAt.freeze(startedAt)
+			},
 			BeforeRequest: func(turn int, payload []byte, originalModel string) error {
 				c.Set(securityAuditWSTurnContextKey, turn)
 				if turn == 1 {
@@ -2445,7 +2461,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account, result)
 				quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 				sessionID := service.ExtractClientSessionID(c)
-				turnRecordPricingAt := turnPricing.current()
+				turnRecordPricingAt := turnPricing.currentOr(turnStartedAt.currentOr(time.Time{}))
 				cyberBlocked := service.GetOpsCyberPolicy(c) != nil
 				h.submitOpenAIUsageRecordTask(ctx, result, func(taskCtx context.Context) {
 					if err := h.gatewayService.RecordUsage(taskCtx, &service.OpenAIRecordUsageInput{

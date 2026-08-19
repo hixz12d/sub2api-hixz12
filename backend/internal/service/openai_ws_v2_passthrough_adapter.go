@@ -927,6 +927,12 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 
 	completedTurns := atomic.Int32{}
 	turnLifecycle := newOpenAIWSPassthroughTurnLifecycle(true)
+	firstTurnStartedAt := time.Now()
+	if hooks != nil && !hooks.InitialTurnStartedAt.IsZero() {
+		firstTurnStartedAt = hooks.InitialTurnStartedAt
+	}
+	var nextTurnStartedAtMu sync.Mutex
+	var nextTurnStartedAt time.Time
 	clientFrameConn := &openAIWSClientFrameConn{
 		conn:                 clientConn,
 		controlCtx:           ctx,
@@ -941,6 +947,16 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			return replaceOpenAIWSMessageModel(payload, upstreamModel, requestModel)
 		},
 	}
+	recordNextTurnStarted := func() {
+		startedAt := time.Now()
+		nextTurnStartedAtMu.Lock()
+		nextTurnStartedAt = startedAt
+		nextTurnStartedAtMu.Unlock()
+		clientFrameConn.markTurnStarted()
+		if hooks != nil && hooks.TurnStarted != nil {
+			hooks.TurnStarted(int(completedTurns.Load())+1, startedAt)
+		}
+	}
 	policyClientConn := &openAIWSPolicyEnforcingFrameConn{
 		inner: clientFrameConn,
 		// 注意线程安全：filter 仅在 runClientToUpstream 这一条
@@ -948,14 +964,14 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 		// capturedSessionModel 的读写都发生在该 goroutine 内，因此无需
 		// 加锁/原子化。
 		filter: func(msgType coderws.MessageType, payload []byte) (out []byte, blocked *OpenAIFastBlockedError, filterErr error) {
-			if msgType != coderws.MessageText {
+			if msgType != coderws.MessageText && msgType != coderws.MessageBinary {
 				return payload, nil, nil
 			}
 			eventType := strings.TrimSpace(gjson.GetBytes(payload, "type").String())
 			isResponseCreate := eventType == "response.create"
 			acceptedTurn := false
 			if isResponseCreate {
-				if !turnLifecycle.beginResponseCreate(clientFrameConn.markTurnStarted) {
+				if !turnLifecycle.beginResponseCreate(recordNextTurnStarted) {
 					err := errors.New("overlapping response.create is not supported")
 					return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, err.Error(), err)
 				}
@@ -1096,6 +1112,9 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 		)
 	}
 	upstreamFirstMessageSent = true
+	if hooks != nil && hooks.TurnStarted != nil {
+		hooks.TurnStarted(1, firstTurnStartedAt)
+	}
 
 	readNextClientFrame := func(readCtx context.Context, conn openaiwsv2.FrameConn) (coderws.MessageType, []byte, error) {
 		for {
@@ -1103,7 +1122,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			if readErr != nil {
 				return msgType, payload, readErr
 			}
-			if msgType == coderws.MessageText && strings.TrimSpace(gjson.GetBytes(payload, "type").String()) == "response.create" {
+			if (msgType == coderws.MessageText || msgType == coderws.MessageBinary) && strings.TrimSpace(gjson.GetBytes(payload, "type").String()) == "response.create" {
 				StartOpenAIRetryBudgetTurn(c, account, payload)
 				if reserveErr := ReserveOpenAIUpstreamAttempt(c, account.ID); reserveErr != nil {
 					return msgType, payload, reserveErr
@@ -1131,6 +1150,14 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			FirstMessageSent:                upstreamFirstMessageSent,
 			StartClientAfterFirstDownstream: true,
 			ReadClientFrame:                 readNextClientFrame,
+			FirstTurnStartedAt:              firstTurnStartedAt,
+			TakeNextTurnStartedAt: func() time.Time {
+				nextTurnStartedAtMu.Lock()
+				defer nextTurnStartedAtMu.Unlock()
+				startedAt := nextTurnStartedAt
+				nextTurnStartedAt = time.Time{}
+				return startedAt
+			},
 			OnUsageParseFailure: func(eventType string, usageRaw string) {
 				logOpenAIWSV2Passthrough(
 					"usage_parse_failed event_type=%s usage_raw=%s",

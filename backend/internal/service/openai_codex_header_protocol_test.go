@@ -36,7 +36,10 @@ func newCodexHeaderProtocolOAuthAccount(mode codexFingerprintMode) *Account {
 		Credentials: map[string]any{
 			"chatgpt_account_id": "codex-header-protocol-account",
 		},
-		Extra: map[string]any{codexFingerprintModeExtraKey: string(mode)},
+		Extra: map[string]any{
+			codexFingerprintModeExtraKey: string(mode),
+			codexFingerprintSeedExtraKey: testCodexFingerprintSeed,
+		},
 	}
 }
 
@@ -350,6 +353,11 @@ func TestOpenAIOAuthPassthroughCrossAccountSessionIsolation(t *testing.T) {
 		})
 		account := newCodexHeaderProtocolOAuthAccount(codexFingerprintSession)
 		account.ID = accountID
+		if accountID == 801 {
+			account.Extra[codexFingerprintSeedExtraKey] = "00000000-0000-4000-8000-000000000801"
+		} else {
+			account.Extra[codexFingerprintSeedExtraKey] = "00000000-0000-4000-8000-000000000802"
+		}
 		req, err := (&OpenAIGatewayService{}).buildUpstreamRequestOpenAIPassthrough(
 			context.Background(), c, account, body, "oauth-token",
 		)

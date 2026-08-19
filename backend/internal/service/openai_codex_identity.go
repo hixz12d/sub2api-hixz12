@@ -76,6 +76,32 @@ func SetCodexCanonicalUserAgentResolver(resolver func() string) {
 	codexCanonicalUAResolver = resolver
 }
 
+// CodexCanonicalUserAgent returns the canonical inference identity User-Agent.
+func CodexCanonicalUserAgent() string {
+	return resolveOpenAIOutboundIdentityWithPolicy(context.Background(), nil, nil, nil, false, "").UserAgent
+}
+
+// CodexCanonicalAuthIdentity returns the canonical auth-plane identity pair.
+func CodexCanonicalAuthIdentity() (userAgent, originator string) {
+	identity := resolveOpenAIOutboundIdentityWithPolicy(context.Background(), nil, nil, nil, false, "")
+	return identity.UserAgent, identity.Originator
+}
+
+// ApplyCodexCanonicalAuthIdentity writes auth-plane identity headers without a version header.
+func ApplyCodexCanonicalAuthIdentity(h http.Header) {
+	if h == nil {
+		return
+	}
+	userAgent, originator := CodexCanonicalAuthIdentity()
+	h.Set("user-agent", userAgent)
+	h.Set("originator", originator)
+}
+
+// CodexCanonicalClientVersion returns the active canonical Codex version.
+func CodexCanonicalClientVersion() string {
+	return resolveOpenAIOutboundIdentityWithPolicy(context.Background(), nil, nil, nil, false, "").Version
+}
+
 // codexCanonicalUserAgent 返回出站规范 User-Agent。
 func codexCanonicalUserAgent() string {
 	codexCanonicalUAMu.RLock()

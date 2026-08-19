@@ -20,18 +20,20 @@ import (
 
 // RateLimitService 处理限流和过载状态管理
 type RateLimitService struct {
-	accountRepo           AccountRepository
-	usageRepo             UsageLogRepository
-	cfg                   *config.Config
-	geminiQuotaService    *GeminiQuotaService
-	tempUnschedCache      TempUnschedCache
-	timeoutCounterCache   TimeoutCounterCache
-	openAI403CounterCache OpenAI403CounterCache
-	settingService        *SettingService
-	tokenCacheInvalidator TokenCacheInvalidator
-	runtimeBlocker        AccountRuntimeBlocker
-	usageCacheMu          sync.RWMutex
-	usageCache            map[int64]*geminiUsageCacheEntry
+	accountRepo            AccountRepository
+	usageRepo              UsageLogRepository
+	cfg                    *config.Config
+	geminiQuotaService     *GeminiQuotaService
+	tempUnschedCache       TempUnschedCache
+	timeoutCounterCache    TimeoutCounterCache
+	openAI403CounterCache  OpenAI403CounterCache
+	settingService         *SettingService
+	tokenCacheInvalidator  TokenCacheInvalidator
+	runtimeBlocker         AccountRuntimeBlocker
+	usageCacheMu           sync.RWMutex
+	usageCache             map[int64]*geminiUsageCacheEntry
+	openaiTeamLinkedMu     sync.Mutex
+	openaiTeamLinkedRecent map[string]time.Time
 }
 
 type AccountRuntimeBlocker interface {
@@ -268,6 +270,8 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 // 返回是否应该停止该账号的调度
 func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) (shouldDisable bool) {
 	ctx = withTempUnschedulableModel(ctx, requestedModel)
+	// Team-linked deactivation must run before request-scoped and pool-mode early returns.
+	s.maybeHandleOpenAITeamLinkedError(ctx, account, statusCode, responseBody)
 	if account.Platform == PlatformOpenAI && IsOpenAIImageGenerationCapabilityError("", responseBody) {
 		slog.Warn("openai_image_generation_capability_request_scoped", "account_id", account.ID)
 		return false

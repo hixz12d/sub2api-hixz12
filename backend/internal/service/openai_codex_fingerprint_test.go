@@ -15,7 +15,17 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+const testCodexFingerprintSeed = "11111111-1111-4111-8111-111111111111"
+
 func newTestOAuthAccount(id int64, extra map[string]any) *Account {
+	if codexFingerprintModeRequiresSeed(codexFingerprintModeFromExtra(extra)) {
+		if extra == nil {
+			extra = make(map[string]any)
+		}
+		if _, exists := extra[codexFingerprintSeedExtraKey]; !exists {
+			extra[codexFingerprintSeedExtraKey] = testCodexFingerprintSeed
+		}
+	}
 	return &Account{
 		ID:       id,
 		Platform: PlatformOpenAI,

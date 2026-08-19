@@ -132,6 +132,10 @@ func mergeExtraUpdates(base map[string]any, more map[string]any) map[string]any 
 	return out
 }
 
+const compactProbeSSESuccessBody = "data: {\"type\":\"response.output_item.done\",\"item\":{\"type\":\"compaction\",\"id\":\"cmp_probe\",\"encrypted_content\":\"blob\"}}\n\n" +
+	"data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_probe\",\"status\":\"completed\",\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n" +
+	"data: [DONE]\n\n"
+
 // compactProbeSessionID is stable and UUID-shaped so probe traffic has the
 // same identity shape as real Codex traffic.
 func compactProbeSessionID(accountID int64) string {

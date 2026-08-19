@@ -1321,8 +1321,8 @@ func bodyHasSSEFraming(body []byte) bool {
 	return false
 }
 
-func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Context, body []byte, originalModel, mappedModel string) (*openaiNonStreamingResult, error) {
-	return s.handleSSEToJSONWithAffinity(c.Request.Context(), resp, c, nil, body, originalModel, mappedModel)
+func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Context, account *Account, body []byte, originalModel, mappedModel string) (*openaiNonStreamingResult, error) {
+	return s.handleSSEToJSONWithAffinity(c.Request.Context(), resp, c, account, body, originalModel, mappedModel)
 }
 
 func (s *OpenAIGatewayService) handleSSEToJSONWithAffinity(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, body []byte, originalModel, mappedModel string) (*openaiNonStreamingResult, error) {

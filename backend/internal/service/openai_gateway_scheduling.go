@@ -243,10 +243,17 @@ func (s *OpenAIGatewayService) SelectAccountForModelWithExclusions(ctx context.C
 // noAvailableOpenAISelectionError builds the standard "no account available" error
 // while preserving the legacy /responses/compact error when applicable.
 func normalizeOpenAICompatiblePlatform(platform string) string {
-	if platform == PlatformGrok {
-		return PlatformGrok
+	switch platform {
+	case PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek:
+		return platform
+	default:
+		return PlatformOpenAI
 	}
-	return PlatformOpenAI
+}
+
+// NormalizeOpenAICompatiblePlatform is the exported scheduler normalization used by handlers and tests.
+func NormalizeOpenAICompatiblePlatform(platform string) string {
+	return normalizeOpenAICompatiblePlatform(platform)
 }
 
 // details carries an optional machine-parseable exclusion summary (e.g.
