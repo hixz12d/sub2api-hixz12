@@ -23,6 +23,74 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+func TestNormalizeGrokResponsesPayloadForClientAddsMissingCreatedAt(t *testing.T) {
+	t.Parallel()
+
+	fallback := int64(1710000000)
+	payload := []byte(`{"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[]}}`)
+	normalized, changed := normalizeGrokResponsesPayloadForClient(payload, fallback)
+	require.True(t, changed)
+	require.Equal(t, fallback, gjson.GetBytes(normalized, "response.created_at").Int())
+}
+
+func TestNormalizeGrokResponsesPayloadForClientAddsRootCreatedAt(t *testing.T) {
+	t.Parallel()
+
+	fallback := int64(1710000000)
+	payload := []byte(`{"id":"resp_1","object":"response","status":"completed","output":[]}`)
+	normalized, changed := normalizeGrokResponsesPayloadForClient(payload, fallback)
+	require.True(t, changed)
+	require.Equal(t, fallback, gjson.GetBytes(normalized, "created_at").Int())
+}
+
+func TestNormalizeGrokResponsesPayloadForClientPreservesExistingAndIgnoresUnrelated(t *testing.T) {
+	t.Parallel()
+
+	fallback := int64(1710000000)
+	existing := []byte(`{"type":"response.completed","response":{"created_at":1710000001}}`)
+	normalized, changed := normalizeGrokResponsesPayloadForClient(existing, fallback)
+	require.False(t, changed)
+	require.Equal(t, int64(1710000001), gjson.GetBytes(normalized, "response.created_at").Int())
+
+	unrelated := []byte(`{"type":"error","error":{"message":"failed"}}`)
+	normalized, changed = normalizeGrokResponsesPayloadForClient(unrelated, fallback)
+	require.False(t, changed)
+	require.JSONEq(t, string(unrelated), string(normalized))
+
+	unrelatedWithResponse := []byte(`{"type":"ping","response":{"id":"ping_1"}}`)
+	normalized, changed = normalizeGrokResponsesPayloadForClient(unrelatedWithResponse, fallback)
+	require.False(t, changed)
+	require.JSONEq(t, string(unrelatedWithResponse), string(normalized))
+
+	chatCompletion := []byte(`{"id":"chatcmpl_1","object":"chat.completion","created":1710000001,"choices":[]}`)
+	normalized, changed = normalizeGrokResponsesPayloadForClient(chatCompletion, fallback)
+	require.False(t, changed)
+	require.JSONEq(t, string(chatCompletion), string(normalized))
+}
+
+func TestNormalizeGrokResponsesSSEBodyForClientAddsMissingCreatedAt(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(strings.Join([]string{
+		`data: {"type":"response.created","response":{"id":"resp_1"}}`,
+		"",
+		`data: {"type":"response.completed","response":{"id":"resp_1","output":[]}}`,
+		"",
+	}, "\n"))
+	normalized := normalizeGrokResponsesSSEBodyForClient(body, 1710000000)
+	require.Equal(t, int64(1710000000), gjson.GetBytes(extractSSEJSONForGrokTest(normalized, "response.created"), "response.created_at").Int())
+	require.Equal(t, int64(1710000000), gjson.GetBytes(extractSSEJSONForGrokTest(normalized, "response.completed"), "response.created_at").Int())
+}
+
+func extractSSEJSONForGrokTest(body []byte, eventType string) []byte {
+	var payload []byte
+	forEachOpenAISSEDataPayload(string(body), func(data []byte) {
+		if payload == nil && gjson.GetBytes(data, "type").String() == eventType {
+			payload = append([]byte(nil), data...)
+		}
+	})
+	return payload
+}
 func TestPatchGrokResponsesBodySetsMappedModelAndDropsUnsupportedFields(t *testing.T) {
 	t.Parallel()
 

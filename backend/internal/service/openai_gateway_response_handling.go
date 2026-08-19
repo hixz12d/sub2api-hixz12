@@ -419,6 +419,13 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		// Extract data from SSE line (supports both "data: " and "data:" formats)
 		if data, ok := extractOpenAISSEDataLine(line); ok {
 			dataBytes := []byte(data)
+			if account != nil && account.IsGrok() {
+				if normalized, normalizedChanged := normalizeGrokResponsesPayloadForClient(dataBytes, startTime.Unix()); normalizedChanged {
+					dataBytes = normalized
+					data = string(normalized)
+					line = "data: " + data
+				}
+			}
 			eventTypeRaw := gjson.GetBytes(dataBytes, "type").String()
 			eventType := strings.TrimSpace(eventTypeRaw)
 			observer.ObserveOpenAI(dataBytes, eventTypeRaw)
@@ -1210,6 +1217,15 @@ func (s *OpenAIGatewayService) handleNonStreamingResponse(ctx context.Context, r
 	if err != nil {
 		return nil, err
 	}
+	fallbackCreatedAt := time.Now().Unix()
+	if account != nil && account.IsGrok() {
+		body = normalizeGrokResponsesSSEBodyForClient(body, fallbackCreatedAt)
+		if !bodyHasSSEFraming(body) {
+			if normalized, normalizedChanged := normalizeGrokResponsesPayloadForClient(body, fallbackCreatedAt); normalizedChanged {
+				body = normalized
+			}
+		}
+	}
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
@@ -1327,6 +1343,11 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 
 func (s *OpenAIGatewayService) handleSSEToJSONWithAffinity(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, body []byte, originalModel, mappedModel string) (*openaiNonStreamingResult, error) {
 	bodyText := string(body)
+	fallbackCreatedAt := time.Now().Unix()
+	if account != nil && account.IsGrok() {
+		body = normalizeGrokResponsesSSEBodyForClient(body, fallbackCreatedAt)
+		bodyText = string(body)
+	}
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
 
 	usage := &OpenAIUsage{}
