@@ -616,6 +616,11 @@ const escapeCSVValue = (value: unknown): string => {
   return str
 }
 
+const formatExportCost = (value: unknown): string => {
+  const cost = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(cost) ? cost.toFixed(8) : '0.00000000'
+}
+
 const exportToCSV = async () => {
   if (pagination.total === 0) {
     appStore.showWarning(t('usage.noDataToExport'))
@@ -625,11 +630,14 @@ const exportToCSV = async () => {
   appStore.showInfo(t('usage.preparingExport'))
   try {
     const allLogs: UsageLog[] = []
-    const pageSize = 100
-    const totalPages = Math.ceil(pagination.total / pageSize)
-    for (let page = 1; page <= totalPages; page++) {
+    // The usage endpoint allows 1,000 rows per request. Keeping export pagination
+    // at that limit avoids exhausting the per-user heavy-query rate limit on wide ranges.
+    const pageSize = 1000
+    for (let page = 1; ; page++) {
       const response = await usageAPI.query(buildUsageListParams(page, pageSize))
-      allLogs.push(...response.items)
+      const items = response.items ?? []
+      allLogs.push(...items)
+      if (items.length < pageSize) break
     }
     if (allLogs.length === 0) {
       appStore.showWarning(t('usage.noDataToExport'))
@@ -668,8 +676,8 @@ const exportToCSV = async () => {
       log.cache_read_tokens,
       log.cache_creation_tokens,
       log.rate_multiplier,
-      log.actual_cost.toFixed(8),
-      log.total_cost.toFixed(8),
+      formatExportCost(log.actual_cost),
+      formatExportCost(log.total_cost),
       log.first_token_ms ?? '',
       log.duration_ms ?? '',
     ].map(escapeCSVValue))

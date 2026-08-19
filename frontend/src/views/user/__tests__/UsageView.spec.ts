@@ -231,7 +231,7 @@ describe('user UsageView', () => {
 
     expect(exportedBlob).not.toBeNull()
     expect(query).toHaveBeenCalledWith(expect.objectContaining({
-      page_size: 100,
+      page_size: 1000,
       sort_by: 'created_at',
       sort_order: 'desc',
     }))
@@ -249,6 +249,56 @@ describe('user UsageView', () => {
     expect(csvContent).not.toContain('Upstream Endpoint')
     expect(csvContent).not.toContain('account_cost')
     expect(csvContent).not.toContain('account_rate_multiplier')
+
+    window.URL.createObjectURL = originalCreateObjectURL
+    window.URL.revokeObjectURL = originalRevokeObjectURL
+    vi.unstubAllGlobals()
+    clickSpy.mockRestore()
+  })
+
+  it('exports a week across 1,000-row pages and tolerates legacy missing costs', async () => {
+    const wrapper = mountUsageView()
+    await flushPromises()
+
+    const firstPage = Array.from({ length: 1000 }, (_, index) => ({
+      ...usageLog,
+      id: index + 1,
+      request_id: `req-user-export-${index + 1}`,
+    }))
+    const legacyRow = {
+      ...usageLog,
+      id: 1001,
+      request_id: 'req-user-export-legacy-cost',
+      actual_cost: null,
+      total_cost: undefined,
+    }
+    query.mockImplementation((params: { page: number; page_size: number }) => {
+      if (params.page_size !== 1000) {
+        return Promise.resolve({ items: [usageLog], total: 1001, pages: 1 })
+      }
+      return Promise.resolve(params.page === 1
+        ? { items: firstPage, total: 1001, pages: 2 }
+        : { items: [legacyRow], total: 1001, pages: 2 })
+    })
+
+    let csvContent = ''
+    const OriginalBlob = globalThis.Blob
+    vi.stubGlobal('Blob', vi.fn((parts: BlobPart[], options?: BlobPropertyBag) => {
+      csvContent = parts.map((part) => String(part)).join('')
+      return new OriginalBlob(parts, options)
+    }))
+    const originalCreateObjectURL = window.URL.createObjectURL
+    const originalRevokeObjectURL = window.URL.revokeObjectURL
+    window.URL.createObjectURL = vi.fn(() => 'blob:usage-export') as typeof window.URL.createObjectURL
+    window.URL.revokeObjectURL = vi.fn(() => {}) as typeof window.URL.revokeObjectURL
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    await (wrapper.vm as any).exportToCSV()
+
+    expect(query).toHaveBeenCalledWith(expect.objectContaining({ page: 1, page_size: 1000 }))
+    expect(query).toHaveBeenCalledWith(expect.objectContaining({ page: 2, page_size: 1000 }))
+    expect(csvContent).toContain('0.00000000,0.00000000')
+    expect(showSuccess).toHaveBeenCalled()
 
     window.URL.createObjectURL = originalCreateObjectURL
     window.URL.revokeObjectURL = originalRevokeObjectURL
