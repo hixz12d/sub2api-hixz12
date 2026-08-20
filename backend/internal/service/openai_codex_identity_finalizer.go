@@ -80,7 +80,8 @@ func resolveCodexFingerprintModeForFinalizer(account *Account) (codexFingerprint
 	}
 	raw := strings.TrimSpace(account.GetExtraString(codexFingerprintModeExtraKey))
 	if raw == "" {
-		return codexFingerprintOff, nil
+		// Default to account-stable device identity; explicit "off" remains an opt-out.
+		return codexFingerprintDevice, nil
 	}
 	mode := codexFingerprintMode(raw)
 	switch mode {
@@ -174,6 +175,7 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthHeaders(
 	snapshot *CodexIdentitySnapshot,
 	accountIdentitySessionID string,
 ) {
+	sanitizeCodexOAuthHeaders(headers)
 	s.applyOpenAIOutboundIdentityPolicy(ctx, account, headers, openAIOutboundOAuthPolicy)
 	s.applyOpenAIAccountScopedHeaders(ctx, c, account, headers, accountIdentitySessionID)
 	applyCodexFingerprintHeaders(headers, snapshot)

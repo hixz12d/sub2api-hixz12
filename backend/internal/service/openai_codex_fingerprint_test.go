@@ -23,7 +23,11 @@ func newTestOAuthAccount(id int64, extra map[string]any) *Account {
 			extra = make(map[string]any)
 		}
 		if _, exists := extra[codexFingerprintSeedExtraKey]; !exists {
-			extra[codexFingerprintSeedExtraKey] = testCodexFingerprintSeed
+			if _, hasMode := extra[codexFingerprintModeExtraKey]; hasMode {
+				extra[codexFingerprintSeedExtraKey] = testCodexFingerprintSeed
+			} else {
+				extra[codexFingerprintSeedExtraKey] = deriveStableUUIDv4(fmt.Sprintf("test-account-seed:%d", id))
+			}
 		}
 	}
 	return &Account{
@@ -66,8 +70,8 @@ func TestGetCodexFingerprintMode(t *testing.T) {
 	}{
 		{"nil 账号", nil, codexFingerprintOff},
 		{"非 OAuth 账号", &Account{Platform: PlatformOpenAI, Type: "api_key"}, codexFingerprintOff},
-		{"无 extra 默认 off", newTestOAuthAccount(1, nil), codexFingerprintOff},
-		{"空值默认 off", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: ""}), codexFingerprintOff},
+		{"无 extra 默认 device", newTestOAuthAccount(1, nil), codexFingerprintDevice},
+		{"空值默认 device", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: ""}), codexFingerprintDevice},
 		{"非法值安全关闭", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "invalid"}), codexFingerprintOff},
 		{"显式 off", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "off"}), codexFingerprintOff},
 		{"device", newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "device"}), codexFingerprintDevice},
@@ -293,9 +297,11 @@ func TestResolveCodexFingerprintIDsFromRequest_ExplicitOff(t *testing.T) {
 	assert.Nil(t, ids, "显式 off 模式应返回 nil")
 }
 
-func TestResolveCodexFingerprintIDsFromRequest_DefaultIsOff(t *testing.T) {
+func TestResolveCodexFingerprintIDsFromRequest_DefaultIsDevice(t *testing.T) {
 	account := newTestOAuthAccount(1, nil)
-	assert.Nil(t, resolveCodexFingerprintIDsFromRequest(account, nil), "无 extra 应视为 off")
+	ids := resolveCodexFingerprintIDsFromRequest(account, nil)
+	require.NotNil(t, ids, "无 extra 应使用账号级 device 身份")
+	assert.Equal(t, codexFingerprintDevice, ids.mode)
 }
 
 // --- applyCodexFingerprintHeaders: off 模式 ---

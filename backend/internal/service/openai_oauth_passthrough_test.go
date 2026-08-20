@@ -2673,6 +2673,6 @@ func TestOpenAIGatewayService_OAuthPassthrough_AllowTimeoutHeadersWhenConfigured
 	_, err := svc.Forward(context.Background(), c, account, originalBody)
 	require.NoError(t, err)
 	require.NotNil(t, upstream.lastReq)
-	require.Equal(t, "120000", upstream.lastReq.Header.Get("x-stainless-timeout"))
+	require.Empty(t, upstream.lastReq.Header.Get("x-stainless-timeout"), "OAuth finalizer must strip client timeout metadata")
 	require.Empty(t, upstream.lastReq.Header.Get("X-Test"))
 }

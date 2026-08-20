@@ -91,9 +91,12 @@ func stripCodexFingerprintSeed(extra map[string]any) map[string]any {
 
 func codexFingerprintModeFromExtra(extra map[string]any) codexFingerprintMode {
 	if extra == nil {
-		return codexFingerprintOff
+		return codexFingerprintDevice
 	}
 	raw, _ := extra[codexFingerprintModeExtraKey].(string)
+	if strings.TrimSpace(raw) == "" {
+		return codexFingerprintDevice
+	}
 	switch mode := codexFingerprintMode(strings.TrimSpace(raw)); mode {
 	case codexFingerprintOff, codexFingerprintDevice, codexFingerprintSession, codexFingerprintWindow, codexFingerprintWindow40, codexFingerprintFull:
 		return mode
@@ -156,7 +159,11 @@ func sanitizedCodexFingerprintExtraUpdates(updates map[string]any) map[string]an
 }
 
 func ShouldEnsureCodexFingerprintSeedForExtraUpdates(updates map[string]any) bool {
-	return updates != nil && codexFingerprintModeRequiresSeed(codexFingerprintModeFromExtra(updates))
+	if updates == nil {
+		return false
+	}
+	_, modeWasUpdated := updates[codexFingerprintModeExtraKey]
+	return modeWasUpdated && codexFingerprintModeRequiresSeed(codexFingerprintModeFromExtra(updates))
 }
 
 // GetCodexFingerprintMode 从账号 extra JSON 读取指纹收敛模式。
@@ -167,7 +174,8 @@ func (a *Account) GetCodexFingerprintMode() codexFingerprintMode {
 	}
 	raw := strings.TrimSpace(a.GetExtraString(codexFingerprintModeExtraKey))
 	if raw == "" {
-		return codexFingerprintOff
+		// Account-scoped device identity is the default; explicit "off" opts out.
+		return codexFingerprintDevice
 	}
 	switch codexFingerprintMode(raw) {
 	case codexFingerprintOff, codexFingerprintDevice, codexFingerprintSession, codexFingerprintWindow, codexFingerprintWindow40, codexFingerprintFull:
@@ -501,6 +509,95 @@ func codexFingerprintIDsFromContext(c *gin.Context) *codexFingerprintIDs {
 	return ids
 }
 
+var codexClientMetadataAllowedKeys = map[string]struct{}{
+	"session_id": {}, "thread_id": {}, "turn_id": {},
+	"x-codex-installation-id": {}, "x-codex-window-id": {},
+	"x-codex-turn-metadata": {}, "sandbox": {}, "thread_source": {},
+	"turn_started_at_unix_ms":                                  {},
+	"ws_request_header_x_openai_internal_codex_responses_lite": {},
+	"x-codex-ws-stream-request-start-ms":                       {},
+}
+
+var codexTurnMetadataAllowedKeys = map[string]struct{}{
+	"installation_id": {}, "session_id": {}, "thread_id": {}, "turn_id": {},
+	"window_id": {}, "turn_started_at_unix_ms": {}, "sandbox": {}, "thread_source": {},
+}
+
+// sanitizeCodexMetadataMap is the fail-closed boundary for client-controlled
+// Codex metadata. Workspace, VCS, OS/arch, terminal, plugin/skill/MCP and
+// tracing fields must not become account or deployment fingerprints.
+func sanitizeCodexMetadataMap(metadata map[string]any, allowed map[string]struct{}) bool {
+	if metadata == nil {
+		return false
+	}
+	modified := false
+	for key := range metadata {
+		if _, ok := allowed[key]; !ok {
+			delete(metadata, key)
+			modified = true
+		}
+	}
+	return modified
+}
+
+func sanitizeCodexTurnMetadataValue(value any) (any, bool) {
+	raw, ok := value.(string)
+	if !ok || strings.TrimSpace(raw) == "" {
+		return value, false
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal([]byte(raw), &metadata); err != nil {
+		// Opaque legacy turn-state values are handled by the provenance guard.
+		return value, false
+	}
+	modified := sanitizeCodexMetadataMap(metadata, codexTurnMetadataAllowedKeys)
+	encoded, err := json.Marshal(metadata)
+	if err != nil {
+		return value, false
+	}
+	if string(encoded) != raw {
+		modified = true
+	}
+	return string(encoded), modified
+}
+
+func sanitizeCodexClientMetadata(reqBody map[string]any) bool {
+	if reqBody == nil {
+		return false
+	}
+	value, exists := reqBody["client_metadata"]
+	if !exists {
+		return false
+	}
+	metadata, ok := value.(map[string]any)
+	if !ok {
+		delete(reqBody, "client_metadata")
+		return true
+	}
+	modified := sanitizeCodexMetadataMap(metadata, codexClientMetadataAllowedKeys)
+	if raw, ok := metadata["x-codex-turn-metadata"]; ok {
+		if sanitized, changed := sanitizeCodexTurnMetadataValue(raw); changed {
+			metadata["x-codex-turn-metadata"] = sanitized
+			modified = true
+		}
+	}
+	return modified
+}
+
+func sanitizeCodexOAuthHeaders(h http.Header) {
+	if h == nil {
+		return
+	}
+	for _, name := range []string{
+		"cookie", "set-cookie", "traceparent", "tracestate", "baggage",
+		"x-b3-traceid", "x-b3-spanid", "x-b3-parentspanid", "x-b3-sampled",
+		"x-amzn-trace-id", "x-cloud-trace-context", "x-request-start",
+		"x-request-timeout", "x-stainless-timeout",
+	} {
+		deleteOpenAIHeaderEqualFold(h, name)
+	}
+}
+
 func applyCodexFingerprintToRawBody(body []byte, ids *codexFingerprintIDs) ([]byte, error) {
 	if len(body) == 0 {
 		return body, nil
@@ -509,7 +606,10 @@ func applyCodexFingerprintToRawBody(body []byte, ids *codexFingerprintIDs) ([]by
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, err
 	}
-	modified := applyCodexFingerprintClientMetadata(payload, ids)
+	modified := sanitizeCodexClientMetadata(payload)
+	if applyCodexFingerprintClientMetadata(payload, ids) {
+		modified = true
+	}
 	if sanitizeOpenAIOutboundBrandMarkers(payload) {
 		modified = true
 	}
