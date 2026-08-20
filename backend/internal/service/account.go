@@ -1263,10 +1263,18 @@ func (a *Account) IsAPIKeyOrBedrock() bool {
 	return a.Type == AccountTypeAPIKey || a.Type == AccountTypeBedrock
 }
 
+// SupportsAccountQuotaType reports whether account-level spend limits are enforced for this type.
+// OAuth and setup-token accounts use the same local billing counters as API-key accounts.
+func SupportsAccountQuotaType(accountType string) bool {
+	return strings.EqualFold(accountType, AccountTypeAPIKey) ||
+		strings.EqualFold(accountType, AccountTypeBedrock) ||
+		strings.EqualFold(accountType, AccountTypeOAuth) ||
+		strings.EqualFold(accountType, AccountTypeSetupToken)
+}
+
 // SupportsQuotaLimit reports whether account-level spend limits are enforced.
-// OAuth accounts use the same local billing counters as API-key accounts.
 func (a *Account) SupportsQuotaLimit() bool {
-	return a != nil && (a.IsAPIKeyOrBedrock() || a.IsOAuth())
+	return a != nil && SupportsAccountQuotaType(a.Type)
 }
 
 func (a *Account) IsOpenAI() bool {

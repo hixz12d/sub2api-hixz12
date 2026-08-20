@@ -199,6 +199,46 @@ func TestUsageBillingRepositoryApply_UpdatesAccountQuota(t *testing.T) {
 	require.InDelta(t, 3.5, quotaUsed, 0.000001)
 }
 
+func TestUsageBillingRepositoryApply_UpdatesOAuthAccountQuota(t *testing.T) {
+	ctx := context.Background()
+	client := testEntClient(t)
+	repo := NewUsageBillingRepository(client, integrationDB)
+
+	user := mustCreateUser(t, client, &service.User{
+		Email:        fmt.Sprintf("usage-billing-oauth-user-%d@example.com", time.Now().UnixNano()),
+		PasswordHash: "hash",
+	})
+	apiKey := mustCreateApiKey(t, client, &service.APIKey{
+		UserID: user.ID,
+		Key:    "sk-usage-billing-oauth-" + uuid.NewString(),
+		Name:   "billing-oauth",
+	})
+	account := mustCreateAccount(t, client, &service.Account{
+		Name: "usage-billing-oauth-quota-" + uuid.NewString(),
+		Type: service.AccountTypeOAuth,
+		Extra: map[string]any{
+			"quota_daily_limit": 500.0,
+		},
+	})
+
+	result, err := repo.Apply(ctx, &service.UsageBillingCommand{
+		RequestID:        uuid.NewString(),
+		APIKeyID:         apiKey.ID,
+		UserID:           user.ID,
+		AccountID:        account.ID,
+		AccountType:      service.AccountTypeOAuth,
+		AccountQuotaCost: 12.5,
+	})
+	require.NoError(t, err)
+	require.True(t, result.Applied)
+	require.NotNil(t, result.QuotaState)
+	require.InDelta(t, 12.5, result.QuotaState.DailyUsed, 0.000001)
+
+	var dailyUsed float64
+	require.NoError(t, integrationDB.QueryRowContext(ctx, "SELECT COALESCE((extra->>'quota_daily_used')::numeric, 0) FROM accounts WHERE id = $1", account.ID).Scan(&dailyUsed))
+	require.InDelta(t, 12.5, dailyUsed, 0.000001)
+}
+
 func TestUsageBillingRepositoryApply_EnqueuesSchedulerOutboxOnQuotaCrossing(t *testing.T) {
 	ctx := context.Background()
 	client := testEntClient(t)
