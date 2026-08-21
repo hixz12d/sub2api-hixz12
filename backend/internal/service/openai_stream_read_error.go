@@ -37,6 +37,12 @@ func NewOpenAIUpstreamStreamReadError(err error) error {
 	}
 }
 
+// newOpenAIUpstreamStreamReadError is the internal spelling used by the
+// v0.1.179 gateway paths; keep the exported helper for existing callers.
+func newOpenAIUpstreamStreamReadError(err error) error {
+	return NewOpenAIUpstreamStreamReadError(err)
+}
+
 // shouldClassifyOpenAIUpstreamStreamReadError excludes cancellation and
 // response-size enforcement from upstream retry.
 func shouldClassifyOpenAIUpstreamStreamReadError(err error, contexts ...context.Context) bool {

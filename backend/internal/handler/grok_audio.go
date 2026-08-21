@@ -281,7 +281,7 @@ func (h *OpenAIGatewayHandler) recordGrokVoiceUsage(
 	if requestPayloadHash == "" {
 		requestPayloadHash = service.HashUsageRequestPayload([]byte(endpoint))
 	}
-	inboundEndpoint := GetInboundEndpoint(c)
+	inboundEndpoint := GetInboundEndpointWithRoute(c)
 	upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 	quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 	model := strings.TrimSpace(result.Model)

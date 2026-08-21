@@ -393,7 +393,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 		if parsed.Multipart {
 			requestPayloadHash = service.HashUsageRequestPayload([]byte(parsed.StickySessionSeed()))
 		}
-		inboundEndpoint := GetInboundEndpoint(c)
+		inboundEndpoint := GetInboundEndpointWithRoute(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 

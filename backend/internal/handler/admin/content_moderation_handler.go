@@ -25,16 +25,19 @@ type contentModerationConfigRequest struct {
 	BaseURL *string `json:"base_url"`
 	Model   *string `json:"model"`
 	// 审计请求使用的代理服务器：null 不修改；0 清除（直连）；>0 指定代理。
-	ProxyID              *int64              `json:"proxy_id"`
-	APIKey               *string             `json:"api_key"`
-	APIKeys              *[]string           `json:"api_keys"`
-	APIKeysMode          string              `json:"api_keys_mode"`
-	DeleteAPIKeyHashes   *[]string           `json:"delete_api_key_hashes"`
-	ClearAPIKey          bool                `json:"clear_api_key"`
-	TimeoutMS            *int                `json:"timeout_ms"`
-	SampleRate           *int                `json:"sample_rate"`
-	AllGroups            *bool               `json:"all_groups"`
-	GroupIDs             *[]int64            `json:"group_ids"`
+	ProxyID            *int64    `json:"proxy_id"`
+	APIKey             *string   `json:"api_key"`
+	APIKeys            *[]string `json:"api_keys"`
+	APIKeysMode        string    `json:"api_keys_mode"`
+	DeleteAPIKeyHashes *[]string `json:"delete_api_key_hashes"`
+	ClearAPIKey        bool      `json:"clear_api_key"`
+	TimeoutMS          *int      `json:"timeout_ms"`
+	SampleRate         *int      `json:"sample_rate"`
+	AllGroups          *bool     `json:"all_groups"`
+	GroupIDs           *[]int64  `json:"group_ids"`
+	// account_ids 指定上游账号审计范围；前端已发送该字段，service 层也已支持，
+	// 此前 handler 缺透传，保存后 GET/回包都没有账号范围，页面会回退成「已选 0 个分组」。
+	AccountIDs           *[]int64            `json:"account_ids"`
 	RecordNonHits        *bool               `json:"record_non_hits"`
 	Thresholds           *map[string]float64 `json:"thresholds"`
 	WorkerCount          *int                `json:"worker_count"`
@@ -101,6 +104,7 @@ func (h *ContentModerationHandler) UpdateConfig(c *gin.Context) {
 		SampleRate:                     req.SampleRate,
 		AllGroups:                      req.AllGroups,
 		GroupIDs:                       req.GroupIDs,
+		AccountIDs:                     req.AccountIDs,
 		RecordNonHits:                  req.RecordNonHits,
 		Thresholds:                     req.Thresholds,
 		WorkerCount:                    req.WorkerCount,

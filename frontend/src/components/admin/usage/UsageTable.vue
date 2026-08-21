@@ -98,9 +98,20 @@
 
         <template #cell-endpoint="{ row }">
           <div class="max-w-[320px] space-y-1 text-xs">
+            <div v-if="parseInboundEndpoint(row.inbound_endpoint).route" class="flex items-center gap-1 text-gray-700 dark:text-gray-300">
+              <span class="font-medium text-gray-500 dark:text-gray-400">{{ t('usage.ingress') }}:</span>
+              <span
+                class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset"
+                :class="parseInboundEndpoint(row.inbound_endpoint).route === 'DMIT'
+                  ? 'bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/30'
+                  : 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/30'"
+              >
+                {{ ingressRouteLabel(parseInboundEndpoint(row.inbound_endpoint).route) }}
+              </span>
+            </div>
             <div class="break-all text-gray-700 dark:text-gray-300">
               <span class="font-medium text-gray-500 dark:text-gray-400">{{ t('usage.inbound') }}:</span>
-              <span class="ml-1">{{ row.inbound_endpoint?.trim() || '-' }}</span>
+              <span class="ml-1">{{ parseInboundEndpoint(row.inbound_endpoint).path }}</span>
             </div>
             <div v-if="showUpstreamEndpoint" class="break-all text-gray-700 dark:text-gray-300">
               <span class="font-medium text-gray-500 dark:text-gray-400">{{ t('usage.upstream') }}:</span>
@@ -586,6 +597,23 @@ const showUpstreamEndpoint = props.showUpstreamEndpoint
 const ipGeoBatchLoading = ref(false)
 
 const showIpGeoToolbar = computed(() => props.columns.some((col) => col.key === 'ip_address'))
+
+function parseInboundEndpoint(value?: string | null): { route: string; path: string } {
+  const raw = value?.trim() || ''
+  if (raw.startsWith('DMIT ')) {
+    return { route: 'DMIT', path: raw.slice(5).trim() || '-' }
+  }
+  if (raw.startsWith('直连 ')) {
+    return { route: '直连', path: raw.slice(3).trim() || '-' }
+  }
+  return { route: '', path: raw || '-' }
+}
+
+function ingressRouteLabel(route: string): string {
+  if (route === 'DMIT') return t('usage.ingressDMIT')
+  if (route === '直连') return t('usage.ingressDirect')
+  return route
+}
 
 const sentUpstreamModel = (row: AdminUsageLog): string => row.upstream_model?.trim() || row.model?.trim() || ''
 

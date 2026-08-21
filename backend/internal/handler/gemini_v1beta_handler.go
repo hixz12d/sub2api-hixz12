@@ -570,7 +570,7 @@ func (h *GatewayHandler) GeminiV1BetaModels(c *gin.Context) {
 
 		// 使用量记录通过有界 worker 池提交，避免请求热路径创建无界 goroutine。
 		requestPayloadHash := service.HashUsageRequestPayload(body)
-		inboundEndpoint := GetInboundEndpoint(c)
+		inboundEndpoint := GetInboundEndpointWithRoute(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 		// ForceCacheBilling 提前拍成标量，避免 worker 闭包保活 failover 状态里的响应体。
 		forceCacheBilling := fs.ForceCacheBilling

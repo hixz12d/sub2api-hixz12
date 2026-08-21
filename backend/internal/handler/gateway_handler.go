@@ -545,7 +545,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 			userAgent := c.GetHeader("User-Agent")
 			clientIP := ip.GetClientIP(c)
 			requestPayloadHash := service.HashUsageRequestPayload(body)
-			inboundEndpoint := GetInboundEndpoint(c)
+			inboundEndpoint := GetInboundEndpointWithRoute(c)
 			upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 
 			if result.ReasoningEffort == nil {
@@ -893,7 +893,7 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 				clientIP := ip.GetClientIP(c)
 				// Forward 内部可能继续改写 body，usage 去重指纹必须使用最终上游接受的当前 body。
 				requestPayloadHash := service.HashUsageRequestPayload(attemptParsedReq.Body.Bytes())
-				inboundEndpoint := GetInboundEndpoint(c)
+				inboundEndpoint := GetInboundEndpointWithRoute(c)
 				upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 
 				if result.ReasoningEffort == nil {
@@ -1161,10 +1161,12 @@ func (h *GatewayHandler) compositeAvailableModels(ctx context.Context, groupID *
 	seen := make(map[string]struct{})
 	models := make([]string, 0)
 	schedulablePlatforms := h.gatewayService.GetSchedulablePlatforms(ctx, groupID)
-	for _, platform := range []string{service.PlatformAnthropic, service.PlatformGemini, service.PlatformOpenAI, service.PlatformAntigravity, service.PlatformGrok} {
+	for _, platform := range []string{service.PlatformAnthropic, service.PlatformGemini, service.PlatformOpenAI, service.PlatformAntigravity, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek} {
 		platformModels := h.gatewayService.GetAvailableModels(ctx, groupID, platform)
 		if len(platformModels) == 0 {
-			if _, ok := schedulablePlatforms[platform]; ok {
+			// CN 供应商没有静态默认模型列表（defaultModelIDsForPlatform 的
+			// default 分支是 Claude 列表），composite 下只暴露账号映射键。
+			if _, ok := schedulablePlatforms[platform]; ok && !service.IsCNProvider(platform) {
 				platformModels = defaultModelIDsForPlatform(platform)
 			}
 		}
@@ -1386,7 +1388,7 @@ func defaultModelIDsForPlatform(platform string) []string {
 	case service.PlatformComposite:
 		ids := make([]string, 0)
 		seen := make(map[string]struct{})
-		for _, concretePlatform := range []string{service.PlatformAnthropic, service.PlatformGemini, service.PlatformOpenAI, service.PlatformAntigravity, service.PlatformGrok} {
+		for _, concretePlatform := range []string{service.PlatformAnthropic, service.PlatformGemini, service.PlatformOpenAI, service.PlatformAntigravity, service.PlatformGrok, service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek} {
 			for _, id := range defaultModelIDsForPlatform(concretePlatform) {
 				if _, ok := seen[id]; ok {
 					continue

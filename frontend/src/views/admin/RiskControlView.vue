@@ -54,6 +54,25 @@
         </div>
 
         <div
+          v-if="savedScopeTargets.length > 0"
+          data-test="saved-scope-targets"
+          class="rounded-lg border border-primary-100 bg-primary-50/80 px-4 py-3 dark:border-primary-900/40 dark:bg-primary-900/15"
+        >
+          <p class="text-sm font-medium text-primary-800 dark:text-primary-200">{{ selectedScopeSummary }}</p>
+          <p class="mt-1 text-xs text-primary-700/80 dark:text-primary-300/80">{{ t('admin.riskControl.savedScopeTargetsHint') }}</p>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <span
+              v-for="item in savedScopeTargets"
+              :key="item.key"
+              class="inline-flex max-w-full items-center rounded-md bg-white px-2 py-1 text-xs font-medium text-gray-700 ring-1 ring-inset ring-primary-200 dark:bg-dark-800 dark:text-gray-200 dark:ring-primary-800"
+            >
+              <span class="truncate">{{ item.label }}</span>
+              <span class="ml-1 flex-shrink-0 text-gray-400">{{ item.meta }}</span>
+            </span>
+          </div>
+        </div>
+
+        <div
           v-if="showPreBlockRuntimeCard"
           data-test="pre-block-runtime-cards"
           class="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,520px)_minmax(0,1fr)]"
@@ -732,6 +751,11 @@
                   {{ t('admin.riskControl.selectedAccounts') }}
                 </button>
               </div>
+            </div>
+
+            <div data-test="scope-selection-summary" class="rounded-lg border border-primary-100 bg-primary-50 px-3 py-2 text-sm text-primary-800 dark:border-primary-900/50 dark:bg-primary-900/20 dark:text-primary-200">
+              <span class="font-medium">{{ t('admin.riskControl.auditScope') }}:</span>
+              <span class="ml-1">{{ selectedScopeSummary }}</span>
             </div>
 
             <div v-if="configForm.scope_mode === 'groups'" class="space-y-4">
@@ -1465,6 +1489,30 @@ const selectedScopeSummary = computed(() => {
   return t('admin.riskControl.allGroups')
 })
 
+const savedScopeTargets = computed(() => {
+  if (configForm.scope_mode === 'accounts') {
+    const selected = new Set(configForm.account_ids)
+    return accounts.value
+      .filter((account) => selected.has(account.id))
+      .map((account) => ({
+        key: `account-${account.id}`,
+        label: account.name,
+        meta: `${account.platform} / ${account.type}`,
+      }))
+  }
+  if (configForm.scope_mode === 'groups') {
+    const selected = new Set(configForm.group_ids)
+    return groups.value
+      .filter((group) => selected.has(group.id))
+      .map((group) => ({
+        key: `group-${group.id}`,
+        label: group.name,
+        meta: String(group.platform),
+      }))
+  }
+  return []
+})
+
 const modelFilterModelCount = computed(() => configForm.model_filter_models.length)
 
 const modelFilterSummary = computed(() => {
@@ -1782,8 +1830,14 @@ function applyConfig(config: ContentModerationConfig) {
   configForm.timeout_ms = config.timeout_ms || 3000
   configForm.retry_count = config.retry_count ?? 2
   configForm.sample_rate = config.sample_rate ?? 100
-  configForm.group_ids = Array.isArray(config.group_ids) ? [...config.group_ids] : []
-  configForm.account_ids = Array.isArray(config.account_ids) ? [...config.account_ids] : []
+  // Keep the persisted scope visible even when an older API serializes IDs as strings.
+  const normalizeScopeIDs = (value: unknown): number[] => (
+    Array.isArray(value)
+      ? value.map((id) => Number(id)).filter((id) => Number.isSafeInteger(id) && id > 0)
+      : []
+  )
+  configForm.group_ids = normalizeScopeIDs(config.group_ids)
+  configForm.account_ids = normalizeScopeIDs(config.account_ids)
   configForm.scope_mode = configForm.account_ids.length > 0 ? 'accounts' : config.all_groups ? 'all' : 'groups'
   configForm.all_groups = configForm.scope_mode === 'all'
   configForm.record_non_hits = config.record_non_hits
@@ -1927,7 +1981,7 @@ async function saveConfig() {
     const updated = await adminAPI.riskControl.updateConfig(payload)
     applyConfig(updated)
     settingsOpen.value = false
-    appStore.showSuccess(t('admin.riskControl.saved'))
+    appStore.showSuccess(t('admin.riskControl.savedWithScope', { scope: selectedScopeSummary.value }))
     await Promise.all([loadStatus(true), loadLogs()])
   } catch (err: unknown) {
     appStore.showError(extractApiErrorMessage(err, t('admin.riskControl.saveFailed')))

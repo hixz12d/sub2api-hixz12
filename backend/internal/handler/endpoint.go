@@ -15,21 +15,22 @@ import (
 // ──────────────────────────────────────────────────────────
 
 const (
-	EndpointMessages          = "/v1/messages"
-	EndpointChatCompletions   = "/v1/chat/completions"
-	EndpointCompletions       = "/v1/completions"
-	EndpointEmbeddings        = "/v1/embeddings"
-	EndpointAlphaSearch       = "/v1/alpha/search"
-	EndpointResponses         = "/v1/responses"
-	EndpointResponsesCompact  = "/v1/responses/compact"
-	EndpointImagesGenerations = "/v1/images/generations"
-	EndpointImagesEdits       = "/v1/images/edits"
-	EndpointImageTasks        = "/v1/images/tasks"
-	EndpointVideosGenerations = "/v1/videos/generations"
-	EndpointVideosEdits       = "/v1/videos/edits"
-	EndpointVideosExtensions  = "/v1/videos/extensions"
-	EndpointVideos            = "/v1/videos"
-	EndpointGeminiModels      = "/v1beta/models"
+	EndpointMessages             = "/v1/messages"
+	EndpointChatCompletions      = "/v1/chat/completions"
+	EndpointCompletions          = "/v1/completions"
+	EndpointEmbeddings           = "/v1/embeddings"
+	EndpointAlphaSearch          = "/v1/alpha/search"
+	EndpointResponses            = "/v1/responses"
+	EndpointResponsesCompact     = "/v1/responses/compact"
+	EndpointResponsesInputTokens = "/v1/responses/input_tokens"
+	EndpointImagesGenerations    = "/v1/images/generations"
+	EndpointImagesEdits          = "/v1/images/edits"
+	EndpointImageTasks           = "/v1/images/tasks"
+	EndpointVideosGenerations    = "/v1/videos/generations"
+	EndpointVideosEdits          = "/v1/videos/edits"
+	EndpointVideosExtensions     = "/v1/videos/extensions"
+	EndpointVideos               = "/v1/videos"
+	EndpointGeminiModels         = "/v1beta/models"
 )
 
 const EndpointAntigravityGenerateContent = "/v1internal:streamGenerateContent"
@@ -81,6 +82,8 @@ const (
 func NormalizeInboundEndpoint(path string) string {
 	path = strings.TrimSpace(path)
 	switch {
+	case strings.Contains(path, EndpointResponsesInputTokens) || isResponsesInputTokensAliasPath(path):
+		return EndpointResponsesInputTokens
 	case strings.Contains(path, EndpointEmbeddings):
 		return EndpointEmbeddings
 	case strings.Contains(path, EndpointAlphaSearch) || isBareOrSubpathOf(strings.TrimRight(path, "/"), "/alpha/search") || isBareOrSubpathOf(strings.TrimRight(path, "/"), "/backend-api/codex/alpha/search"):
@@ -114,6 +117,15 @@ func NormalizeInboundEndpoint(path string) string {
 	default:
 		return path
 	}
+}
+
+func isResponsesInputTokensAliasPath(path string) bool {
+	trimmed := strings.TrimRight(strings.TrimSpace(path), "/")
+	if trimmed == "" {
+		return false
+	}
+	return isBareOrSubpathOf(trimmed, "/responses/input_tokens") ||
+		isBareOrSubpathOf(trimmed, "/backend-api/codex/responses/input_tokens")
 }
 
 // isResponsesCompactAliasPath reports whether path is the bare/alias
@@ -188,7 +200,7 @@ func DeriveUpstreamEndpoint(inbound, rawRequestPath, platform string) string {
 
 	switch platform {
 	case service.PlatformOpenAI, service.PlatformGrok:
-		if inbound == EndpointEmbeddings || inbound == EndpointAlphaSearch || inbound == EndpointImagesGenerations || inbound == EndpointImagesEdits || inbound == EndpointVideosGenerations || inbound == EndpointVideosEdits || inbound == EndpointVideosExtensions || inbound == EndpointVideos {
+		if inbound == EndpointEmbeddings || inbound == EndpointAlphaSearch || inbound == EndpointResponsesInputTokens || inbound == EndpointImagesGenerations || inbound == EndpointImagesEdits || inbound == EndpointVideosGenerations || inbound == EndpointVideosEdits || inbound == EndpointVideosExtensions || inbound == EndpointVideos {
 			return inbound
 		}
 		// OpenAI forwards everything to the Responses API.
@@ -297,6 +309,69 @@ func GetInboundEndpoint(c *gin.Context) string {
 		}
 	}
 	return NormalizeInboundEndpoint(path)
+}
+
+// GetInboundEndpointWithRoute keeps the existing canonical endpoint while
+// recording which public ingress accepted the request in usage records.
+// The deployment uses a DMIT hostname for the DMIT entry and another host for
+// the direct entry. Local/empty hosts stay unprefixed so tests and internal
+// probes keep comparing against the canonical path.
+func GetInboundEndpointWithRoute(c *gin.Context) string {
+	endpoint := GetInboundEndpoint(c)
+	route := inboundIngressRoute(c)
+	if route == "" || endpoint == "" {
+		return endpoint
+	}
+	return route + " " + endpoint
+}
+
+func inboundIngressRoute(c *gin.Context) string {
+	host := inboundRequestHost(c)
+	if host == "" {
+		return ""
+	}
+	if strings.Contains(host, "dmit") {
+		return "DMIT"
+	}
+	if isLocalIngressHost(host) {
+		return ""
+	}
+	if strings.Contains(host, ".") {
+		return "直连"
+	}
+	return ""
+}
+
+func inboundRequestHost(c *gin.Context) string {
+	if c == nil || c.Request == nil {
+		return ""
+	}
+	for _, raw := range []string{
+		c.GetHeader("X-Forwarded-Host"),
+		c.GetHeader("X-Original-Host"),
+		c.Request.Host,
+	} {
+		host := strings.ToLower(strings.TrimSpace(raw))
+		if host == "" {
+			continue
+		}
+		if i := strings.IndexByte(host, ','); i >= 0 {
+			host = strings.TrimSpace(host[:i])
+		}
+		return host
+	}
+	return ""
+}
+
+func isLocalIngressHost(host string) bool {
+	switch {
+	case host == "localhost", strings.HasPrefix(host, "localhost:"):
+		return true
+	case strings.HasPrefix(host, "127."), strings.HasPrefix(host, "[::1]"), strings.HasPrefix(host, "::1"):
+		return true
+	default:
+		return false
+	}
 }
 
 // GetUpstreamEndpoint derives the upstream endpoint from the context

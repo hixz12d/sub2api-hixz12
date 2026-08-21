@@ -268,7 +268,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 		h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, account.GetMappedModel(reqModel), true, nil)
 		userAgent := c.GetHeader("User-Agent")
 		clientIP := ip.GetClientIP(c)
-		inboundEndpoint := GetInboundEndpoint(c)
+		inboundEndpoint := GetInboundEndpointWithRoute(c)
 		upstreamEndpoint := GetUpstreamEndpoint(c, account.Platform)
 		quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
 		sessionID := service.ExtractClientSessionID(c)
