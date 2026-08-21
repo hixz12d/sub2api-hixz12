@@ -49,21 +49,21 @@ func collectLastRoleMessage(messages gjson.Result, role string, parts *[]string,
 		return
 	}
 	array := messages.Array()
-	if len(array) == 0 {
+	for i := len(array) - 1; i >= 0; i-- {
+		item := array[i]
+		if strings.ToLower(strings.TrimSpace(item.Get("role").String())) != role {
+			continue
+		}
+		var candidate []string
+		var candidateImages []string
+		collectContentValue(item.Get("content"), &candidate, &candidateImages)
+		if !contentModerationHasExtractedInput(candidate, candidateImages) {
+			continue
+		}
+		*parts = append(*parts, candidate...)
+		*images = append(*images, candidateImages...)
 		return
 	}
-	last := array[len(array)-1]
-	if strings.ToLower(strings.TrimSpace(last.Get("role").String())) != role {
-		return
-	}
-	var candidate []string
-	var candidateImages []string
-	collectContentValue(last.Get("content"), &candidate, &candidateImages)
-	if normalizeContentModerationText(strings.Join(candidate, "\n")) == "" && len(candidateImages) == 0 {
-		return
-	}
-	*parts = append(*parts, candidate...)
-	*images = append(*images, candidateImages...)
 }
 
 func collectLastAnthropicUserMessage(messages gjson.Result, parts *[]string, images *[]string) {
@@ -71,21 +71,21 @@ func collectLastAnthropicUserMessage(messages gjson.Result, parts *[]string, ima
 		return
 	}
 	array := messages.Array()
-	if len(array) == 0 {
+	for i := len(array) - 1; i >= 0; i-- {
+		item := array[i]
+		if strings.ToLower(strings.TrimSpace(item.Get("role").String())) != "user" {
+			continue
+		}
+		var candidate []string
+		var candidateImages []string
+		collectAnthropicUserContentValue(item.Get("content"), &candidate, &candidateImages)
+		if !contentModerationHasExtractedInput(candidate, candidateImages) {
+			continue
+		}
+		*parts = append(*parts, candidate...)
+		*images = append(*images, candidateImages...)
 		return
 	}
-	last := array[len(array)-1]
-	if strings.ToLower(strings.TrimSpace(last.Get("role").String())) != "user" {
-		return
-	}
-	var candidate []string
-	var candidateImages []string
-	collectAnthropicUserContentValue(last.Get("content"), &candidate, &candidateImages)
-	if normalizeContentModerationText(strings.Join(candidate, "\n")) == "" && len(candidateImages) == 0 {
-		return
-	}
-	*parts = append(*parts, candidate...)
-	*images = append(*images, candidateImages...)
 }
 
 func collectAnthropicUserContentValue(value gjson.Result, parts *[]string, images *[]string) {
@@ -129,23 +129,17 @@ func collectLastResponsesInput(input gjson.Result, parts *[]string, images *[]st
 		addModerationText(parts, input.String())
 	case input.IsArray():
 		array := input.Array()
-		if len(array) == 0 {
+		for i := len(array) - 1; i >= 0; i-- {
+			item := array[i]
+			if !isResponsesUserTextItem(item) {
+				continue
+			}
+			collectResponsesItemInput(item, parts, images)
 			return
-		}
-		last := array[len(array)-1]
-		if !isResponsesUserTextItem(last) {
-			return
-		}
-		collectContentValue(last.Get("content"), parts, images)
-		if last.Get("type").String() == "input_text" || last.Get("text").Exists() {
-			collectContentValue(last, parts, images)
 		}
 	case input.IsObject():
 		if isResponsesUserTextItem(input) {
-			collectContentValue(input.Get("content"), parts, images)
-			if input.Get("type").String() == "input_text" || input.Get("text").Exists() {
-				collectContentValue(input, parts, images)
-			}
+			collectResponsesItemInput(input, parts, images)
 		}
 	}
 }
@@ -164,11 +158,8 @@ func isResponsesUserTextItem(item gjson.Result) bool {
 func responseItemHasModerationText(item gjson.Result) bool {
 	var parts []string
 	var images []string
-	collectContentValue(item.Get("content"), &parts, &images)
-	if item.Get("type").String() == "input_text" || item.Get("text").Exists() {
-		collectContentValue(item, &parts, &images)
-	}
-	return normalizeContentModerationText(strings.Join(parts, "\n")) != "" || len(images) > 0
+	collectResponsesItemInput(item, &parts, &images)
+	return contentModerationHasExtractedInput(parts, images)
 }
 
 func collectLastGeminiContent(contents gjson.Result, parts *[]string, images *[]string) {
@@ -176,28 +167,39 @@ func collectLastGeminiContent(contents gjson.Result, parts *[]string, images *[]
 		return
 	}
 	array := contents.Array()
-	if len(array) == 0 {
+	for i := len(array) - 1; i >= 0; i-- {
+		item := array[i]
+		role := strings.ToLower(strings.TrimSpace(item.Get("role").String()))
+		if role != "" && role != "user" {
+			continue
+		}
+		var candidate []string
+		var candidateImages []string
+		collectGeminiUserContent(item, &candidate, &candidateImages)
+		if !contentModerationHasExtractedInput(candidate, candidateImages) {
+			continue
+		}
+		*parts = append(*parts, candidate...)
+		*images = append(*images, candidateImages...)
 		return
 	}
-	last := array[len(array)-1]
-	role := strings.ToLower(strings.TrimSpace(last.Get("role").String()))
-	if role != "" && role != "user" {
-		return
+}
+
+func collectResponsesItemInput(item gjson.Result, parts *[]string, images *[]string) {
+	collectContentValue(item.Get("content"), parts, images)
+	if item.Get("type").String() == "input_text" || item.Get("text").Exists() {
+		collectContentValue(item, parts, images)
 	}
-	var candidate []string
-	var candidateImages []string
-	if arr := last.Get("parts"); arr.IsArray() {
+}
+
+func collectGeminiUserContent(item gjson.Result, parts *[]string, images *[]string) {
+	if arr := item.Get("parts"); arr.IsArray() {
 		arr.ForEach(func(_, part gjson.Result) bool {
-			addModerationText(&candidate, part.Get("text").String())
-			addGeminiModerationImage(&candidateImages, part)
+			addModerationText(parts, part.Get("text").String())
+			addGeminiModerationImage(images, part)
 			return true
 		})
 	}
-	if normalizeContentModerationText(strings.Join(candidate, "\n")) == "" && len(candidateImages) == 0 {
-		return
-	}
-	*parts = append(*parts, candidate...)
-	*images = append(*images, candidateImages...)
 }
 
 func collectContentValue(value gjson.Result, parts *[]string, images *[]string) {
@@ -312,6 +314,10 @@ func addModerationText(parts *[]string, text string) {
 		return
 	}
 	*parts = append(*parts, text)
+}
+
+func contentModerationHasExtractedInput(parts []string, images []string) bool {
+	return normalizeContentModerationText(strings.Join(parts, "\n")) != "" || len(images) > 0
 }
 
 func normalizeContentModerationText(text string) string {

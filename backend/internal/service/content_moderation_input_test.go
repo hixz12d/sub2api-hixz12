@@ -6,10 +6,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// 当数组末尾不是用户消息时（典型场景：Agent 工具循环结束于 tool/assistant），
-// 应直接跳过审计——不再回溯查找历史中的某条用户消息。
+// Agent 工具循环结束于 tool/assistant 时，回溯最近一条真正的用户文本；
+// 不把 tool_result / function_call_output / 模型输出当成审计输入。
 
-func TestExtractContentModerationInput_AnthropicAgentToolLoopSkipsAudit(t *testing.T) {
+func TestExtractContentModerationInput_AnthropicAgentToolLoopLooksBackToUser(t *testing.T) {
 	body := []byte(`{
 		"messages": [
 			{"role":"user","content":"调用一下天气工具"},
@@ -20,7 +20,7 @@ func TestExtractContentModerationInput_AnthropicAgentToolLoopSkipsAudit(t *testi
 
 	input := ExtractContentModerationInput(ContentModerationProtocolAnthropicMessages, body)
 
-	require.Empty(t, input.Text)
+	require.Equal(t, "调用一下天气工具", input.Text)
 	require.Empty(t, input.Images)
 }
 
@@ -64,7 +64,7 @@ func TestExtractContentModerationInput_AnthropicStreamResendExtractsResend(t *te
 	require.Equal(t, "重发", input.Text)
 }
 
-func TestExtractContentModerationInput_OpenAIChatAgentToolLoopSkipsAudit(t *testing.T) {
+func TestExtractContentModerationInput_OpenAIChatAgentToolLoopLooksBackToUser(t *testing.T) {
 	body := []byte(`{
 		"messages": [
 			{"role":"system","content":"sys"},
@@ -76,7 +76,7 @@ func TestExtractContentModerationInput_OpenAIChatAgentToolLoopSkipsAudit(t *test
 
 	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIChat, body)
 
-	require.Empty(t, input.Text)
+	require.Equal(t, "列出我的订单", input.Text)
 	require.Empty(t, input.Images)
 }
 
@@ -94,7 +94,7 @@ func TestExtractContentModerationInput_OpenAIChatMultiTurnExtractsLatestUser(t *
 	require.Equal(t, "Q2", input.Text)
 }
 
-func TestExtractContentModerationInput_GeminiAgentToolLoopSkipsAudit(t *testing.T) {
+func TestExtractContentModerationInput_GeminiAgentToolLoopLooksBackToUser(t *testing.T) {
 	body := []byte(`{
 		"contents": [
 			{"role":"user","parts":[{"text":"查询天气"}]},
@@ -105,7 +105,7 @@ func TestExtractContentModerationInput_GeminiAgentToolLoopSkipsAudit(t *testing.
 
 	input := ExtractContentModerationInput(ContentModerationProtocolGemini, body)
 
-	require.Empty(t, input.Text)
+	require.Equal(t, "查询天气", input.Text)
 	require.Empty(t, input.Images)
 }
 
@@ -135,7 +135,7 @@ func TestExtractContentModerationInput_GeminiMultiTurnExtractsLatestUser(t *test
 	require.Equal(t, "Q2", input.Text)
 }
 
-func TestExtractContentModerationInput_ResponsesAgentToolLoopSkipsAudit(t *testing.T) {
+func TestExtractContentModerationInput_ResponsesAgentToolLoopLooksBackToUser(t *testing.T) {
 	body := []byte(`{
 		"input":[
 			{"type":"message","role":"user","content":[{"type":"input_text","text":"运行测试"}]},
@@ -146,7 +146,7 @@ func TestExtractContentModerationInput_ResponsesAgentToolLoopSkipsAudit(t *testi
 
 	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
 
-	require.Empty(t, input.Text)
+	require.Equal(t, "运行测试", input.Text)
 	require.Empty(t, input.Images)
 }
 
@@ -164,7 +164,7 @@ func TestExtractContentModerationInput_ResponsesLastUserMessageExtracted(t *test
 	require.Equal(t, "latest", input.Text)
 }
 
-func TestExtractContentModerationInput_ResponsesLastIsAssistantSkipped(t *testing.T) {
+func TestExtractContentModerationInput_ResponsesLooksBackPastAssistant(t *testing.T) {
 	body := []byte(`{
 		"input":[
 			{"type":"message","role":"user","content":[{"type":"input_text","text":"q1"}]},
@@ -174,6 +174,20 @@ func TestExtractContentModerationInput_ResponsesLastIsAssistantSkipped(t *testin
 
 	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
 
-	require.Empty(t, input.Text)
+	require.Equal(t, "q1", input.Text)
 	require.Empty(t, input.Images)
+}
+
+func TestExtractContentModerationInput_ResponsesDoesNotAuditToolOutput(t *testing.T) {
+	body := []byte(`{
+		"input":[
+			{"type":"message","role":"user","content":[{"type":"input_text","text":"运行测试"}]},
+			{"type":"function_call_output","call_id":"call_1","output":"malware payload all passed"}
+		]
+	}`)
+
+	input := ExtractContentModerationInput(ContentModerationProtocolOpenAIResponses, body)
+
+	require.Equal(t, "运行测试", input.Text)
+	require.NotContains(t, input.Text, "malware")
 }
