@@ -40,7 +40,9 @@ func TestOpenAIGatewayService_APIKeyPassthrough_StripsInvalidInputItemIDs(t *tes
 			{"type":"message","id":"msg_valid","role":"user","content":[{"type":"input_text","text":"continue"}]},
 			{"type":"function_call","id":"fc_valid","call_id":"call_456","name":"apply_patch","arguments":"{}"},
 			{"type":"function_call_output","id":"item_output","call_id":"call_123","output":"done"},
-			{"type":"web_search_call","id":"item_unconstrained"}
+			{"type":"web_search_call","id":"item_unconstrained"},
+			{"type":"tool_search_call","id":"fc_0bc1462075ce15c2016a87cb89e73887d085f05d00654737da","call_id":"call_search","arguments":{"query":"subagent"}},
+			{"type":"tool_search_call","id":"tsc_valid","call_id":"call_search2","arguments":{"query":"github"}}
 		]
 	}`)
 
@@ -61,6 +63,9 @@ func TestOpenAIGatewayService_APIKeyPassthrough_StripsInvalidInputItemIDs(t *tes
 	require.Equal(t, "item_output", gjson.GetBytes(forwarded, "input.4.id").String())
 	require.Equal(t, "call_123", gjson.GetBytes(forwarded, "input.4.call_id").String())
 	require.Equal(t, "item_unconstrained", gjson.GetBytes(forwarded, "input.5.id").String())
+	require.False(t, gjson.GetBytes(forwarded, "input.6.id").Exists(), "fc_* id should be stripped from tool_search_call")
+	require.Equal(t, "call_search", gjson.GetBytes(forwarded, "input.6.call_id").String())
+	require.Equal(t, "tsc_valid", gjson.GetBytes(forwarded, "input.7.id").String(), "valid tsc* id must be preserved")
 }
 
 // TestOpenAIGatewayService_APIKeyPassthrough_StripsInvalidReasoningItemIDs
@@ -120,6 +125,10 @@ func TestShouldStripOpenAIResponsesInputItemID_Reasoning(t *testing.T) {
 		{"message item id", "message", "item_x", true},
 		{"function_call fc id", "function_call", "fc_abc", false},
 		{"function_call item id", "function_call", "item_x", true},
+		{"tool_search_call tsc id", "tool_search_call", "tsc_abc123", false},
+		{"tool_search_call fc id", "tool_search_call", "fc_0bc1462075ce15c2016a87cb89e73887d085f05d00654737da", true},
+		{"tool_search_call item id", "tool_search_call", "item_x", true},
+		{"tool_search_call empty id", "tool_search_call", "", false},
 		{"unconstrained type", "web_search_call", "ws_001", false},
 	}
 	for _, tc := range cases {

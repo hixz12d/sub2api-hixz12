@@ -66,10 +66,53 @@ func TestFilterCodexInput_KeepsFcID_WhenPreservingReferences(t *testing.T) {
 	require.Equal(t, "fc_validID123", fc["id"], "valid fc* id must be preserved")
 }
 
+// TestFilterCodexInput_StripsFcIDFromToolSearchCall_WhenPreservingReferences
+// verifies that tool_search_call items keep tsc* ids but drop replayed fc_* ids.
+// OpenAI upstream requires tool_search_call ids to begin with "tsc" and rejects
+// fc_* with 400: "Expected an ID that begins with 'tsc'."
+func TestFilterCodexInput_StripsFcIDFromToolSearchCall_WhenPreservingReferences(t *testing.T) {
+	input := []any{
+		map[string]any{
+			"type":    "tool_search_call",
+			"id":      "fc_0bc1462075ce15c2016a87cb89e73887d085f05d00654737da",
+			"call_id": "fc_search",
+			"arguments": map[string]any{
+				"query": "subagent",
+			},
+		},
+		map[string]any{
+			"type":    "tool_search_call",
+			"id":      "tsc_validID123",
+			"call_id": "fc_search2",
+			"arguments": map[string]any{
+				"query": "github",
+			},
+		},
+	}
+
+	filtered := filterCodexInputWithOptions(input, codexInputFilterOptions{
+		PreserveReferences: true,
+	})
+
+	require.Len(t, filtered, 2)
+
+	bad, ok := filtered[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "tool_search_call", bad["type"])
+	_, hasID := bad["id"]
+	require.False(t, hasID, "fc_* id should be stripped from tool_search_call")
+	require.Equal(t, "fc_search", bad["call_id"], "call_id must be preserved")
+
+	good, ok := filtered[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "tsc_validID123", good["id"], "valid tsc* id must be preserved")
+	require.Equal(t, "fc_search2", good["call_id"])
+}
+
 // TestFilterCodexInput_StripsItemIDFromAllToolCallInputTypes verifies that
 // item_* ids are stripped from all call-input types (not output types).
 func TestFilterCodexInput_StripsItemIDFromAllToolCallInputTypes(t *testing.T) {
-	types := []string{"function_call", "tool_call", "local_shell_call", "custom_tool_call", "mcp_tool_call"}
+	types := []string{"function_call", "tool_call", "local_shell_call", "tool_search_call", "custom_tool_call", "mcp_tool_call"}
 
 	for _, typ := range types {
 		input := []any{

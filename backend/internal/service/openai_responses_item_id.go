@@ -9,7 +9,7 @@ import (
 )
 
 // Invalid replayed IDs are removed rather than rewritten because a fabricated
-// msg/fc ID may point at a different upstream object.
+// msg/fc/tsc ID may point at a different upstream object.
 func shouldStripOpenAIResponsesInputItemID(itemType, id string) bool {
 	if id == "" {
 		return false
@@ -19,6 +19,12 @@ func shouldStripOpenAIResponsesInputItemID(itemType, id string) bool {
 	}
 	if itemType == "reasoning" {
 		return !strings.HasPrefix(id, "rs")
+	}
+	// Native Responses requires tool_search_call ids to begin with "tsc".
+	// Replayed fc_* ids from lowered function_call history are rejected with
+	// 400: "Expected an ID that begins with 'tsc'."
+	if itemType == "tool_search_call" {
+		return !strings.HasPrefix(id, "tsc")
 	}
 	if isCodexToolCallInputType(itemType) {
 		return !strings.HasPrefix(id, "fc")
