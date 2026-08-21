@@ -3932,10 +3932,6 @@ const cnAdaptiveProtocolOptions = computed<Array<{ value: CnNativeApiProtocol; l
   if (form.platform === 'deepseek') opts.push({ value: 'responses', labelKey: 'responses' })
   return opts
 })
-
-function resetAdaptiveBaseUrls(platform: 'kimi' | 'zhipu' | 'deepseek', mode: CnAccountMode) {
-  adaptiveBaseUrls.value = defaultCNAdaptiveBaseUrls(platform, mode)
-}
 // 当前选中平台的品牌色（选中卡片描边 / 图标底色），与 platformColors 取色一致。
 const cnAccentActiveClass = computed(() => {
   switch (form.platform) {
