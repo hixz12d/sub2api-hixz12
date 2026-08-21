@@ -45,6 +45,8 @@ func TestSanitizeCodexOAuthHeadersRemovesClientTracingAndTimeout(t *testing.T) {
 		"Tracestate":          {"vendor=secret"},
 		"X-Request-Timeout":   {"120000"},
 		"X-Stainless-Timeout": {"120000"},
+		"X-Forwarded-For":     {"203.0.113.10"},
+		"X-Real-IP":           {"203.0.113.10"},
 		"X-Codex-Turn-State":  {"opaque-turn-state"},
 	}
 
@@ -54,5 +56,7 @@ func TestSanitizeCodexOAuthHeadersRemovesClientTracingAndTimeout(t *testing.T) {
 	require.Empty(t, headers.Get("Tracestate"))
 	require.Empty(t, headers.Get("X-Request-Timeout"))
 	require.Empty(t, headers.Get("X-Stainless-Timeout"))
+	require.Empty(t, headers.Get("X-Forwarded-For"))
+	require.Empty(t, headers.Get("X-Real-IP"))
 	require.Equal(t, "opaque-turn-state", headers.Get("X-Codex-Turn-State"), "turn-state is protocol state, not tracing metadata")
 }

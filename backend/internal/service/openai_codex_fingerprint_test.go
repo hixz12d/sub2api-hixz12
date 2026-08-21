@@ -246,6 +246,9 @@ func TestExtractClientThreadSeedPriority(t *testing.T) {
 	headers.Del("session_id")
 	assert.Equal(t, "conversation", extractClientThreadSeed(headers, "cache"))
 	headers.Del("conversation_id")
+	headers.Set(openCodeNativeSessionHeader, "opencode-session")
+	assert.Equal(t, "opencode-session", extractClientThreadSeed(headers, "cache"))
+	headers.Del(openCodeNativeSessionHeader)
 	assert.Equal(t, "cache", extractClientThreadSeed(headers, " cache "))
 }
 
@@ -632,6 +635,11 @@ func TestExtractClientSessionID(t *testing.T) {
 			return h
 		}(), "underscore-form"},
 		{"都没有", http.Header{}, ""},
+		{"OpenCode 会话头", func() http.Header {
+			h := http.Header{}
+			h.Set(openCodeNativeSessionHeader, "opencode-session")
+			return h
+		}(), "opencode-session"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -646,4 +654,67 @@ func TestApplyCodexFingerprintToRawBody_PreservesPromptCacheKeyWhenOff(t *testin
 	require.NoError(t, err)
 	assert.Equal(t, "client-cache", gjson.GetBytes(out, "prompt_cache_key").String())
 	assert.Equal(t, "gpt-5.4", gjson.GetBytes(out, "model").String())
+}
+
+func TestDeviceModeFillsMissingCodexHeadersFromOpenCodeSession(t *testing.T) {
+	account := newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "device"})
+	clientHeaders := http.Header{}
+	clientHeaders.Set(openCodeNativeSessionHeader, "opencode-conversation-1")
+
+	ids := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
+	require.NotNil(t, ids)
+	require.Equal(t, codexFingerprintDevice, ids.mode)
+	require.NotEmpty(t, ids.sessionID)
+	require.NotEmpty(t, ids.threadID)
+	require.NotEqual(t, ids.sessionID, ids.threadID)
+	require.Equal(t, ids.threadID+":0", ids.windowID)
+
+	outbound := http.Header{}
+	applyCodexFingerprintHeaders(outbound, ids)
+	assert.Equal(t, ids.installationID, outbound.Get("x-codex-installation-id"))
+	assert.Equal(t, ids.sessionID, outbound.Get("session-id"))
+	assert.Equal(t, ids.threadID, outbound.Get("thread-id"))
+	assert.Equal(t, ids.windowID, outbound.Get("x-codex-window-id"))
+	assert.Equal(t, ids.clientRequestID, outbound.Get("x-client-request-id"))
+
+	same := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
+	require.NotNil(t, same)
+	assert.Equal(t, ids.sessionID, same.sessionID)
+	assert.Equal(t, ids.threadID, same.threadID)
+}
+
+func TestDeviceModeDoesNotOverrideClientCodexSessionHeaders(t *testing.T) {
+	account := newTestOAuthAccount(1, map[string]any{codexFingerprintModeExtraKey: "device"})
+	clientHeaders := http.Header{}
+	clientHeaders.Set("session-id", "client-session")
+	clientHeaders.Set("thread-id", "client-thread")
+
+	ids := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
+	require.NotNil(t, ids)
+	require.NotEmpty(t, ids.sessionID, "device fill IDs still exist as candidates")
+
+	outbound := http.Header{}
+	outbound.Set("session-id", "client-session")
+	outbound.Set("thread-id", "client-thread")
+	outbound.Set("x-codex-window-id", "client-thread:0")
+	applyCodexFingerprintHeaders(outbound, ids)
+
+	assert.Equal(t, "client-session", outbound.Get("session-id"))
+	assert.Equal(t, "client-thread", outbound.Get("thread-id"))
+	assert.Equal(t, "client-thread:0", outbound.Get("x-codex-window-id"))
+	assert.Equal(t, ids.installationID, outbound.Get("x-codex-installation-id"))
+}
+
+func TestDeviceModePromptCacheKeyStaysClientScoped(t *testing.T) {
+	account := newTestOAuthAccount(9, map[string]any{codexFingerprintModeExtraKey: "device"})
+	clientHeaders := http.Header{}
+	clientHeaders.Set(openCodeNativeSessionHeader, "opencode-conversation-2")
+	ids := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
+	require.NotNil(t, ids)
+	require.NotEmpty(t, ids.sessionID)
+
+	svc := &OpenAIGatewayService{}
+	got := svc.resolveCodexOutboundPromptCacheKey(nil, account, ids, "client-cache")
+	assert.Equal(t, svc.openAIOutboundSessionID(account, 0, "client-cache"), got)
+	assert.NotEqual(t, ids.sessionID, got)
 }

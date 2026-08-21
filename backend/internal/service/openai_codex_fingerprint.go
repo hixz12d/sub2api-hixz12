@@ -23,7 +23,8 @@ const (
 	// codexFingerprintOff 不做收敛，仅执行 canonical wire 规范化。
 	codexFingerprintOff codexFingerprintMode = "off"
 	// codexFingerprintDevice 仅收敛 installation_id 为账号级恒定值。
-	// session/thread 仍保持客户端原有边界。
+	// 客户端已给出的 session/thread/window 保持原边界；通用 API 客户端缺这些
+	// Codex 线头时，用与粘性路由相同的会话种子补齐，避免多轮对话被拆成无 thread 的请求。
 	codexFingerprintDevice codexFingerprintMode = "device"
 	// codexFingerprintSession 收敛 installation_id + session_id，
 	// thread_id 按客户端原始 session-id 确定性派生（每个真实 Codex 会话一个独立线程）。
@@ -317,7 +318,7 @@ func resolveWindow40ThreadID(source any, clientSeed string, now time.Time) strin
 // 由 resolveCodexFingerprintIDs 一次性生成，同一个实例在头改写和体改写之间共享，
 // 确保所有载体中的 turn_id 等随机字段一致。
 // resolveCodexFingerprintIDs 按收敛模式计算出站 ID 集合。
-// clientSessionID 是客户端线程种子。session 模式只会传入原始 session 头；window
+// clientSessionID 是客户端线程种子（Codex session 头、OpenCode/CodeBuddy 会话头或 prompt_cache_key）。
 // 模式还可传入 conversation_id 或 prompt_cache_key，且只用于固定 8 槽哈希。
 // 返回 nil 表示 off 模式，不需要改写。
 // 注意：包含随机生成的 turn_id，调用方必须只调用一次并共享结果给头改写和体改写。
@@ -343,6 +344,7 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 
 	switch mode {
 	case codexFingerprintDevice:
+		assignDeviceFillConversationIDs(ids, seed, clientSessionID)
 		return ids
 
 	case codexFingerprintSession:
@@ -427,19 +429,24 @@ func normalizeCodexOAuthHeaders(h http.Header, sessionID, threadID string) {
 	}
 }
 
-// extractClientSessionID returns the client's un-isolated session identity.
+// extractClientSessionID returns the client's un-isolated conversation identity.
+// It uses the same header list as sticky routing so OpenCode/CodeBuddy session
+// headers participate in outbound Codex identity, not just account pinning.
 func extractClientSessionID(h http.Header) string {
-	return resolveCodexSessionHeader(h)
+	if h == nil {
+		return ""
+	}
+	for _, name := range explicitOpenAIHeaderSessionNames {
+		if value := strings.TrimSpace(h.Get(name)); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func extractClientThreadSeed(h http.Header, promptCacheKey string) string {
 	if sessionID := extractClientSessionID(h); sessionID != "" {
 		return sessionID
-	}
-	if h != nil {
-		if conversationID := strings.TrimSpace(h.Get("conversation_id")); conversationID != "" {
-			return conversationID
-		}
 	}
 	return strings.TrimSpace(promptCacheKey)
 }
@@ -468,6 +475,57 @@ func combineCodexFingerprintSeed(tenantSeed, clientSeed string) string {
 	return tenantSeed + ":" + clientSeed
 }
 
+// assignDeviceFillConversationIDs derives conversation-stable Codex wire IDs for
+// device mode. They are only applied when the client omitted session/thread/window.
+func assignDeviceFillConversationIDs(ids *codexFingerprintIDs, seed, clientSessionID string) {
+	if ids == nil {
+		return
+	}
+	seed = strings.TrimSpace(seed)
+	clientSessionID = strings.TrimSpace(clientSessionID)
+	if seed == "" || clientSessionID == "" {
+		return
+	}
+	ids.sessionID = deriveStableUUIDv4("sub2api:codex-session-id:device-fill:v2:" + seed + ":" + clientSessionID)
+	ids.threadID = deriveStableUUIDv4("sub2api:codex-thread-id:device-fill:v2:" + seed + ":" + clientSessionID)
+	ids.windowID = ids.threadID + ":0"
+	ids.turnID = uuid.Must(uuid.NewV7()).String()
+	ids.clientRequestID = ids.turnID
+	ids.protocolProfile = codexProtocolProfileName
+}
+
+// fillMissingCodexConversationHeaders writes snapshot session/thread/window only
+// when the outbound request does not already have those Codex wire headers.
+func fillMissingCodexConversationHeaders(h http.Header, ids *codexFingerprintIDs) bool {
+	if h == nil || ids == nil {
+		return false
+	}
+	filled := false
+	sessionID := resolveCodexSessionHeader(h)
+	threadID := resolveCodexThreadHeader(h)
+	sessionMissing := sessionID == "" && strings.TrimSpace(ids.sessionID) != ""
+	threadMissing := threadID == "" && strings.TrimSpace(ids.threadID) != ""
+	if sessionMissing {
+		sessionID = ids.sessionID
+	}
+	if threadMissing {
+		threadID = ids.threadID
+	}
+	if sessionMissing || threadMissing {
+		normalizeCodexOAuthHeaders(h, sessionID, threadID)
+		filled = true
+	}
+	if strings.TrimSpace(h.Get("x-codex-window-id")) == "" && strings.TrimSpace(ids.windowID) != "" {
+		h.Set("x-codex-window-id", ids.windowID)
+		filled = true
+	}
+	if strings.TrimSpace(h.Get("x-client-request-id")) == "" && strings.TrimSpace(ids.clientRequestID) != "" {
+		h.Set("x-client-request-id", ids.clientRequestID)
+		filled = true
+	}
+	return filled
+}
+
 // resolveCodexFingerprintIDsFromRequest 从客户端原始请求头中提取 session-id，
 // 结合账号配置一次性解析收敛 ID 集合。调用方应将返回的 ids 同时传给
 // applyCodexFingerprintHeaders 和 applyCodexFingerprintClientMetadata。
@@ -487,10 +545,7 @@ func resolveCodexFingerprintIDsFromContext(account *Account, c *gin.Context, cli
 	if mode == codexFingerprintOff {
 		return nil
 	}
-	clientSessionID := extractClientSessionID(clientHeaders)
-	if mode == codexFingerprintWindow || mode == codexFingerprintWindow40 {
-		clientSessionID = extractClientThreadSeed(clientHeaders, promptCacheKey)
-	}
+	clientSessionID := extractClientThreadSeed(clientHeaders, promptCacheKey)
 	if mode == codexFingerprintWindow40 {
 		clientSessionID = combineCodexFingerprintSeed(codexFingerprintTenantSeed(c), clientSessionID)
 	}
@@ -593,6 +648,8 @@ func sanitizeCodexOAuthHeaders(h http.Header) {
 		"x-b3-traceid", "x-b3-spanid", "x-b3-parentspanid", "x-b3-sampled",
 		"x-amzn-trace-id", "x-cloud-trace-context", "x-request-start",
 		"x-request-timeout", "x-stainless-timeout",
+		"x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-real-ip",
+		"forwarded", "via", "cf-connecting-ip", "true-client-ip",
 	} {
 		deleteOpenAIHeaderEqualFold(h, name)
 	}
@@ -630,9 +687,25 @@ func applyCodexFingerprintHeaders(h http.Header, ids *codexFingerprintIDs) {
 	h.Set("x-codex-installation-id", ids.installationID)
 
 	if ids.mode == codexFingerprintDevice {
-		rewriteCodexTurnMetadataFields(h, map[string]any{
+		fields := map[string]any{
 			"installation_id": ids.installationID,
-		})
+		}
+		if fillMissingCodexConversationHeaders(h, ids) {
+			if sessionID := resolveCodexSessionHeader(h); sessionID != "" {
+				fields["session_id"] = sessionID
+			}
+			if threadID := resolveCodexThreadHeader(h); threadID != "" {
+				fields["thread_id"] = threadID
+			}
+			if windowID := strings.TrimSpace(h.Get("x-codex-window-id")); windowID != "" {
+				fields["window_id"] = windowID
+			}
+			if ids.turnID != "" {
+				fields["turn_id"] = ids.turnID
+				fields["turn_started_at_unix_ms"] = ids.turnStartedAtUnixMs
+			}
+		}
+		rewriteCodexTurnMetadataFields(h, fields)
 		return
 	}
 

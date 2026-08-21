@@ -112,9 +112,9 @@ func finalizeCodexOAuthIdentity(account *Account, c *gin.Context, clientHeaders 
 	if mode == codexFingerprintOff {
 		return nil, nil
 	}
-	clientSeed := extractClientSessionID(clientHeaders)
-	if mode == codexFingerprintWindow || mode == codexFingerprintWindow40 {
-		clientSeed = extractClientThreadSeed(clientHeaders, promptCacheKey)
+	clientSeed := extractClientThreadSeed(clientHeaders, promptCacheKey)
+	if clientSeed == "" && c != nil {
+		clientSeed = explicitOpenAIHeaderSessionID(c)
 	}
 	if mode == codexFingerprintWindow40 {
 		clientSeed = combineCodexFingerprintSeed(codexFingerprintTenantSeed(c), clientSeed)
@@ -128,7 +128,7 @@ func finalizeCodexOAuthIdentity(account *Account, c *gin.Context, clientHeaders 
 }
 
 func (s *OpenAIGatewayService) resolveCodexOutboundPromptCacheKey(c *gin.Context, account *Account, snapshot *CodexIdentitySnapshot, rawSessionID string) string {
-	if snapshot != nil && strings.TrimSpace(snapshot.sessionID) != "" {
+	if snapshot != nil && snapshot.mode != codexFingerprintDevice && strings.TrimSpace(snapshot.sessionID) != "" {
 		return strings.TrimSpace(snapshot.sessionID)
 	}
 	rawSessionID = strings.TrimSpace(rawSessionID)
