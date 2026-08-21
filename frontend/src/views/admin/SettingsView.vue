@@ -7070,7 +7070,7 @@
                   v-model.number="form.channel_monitor_default_interval_seconds"
                   type="number"
                   min="15"
-                  max="3600"
+                  max="9600"
                   class="input"
                 />
                 <p class="mt-1 text-xs text-gray-400">

@@ -469,7 +469,7 @@ const (
 	ChannelMonitorModeV2 = "v2"
 
 	// SettingKeyChannelMonitorDefaultIntervalSeconds controls the default interval (seconds)
-	// pre-filled when creating a new channel monitor from the admin UI. Range: [15, 3600].
+	// pre-filled when creating a new channel monitor from the admin UI. Range: [15, 9600].
 	SettingKeyChannelMonitorDefaultIntervalSeconds = "channel_monitor_default_interval_seconds"
 
 	// SettingKeyChannelMonitorHideThroughput hides RPM/TPM (and similar absolute

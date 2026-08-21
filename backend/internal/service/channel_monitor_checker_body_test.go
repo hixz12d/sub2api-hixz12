@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -133,19 +131,12 @@ func answerFromOpenAIRequest(body map[string]any) string {
 	return answerFromChallengePrompt(prompt)
 }
 
-var challengeQuestionRegex = regexp.MustCompile(`Q: (\d+) ([+-]) (\d+) = \?\nA:$`)
-
 func answerFromChallengePrompt(prompt string) string {
-	m := challengeQuestionRegex.FindStringSubmatch(prompt)
-	if len(m) != 4 {
+	got, ok := parseChallengeExpression(prompt)
+	if !ok {
 		return "0"
 	}
-	left, _ := strconv.Atoi(m[1])
-	right, _ := strconv.Atoi(m[3])
-	if m[2] == "+" {
-		return strconv.Itoa(left + right)
-	}
-	return strconv.Itoa(left - right)
+	return got
 }
 
 func TestRunCheckForModel_OffMode_PreservesDefaultBody(t *testing.T) {

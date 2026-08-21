@@ -127,15 +127,17 @@
 
       <div v-if="usesProbePart">
         <label class="input-label">{{ t('admin.channelMonitor.form.primaryModel') }} <span class="text-red-500">*</span></label>
-        <input
-          v-model="form.primary_model"
-          data-testid="monitor-primary-model"
-          type="text"
-          required
-          class="input font-medium"
-          :class="getPlatformTextClass(form.provider)"
-          :placeholder="t('admin.channelMonitor.form.primaryModelPlaceholder')"
-        />
+        <div data-testid="monitor-primary-model">
+          <Select
+            v-model="form.primary_model"
+            :options="primaryModelOptions"
+            :placeholder="t('admin.channelMonitor.form.primaryModelPlaceholder')"
+            :aria-label="t('admin.channelMonitor.form.primaryModel')"
+            searchable
+            creatable
+            :creatable-prefix="t('admin.channelMonitor.form.useCustomModel')"
+          />
+        </div>
       </div>
 
       <div v-if="usesProbePart">
@@ -143,6 +145,7 @@
         <ModelTagInput
           :models="form.extra_models"
           :platform="form.provider"
+          :suggestions="extraModelSuggestions"
           :placeholder="t('admin.channelMonitor.form.extraModelsPlaceholder')"
           @update:models="form.extra_models = $event"
         />
@@ -155,7 +158,7 @@
 
       <div>
         <label class="input-label">{{ t('admin.channelMonitor.form.intervalSeconds') }} <span class="text-red-500">*</span></label>
-        <input v-model.number="form.interval_seconds" type="number" min="15" max="3600" required class="input" />
+        <input v-model.number="form.interval_seconds" type="number" :min="MIN_INTERVAL_SECONDS" :max="MAX_INTERVAL_SECONDS" required class="input" />
         <p class="mt-1 text-xs text-gray-400">{{ t('admin.channelMonitor.form.intervalSecondsHint') }}</p>
       </div>
 
@@ -255,7 +258,7 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import Toggle from '@/components/common/Toggle.vue'
 import Select from '@/components/common/Select.vue'
 import ModelTagInput from '@/components/admin/channel/ModelTagInput.vue'
-import { getPlatformTextClass } from '@/components/admin/channel/types'
+import { getModelsByPlatform } from '@/composables/useModelWhitelist'
 import MonitorKeyPickerDialog from '@/components/admin/monitor/MonitorKeyPickerDialog.vue'
 import MonitorAdvancedRequestConfig from '@/components/admin/monitor/MonitorAdvancedRequestConfig.vue'
 import ProviderIcon from '@/components/user/monitor/ProviderIcon.vue'
@@ -280,6 +283,10 @@ import {
   DEFAULT_ZHIPU_ENDPOINT,
   DEFAULT_DEEPSEEK_ENDPOINT,
   DEFAULT_INTERVAL_SECONDS,
+  MIN_INTERVAL_SECONDS,
+  MAX_INTERVAL_SECONDS,
+  recommendedMonitorJitter,
+  getMonitorModelChoices,
 } from '@/constants/channelMonitor'
 
 const props = defineProps<{
@@ -347,7 +354,7 @@ const form = reactive<MonitorForm>({
   extra_models: [],
   group_name: '',
   interval_seconds: systemDefaultInterval.value,
-  jitter_seconds: 0,
+  jitter_seconds: recommendedMonitorJitter(systemDefaultInterval.value),
   enabled: true,
   template_id: null,
   extra_headers: {},
@@ -359,10 +366,36 @@ const form = reactive<MonitorForm>({
 const usesQuotaMode = computed(() => form.check_mode !== CHECK_MODE_PROBE)
 const usesProbePart = computed(() => form.check_mode !== CHECK_MODE_QUOTA)
 
-// jitter 上限与后端校验一致：interval - jitter 不得低于最小检测间隔 15 秒。
-const maxJitterSeconds = computed<number>(() => Math.max(0, (form.interval_seconds || 0) - 15))
+// jitter 上限与后端校验一致：interval - jitter 不得低于最小检测间隔。
+const maxJitterSeconds = computed<number>(() => Math.max(0, (form.interval_seconds || 0) - MIN_INTERVAL_SECONDS))
+
+const primaryModelOptions = computed(() => {
+  const models = getMonitorModelChoices(form.provider, getModelsByPlatform(form.provider))
+  const current = form.primary_model.trim()
+  const opts = models.map((m) => ({ value: m, label: m }))
+  if (current && current !== 'quota' && !models.includes(current)) {
+    opts.unshift({ value: current, label: current })
+  }
+  return opts
+})
+
+const extraModelSuggestions = computed(() => {
+  const selected = new Set(form.extra_models)
+  const primary = form.primary_model.trim()
+  return getMonitorModelChoices(form.provider, getModelsByPlatform(form.provider))
+    .filter((m) => m !== primary && !selected.has(m))
+})
 
 let suppressFormWatchers = false
+
+watch(
+  () => form.interval_seconds,
+  (sec) => {
+    if (suppressFormWatchers) return
+    const max = Math.max(0, (sec || 0) - MIN_INTERVAL_SECONDS)
+    if (form.jitter_seconds > max) form.jitter_seconds = max
+  },
+)
 
 // 可用模板列表（进入 dialog 时一次性拉取 cache；按 provider / api mode 过滤）。
 const templatesCache = ref<ChannelMonitorTemplate[]>([])
@@ -730,7 +763,7 @@ function resetForm() {
   form.extra_models = []
   form.group_name = ''
   form.interval_seconds = systemDefaultInterval.value
-  form.jitter_seconds = 0
+  form.jitter_seconds = recommendedMonitorJitter(form.interval_seconds)
   form.enabled = true
   form.template_id = null
   form.extra_headers = {}

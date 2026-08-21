@@ -145,6 +145,26 @@ const clickOption = (dropdown: HTMLElement, text: string) => {
   ;(option as HTMLElement).click()
 }
 
+async function setPrimaryModel(wrapper: VueWrapper, value: string) {
+  const trigger = wrapper.get('[data-testid="monitor-primary-model"] button')
+  await trigger.trigger('click')
+  await nextTick()
+  const dropdowns = [...document.body.querySelectorAll<HTMLElement>('.select-dropdown-portal')]
+  const dropdown = dropdowns[dropdowns.length - 1]
+  expect(dropdown, 'primary model dropdown').toBeDefined()
+  const input = dropdown.querySelector<HTMLInputElement>('.select-search-input')
+  expect(input).not.toBeNull()
+  input!.value = value
+  input!.dispatchEvent(new Event('input'))
+  await nextTick()
+  const option = [...dropdown.querySelectorAll('.select-option')].find((el) =>
+    el.textContent?.includes(value),
+  ) as HTMLElement | undefined
+  expect(option, `primary model option ${value}`).toBeDefined()
+  option!.click()
+  await nextTick()
+}
+
 const typeAccountSearch = async (dropdown: HTMLElement, query: string) => {
   const input = dropdown.querySelector<HTMLInputElement>('.select-search-input')
   expect(input).not.toBeNull()
@@ -329,7 +349,7 @@ describe('MonitorFormDialog linked account selector', () => {
     await flushPromises()
     expect(monitorUpdate).not.toHaveBeenCalled()
 
-    await wrapper.get('[data-testid="monitor-primary-model"]').setValue('claude-sonnet-4-5')
+    await setPrimaryModel(wrapper, 'claude-sonnet-4-5')
     await wrapper.get('#channel-monitor-form').trigger('submit')
     await flushPromises()
     expect(monitorUpdate).toHaveBeenCalledWith(42, expect.objectContaining({
@@ -351,7 +371,7 @@ describe('MonitorFormDialog linked account selector', () => {
     await flushPromises()
 
     await wrapper.get('[data-testid="monitor-check-mode-probe"]').trigger('click')
-    await wrapper.get('[data-testid="monitor-primary-model"]').setValue('claude-sonnet-4-5')
+    await setPrimaryModel(wrapper, 'claude-sonnet-4-5')
     await wrapper.get('#channel-monitor-form').trigger('submit')
     await flushPromises()
 
@@ -364,7 +384,7 @@ describe('MonitorFormDialog linked account selector', () => {
     await flushPromises()
 
     await wrapper.findAll('input[type="text"]')[0].setValue('my monitor')
-    await wrapper.get('[data-testid="monitor-primary-model"]').setValue('claude-sonnet-4-5')
+    await setPrimaryModel(wrapper, 'claude-sonnet-4-5')
     await wrapper.get('#channel-monitor-form').trigger('submit')
     await flushPromises()
 

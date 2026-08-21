@@ -72,3 +72,21 @@ export const MONITOR_STATUSES: readonly MonitorStatus[] = [
 
 /** Default polling interval (seconds) for new monitors. */
 export const DEFAULT_INTERVAL_SECONDS = 60
+export const MIN_INTERVAL_SECONDS = 15
+export const MAX_INTERVAL_SECONDS = 9600
+/** Recommended random offset for new monitors; clamped so interval - jitter >= MIN_INTERVAL_SECONDS. */
+export const DEFAULT_JITTER_SECONDS = 200
+
+export function recommendedMonitorJitter(intervalSeconds: number): number {
+  return Math.min(DEFAULT_JITTER_SECONDS, Math.max(0, (intervalSeconds || 0) - MIN_INTERVAL_SECONDS))
+}
+
+/** Extra commonly probed names that may be missing from the account whitelist. */
+export const MONITOR_COMMON_MODELS: Partial<Record<Provider, readonly string[]>> = {
+  openai: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1', 'o4-mini', 'o3-mini'],
+}
+
+export function getMonitorModelChoices(provider: string, extra: string[] = []): string[] {
+  const common = MONITOR_COMMON_MODELS[provider as Provider] ?? []
+  return [...new Set([...common, ...extra])]
+}

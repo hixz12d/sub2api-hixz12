@@ -375,7 +375,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 // (mirrors the monitor-level constraint but lives here so setting_service stays decoupled).
 const (
 	channelMonitorIntervalMin      = 15
-	channelMonitorIntervalMax      = 3600
+	channelMonitorIntervalMax      = 9600
 	channelMonitorIntervalFallback = 60
 	defaultChannelMonitorMode      = ChannelMonitorModeV1
 )
@@ -392,7 +392,7 @@ func normalizeChannelMonitorMode(raw string) string {
 	}
 }
 
-// parseChannelMonitorInterval parses the stored string and clamps to [15, 3600].
+// parseChannelMonitorInterval parses the stored string and clamps to [15, 9600].
 // Empty / invalid input falls back to channelMonitorIntervalFallback.
 func parseChannelMonitorInterval(raw string) int {
 	v, err := strconv.Atoi(strings.TrimSpace(raw))

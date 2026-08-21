@@ -27,7 +27,7 @@ export default {
           modeV2Hint: 'Opt-in: aggregates health metrics from real gateway traffic without upstream probe traffic. V1 probes stop while V2 is active.',
           modeV1Hint: 'Default: runs scheduled upstream health checks for configured channel monitors (probe traffic).',
           defaultInterval: 'Default check interval (seconds)',
-          defaultIntervalHint: 'V1 only: default interval for new monitors (overridable per monitor). Range 15 – 3600 seconds.',
+          defaultIntervalHint: 'V1 only: default interval for new monitors (overridable per monitor). Range 15 – 9600 seconds.',
           hideThroughput: 'Hide throughput rates from users (RPM / TPM)',
           hideThroughputHint:
             'When on, the user Channel Monitor page and user APIs omit RPM and TPM so fleet volume cannot be reverse-estimated from rates × window. Admins still see full metrics. Error rates, latency, and cache rates remain visible.',

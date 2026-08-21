@@ -1,6 +1,6 @@
-import { defineComponent } from 'vue'
-import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { defineComponent, nextTick } from 'vue'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import MonitorFormDialog from '@/components/admin/monitor/MonitorFormDialog.vue'
 import {
@@ -79,7 +79,6 @@ function mountDialog() {
       stubs: {
         BaseDialog: BaseDialogStub,
         Toggle: true,
-        Select: true,
         ModelTagInput: true,
         MonitorKeyPickerDialog: true,
         MonitorAdvancedRequestConfig: true,
@@ -87,6 +86,35 @@ function mountDialog() {
     },
   })
 }
+
+const EMPTY_PRIMARY_MODEL = 'admin.channelMonitor.form.primaryModelPlaceholder'
+
+function primaryModelLabel(wrapper: VueWrapper) {
+  return wrapper.get('[data-testid="monitor-primary-model"] .select-value').text().trim()
+}
+
+async function setPrimaryModel(wrapper: VueWrapper, value: string) {
+  const trigger = wrapper.get('[data-testid="monitor-primary-model"] button')
+  await trigger.trigger('click')
+  await nextTick()
+  const dropdowns = [...document.body.querySelectorAll<HTMLElement>('.select-dropdown-portal')]
+  const dropdown = dropdowns[dropdowns.length - 1]
+  const input = dropdown.querySelector<HTMLInputElement>('.select-search-input')
+  expect(input).not.toBeNull()
+  input!.value = value
+  input!.dispatchEvent(new Event('input'))
+  await nextTick()
+  const option = [...dropdown.querySelectorAll('.select-option')].find((el) =>
+    el.textContent?.includes(value),
+  ) as HTMLElement | undefined
+  expect(option, `primary model option ${value}`).toBeDefined()
+  option!.click()
+  await nextTick()
+}
+
+afterEach(() => {
+  document.body.innerHTML = ''
+})
 
 describe('channel monitor Grok provider', () => {
   beforeEach(() => {
@@ -112,20 +140,19 @@ describe('channel monitor Grok provider', () => {
     expect(grokButton.classes().join(' ')).toContain('zinc')
 
     const endpoint = wrapper.get('[data-testid="monitor-endpoint"]')
-    const model = wrapper.get('[data-testid="monitor-primary-model"]')
     expect((endpoint.element as HTMLInputElement).value).toBe(DEFAULT_GROK_ENDPOINT)
-    expect((model.element as HTMLInputElement).value).toBe(DEFAULT_GROK_MODEL)
+    expect(primaryModelLabel(wrapper)).toBe(DEFAULT_GROK_MODEL)
 
     await wrapper.get('[data-testid="monitor-provider-anthropic"]').trigger('click')
     expect((endpoint.element as HTMLInputElement).value).toBe('')
-    expect((model.element as HTMLInputElement).value).toBe('')
+    expect(primaryModelLabel(wrapper)).toBe(EMPTY_PRIMARY_MODEL)
 
     await grokButton.trigger('click')
     await endpoint.setValue('https://gateway.example.com')
-    await model.setValue('grok-custom')
+    await setPrimaryModel(wrapper, 'grok-custom')
     await wrapper.get('[data-testid="monitor-provider-openai"]').trigger('click')
     expect((endpoint.element as HTMLInputElement).value).toBe('https://gateway.example.com')
-    expect((model.element as HTMLInputElement).value).toBe('grok-custom')
+    expect(primaryModelLabel(wrapper)).toBe('grok-custom')
   })
 
   it('prefills only empty Grok fields and preserves existing provider values', async () => {
@@ -133,23 +160,22 @@ describe('channel monitor Grok provider', () => {
     await flushPromises()
 
     const endpoint = wrapper.get('[data-testid="monitor-endpoint"]')
-    const model = wrapper.get('[data-testid="monitor-primary-model"]')
     const grokButton = wrapper.get('[data-testid="monitor-provider-grok"]')
     const anthropicButton = wrapper.get('[data-testid="monitor-provider-anthropic"]')
 
     await endpoint.setValue('https://gateway.example.com')
     await grokButton.trigger('click')
     expect((endpoint.element as HTMLInputElement).value).toBe('https://gateway.example.com')
-    expect((model.element as HTMLInputElement).value).toBe(DEFAULT_GROK_MODEL)
+    expect(primaryModelLabel(wrapper)).toBe(DEFAULT_GROK_MODEL)
 
     await anthropicButton.trigger('click')
     expect((endpoint.element as HTMLInputElement).value).toBe('https://gateway.example.com')
-    expect((model.element as HTMLInputElement).value).toBe('')
+    expect(primaryModelLabel(wrapper)).toBe(EMPTY_PRIMARY_MODEL)
 
     await endpoint.setValue('')
-    await model.setValue('grok-custom')
+    await setPrimaryModel(wrapper, 'grok-custom')
     await grokButton.trigger('click')
     expect((endpoint.element as HTMLInputElement).value).toBe(DEFAULT_GROK_ENDPOINT)
-    expect((model.element as HTMLInputElement).value).toBe('grok-custom')
+    expect(primaryModelLabel(wrapper)).toBe('grok-custom')
   })
 })
