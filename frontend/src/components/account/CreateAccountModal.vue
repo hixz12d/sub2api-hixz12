@@ -3961,19 +3961,6 @@ const cnAccentIconClass = computed(() => {
       return 'bg-primary-500 text-white'
   }
 })
-// 切换国产供应商平台：强制 apikey 类型，deepseek 无 coding 套餐故锁定 payg，
-// 协议回落 adaptive，并把 base url 重置为该平台默认端点。
-function selectCNPlatform(platform: 'kimi' | 'zhipu' | 'deepseek') {
-  form.platform = platform
-  form.type = 'apikey'
-  accountCategory.value = 'apikey'
-  apiProtocol.value = 'adaptive'
-  if (platform === 'deepseek') {
-    accountMode.value = 'payg'
-  }
-  apiKeyBaseUrl.value = defaultCNBaseUrl(platform, accountMode.value, apiProtocol.value)
-  resetAdaptiveBaseUrls(platform, accountMode.value)
-}
 // 账号类型 / 协议变更时同步默认 base url。
 watch(accountMode, (mode, previousMode) => {
   if (!isCNPlatform.value) return
@@ -4002,12 +3989,6 @@ watch(apiProtocol, (protocol) => {
   }
   apiKeyBaseUrl.value = defaultCNBaseUrl(form.platform, accountMode.value, protocol)
 })
-// 点击预设端点：同时回填 base url、账号类型与协议。
-function onCnPresetSelect(preset: { mode: CnAccountMode; protocol: CnApiProtocol; url: string }) {
-  accountMode.value = preset.mode
-  apiProtocol.value = preset.protocol
-  apiKeyBaseUrl.value = preset.url
-}
 
 const syncPreviewCredentials = computed(() => {
   if (!apiKeyValue.value) return undefined
