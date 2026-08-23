@@ -20,7 +20,6 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"golang.org/x/net/http2"
 )
 
 func TestHTTPUpstreamDoCanDisableRedirectsPerRequest(t *testing.T) {
@@ -96,17 +95,13 @@ func TestHTTPUpstreamDoWithTLSPlainHTTPUsesConfiguredSOCKSProxy(t *testing.T) {
 	require.Equal(t, int64(1), upstreamCalls.Load())
 }
 
-func TestTLSFingerprintHTTPSProxyFallsBackWithoutBypassingProxy(t *testing.T) {
+func TestTLSFingerprintHTTPSProxyUsesFingerprintDialer(t *testing.T) {
 	proxyURL, err := url.Parse("https://user:pass@proxy.example:8443")
 	require.NoError(t, err)
 	transport, err := buildUpstreamTransportWithTLSFingerprint(poolSettings{}, proxyURL, &tlsfingerprint.Profile{Name: "test"})
 	require.NoError(t, err)
-	require.NotNil(t, transport.Proxy)
-	require.Nil(t, transport.DialTLSContext)
-	req := &http.Request{URL: &url.URL{Scheme: "https", Host: "upstream.example"}}
-	resolved, err := transport.Proxy(req)
-	require.NoError(t, err)
-	require.Equal(t, "https://user:pass@proxy.example:8443", resolved.String())
+	require.Nil(t, transport.Proxy, "HTTPS proxy CONNECT is handled inside the fingerprint dialer")
+	require.NotNil(t, transport.DialTLSContext)
 }
 
 func startTestSOCKS5Proxy(t *testing.T) (string, *atomic.Int64) {
@@ -667,8 +662,7 @@ func (s *HTTPUpstreamSuite) TestOpenAIChromeTLSFingerprintUsesHTTP2Transport() {
 	svc := s.newService()
 	entry, err := svc.getClientEntryWithTLS("", 1, 1, tlsfingerprint.BuiltinChromeAutoProfile(), service.HTTPUpstreamProfileOpenAI, false, false)
 	require.NoError(s.T(), err)
-	_, ok := entry.client.Transport.(*http2.Transport)
-	require.True(s.T(), ok, "OpenAI Chrome Auto should speak HTTP/2 over utls")
+	require.True(s.T(), tlsfingerprint.IsChromeHTTP2RoundTripper(entry.client.Transport), "OpenAI Chrome Auto should speak HTTP/2 with Chrome SETTINGS over utls")
 	require.Equal(s.T(), upstreamProtocolModeOpenAIH2, entry.protocolMode)
 }
 

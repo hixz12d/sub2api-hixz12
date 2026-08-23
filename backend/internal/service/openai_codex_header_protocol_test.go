@@ -106,7 +106,7 @@ func TestOpenAIOAuthHTTPHeaderProtocolAllFingerprintModes(t *testing.T) {
 
 			wantSession := isolateOpenAISessionID(71, "current-session")
 			wantThread := "current-thread"
-			if ids != nil && ids.sessionID != "" {
+			if ids != nil && ids.sessionID != "" && ids.mode != codexFingerprintDevice {
 				wantSession = ids.sessionID
 				wantThread = ids.threadID
 			}

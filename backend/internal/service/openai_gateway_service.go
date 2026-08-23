@@ -36,7 +36,7 @@ const (
 	// 与真实 Codex TUI 的 User-Agent 结构对齐：
 	// {originator}/{version} ({OS} {OS_version}; {arch}) {terminal}
 	// 缺少 OS/架构/终端后缀的形态易被上游指纹识别为非官方客户端。
-	// 该后缀是 UA 形态的唯一定义处，buildCodexCLIUserAgent 按运行时版本号复用它。
+	// 该后缀只用于无账号兜底和 ForceCodexCLI；有 OAuth 账号时改走平台指纹库。
 	codexCLIUserAgentSuffix = " (Ubuntu 22.4.0; x86_64) xterm-256color"
 	// codexCLIUserAgent 是编译期兜底 UA；运行时优先使用由后台版本号拼出的规范 UA。
 	// 版本段必须来自 codexCLIVersion：UA 与 version 头是同一个版本声明的两个出口，

@@ -241,11 +241,8 @@ func newOpenAIWSTLSFingerprintTransport(proxyURL *url.URL, profile *tlsfingerpri
 	switch strings.ToLower(proxyURL.Scheme) {
 	case "socks5", "socks5h":
 		transport.DialTLSContext = tlsfingerprint.NewSOCKS5ProxyDialer(profile, proxyURL).DialTLSContext
-	case "http":
+	case "http", "https":
 		transport.DialTLSContext = tlsfingerprint.NewHTTPProxyDialer(profile, proxyURL).DialTLSContext
-	case "https":
-		// HTTPS 代理无法在 CONNECT 前用 utls 伪装，回退普通代理。
-		return newOpenAIWSPlainTransport(proxyURL), nil
 	default:
 		transport.Proxy = http.ProxyURL(proxyURL)
 	}

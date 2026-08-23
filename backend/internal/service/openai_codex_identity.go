@@ -32,8 +32,8 @@ func NormalizeCodexClientVersion(version string) string {
 	return version
 }
 
-// buildCodexCLIUserAgent 按版本号拼出规范 Codex TUI User-Agent。
-// UA 形态只在 codexCLIUserAgentSuffix 一处定义，避免多处拼装漂移。
+// buildCodexCLIUserAgent 按版本号拼出无账号时的兜底 Codex TUI User-Agent。
+// OAuth 账号未自定义 UA 时走账号稳定的平台指纹库，不再复用这一条 Ubuntu 后缀。
 func buildCodexCLIUserAgent(version string) string {
 	if version = NormalizeCodexClientVersion(version); version == "" {
 		return codexCLIUserAgent

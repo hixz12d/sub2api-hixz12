@@ -3059,9 +3059,7 @@ func TestOpenAIBuildUpstreamRequestOAuthMessagesBridgeUsesSessionOnly(t *testing
 	require.Empty(t, req.Header.Get(legacyCodexSessionHeader))
 	require.Empty(t, req.Header.Get("Conversation_Id"))
 	require.Empty(t, req.Header.Get("OpenAI-Beta"))
-	require.Equal(t, DefaultOpenAICodexUserAgent, req.Header.Get("User-Agent"))
-	require.Equal(t, openai.CodexDefaultOriginator, req.Header.Get("originator"))
-	require.Equal(t, codexCLIVersion, req.Header.Get("version"))
+	requireOfficialCodexOutboundHeaders(t, req.Header)
 }
 
 func TestOpenAIBuildUpstreamRequestPreservesCompactPathForAPIKeyBaseURL(t *testing.T) {
@@ -3158,9 +3156,7 @@ func TestOpenAIBuildUpstreamRequestOAuthOfficialClientOriginatorCompatibility(t 
 			isCodexCLI := openai.IsCodexOfficialClientByHeaders(c.GetHeader("User-Agent"), c.GetHeader("originator"))
 			req, err := svc.buildUpstreamRequest(c.Request.Context(), c, account, []byte(`{"model":"gpt-5"}`), "token", false, "", isCodexCLI)
 			require.NoError(t, err)
-			require.Equal(t, openai.CodexDefaultOriginator, req.Header.Get("originator"))
-			require.Equal(t, codexCLIUserAgent, req.Header.Get("User-Agent"))
-			require.Equal(t, codexCLIVersion, req.Header.Get("version"))
+			requireOfficialCodexOutboundHeaders(t, req.Header)
 		})
 	}
 }

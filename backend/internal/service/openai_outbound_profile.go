@@ -108,7 +108,13 @@ func resolveOpenAIOutboundIdentityWithPolicy(
 			return resolveOpenAIOutboundIdentityWithVersion(inboundUserAgent, inboundUserAgent, version)
 		}
 	}
-	return resolveOpenAIOutboundIdentityWithVersion(accountUA, systemUA, codexClientVersionFromUA(systemUA))
+	version := codexClientVersionFromUA(systemUA)
+	if strings.TrimSpace(accountUA) == "" {
+		if personaUA := buildAccountStableCodexUserAgent(account, version); personaUA != "" {
+			accountUA = personaUA
+		}
+	}
+	return resolveOpenAIOutboundIdentityWithVersion(accountUA, systemUA, version)
 }
 
 // resolveOpenAIOutboundIdentity resolves shadow accounts to their credential

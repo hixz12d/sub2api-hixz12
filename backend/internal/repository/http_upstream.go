@@ -1431,13 +1431,9 @@ func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *u
 			slog.Debug("tls_fingerprint_transport_socks5", "proxy", proxyURL.Host)
 			socks5Dialer := tlsfingerprint.NewSOCKS5ProxyDialer(profile, proxyURL)
 			transport.DialTLSContext = socks5Dialer.DialTLSContext
-		case "https":
-			// The fingerprint dialer emits a plaintext CONNECT preface and cannot
-			// establish TLS to an HTTPS proxy. Keep proxy routing via net/http.
-			return buildUpstreamTransport(settings, proxyURL, upstreamProtocolModeDefault)
-		case "http":
-			// HTTP/HTTPS 代理：使用 HTTPProxyDialer（CONNECT 隧道）
-			slog.Debug("tls_fingerprint_transport_http_connect", "proxy", proxyURL.Host)
+		case "http", "https":
+			// HTTP/HTTPS 代理：CONNECT 隧道后再对目标做 utls。HTTPS 代理先用标准 TLS 连代理。
+			slog.Debug("tls_fingerprint_transport_http_connect", "proxy", proxyURL.Host, "scheme", scheme)
 			httpDialer := tlsfingerprint.NewHTTPProxyDialer(profile, proxyURL)
 			transport.DialTLSContext = httpDialer.DialTLSContext
 		default:
@@ -1467,17 +1463,17 @@ func buildUpstreamRoundTripperWithTLSFingerprint(settings poolSettings, proxyURL
 	if !profile.UsesChromeAuto() || protocolMode != upstreamProtocolModeOpenAIH2 || transport.DialTLSContext == nil {
 		return transport, nil
 	}
-	return newUTLSHTTP2Transport(transport.DialTLSContext), nil
+	return newUTLSHTTP2Transport(transport.DialTLSContext, settings), nil
 }
 
-func newUTLSHTTP2Transport(dialTLS func(context.Context, string, string) (net.Conn, error)) *http2.Transport {
-	return &http2.Transport{
-		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
-			return dialTLS(ctx, network, addr)
-		},
-		ReadIdleTimeout: openAIHTTP2ReadIdleTimeout,
-		PingTimeout:     openAIHTTP2PingTimeout,
-	}
+func newUTLSHTTP2Transport(dialTLS func(context.Context, string, string) (net.Conn, error), settings poolSettings) http.RoundTripper {
+	return tlsfingerprint.NewChromeHTTP2RoundTripper(dialTLS, tlsfingerprint.ChromeHTTP2Options{
+		MaxIdleConns:          settings.maxIdleConns,
+		IdleConnTimeout:       settings.idleConnTimeout,
+		ReadIdleTimeout:       openAIHTTP2ReadIdleTimeout,
+		PingTimeout:           openAIHTTP2PingTimeout,
+		ResponseHeaderTimeout: settings.responseHeaderTimeout,
+	})
 }
 
 // trackedBody 带跟踪功能的响应体包装器

@@ -17,7 +17,6 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/http2"
@@ -200,12 +199,11 @@ func TestFetchCodexModelsManifestPassthrough(t *testing.T) {
 	if gotAccountID != "acc-123" {
 		t.Errorf("chatgpt-account-id header: got %q", gotAccountID)
 	}
-	if gotOriginator != openai.CodexDefaultOriginator {
-		t.Errorf("originator header: got %q", gotOriginator)
-	}
-	if gotUserAgent != DefaultOpenAICodexUserAgent {
-		t.Errorf("user-agent header: got %q", gotUserAgent)
-	}
+	requireOfficialCodexOutboundHeaders(t, http.Header{
+		"User-Agent": {gotUserAgent},
+		"Originator": {gotOriginator},
+		"Version":    {gotVersion},
+	})
 	if gotVersion != codexCLIVersion {
 		t.Errorf("version header: got %q", gotVersion)
 	}

@@ -64,7 +64,7 @@ data: {"type":"response.completed","response":{"id":"resp_probe","output":[]}}
 	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("Version"))
 	require.NotEmpty(t, upstream.lastReq.Header.Get(codexSessionHeader))
 	require.Equal(t, HTTPUpstreamProfileOpenAI, HTTPUpstreamProfileFromContext(upstream.lastReq.Context()))
-	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
+	requireOfficialCodexOutboundHeaders(t, upstream.lastReq.Header)
 	require.Equal(t, "chatgpt-acc", upstream.lastReq.Header.Get("chatgpt-account-id"))
 	require.Equal(t, "true", upstream.lastReq.Header.Get("x-openai-fedramp"))
 	require.Equal(t, "gpt-5.4", gjson.GetBytes(upstream.lastBody, "model").String())
@@ -165,7 +165,7 @@ data: {"type":"response.completed","response":{"id":"resp_probe_apikey","output"
 	require.NoError(t, err)
 
 	require.Equal(t, "https://example.com/v1/responses", upstream.lastReq.URL.String())
-	require.Equal(t, codexCLIUserAgent, upstream.lastReq.Header.Get("User-Agent"))
+	require.Equal(t, DefaultOpenAICodexUserAgent, upstream.lastReq.Header.Get("User-Agent"))
 	require.Empty(t, upstream.lastReq.Header.Get("Originator"))
 	require.Equal(t, codexCLIVersion, upstream.lastReq.Header.Get("Version"))
 	require.Equal(t, "gpt-5.4", gjson.GetBytes(upstream.lastBody, "model").String())
