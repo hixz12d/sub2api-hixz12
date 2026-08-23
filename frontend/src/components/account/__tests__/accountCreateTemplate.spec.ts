@@ -41,6 +41,19 @@ describe('accountCreateTemplate helpers', () => {
     expect(values.tls_fingerprint_profile_id).toBe(-1)
   })
 
+  it('accepts API string enums and default preview options', () => {
+    const payload = {
+      openai_ws_mode: 'ctx_pool' as string,
+      openai_compact_mode: 'force_on' as string,
+      codex_fingerprint_mode: 'window40' as string,
+    }
+    const values = normalizeAccountCreateTemplateValues(payload)
+    expect(values.openai_ws_mode).toBe('ctx_pool')
+    expect(values.openai_compact_mode).toBe('force_on')
+    expect(values.codex_fingerprint_mode).toBe('window40')
+    expect(buildAccountCreateTemplatePreview(values)).toContain('WS=ctx_pool')
+  })
+
   it('filters templates and finds the default for a platform/type', () => {
     const items: AccountCreateTemplate[] = [
       {

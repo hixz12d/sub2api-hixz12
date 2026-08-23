@@ -82,22 +82,25 @@ export function emptyAccountCreateTemplateValues(): AccountCreateTemplateValues 
   }
 }
 
+export type AccountCreateTemplateValuesLoose = Omit<
+  Partial<AccountCreateTemplateValues>,
+  'openai_ws_mode' | 'openai_compact_mode' | 'codex_fingerprint_mode'
+> & {
+  openai_ws_mode?: string
+  openai_compact_mode?: string
+  codex_fingerprint_mode?: string
+}
+
 export function normalizeAccountCreateTemplateValues(
-  input?: Partial<AccountCreateTemplateValues> | null,
+  input?: AccountCreateTemplateValuesLoose | null,
 ): AccountCreateTemplateValues {
   const base = emptyAccountCreateTemplateValues()
   if (!input) return base
   const concurrency = toPositiveInt(input.concurrency, base.concurrency)
   const priority = toPositiveInt(input.priority, base.priority)
-  const wsMode = typeof input.openai_ws_mode === 'string' && WS_MODES.has(input.openai_ws_mode)
-    ? input.openai_ws_mode
-    : base.openai_ws_mode
-  const compactMode = typeof input.openai_compact_mode === 'string' && COMPACT_MODES.has(input.openai_compact_mode)
-    ? input.openai_compact_mode
-    : base.openai_compact_mode
-  const fingerprintMode = typeof input.codex_fingerprint_mode === 'string' && FINGERPRINT_MODES.has(input.codex_fingerprint_mode)
-    ? input.codex_fingerprint_mode
-    : base.codex_fingerprint_mode
+  const wsMode = pickAllowedMode(input.openai_ws_mode, WS_MODES, base.openai_ws_mode)
+  const compactMode = pickAllowedMode(input.openai_compact_mode, COMPACT_MODES, base.openai_compact_mode)
+  const fingerprintMode = pickAllowedMode(input.codex_fingerprint_mode, FINGERPRINT_MODES, base.codex_fingerprint_mode)
   return {
     proxy_id: toOptionalPositiveId(input.proxy_id),
     concurrency,
@@ -151,7 +154,7 @@ export function applyAccountCreateTemplateGroups(
 export function buildAccountCreateTemplatePreview(
   values: AccountCreateTemplateValues,
   options: {
-    includeGroups: boolean
+    includeGroups?: boolean
     proxies?: Array<Pick<Proxy, 'id' | 'name'>>
     groups?: Array<Pick<AdminGroup, 'id' | 'name'>>
   } = {},
@@ -185,6 +188,10 @@ function resolveGroupLabel(
   return groupIds
     .map((id) => groups?.find((item) => item.id === id)?.name || `#${id}`)
     .join(',')
+}
+
+function pickAllowedMode<T extends string>(value: unknown, allowed: Set<T>, fallback: T): T {
+  return typeof value === 'string' && allowed.has(value as T) ? value as T : fallback
 }
 
 function toPositiveInt(value: unknown, fallback: number): number {
