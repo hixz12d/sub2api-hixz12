@@ -587,6 +587,11 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		adminSettings.PUT("/web-search-emulation", h.Admin.Setting.UpdateWebSearchEmulationConfig)
 		adminSettings.POST("/web-search-emulation/test", h.Admin.Setting.TestWebSearchEmulation)
 		adminSettings.POST("/web-search-emulation/reset-usage", h.Admin.Setting.ResetWebSearchUsage)
+		// 账号创建配置模板
+		adminSettings.GET("/account-create-templates", h.Admin.Setting.ListAccountCreateTemplates)
+		adminSettings.POST("/account-create-templates", h.Admin.Setting.CreateAccountCreateTemplate)
+		adminSettings.PUT("/account-create-templates/:id", h.Admin.Setting.UpdateAccountCreateTemplate)
+		adminSettings.DELETE("/account-create-templates/:id", h.Admin.Setting.DeleteAccountCreateTemplate)
 	}
 }
 

@@ -44,7 +44,8 @@ vi.mock('@/api/admin', () => ({
     },
     settings: {
       getWebSearchEmulationConfig: vi.fn().mockResolvedValue({ enabled: false, providers: [] }),
-      getSettings: vi.fn().mockResolvedValue({})
+      getSettings: vi.fn().mockResolvedValue({}),
+      listAccountCreateTemplates: vi.fn().mockResolvedValue({ items: [] }),
     },
     tlsFingerprintProfiles: {
       list: vi.fn().mockResolvedValue([])
@@ -317,7 +318,8 @@ function mountModal(account = buildAccount(), groups: any[] = []) {
         Icon: true,
         ProxySelector: true,
         GroupSelector: GroupSelectorStub,
-        ModelWhitelistSelector: ModelWhitelistSelectorStub
+        ModelWhitelistSelector: ModelWhitelistSelectorStub,
+        AccountCreateTemplateBar: true
       }
     }
   })

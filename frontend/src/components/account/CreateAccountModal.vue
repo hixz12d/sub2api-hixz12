@@ -1974,6 +1974,16 @@
         </div>
       </div>
 
+      <AccountCreateTemplateBar
+        :platform="form.platform"
+        :account-type="form.type"
+        :proxies="proxies"
+        :groups="groups"
+        :auto-apply="true"
+        :active="show"
+        :get-snapshot="getAccountCreateTemplateSnapshot"
+        :apply-snapshot="applyAccountCreateTemplateSnapshot"
+      />
       <!-- 配额控制 (Anthropic apikey/bedrock: 配额限制 + 亲和) -->
       <div
         v-if="form.platform === 'anthropic' && (form.type === 'apikey' || form.type === 'bedrock')"
@@ -3734,6 +3744,12 @@ import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
 import ModelWhitelistSelector from '@/components/account/ModelWhitelistSelector.vue'
 import QuotaLimitCard from '@/components/account/QuotaLimitCard.vue'
+import AccountCreateTemplateBar from '@/components/account/AccountCreateTemplateBar.vue'
+import {
+  applyAccountCreateTemplateGroups,
+  normalizeAccountCreateTemplateValues,
+  type AccountCreateTemplateValues,
+} from '@/components/account/accountCreateTemplate'
 import Toggle from '@/components/common/Toggle.vue'
 import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
 import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
@@ -4307,6 +4323,60 @@ const openaiResponsesWebSocketV2Mode = computed({
     openaiOAuthResponsesWebSocketV2Mode.value = mode
   }
 })
+
+const getAccountCreateTemplateSnapshot = (): AccountCreateTemplateValues =>
+  normalizeAccountCreateTemplateValues({
+    proxy_id: form.proxy_id,
+    concurrency: form.concurrency,
+    load_factor: form.load_factor,
+    priority: form.priority,
+    rate_multiplier: form.rate_multiplier,
+    group_ids: form.group_ids,
+    quota_limit: editQuotaLimit.value,
+    quota_daily_limit: editQuotaDailyLimit.value,
+    quota_weekly_limit: editQuotaWeeklyLimit.value,
+    auto_pause_on_expired: autoPauseOnExpired.value,
+    intercept_warmup: interceptWarmupRequests.value,
+    openai_passthrough: openaiPassthroughEnabled.value,
+    openai_flatten_namespaces: openaiFlattenNamespacesEnabled.value,
+    openai_long_context_billing: openAILongContextBillingEnabled.value,
+    openai_ws_mode: openaiResponsesWebSocketV2Mode.value,
+    openai_compact_mode: openAICompactMode.value,
+    codex_cli_only: codexCLIOnlyEnabled.value,
+    codex_cli_only_app_server: codexCLIOnlyAppServerEnabled.value,
+    codex_fingerprint_mode: codexFingerprintMode.value,
+    tls_fingerprint_enabled: tlsFingerprintEnabled.value,
+    tls_fingerprint_profile_id: tlsFingerprintProfileId.value,
+  })
+
+const applyAccountCreateTemplateSnapshot = (
+  values: AccountCreateTemplateValues,
+  options: { includeGroups: boolean },
+) => {
+  const next = normalizeAccountCreateTemplateValues(values)
+  form.proxy_id = next.proxy_id
+  form.concurrency = next.concurrency
+  form.load_factor = next.load_factor
+  form.priority = next.priority
+  form.rate_multiplier = next.rate_multiplier
+  form.group_ids = applyAccountCreateTemplateGroups(form.group_ids, next, options.includeGroups)
+  editQuotaLimit.value = next.quota_limit
+  editQuotaDailyLimit.value = next.quota_daily_limit
+  editQuotaWeeklyLimit.value = next.quota_weekly_limit
+  autoPauseOnExpired.value = next.auto_pause_on_expired
+  interceptWarmupRequests.value = next.intercept_warmup
+  openaiPassthroughEnabled.value = next.openai_passthrough
+  openaiFlattenNamespacesEnabled.value = next.openai_flatten_namespaces
+  openAILongContextBillingEnabled.value = next.openai_long_context_billing
+  openAILongContextBillingTouched.value = true
+  openaiResponsesWebSocketV2Mode.value = next.openai_ws_mode
+  openAICompactMode.value = next.openai_compact_mode
+  codexCLIOnlyEnabled.value = next.codex_cli_only
+  codexCLIOnlyAppServerEnabled.value = next.codex_cli_only_app_server
+  codexFingerprintMode.value = next.codex_fingerprint_mode
+  tlsFingerprintEnabled.value = next.tls_fingerprint_enabled
+  tlsFingerprintProfileId.value = next.tls_fingerprint_profile_id
+}
 
 const openAIWSModeConcurrencyHintKey = computed(() =>
   resolveOpenAIWSModeConcurrencyHintKey(openaiResponsesWebSocketV2Mode.value)

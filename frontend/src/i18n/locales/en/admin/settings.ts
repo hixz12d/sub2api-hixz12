@@ -14,6 +14,12 @@ export default {
         payment: 'Payment',
       },
       features: {
+        accountCreateTemplates: {
+          title: 'Account config templates',
+          description: 'Manage snapshots that can be applied when creating or editing accounts. Create new ones from the account form with Save as.',
+          manageHint: 'Rename, change the default, choose whether groups are included, or delete templates here. Editing a template does not change existing accounts.',
+          empty: 'No templates yet. Configure proxy, WS, fingerprint, and groups in Add Account, then click Save as.',
+        },
         channelMonitor: {
           title: 'Channel Monitor',
           description: 'Choose either V1 active probes or V2 passive usage monitoring. When disabled, both background jobs stop and the user entry is hidden.',

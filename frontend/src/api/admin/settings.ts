@@ -1550,6 +1550,87 @@ export async function resetWebSearchUsage(payload: {
   );
 }
 
+// ==================== Account create templates ====================
+
+export interface AccountCreateTemplateValuesPayload {
+  proxy_id: number | null;
+  concurrency: number;
+  load_factor: number | null;
+  priority: number;
+  rate_multiplier: number;
+  group_ids: number[];
+  quota_limit: number | null;
+  quota_daily_limit: number | null;
+  quota_weekly_limit: number | null;
+  auto_pause_on_expired: boolean;
+  intercept_warmup: boolean;
+  openai_passthrough: boolean;
+  openai_flatten_namespaces: boolean;
+  openai_long_context_billing: boolean;
+  openai_ws_mode: string;
+  openai_compact_mode: string;
+  codex_cli_only: boolean;
+  codex_cli_only_app_server: boolean;
+  codex_fingerprint_mode: string;
+  tls_fingerprint_enabled: boolean;
+  tls_fingerprint_profile_id: number | null;
+}
+
+export interface AccountCreateTemplatePayload {
+  id: string;
+  name: string;
+  platform: string;
+  type: string;
+  is_default: boolean;
+  include_groups: boolean;
+  values: AccountCreateTemplateValuesPayload;
+}
+
+export interface AccountCreateTemplateWritePayload {
+  name: string;
+  platform: string;
+  type: string;
+  is_default: boolean;
+  include_groups: boolean;
+  values: AccountCreateTemplateValuesPayload;
+}
+
+export async function listAccountCreateTemplates(params: {
+  platform?: string;
+  type?: string;
+} = {}): Promise<{ items: AccountCreateTemplatePayload[] }> {
+  const { data } = await apiClient.get<{ items: AccountCreateTemplatePayload[] }>(
+    "/admin/settings/account-create-templates",
+    { params },
+  );
+  return { items: data?.items ?? [] };
+}
+
+export async function createAccountCreateTemplate(
+  payload: AccountCreateTemplateWritePayload,
+): Promise<AccountCreateTemplatePayload> {
+  const { data } = await apiClient.post<AccountCreateTemplatePayload>(
+    "/admin/settings/account-create-templates",
+    payload,
+  );
+  return data;
+}
+
+export async function updateAccountCreateTemplate(
+  id: string,
+  payload: AccountCreateTemplateWritePayload,
+): Promise<AccountCreateTemplatePayload> {
+  const { data } = await apiClient.put<AccountCreateTemplatePayload>(
+    `/admin/settings/account-create-templates/${id}`,
+    payload,
+  );
+  return data;
+}
+
+export async function deleteAccountCreateTemplate(id: string): Promise<void> {
+  await apiClient.delete(`/admin/settings/account-create-templates/${id}`);
+}
+
 export const settingsAPI = {
   getSettings,
   updateSettings,
@@ -1579,6 +1660,10 @@ export const settingsAPI = {
   updateWebSearchEmulationConfig,
   testWebSearchEmulation,
   resetWebSearchUsage,
+  listAccountCreateTemplates,
+  createAccountCreateTemplate,
+  updateAccountCreateTemplate,
+  deleteAccountCreateTemplate,
 };
 
 export default settingsAPI;

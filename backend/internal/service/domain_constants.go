@@ -524,6 +524,10 @@ const (
 	// SettingKeyOllamaCloudUsageSettings stores the opt-in global runner switch and interval.
 	SettingKeyOllamaCloudUsageSettings = "ollama_cloud_usage_settings"
 
+	// SettingKeyAccountCreateTemplates stores named account-create snapshots
+	// (proxy, WS, Codex, groups, quota, etc.) as a JSON document.
+	SettingKeyAccountCreateTemplates = "account_create_templates"
+
 	// =========================
 	// Overload Cooldown (529)
 	// =========================

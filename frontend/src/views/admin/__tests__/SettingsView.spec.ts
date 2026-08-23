@@ -97,6 +97,7 @@ vi.mock("@/api", () => ({
       getStreamTimeoutSettings,
       getRectifierSettings,
       getBetaPolicySettings,
+      listAccountCreateTemplates: vi.fn().mockResolvedValue({ items: [] }),
     },
     accounts: {
       getUpstreamBillingProbeSettings,
@@ -558,6 +559,7 @@ function mountView() {
         ProxySelector: true,
         ImageUpload: ImageUploadStub,
         BackupSettings: true,
+        AccountCreateTemplatesPanel: true,
       },
     },
   });
@@ -1241,6 +1243,7 @@ describe("admin SettingsView payment visible method controls", () => {
           ProxySelector: true,
           ImageUpload: ImageUploadStub,
           BackupSettings: true,
+          AccountCreateTemplatesPanel: true,
         },
       },
     });
@@ -1518,6 +1521,7 @@ describe("admin SettingsView payment visible method controls", () => {
           ProxySelector: true,
           ImageUpload: ImageUploadStub,
           BackupSettings: true,
+          AccountCreateTemplatesPanel: true,
         },
       },
     });

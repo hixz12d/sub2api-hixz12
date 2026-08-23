@@ -14,6 +14,12 @@ export default {
         payment: '支付设置',
       },
       features: {
+        accountCreateTemplates: {
+          title: '账号配置模板',
+          description: '管理添加/编辑账号时可套用的配置快照。新建请在账号表单里点「另存为」。',
+          manageHint: '这里可以重命名、改默认、决定是否包含分组，或删除模板。改模板不会回头改已有账号。',
+          empty: '还没有模板。先在「添加账号」里调好代理、WS、指纹和分组，再点「另存为」。',
+        },
         channelMonitor: {
           title: '渠道监控',
           description: '启用后在 V1 主动探测与 V2 被动用量监控中二选一。关闭后两种模式的后台任务均停止，用户端入口隐藏。',
