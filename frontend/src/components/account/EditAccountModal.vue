@@ -4483,6 +4483,11 @@ function loadQuotaControlSettings(account: Account) {
   customBaseUrlEnabled.value = false
   customBaseUrl.value = ''
 
+  if (account.platform === 'openai' && account.type === 'oauth') {
+    tlsFingerprintEnabled.value = account.enable_tls_fingerprint !== false
+    return
+  }
+
   // Remaining quota control settings only apply to Anthropic accounts
   if (account.platform !== 'anthropic') {
     return
@@ -5168,10 +5173,7 @@ const handleSubmit = async () => {
       delete newExtra.user_msg_queue_enabled  // 清理旧字段
 
       // TLS fingerprint setting
-      if (props.account.platform === 'openai' && props.account.type === 'oauth') {
-        newExtra.enable_tls_fingerprint = !!tlsFingerprintEnabled.value
-        delete newExtra.tls_fingerprint_profile_id
-      } else if (tlsFingerprintEnabled.value) {
+      if (tlsFingerprintEnabled.value) {
         newExtra.enable_tls_fingerprint = true
         if (tlsFingerprintProfileId.value) {
           newExtra.tls_fingerprint_profile_id = tlsFingerprintProfileId.value
@@ -5338,6 +5340,10 @@ const handleSubmit = async () => {
         } else {
           delete newExtra.codex_fingerprint_mode
         }
+      }
+      if (props.account.type === 'oauth') {
+        newExtra.enable_tls_fingerprint = !!tlsFingerprintEnabled.value
+        delete newExtra.tls_fingerprint_profile_id
       }
 
       updatePayload.extra = newExtra

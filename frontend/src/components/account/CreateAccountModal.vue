@@ -4307,6 +4307,12 @@ const umqModeOptions = computed(() => [
 const tlsFingerprintEnabled = ref(false)
 const tlsFingerprintProfileId = ref<number | null>(null)
 const tlsFingerprintProfiles = ref<{ id: number; name: string }[]>([])
+watch(
+  () => form.platform,
+  (platform) => {
+    tlsFingerprintEnabled.value = platform === 'openai'
+  },
+)
 const sessionIdMaskingEnabled = ref(false)
 const cacheTTLOverrideEnabled = ref(false)
 const cacheTTLOverrideTarget = ref<string>('5m')
@@ -5101,7 +5107,7 @@ const resetForm = () => {
   rpmStrategy.value = 'tiered'
   rpmStickyBuffer.value = null
   userMsgQueueMode.value = ''
-  tlsFingerprintEnabled.value = form.platform === 'openai'
+  tlsFingerprintEnabled.value = false
   tlsFingerprintProfileId.value = null
   sessionIdMaskingEnabled.value = false
   cacheTTLOverrideEnabled.value = false
@@ -5193,6 +5199,10 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
     extra.openai_compact_mode = openAICompactMode.value
   } else {
     delete extra.openai_compact_mode
+  }
+  if (accountCategory.value === 'oauth-based') {
+    extra.enable_tls_fingerprint = !!tlsFingerprintEnabled.value
+    delete extra.tls_fingerprint_profile_id
   }
 
   if (
@@ -6647,9 +6657,7 @@ const handleAnthropicExchange = async (authCode: string) => {
     }
 
     // Add TLS fingerprint settings
-    if (form.platform === 'openai' && form.type === 'oauth') {
-      extra.enable_tls_fingerprint = !!tlsFingerprintEnabled.value
-    } else if (tlsFingerprintEnabled.value) {
+    if (tlsFingerprintEnabled.value) {
       extra.enable_tls_fingerprint = true
       if (tlsFingerprintProfileId.value) {
         extra.tls_fingerprint_profile_id = tlsFingerprintProfileId.value
@@ -6774,9 +6782,7 @@ const handleCookieAuth = async (sessionKey: string) => {
         }
 
         // Add TLS fingerprint settings
-        if (form.platform === 'openai' && form.type === 'oauth') {
-          extra.enable_tls_fingerprint = !!tlsFingerprintEnabled.value
-        } else if (tlsFingerprintEnabled.value) {
+        if (tlsFingerprintEnabled.value) {
           extra.enable_tls_fingerprint = true
           if (tlsFingerprintProfileId.value) {
             extra.tls_fingerprint_profile_id = tlsFingerprintProfileId.value
