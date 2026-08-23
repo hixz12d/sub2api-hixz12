@@ -149,7 +149,7 @@ func (s *OpenAIGatewayService) ProxyGrokRealtime(ctx context.Context, c *gin.Con
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	upstream, _, _, err := dialer.Dial(ctx, u.String(), headers, proxyURL)
+	upstream, _, _, err := dialer.Dial(ctx, u.String(), headers, proxyURL, resolveAccountTLSFingerprintProfile(account))
 	if err != nil {
 		return false, err
 	}

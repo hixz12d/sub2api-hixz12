@@ -71,6 +71,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		if identityErr != nil {
 			return fmt.Errorf("finalize Codex OAuth websocket identity: %w", identityErr)
 		}
+		s.persistLearnedCodexDeviceID(ctx, account, ids)
 		if c != nil {
 			c.Set("codex_fingerprint_ids", ids)
 		}
@@ -1352,6 +1353,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			if identityErr != nil {
 				return fmt.Errorf("finalize Codex OAuth websocket turn identity: %w", identityErr)
 			}
+			s.persistLearnedCodexDeviceID(ctx, account, snapshot)
 			c.Set("codex_fingerprint_ids", snapshot)
 			applyCodexFingerprintHeaders(baseAcquireReq.Headers, snapshot)
 		}

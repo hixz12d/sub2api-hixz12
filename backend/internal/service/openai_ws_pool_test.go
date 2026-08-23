@@ -2029,6 +2029,7 @@ func (d *openAIWSFakeDialer) Dial(
 	wsURL string,
 	headers http.Header,
 	proxyURL string,
+	_ *openAIWSTLSProfile,
 ) (openAIWSClientConn, int, http.Header, error) {
 	_ = ctx
 	_ = wsURL
@@ -2115,6 +2116,7 @@ func (d *openAIWSCountingDialer) Dial(
 	wsURL string,
 	headers http.Header,
 	proxyURL string,
+	_ *openAIWSTLSProfile,
 ) (openAIWSClientConn, int, http.Header, error) {
 	_ = ctx
 	_ = wsURL
@@ -2131,6 +2133,7 @@ func (d *openAIWSFirstDialBlockingCaptureDialer) Dial(
 	wsURL string,
 	headers http.Header,
 	proxyURL string,
+	_ *openAIWSTLSProfile,
 ) (openAIWSClientConn, int, http.Header, error) {
 	_ = wsURL
 	_ = proxyURL
@@ -2167,6 +2170,7 @@ func (d *openAIWSAlwaysFailDialer) Dial(
 	wsURL string,
 	headers http.Header,
 	proxyURL string,
+	_ *openAIWSTLSProfile,
 ) (openAIWSClientConn, int, http.Header, error) {
 	_ = ctx
 	_ = wsURL
@@ -2324,6 +2328,7 @@ func (d *openAIWSNilConnDialer) Dial(
 	wsURL string,
 	headers http.Header,
 	proxyURL string,
+	_ *openAIWSTLSProfile,
 ) (openAIWSClientConn, int, http.Header, error) {
 	_ = ctx
 	_ = wsURL

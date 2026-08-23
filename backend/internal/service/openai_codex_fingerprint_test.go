@@ -252,17 +252,21 @@ func TestExtractClientThreadSeedPriority(t *testing.T) {
 	assert.Equal(t, "cache", extractClientThreadSeed(headers, " cache "))
 }
 
-func TestWindow40BudgetAndTenantIsolation(t *testing.T) {
-	times := []time.Time{
-		time.Date(2026, 8, 14, 1, 0, 0, 0, time.UTC),
-		time.Date(2026, 8, 14, 9, 0, 0, 0, time.UTC),
-		time.Date(2026, 8, 14, 17, 0, 0, 0, time.UTC),
-	}
-	assert.Equal(t, 13, codexThreadWindow40Slots(times[0]))
-	assert.Equal(t, 14, codexThreadWindow40Slots(times[1]))
-	assert.Equal(t, 13, codexThreadWindow40Slots(times[2]))
-	assert.Equal(t, 40, codexThreadWindow40Slots(times[0])+codexThreadWindow40Slots(times[1])+codexThreadWindow40Slots(times[2]))
+func requireCodexUUIDv7(t *testing.T, raw string) uuid.UUID {
+	t.Helper()
+	parsed, err := uuid.Parse(raw)
+	require.NoError(t, err, raw)
+	require.Equal(t, uuid.Version(7), parsed.Version(), raw)
+	return parsed
+}
 
+func uuidv7UnixMilli(t *testing.T, raw string) uint64 {
+	t.Helper()
+	id := requireCodexUUIDv7(t, raw)
+	return uint64(id[0])<<40 | uint64(id[1])<<32 | uint64(id[2])<<24 | uint64(id[3])<<16 | uint64(id[4])<<8 | uint64(id[5])
+}
+
+func TestWindow40BudgetAndTenantIsolation(t *testing.T) {
 	account := newTestOAuthAccount(7, map[string]any{codexFingerprintModeExtraKey: "window40"})
 	cA, _ := gin.CreateTestContext(httptest.NewRecorder())
 	cA.Set("api_key", &APIKey{ID: 11, UserID: 101})
@@ -271,7 +275,7 @@ func TestWindow40BudgetAndTenantIsolation(t *testing.T) {
 	headers := http.Header{"session-id": []string{"same-client-session"}}
 
 	originalNow := codexFingerprintNow
-	codexFingerprintNow = func() time.Time { return times[0] }
+	codexFingerprintNow = func() time.Time { return time.Date(2026, 8, 14, 1, 0, 0, 0, time.UTC) }
 	t.Cleanup(func() { codexFingerprintNow = originalNow })
 
 	idsA1 := resolveCodexFingerprintIDsFromContext(account, cA, headers, "")
@@ -281,15 +285,128 @@ func TestWindow40BudgetAndTenantIsolation(t *testing.T) {
 	require.NotNil(t, idsA2)
 	require.NotNil(t, idsB)
 	assert.Equal(t, codexFingerprintWindow40, idsA1.mode)
+	assert.Equal(t, idsA1.sessionID, idsA1.threadID, "普通对话 session_id 应等于 thread_id")
+	assert.Equal(t, idsA1.sessionID, idsA2.sessionID)
 	assert.Equal(t, idsA1.threadID, idsA2.threadID)
+	assert.Equal(t, idsA1.windowID, idsA2.windowID)
 	assert.NotEqual(t, idsA1.turnID, idsA2.turnID)
+	assert.NotEqual(t, idsA1.sessionID, idsA1.windowID)
+	requireCodexUUIDv7(t, idsA1.sessionID)
+	requireCodexUUIDv7(t, idsA1.windowID)
+	assert.Equal(t, uuidv7UnixMilli(t, idsA1.sessionID)+1, uuidv7UnixMilli(t, idsA1.windowID), "window 应比 session 新 1ms，像连续两次 Uuid::now_v7()")
 	assert.NotEqual(t, combineCodexFingerprintSeed(codexFingerprintTenantSeed(cA), "same-client-session"), combineCodexFingerprintSeed(codexFingerprintTenantSeed(cB), "same-client-session"))
 
+	codexFingerprintNow = func() time.Time { return time.Date(2026, 8, 14, 17, 0, 0, 0, time.UTC) }
+	idsLater := resolveCodexFingerprintIDsFromContext(account, cA, headers, "")
+	require.NotNil(t, idsLater)
+	assert.Equal(t, idsA1.sessionID, idsLater.sessionID, "window40 不应随 UTC 整点换会话")
+	assert.Equal(t, idsA1.windowID, idsLater.windowID)
+
 	for i := 0; i < 128; i++ {
-		slot := resolveWindow40Slot(fmt.Sprintf("seed-%d", i), times[1])
+		slot := resolveWindow40Slot(fmt.Sprintf("seed-%d", i))
 		assert.GreaterOrEqual(t, slot, 0)
-		assert.Less(t, slot, 14)
+		assert.Less(t, slot, codexWindow40Budget)
 	}
+
+	seen := map[string]struct{}{}
+	for i := 0; i < 200; i++ {
+		headers := http.Header{"session-id": []string{fmt.Sprintf("client-%d", i)}}
+		ids := resolveCodexFingerprintIDsFromContext(account, cA, headers, "")
+		require.NotNil(t, ids)
+		seen[ids.sessionID] = struct{}{}
+	}
+	assert.LessOrEqual(t, len(seen), codexWindow40Budget)
+}
+
+func TestWindow40PreservesOfficialEnvironmentMetadata(t *testing.T) {
+	account := newTestOAuthAccount(7, map[string]any{codexFingerprintModeExtraKey: "window40"})
+	clientHeaders := http.Header{}
+	clientHeaders.Set("session-id", "official-session")
+	ids := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
+	require.NotNil(t, ids)
+
+	turnMetadataBytes, err := json.Marshal(map[string]any{
+		"installation_id": "user-install",
+		"session_id":      "user-session",
+		"thread_id":       "user-thread",
+		"turn_id":         "user-turn",
+		"window_id":       "user-window",
+		"sandbox":         "danger-full-access",
+		"thread_source":   "user",
+	})
+	require.NoError(t, err)
+	turnMetadata := string(turnMetadataBytes)
+	h := http.Header{}
+	h.Set("x-codex-turn-metadata", turnMetadata)
+	applyCodexFingerprintHeaders(h, ids)
+
+	assert.Equal(t, ids.sessionID, h.Get("session-id"))
+	assert.Equal(t, ids.sessionID, h.Get("thread-id"))
+	assert.Equal(t, ids.windowID, h.Get("x-codex-window-id"))
+
+	var meta map[string]any
+	require.NoError(t, json.Unmarshal([]byte(h.Get("x-codex-turn-metadata")), &meta))
+	assert.Equal(t, ids.sessionID, meta["session_id"])
+	assert.Equal(t, ids.threadID, meta["thread_id"])
+	assert.Equal(t, ids.windowID, meta["window_id"])
+	assert.Equal(t, "danger-full-access", meta["sandbox"])
+	assert.Equal(t, "user", meta["thread_source"])
+
+	body := map[string]any{
+		"client_metadata": map[string]any{
+			"sandbox":               "danger-full-access",
+			"thread_source":         "user",
+			"x-codex-turn-metadata": turnMetadata,
+		},
+	}
+	require.True(t, applyCodexFingerprintClientMetadata(body, ids))
+	cm := body["client_metadata"].(map[string]any)
+	assert.Equal(t, ids.windowID, cm["x-codex-window-id"])
+	assert.Equal(t, "danger-full-access", cm["sandbox"])
+	assert.Equal(t, "user", cm["thread_source"])
+}
+
+func TestWindow40SynthesizesOfficialConversationEnvelope(t *testing.T) {
+	account := newTestOAuthAccount(7, map[string]any{codexFingerprintModeExtraKey: "window40"})
+	clientHeaders := http.Header{}
+	clientHeaders.Set("session-id", "python-or-opencode-session")
+	ids := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
+	require.NotNil(t, ids)
+
+	h := http.Header{}
+	applyCodexFingerprintHeaders(h, ids)
+	assert.Equal(t, ids.sessionID, h.Get("session-id"))
+	assert.Equal(t, ids.sessionID, h.Get("thread-id"))
+	assert.Equal(t, ids.sessionID, h.Get("conversation_id"))
+	assert.Equal(t, ids.windowID, h.Get("x-codex-window-id"))
+	assert.Equal(t, ids.turnID, h.Get("x-client-request-id"))
+
+	var headerMeta map[string]any
+	require.NoError(t, json.Unmarshal([]byte(h.Get("x-codex-turn-metadata")), &headerMeta))
+	assert.Equal(t, ids.sessionID, headerMeta["session_id"])
+	assert.Equal(t, ids.sessionID, headerMeta["thread_id"])
+	assert.Equal(t, ids.windowID, headerMeta["window_id"])
+	assert.Equal(t, ids.turnID, headerMeta["turn_id"])
+	assert.Equal(t, float64(ids.turnStartedAtUnixMs), headerMeta["turn_started_at_unix_ms"])
+	assert.Equal(t, "danger-full-access", headerMeta["sandbox"])
+	assert.Equal(t, "user", headerMeta["thread_source"])
+
+	body := map[string]any{"model": "gpt-5.4"}
+	require.True(t, applyCodexFingerprintClientMetadata(body, ids))
+	cm := body["client_metadata"].(map[string]any)
+	assert.Equal(t, ids.sessionID, cm["session_id"])
+	assert.Equal(t, ids.sessionID, cm["thread_id"])
+	assert.Equal(t, ids.windowID, cm["x-codex-window-id"])
+	assert.Equal(t, ids.installationID, cm["x-codex-installation-id"])
+	assert.Equal(t, "danger-full-access", cm["sandbox"])
+	assert.Equal(t, "user", cm["thread_source"])
+
+	var embedded map[string]any
+	require.NoError(t, json.Unmarshal([]byte(cm["x-codex-turn-metadata"].(string)), &embedded))
+	assert.Equal(t, headerMeta["session_id"], embedded["session_id"])
+	assert.Equal(t, headerMeta["window_id"], embedded["window_id"])
+	assert.Equal(t, headerMeta["sandbox"], embedded["sandbox"])
+	assert.Equal(t, headerMeta["thread_source"], embedded["thread_source"])
 }
 
 // --- off 模式：resolveCodexFingerprintIDsFromRequest 返回 nil ---

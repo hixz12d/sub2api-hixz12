@@ -80,7 +80,7 @@ func TestCoderOpenAIWSClientDialer_ProxyClientCacheIdleTTL(t *testing.T) {
 	require.NoError(t, err)
 
 	impl.proxyMu.Lock()
-	oldEntry := impl.proxyClients[oldProxy]
+	oldEntry := impl.proxyClients[openAIWSHTTPClientCacheKey(oldProxy, nil)]
 	require.NotNil(t, oldEntry)
 	oldEntry.lastUsedUnixNano = time.Now().Add(-openAIWSProxyClientCacheIdleTTL - time.Minute).UnixNano()
 	impl.proxyMu.Unlock()
@@ -90,7 +90,7 @@ func TestCoderOpenAIWSClientDialer_ProxyClientCacheIdleTTL(t *testing.T) {
 	require.NoError(t, err)
 
 	impl.proxyMu.Lock()
-	_, exists := impl.proxyClients[oldProxy]
+	_, exists := impl.proxyClients[openAIWSHTTPClientCacheKey(oldProxy, nil)]
 	impl.proxyMu.Unlock()
 
 	require.False(t, exists, "超过空闲 TTL 的代理客户端应被回收")
@@ -113,4 +113,63 @@ func TestCoderOpenAIWSClientDialer_ProxyTransportTLSHandshakeTimeout(t *testing.
 
 func TestCoderOpenAIWSClientConn_DoesNotSupportIdlePingWithoutReader(t *testing.T) {
 	require.False(t, (&coderOpenAIWSClientConn{}).SupportsIdlePingWithoutReader())
+}
+
+func TestResolveAccountTLSFingerprintProfile(t *testing.T) {
+	require.Nil(t, resolveAccountTLSFingerprintProfile(nil))
+	require.Nil(t, resolveAccountTLSFingerprintProfile(&Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}))
+	require.Nil(t, resolveAccountTLSFingerprintProfile(&Account{
+		Platform: PlatformOpenAI,
+		Type:     AccountTypeOAuth,
+		Extra:    map[string]any{"enable_tls_fingerprint": false},
+	}))
+
+	profile := resolveAccountTLSFingerprintProfile(&Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth})
+	require.NotNil(t, profile)
+	require.True(t, profile.UsesChromeAuto())
+}
+
+func TestCoderOpenAIWSClientDialer_HTTPClientWithoutProxyOrTLS(t *testing.T) {
+	dialer := newDefaultOpenAIWSClientDialer()
+	impl, ok := dialer.(*coderOpenAIWSClientDialer)
+	require.True(t, ok)
+
+	client, err := impl.httpClient("", nil)
+	require.NoError(t, err)
+	require.Nil(t, client, "直连且未开 TLS 时应继续用 coder/websocket 默认客户端")
+}
+
+func TestCoderOpenAIWSClientDialer_TLSFingerprintIsolatesCacheAndDisablesHTTP2(t *testing.T) {
+	dialer := newDefaultOpenAIWSClientDialer()
+	impl, ok := dialer.(*coderOpenAIWSClientDialer)
+	require.True(t, ok)
+
+	chrome := resolveAccountTLSFingerprintProfile(&Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth})
+	require.NotNil(t, chrome)
+
+	plain, err := impl.httpClient("http://127.0.0.1:48080", nil)
+	require.NoError(t, err)
+	tlsClient, err := impl.httpClient("http://127.0.0.1:48080", chrome)
+	require.NoError(t, err)
+	require.NotSame(t, plain, tlsClient)
+
+	tlsAgain, err := impl.httpClient("http://127.0.0.1:48080", chrome)
+	require.NoError(t, err)
+	require.Same(t, tlsClient, tlsAgain)
+
+	direct, err := impl.httpClient("", chrome)
+	require.NoError(t, err)
+	require.NotNil(t, direct)
+	require.NotSame(t, tlsClient, direct)
+
+	transport, ok := tlsClient.Transport.(*http.Transport)
+	require.True(t, ok)
+	require.False(t, transport.ForceAttemptHTTP2)
+	require.NotNil(t, transport.TLSNextProto)
+	require.NotNil(t, transport.DialTLSContext)
+
+	directTransport, ok := direct.Transport.(*http.Transport)
+	require.True(t, ok)
+	require.False(t, directTransport.ForceAttemptHTTP2)
+	require.NotNil(t, directTransport.DialTLSContext)
 }

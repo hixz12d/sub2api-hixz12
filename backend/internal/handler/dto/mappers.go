@@ -299,9 +299,9 @@ func AccountFromServiceShallow(a *service.Account) *Account {
 		if mode := a.GetUserMsgQueueMode(); mode != "" {
 			out.UserMsgQueueMode = &mode
 		}
-		// TLS指纹伪装开关
-		if a.IsTLSFingerprintEnabled() {
-			enabled := true
+		// TLS指纹伪装开关。OpenAI OAuth 默认开启，必须回传 false 才能在编辑页关闭。
+		if a.SupportsTLSFingerprint() {
+			enabled := a.IsTLSFingerprintEnabled()
 			out.EnableTLSFingerprint = &enabled
 		}
 		// TLS指纹模板ID

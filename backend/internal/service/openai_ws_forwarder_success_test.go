@@ -1872,6 +1872,7 @@ func (d *openAIWSCaptureDialer) Dial(
 	wsURL string,
 	headers http.Header,
 	proxyURL string,
+	_ *openAIWSTLSProfile,
 ) (openAIWSClientConn, int, http.Header, error) {
 	_ = ctx
 	_ = wsURL

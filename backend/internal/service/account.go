@@ -2266,23 +2266,46 @@ func (a *Account) IsAnthropicOAuthOrSetupToken() bool {
 	return a.Platform == PlatformAnthropic && (a.Type == AccountTypeOAuth || a.Type == AccountTypeSetupToken)
 }
 
-// IsTLSFingerprintEnabled 检查是否启用 TLS 指纹伪装
-// 仅适用于 Anthropic OAuth/SetupToken 类型账号
-// 启用后将模拟 Claude Code (Node.js) 客户端的 TLS 握手特征
+// SupportsTLSFingerprint reports whether this account type can impersonate a
+// native client handshake. Anthropic uses the Node.js/Claude Code profile;
+// OpenAI OAuth uses Chrome/Electron by default.
+func (a *Account) SupportsTLSFingerprint() bool {
+	if a == nil {
+		return false
+	}
+	return a.IsAnthropicOAuthOrSetupToken() || a.IsOpenAIOAuth()
+}
+
+// IsTLSFingerprintEnabled 检查是否启用 TLS 指纹伪装。
+// Anthropic OAuth/SetupToken 默认关闭，需 extra.enable_tls_fingerprint=true。
+// OpenAI OAuth 默认开启 Chrome 握手，除非显式写成 false。
 func (a *Account) IsTLSFingerprintEnabled() bool {
-	// 仅支持 Anthropic OAuth/SetupToken 账号
-	if !a.IsAnthropicOAuthOrSetupToken() {
+	if !a.SupportsTLSFingerprint() {
 		return false
 	}
-	if a.Extra == nil {
-		return false
-	}
-	if v, ok := a.Extra["enable_tls_fingerprint"]; ok {
-		if enabled, ok := v.(bool); ok {
+	enabled, present := extraBool(a.Extra, "enable_tls_fingerprint")
+	if a.IsOpenAIOAuth() {
+		if present {
 			return enabled
 		}
+		return true
 	}
-	return false
+	return present && enabled
+}
+
+func extraBool(extra map[string]any, key string) (value bool, present bool) {
+	if extra == nil {
+		return false, false
+	}
+	raw, ok := extra[key]
+	if !ok {
+		return false, false
+	}
+	enabled, ok := raw.(bool)
+	if !ok {
+		return false, false
+	}
+	return enabled, true
 }
 
 // GetTLSFingerprintProfileID 获取账号绑定的 TLS 指纹模板 ID

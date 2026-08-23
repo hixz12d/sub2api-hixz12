@@ -1,5 +1,5 @@
 // Package tlsfingerprint provides TLS fingerprint simulation for HTTP clients.
-// It uses the utls library to create TLS connections that mimic Node.js/Claude Code clients.
+// It uses the utls library to mimic Node.js/Claude Code or Chrome/Electron clients.
 package tlsfingerprint
 
 import (
@@ -11,15 +11,21 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 
 	utls "github.com/refraction-networking/utls"
 	"golang.org/x/net/proxy"
 )
 
+// HelloPresetChromeAuto uses utls.HelloChrome_Auto. Official Codex Desktop is
+// Electron/Chromium; this keeps the ClientHello on a current Chrome track.
+const HelloPresetChromeAuto = "chrome_auto"
+
 // Profile contains TLS fingerprint configuration.
 // All slice fields use built-in defaults when empty.
 type Profile struct {
 	Name                string // Profile name for identification
+	HelloPreset         string // empty = custom/Node spec; chrome_auto = HelloChrome_Auto
 	CipherSuites        []uint16
 	Curves              []uint16
 	PointFormats        []uint16
@@ -30,6 +36,36 @@ type Profile struct {
 	KeyShareGroups      []uint16 // Empty uses [X25519]
 	PSKModes            []uint16 // Empty uses [psk_dhe_ke]
 	Extensions          []uint16 // Extension type IDs in order; empty uses default Node.js 24.x order
+}
+
+// BuiltinChromeAutoProfile is the OpenAI/Codex default handshake.
+func BuiltinChromeAutoProfile() *Profile {
+	return &Profile{
+		Name:        "Built-in Chrome (Auto)",
+		HelloPreset: HelloPresetChromeAuto,
+	}
+}
+
+// BuiltinNodeDefaultProfile is the Anthropic/Claude Code default handshake.
+func BuiltinNodeDefaultProfile() *Profile {
+	return &Profile{Name: "Built-in Default (Node.js 24.x)"}
+}
+
+func (p *Profile) UsesChromeAuto() bool {
+	return p != nil && p.HelloPreset == HelloPresetChromeAuto
+}
+
+func (p *Profile) CacheID() string {
+	if p == nil {
+		return "default"
+	}
+	if p.HelloPreset != "" {
+		return p.HelloPreset
+	}
+	if strings.TrimSpace(p.Name) != "" {
+		return strings.TrimSpace(p.Name)
+	}
+	return "custom"
 }
 
 // Dialer creates TLS connections with custom fingerprints.
@@ -275,12 +311,10 @@ func performTLSHandshake(ctx context.Context, conn net.Conn, profile *Profile, a
 		host = addr
 	}
 
-	spec := buildClientHelloSpecFromProfile(profile)
-	tlsConn := utls.UClient(conn, &utls.Config{ServerName: host}, utls.HelloCustom)
-
-	if err := tlsConn.ApplyPreset(spec); err != nil {
+	tlsConn, err := newUTLSClient(conn, host, profile)
+	if err != nil {
 		_ = conn.Close()
-		return nil, fmt.Errorf("apply TLS preset: %w", err)
+		return nil, err
 	}
 
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
@@ -295,6 +329,18 @@ func performTLSHandshake(ctx context.Context, conn net.Conn, profile *Profile, a
 		"cipher_suite", state.CipherSuite,
 		"alpn", state.NegotiatedProtocol)
 
+	return tlsConn, nil
+}
+
+func newUTLSClient(conn net.Conn, host string, profile *Profile) (*utls.UConn, error) {
+	cfg := &utls.Config{ServerName: host}
+	if profile.UsesChromeAuto() {
+		return utls.UClient(conn, cfg, utls.HelloChrome_Auto), nil
+	}
+	tlsConn := utls.UClient(conn, cfg, utls.HelloCustom)
+	if err := tlsConn.ApplyPreset(buildClientHelloSpecFromProfile(profile)); err != nil {
+		return nil, fmt.Errorf("apply TLS preset: %w", err)
+	}
 	return tlsConn, nil
 }
 

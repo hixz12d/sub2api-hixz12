@@ -33,8 +33,8 @@ const (
 	// codexFingerprintWindow 保留历史 UTC 8 小时、8 槽兼容算法；Phase 1
 	// 不改变其分桶结果，后续迁移阶段再决定废弃映射。
 	codexFingerprintWindow codexFingerprintMode = "window"
-	// codexFingerprintWindow40 保持 8 小时粘滞，将每个 UTC 日的 thread
-	// 预算提高到 40（13 + 14 + 13 个槽）。
+	// codexFingerprintWindow40 把共享账号收敛成最多 40 条普通 Codex 对话。
+	// 每条对话 session_id == thread_id，window_id 是同一次生成的 UUIDv7，不随 UTC 整点切换。
 	codexFingerprintWindow40 codexFingerprintMode = "window40"
 	// codexFingerprintFull 收敛所有标识：installation_id + session_id + thread_id。
 	// 仅为旧配置兼容保留，不作为新部署推荐模式。
@@ -44,8 +44,15 @@ const (
 const (
 	codexFingerprintModeExtraKey = "codex_fingerprint_mode"
 	codexFingerprintSeedExtraKey = "codex_fingerprint_seed"
-	codexThreadWindowHours       = 8
-	codexThreadWindowSlots       = 8
+	codexThreadWindowHours = 8
+	codexThreadWindowSlots = 8
+	codexWindow40Budget    = 40
+	// UUIDv7 稳定时间戳落在 2025-01-01 起的 600 天内，避免派生 ID 看起来像未来时间。
+	uuidv7StableOriginMS   = 1735689600000
+	uuidv7StableSpanMS     = 600 * 24 * 60 * 60 * 1000
+	// 官方桌面端普通对话的环境默认值；仅在客户端没带这些字段时补齐。
+	codexWindow40DefaultSandbox      = "danger-full-access"
+	codexWindow40DefaultThreadSource = "user"
 
 	codexSessionHeader       = "session-id"
 	legacyCodexSessionHeader = "session_id"
@@ -288,30 +295,63 @@ func resolveWindowThreadID(source any, clientSessionID string, now time.Time) st
 	))
 }
 
-func codexThreadWindow40Slots(now time.Time) int {
-	if now.UTC().Hour()/codexThreadWindowHours == 1 {
-		return 14
-	}
-	return 13
-}
-
-func resolveWindow40Slot(clientSeed string, now time.Time) int {
+func resolveWindow40Slot(clientSeed string) int {
 	if strings.TrimSpace(clientSeed) == "" {
 		return 0
 	}
 	hash := sha256.Sum256([]byte(clientSeed))
-	return int(binary.BigEndian.Uint64(hash[:8]) % uint64(codexThreadWindow40Slots(now)))
+	return int(binary.BigEndian.Uint64(hash[:8]) % uint64(codexWindow40Budget))
 }
 
-func resolveWindow40ThreadID(source any, clientSeed string, now time.Time) string {
-	seed, version := fingerprintDerivationSeed(source)
-	if seed == "" {
-		return ""
+func uuidv7TimestampMSFromSeed(seed string) uint64 {
+	h := sha256.Sum256([]byte(seed))
+	n := binary.BigEndian.Uint64(h[:8])
+	return uint64(uuidv7StableOriginMS) + (n % uint64(uuidv7StableSpanMS))
+}
+
+func formatUUIDBytes(b []byte) string {
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		binary.BigEndian.Uint32(b[0:4]),
+		binary.BigEndian.Uint16(b[4:6]),
+		binary.BigEndian.Uint16(b[6:8]),
+		binary.BigEndian.Uint16(b[8:10]),
+		b[10:16])
+}
+
+// deriveStableUUIDv7 用固定时间戳和种子熵生成稳定的 UUIDv7。
+// 同一时间戳的 session/window 看起来像官方客户端连续两次 Uuid::now_v7()。
+func deriveStableUUIDv7(timestampMS uint64, entropySeed string) string {
+	timestampMS &= 0xffffffffffff
+	h := sha256.Sum256([]byte(entropySeed))
+	var b [16]byte
+	b[0] = byte(timestampMS >> 40)
+	b[1] = byte(timestampMS >> 32)
+	b[2] = byte(timestampMS >> 24)
+	b[3] = byte(timestampMS >> 16)
+	b[4] = byte(timestampMS >> 8)
+	b[5] = byte(timestampMS)
+	b[6] = (h[0] & 0x0f) | 0x70
+	b[7] = h[1]
+	b[8] = (h[2] & 0x3f) | 0x80
+	copy(b[9:16], h[3:10])
+	return formatUUIDBytes(b[:])
+}
+
+func assignWindow40ConversationIDs(ids *codexFingerprintIDs, accountSeed, clientSeed string) {
+	if ids == nil {
+		return
 	}
-	return deriveStableUUIDv4(fmt.Sprintf(
-		"sub2api:codex-thread-id:%s-window40:%s:%s:%d",
-		version, seed, codexThreadWindowKey(now), resolveWindow40Slot(clientSeed, now),
-	))
+	accountSeed = strings.TrimSpace(accountSeed)
+	if accountSeed == "" {
+		return
+	}
+	slot := resolveWindow40Slot(clientSeed)
+	base := fmt.Sprintf("sub2api:codex-window40:v3:%s:%d", accountSeed, slot)
+	ts := uuidv7TimestampMSFromSeed(base)
+	ids.sessionID = deriveStableUUIDv7(ts, base+":session")
+	ids.threadID = ids.sessionID
+	// 官方客户端连续两次 Uuid::now_v7()，window 比 session 新 1ms。
+	ids.windowID = deriveStableUUIDv7(ts+1, base+":window")
 }
 
 // codexFingerprintIDs 收敛后的完整 ID 集合。
@@ -369,12 +409,10 @@ func resolveCodexFingerprintIDs(account *Account, clientSessionID string, mode c
 		return ids
 
 	case codexFingerprintWindow40:
-		ids.sessionID = resolveConvergedSessionID(seed)
-		ids.threadID = resolveWindow40ThreadID(seed, clientSessionID, now)
+		assignWindow40ConversationIDs(ids, seed, clientSessionID)
 		ids.turnID = uuid.Must(uuid.NewV7()).String()
 		ids.clientRequestID = ids.turnID
 		ids.protocolProfile = codexProtocolProfileName
-		ids.windowID = ids.threadID + ":0"
 		return ids
 
 	case codexFingerprintFull:
@@ -549,7 +587,9 @@ func resolveCodexFingerprintIDsFromContext(account *Account, c *gin.Context, cli
 	if mode == codexFingerprintWindow40 {
 		clientSessionID = combineCodexFingerprintSeed(codexFingerprintTenantSeed(c), clientSessionID)
 	}
-	return resolveCodexFingerprintIDs(account, clientSessionID, mode)
+	ids := resolveCodexFingerprintIDs(account, clientSessionID, mode)
+	adoptOfficialCodexInstallationID(account, clientHeaders, ids)
+	return ids
 }
 
 func codexFingerprintIDsFromContext(c *gin.Context) *codexFingerprintIDs {
@@ -676,6 +716,70 @@ func applyCodexFingerprintToRawBody(body []byte, ids *codexFingerprintIDs) ([]by
 	return json.Marshal(payload)
 }
 
+// codexFingerprintTurnRewriteFields 只改写身份字段。window40 不覆盖客户端已有的
+// sandbox/thread_source；缺省时再补官方桌面端普通用户的环境值。
+func codexFingerprintTurnRewriteFields(ids *codexFingerprintIDs) map[string]any {
+	if ids == nil {
+		return nil
+	}
+	fields := map[string]any{
+		"installation_id":         ids.installationID,
+		"session_id":              ids.sessionID,
+		"thread_id":               ids.threadID,
+		"turn_id":                 ids.turnID,
+		"window_id":               ids.windowID,
+		"turn_started_at_unix_ms": ids.turnStartedAtUnixMs,
+	}
+	if ids.mode != codexFingerprintWindow40 {
+		fields["sandbox"] = "seccomp"
+		fields["thread_source"] = "cli"
+	}
+	return fields
+}
+
+func codexMetadataFieldEmpty(v any) bool {
+	if v == nil {
+		return true
+	}
+	if s, ok := v.(string); ok {
+		return strings.TrimSpace(s) == ""
+	}
+	return false
+}
+
+func applyWindow40PersonaDefaults(dst map[string]any) {
+	if dst == nil {
+		return
+	}
+	if codexMetadataFieldEmpty(dst["sandbox"]) {
+		dst["sandbox"] = codexWindow40DefaultSandbox
+	}
+	if codexMetadataFieldEmpty(dst["thread_source"]) {
+		dst["thread_source"] = codexWindow40DefaultThreadSource
+	}
+}
+
+func mergeCodexTurnMetadataFields(metadata map[string]any, fields map[string]any, ids *codexFingerprintIDs) map[string]any {
+	if metadata == nil {
+		metadata = make(map[string]any)
+	}
+	for k, v := range fields {
+		metadata[k] = v
+	}
+	if ids != nil && ids.mode == codexFingerprintWindow40 {
+		applyWindow40PersonaDefaults(metadata)
+	}
+	return metadata
+}
+
+func encodeCodexTurnMetadata(metadata map[string]any) (string, bool) {
+	rebuilt, err := json.Marshal(metadata)
+	if err != nil {
+		return "", false
+	}
+	return string(rebuilt), true
+}
+
 // applyCodexFingerprintHeaders 按预计算的收敛 ID 改写出站 HTTP 头中的设备指纹。
 // 在 buildUpstreamRequest 的白名单透传之后、enforceCodexIdentityHeaders 之前调用。
 func applyCodexFingerprintHeaders(h http.Header, ids *codexFingerprintIDs) {
@@ -709,46 +813,55 @@ func applyCodexFingerprintHeaders(h http.Header, ids *codexFingerprintIDs) {
 		return
 	}
 
-	// session / window / full 模式：改写所有相关头
+	// session / window / window40 / full 模式：改写所有相关头
 	h.Set("x-codex-window-id", ids.windowID)
 	h.Set("x-client-request-id", ids.clientRequestID)
 	normalizeCodexOAuthHeaders(h, ids.sessionID, ids.threadID)
 	h.Set("conversation_id", ids.sessionID)
 
-	rewriteCodexTurnMetadataFields(h, map[string]any{
-		"installation_id":         ids.installationID,
-		"session_id":              ids.sessionID,
-		"thread_id":               ids.threadID,
-		"turn_id":                 ids.turnID,
-		"window_id":               ids.windowID,
-		"turn_started_at_unix_ms": ids.turnStartedAtUnixMs,
-		"sandbox":                 "seccomp",
-		"thread_source":           "cli",
-	})
+	if ids.mode == codexFingerprintWindow40 {
+		ensureCodexTurnMetadataHeader(h, ids)
+	} else {
+		rewriteCodexTurnMetadataFields(h, codexFingerprintTurnRewriteFields(ids))
+	}
 }
 
 // rewriteCodexTurnMetadataFields 解析 x-codex-turn-metadata 头中的 JSON，
 // 替换指定字段后回写。保留未指定字段原样（如 sandbox、thread_source 等）。
 func rewriteCodexTurnMetadataFields(h http.Header, fields map[string]any) {
+	writeCodexTurnMetadataHeader(h, fields, nil, false)
+}
+
+func ensureCodexTurnMetadataHeader(h http.Header, ids *codexFingerprintIDs) {
+	writeCodexTurnMetadataHeader(h, codexFingerprintTurnRewriteFields(ids), ids, true)
+}
+
+func writeCodexTurnMetadataHeader(h http.Header, fields map[string]any, ids *codexFingerprintIDs, synthesize bool) {
+	if h == nil {
+		return
+	}
 	raw := strings.TrimSpace(h.Get("x-codex-turn-metadata"))
-	if raw == "" {
-		return
-	}
 	var metadata map[string]any
-	if err := json.Unmarshal([]byte(raw), &metadata); err != nil {
-		// Explicit sanitize policy: malformed managed metadata is removed rather
-		// than being combined with a newly finalized outer identity.
-		deleteOpenAIHeaderEqualFold(h, "x-codex-turn-metadata")
-		return
+	if raw != "" {
+		if err := json.Unmarshal([]byte(raw), &metadata); err != nil {
+			// Explicit sanitize policy: malformed managed metadata is removed rather
+			// than being combined with a newly finalized outer identity.
+			deleteOpenAIHeaderEqualFold(h, "x-codex-turn-metadata")
+			if !synthesize {
+				return
+			}
+		}
 	}
-	for k, v := range fields {
-		metadata[k] = v
+	if metadata == nil {
+		if !synthesize {
+			return
+		}
+		metadata = make(map[string]any)
 	}
-	rebuilt, err := json.Marshal(metadata)
-	if err != nil {
-		return
+	metadata = mergeCodexTurnMetadataFields(metadata, fields, ids)
+	if encoded, ok := encodeCodexTurnMetadata(metadata); ok {
+		h.Set("x-codex-turn-metadata", encoded)
 	}
-	h.Set("x-codex-turn-metadata", string(rebuilt))
 }
 
 // applyCodexFingerprintClientMetadata 按预计算的收敛 ID 改写请求体中的 client_metadata。
@@ -780,7 +893,7 @@ func applyCodexFingerprintClientMetadata(reqBody map[string]any, ids *codexFinge
 		return modified
 	}
 
-	// session / window / full 模式
+	// session / window / window40 / full 模式
 	existing["session_id"] = ids.sessionID
 	existing["thread_id"] = ids.threadID
 	if ids.sessionID != "" {
@@ -788,19 +901,14 @@ func applyCodexFingerprintClientMetadata(reqBody map[string]any, ids *codexFinge
 	}
 	existing["turn_id"] = ids.turnID
 	existing["x-codex-window-id"] = ids.windowID
-	existing["sandbox"] = "seccomp"
-	existing["thread_source"] = "cli"
-
-	rewriteClientMetadataEmbeddedTurnMetadata(existing, map[string]any{
-		"installation_id":         ids.installationID,
-		"session_id":              ids.sessionID,
-		"thread_id":               ids.threadID,
-		"turn_id":                 ids.turnID,
-		"window_id":               ids.windowID,
-		"turn_started_at_unix_ms": ids.turnStartedAtUnixMs,
-		"sandbox":                 "seccomp",
-		"thread_source":           "cli",
-	})
+	if ids.mode == codexFingerprintWindow40 {
+		applyWindow40PersonaDefaults(existing)
+		ensureClientMetadataEmbeddedTurnMetadata(existing, ids)
+	} else {
+		existing["sandbox"] = "seccomp"
+		existing["thread_source"] = "cli"
+		rewriteClientMetadataEmbeddedTurnMetadata(existing, codexFingerprintTurnRewriteFields(ids))
+	}
 
 	reqBody["client_metadata"] = existing
 	return true
@@ -825,5 +933,23 @@ func rewriteClientMetadataEmbeddedTurnMetadata(clientMetadata map[string]any, fi
 	}
 	if rebuilt, err := json.Marshal(metadata); err == nil {
 		clientMetadata["x-codex-turn-metadata"] = string(rebuilt)
+	}
+}
+
+func ensureClientMetadataEmbeddedTurnMetadata(clientMetadata map[string]any, ids *codexFingerprintIDs) {
+	if clientMetadata == nil || ids == nil {
+		return
+	}
+	raw, _ := clientMetadata["x-codex-turn-metadata"].(string)
+	var metadata map[string]any
+	if strings.TrimSpace(raw) != "" {
+		if err := json.Unmarshal([]byte(raw), &metadata); err != nil {
+			delete(clientMetadata, "x-codex-turn-metadata")
+			metadata = nil
+		}
+	}
+	metadata = mergeCodexTurnMetadataFields(metadata, codexFingerprintTurnRewriteFields(ids), ids)
+	if encoded, ok := encodeCodexTurnMetadata(metadata); ok {
+		clientMetadata["x-codex-turn-metadata"] = encoded
 	}
 }

@@ -848,7 +848,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			return NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "upstream retry budget exhausted", reserveErr)
 		}
 		dialCtx, cancelDial := context.WithTimeout(ctx, s.openAIWSDialTimeout())
-		upstreamConn, statusCode, handshakeHeaders, err = dialer.Dial(dialCtx, wsURL, headers, proxyURL)
+		upstreamConn, statusCode, handshakeHeaders, err = dialer.Dial(dialCtx, wsURL, headers, proxyURL, resolveAccountTLSFingerprintProfile(account))
 		cancelDial()
 		if err == nil {
 			break
@@ -1075,6 +1075,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 				if identityErr != nil {
 					return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid Codex identity mode", identityErr)
 				}
+				s.persistLearnedCodexDeviceID(ctx, account, ids)
 				if c != nil {
 					c.Set("codex_fingerprint_ids", ids)
 				}

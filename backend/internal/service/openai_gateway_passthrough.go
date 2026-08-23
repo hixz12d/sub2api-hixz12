@@ -483,6 +483,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 		if identityErr != nil {
 			return nil, fmt.Errorf("finalize Codex OAuth passthrough identity: %w", identityErr)
 		}
+		s.persistLearnedCodexDeviceID(ctx, account, fingerprintIDs)
 		if c != nil {
 			c.Set("codex_fingerprint_ids", fingerprintIDs)
 		}

@@ -712,12 +712,12 @@ export default {
         codexCLIOnlyAppServer: '允许 Codex app-server 客户端',
         codexCLIOnlyAppServerDesc: '仅在上方开关开启时生效。开启后本账号额外放行内嵌 Codex 引擎、经 app-server 协议接入的第三方客户端（如 Claude Code 的 codex 插件），仍需通过全局引擎指纹门；与全局 app-server 开关取 OR（任一开即放行）。',
         codexFingerprintMode: 'Codex 指纹收敛',
-        codexFingerprintModeDesc: '默认「仅设备」：账号级 installation 保持稳定，客户端已有的 session/thread 原样保留；OpenCode 等只带自己会话头的 API 客户端会补齐 Codex 线头。需要更强收敛时再显式选择会话或时段池。40 Threads 时段池按 8 小时切换，每个 UTC 日最多 40 条；部分账号开启强收敛后出现过额度缩水，请按自己的实测结果选择。',
+        codexFingerprintModeDesc: '默认「仅设备」：账号级 installation 保持稳定，客户端已有的 session/thread 原样保留；OpenCode 等只带自己会话头的 API 客户端会补齐 Codex 线头。需要更强收敛时再显式选择会话或 40 会话预算。40 会话预算把共享账号压到最多 40 条普通对话（session 等于 thread），按租户/客户端粘滞，不再按 UTC 整点切换；部分账号开启强收敛后出现过额度缩水，请按自己的实测结果选择。',
         codexFingerprintOff: '关闭（透传）',
         codexFingerprintDevice: '仅设备',
         codexFingerprintSession: '设备+会话',
         codexFingerprintWindow: '时段粘滞池（24 Threads）',
-        codexFingerprintWindow40: '时段粘滞池（40 Threads，推荐）',
+        codexFingerprintWindow40: '40 会话预算（推荐）',
         codexFingerprintFull: '完全收敛',
         codexImageTool: 'Codex 图片桥接策略',
         codexImageToolDesc:
@@ -963,7 +963,7 @@ export default {
         },
         tlsFingerprint: {
           label: 'TLS 指纹模拟',
-          hint: '模拟 Node.js/Claude Code 客户端的 TLS 指纹',
+          hint: 'Anthropic 模拟 Claude Code / Node.js；OpenAI OAuth 默认模拟 Chrome / Electron，多人共用同一账号时不要改成每人一套',
           defaultProfile: '内置默认',
           randomProfile: '随机'
         },

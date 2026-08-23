@@ -495,9 +495,11 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	}
 	settings := s.resolvePoolSettings(isolation, accountConcurrency)
 	settings = s.applyProfilePoolSettings(settings, upstreamProfile)
-	// TLS 指纹客户端使用独立的缓存键，加 "tls:" 前缀
-	cacheKey := "tls:" + buildCacheKey(isolation, proxyKey, accountID, upstreamProtocolModeDefault)
-	poolKey := buildPoolKey(settings, upstreamProtocolModeDefault) + ":tls"
+	protocolMode := tlsFingerprintProtocolMode(upstreamProfile, profile, s.resolveProtocolMode(upstreamProfile, proxyKey, parsedProxy))
+	profileID := profile.CacheID()
+	// TLS 指纹客户端使用独立的缓存键，并按协议/预设隔离，避免 Chrome H2 与 Node H1 复用同一连接。
+	cacheKey := "tls:" + buildCacheKey(isolation, proxyKey, accountID, protocolMode) + ":" + profileID
+	poolKey := buildPoolKey(settings, protocolMode) + ":tls:" + profileID
 
 	now := time.Now()
 	nowUnix := now.UnixNano()
@@ -548,7 +550,7 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 
 	// 创建带 TLS 指纹的 Transport
 	slog.Debug("tls_fingerprint_creating_new_client", "account_id", accountID, "cache_key", cacheKey, "proxy", proxyKey)
-	transport, err := buildUpstreamTransportWithTLSFingerprint(settings, parsedProxy, profile)
+	transport, err := buildUpstreamRoundTripperWithTLSFingerprint(settings, parsedProxy, profile, protocolMode)
 	if err != nil {
 		s.mu.Unlock()
 		return nil, fmt.Errorf("build TLS fingerprint transport: %w", err)
@@ -560,9 +562,10 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	}
 
 	entry := &upstreamClientEntry{
-		client:   client,
-		proxyKey: proxyKey,
-		poolKey:  poolKey,
+		client:       client,
+		proxyKey:     proxyKey,
+		poolKey:      poolKey,
+		protocolMode: protocolMode,
 	}
 	atomic.StoreInt64(&entry.lastUsed, nowUnix)
 	if markInFlight {
@@ -1447,6 +1450,34 @@ func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *u
 	}
 
 	return transport, nil
+}
+
+func tlsFingerprintProtocolMode(upstreamProfile service.HTTPUpstreamProfile, profile *tlsfingerprint.Profile, resolved string) string {
+	if upstreamProfile == service.HTTPUpstreamProfileOpenAI && profile.UsesChromeAuto() {
+		return resolved
+	}
+	return upstreamProtocolModeDefault
+}
+
+func buildUpstreamRoundTripperWithTLSFingerprint(settings poolSettings, proxyURL *url.URL, profile *tlsfingerprint.Profile, protocolMode string) (http.RoundTripper, error) {
+	transport, err := buildUpstreamTransportWithTLSFingerprint(settings, proxyURL, profile)
+	if err != nil {
+		return nil, err
+	}
+	if !profile.UsesChromeAuto() || protocolMode != upstreamProtocolModeOpenAIH2 || transport.DialTLSContext == nil {
+		return transport, nil
+	}
+	return newUTLSHTTP2Transport(transport.DialTLSContext), nil
+}
+
+func newUTLSHTTP2Transport(dialTLS func(context.Context, string, string) (net.Conn, error)) *http2.Transport {
+	return &http2.Transport{
+		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+			return dialTLS(ctx, network, addr)
+		},
+		ReadIdleTimeout: openAIHTTP2ReadIdleTimeout,
+		PingTimeout:     openAIHTTP2PingTimeout,
+	}
 }
 
 // trackedBody 带跟踪功能的响应体包装器

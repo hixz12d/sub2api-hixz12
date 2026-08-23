@@ -444,6 +444,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if identityErr != nil {
 			return nil, fmt.Errorf("finalize Codex OAuth identity: %w", identityErr)
 		}
+		s.persistLearnedCodexDeviceID(ctx, account, fpIDs)
 		if c != nil {
 			c.Set("codex_fingerprint_ids", fpIDs)
 		}

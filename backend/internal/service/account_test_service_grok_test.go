@@ -562,7 +562,7 @@ type grokRealtimeTestDialer struct {
 	status    int
 }
 
-func (d *grokRealtimeTestDialer) Dial(_ context.Context, wsURL string, headers http.Header, proxyURL string) (openAIWSClientConn, int, http.Header, error) {
+func (d *grokRealtimeTestDialer) Dial(_ context.Context, wsURL string, headers http.Header, proxyURL string, _ *openAIWSTLSProfile) (openAIWSClientConn, int, http.Header, error) {
 	d.lastURL = wsURL
 	d.lastAuth = headers.Get("Authorization")
 	d.lastProxy = proxyURL

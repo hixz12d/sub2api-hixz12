@@ -3174,6 +3174,36 @@
         </div>
       </div>
 
+      <!-- OpenAI OAuth TLS：默认 Chrome/Electron，不按用户拆标签 -->
+      <div
+        v-if="form.platform === 'openai' && accountCategory === 'oauth-based'"
+        class="border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="flex items-center justify-between">
+          <div>
+            <label class="input-label mb-0">{{ t('admin.accounts.quotaControl.tlsFingerprint.label') }}</label>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.quotaControl.tlsFingerprint.hint') }}
+            </p>
+          </div>
+          <button
+            type="button"
+            @click="tlsFingerprintEnabled = !tlsFingerprintEnabled"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              tlsFingerprintEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                tlsFingerprintEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
+        </div>
+      </div>
+
       <!-- OpenAI Compact 能力配置 -->
       <div
         v-if="form.platform === 'openai' && (accountCategory === 'oauth-based' || accountCategory === 'apikey')"
@@ -4374,7 +4404,7 @@ const applyAccountCreateTemplateSnapshot = (
   codexCLIOnlyEnabled.value = next.codex_cli_only
   codexCLIOnlyAppServerEnabled.value = next.codex_cli_only_app_server
   codexFingerprintMode.value = next.codex_fingerprint_mode
-  tlsFingerprintEnabled.value = next.tls_fingerprint_enabled
+  tlsFingerprintEnabled.value = form.platform === 'openai' ? true : next.tls_fingerprint_enabled
   tlsFingerprintProfileId.value = next.tls_fingerprint_profile_id
 }
 
@@ -5071,7 +5101,7 @@ const resetForm = () => {
   rpmStrategy.value = 'tiered'
   rpmStickyBuffer.value = null
   userMsgQueueMode.value = ''
-  tlsFingerprintEnabled.value = false
+  tlsFingerprintEnabled.value = form.platform === 'openai'
   tlsFingerprintProfileId.value = null
   sessionIdMaskingEnabled.value = false
   cacheTTLOverrideEnabled.value = false
@@ -6617,7 +6647,9 @@ const handleAnthropicExchange = async (authCode: string) => {
     }
 
     // Add TLS fingerprint settings
-    if (tlsFingerprintEnabled.value) {
+    if (form.platform === 'openai' && form.type === 'oauth') {
+      extra.enable_tls_fingerprint = !!tlsFingerprintEnabled.value
+    } else if (tlsFingerprintEnabled.value) {
       extra.enable_tls_fingerprint = true
       if (tlsFingerprintProfileId.value) {
         extra.tls_fingerprint_profile_id = tlsFingerprintProfileId.value
@@ -6742,7 +6774,9 @@ const handleCookieAuth = async (sessionKey: string) => {
         }
 
         // Add TLS fingerprint settings
-        if (tlsFingerprintEnabled.value) {
+        if (form.platform === 'openai' && form.type === 'oauth') {
+          extra.enable_tls_fingerprint = !!tlsFingerprintEnabled.value
+        } else if (tlsFingerprintEnabled.value) {
           extra.enable_tls_fingerprint = true
           if (tlsFingerprintProfileId.value) {
             extra.tls_fingerprint_profile_id = tlsFingerprintProfileId.value
