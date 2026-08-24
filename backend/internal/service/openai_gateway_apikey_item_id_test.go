@@ -62,7 +62,6 @@ func TestOpenAIGatewayService_APIKeyPassthrough_StripsInvalidInputItemIDs(t *tes
 	require.Equal(t, "{}", gjson.GetBytes(forwarded, "input.1.arguments").String())
 	require.Equal(t, "msg_valid", gjson.GetBytes(forwarded, "input.2.id").String())
 	require.Equal(t, "fc_valid", gjson.GetBytes(forwarded, "input.3.id").String())
-	require.Equal(t, "fc_valid", gjson.GetBytes(forwarded, "input.3.id").String())
 	require.False(t, gjson.GetBytes(forwarded, "input.4.id").Exists())
 	require.Equal(t, "ctc_valid", gjson.GetBytes(forwarded, "input.5.id").String())
 	require.False(t, gjson.GetBytes(forwarded, "input.6.id").Exists())

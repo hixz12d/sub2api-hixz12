@@ -698,13 +698,13 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		return nil, false, persistentErr
 	}
 	accountID := req.StickyAccountID
-		clearBinding := func() {
-			if !req.PreserveStickyBinding {
-				_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
-			}
+	clearBinding := func() {
+		if !req.PreserveStickyBinding {
+			_ = s.service.deleteStickySessionAccountID(ctx, req.GroupID, sessionHash)
 		}
-		if persistentHit {
-			accountID = persistentBinding.AccountID
+	}
+	if persistentHit {
+		accountID = persistentBinding.AccountID
 	}
 	if accountID <= 0 {
 		var err error
@@ -748,35 +748,35 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 		account, err = s.service.accountRepo.GetByID(ctx, accountID)
 	}
 	if err != nil || account == nil {
-			if persistentStrong {
-				return nil, false, fmt.Errorf("%w: bound account %d unavailable", ErrOpenAIAffinityStateUnbound, accountID)
-			}
-			clearBinding()
-			return nil, false, nil
-		}
 		if persistentStrong {
-			if account.Status != StatusActive || !account.IsSchedulableForModel(req.RequestedModel) || account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() ||
-				(req.RequestedModel != "" && !account.IsModelSupported(req.RequestedModel)) ||
-				!account.SupportsOpenAIEndpointCapability(req.RequiredCapability) ||
-				!s.service.openAIAccountMatchesSchedulingGroup(account, req.GroupID) ||
-				!s.isAccountTransportCompatible(account, req.RequiredTransport) {
-				return nil, false, fmt.Errorf("%w: strong-bound account %d cannot continue request", ErrOpenAIAffinityStateUnbound, accountID)
-			}
-			result, acquireErr := s.service.tryAcquireAccountSlot(ctx, accountID, account.Concurrency)
-			if acquireErr != nil {
-				return nil, false, acquireErr
-			}
-			if result != nil && result.Acquired {
-				return &AccountSelectionResult{Account: account, Acquired: true, ReleaseFunc: result.ReleaseFunc}, false, nil
-			}
-			if s.service.concurrencyService != nil {
-				cfg := s.service.schedulingConfig()
-				return &AccountSelectionResult{Account: account, WaitPlan: &AccountWaitPlan{AccountID: accountID, MaxConcurrency: account.Concurrency, Timeout: cfg.StickySessionWaitTimeout, MaxWaiting: cfg.StickySessionMaxWaiting}}, false, nil
-			}
-			return nil, false, fmt.Errorf("%w: strong-bound account %d has no capacity", ErrOpenAIAffinityStateUnbound, accountID)
+			return nil, false, fmt.Errorf("%w: bound account %d unavailable", ErrOpenAIAffinityStateUnbound, accountID)
 		}
-		if shouldClearStickySession(account, req.RequestedModel) || account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() || !account.IsSchedulableForModel(req.RequestedModel) {
-			clearBinding()
+		clearBinding()
+		return nil, false, nil
+	}
+	if persistentStrong {
+		if account.Status != StatusActive || !account.IsSchedulableForModel(req.RequestedModel) || account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() ||
+			(req.RequestedModel != "" && !account.IsModelSupported(req.RequestedModel)) ||
+			!account.SupportsOpenAIEndpointCapability(req.RequiredCapability) ||
+			!s.service.openAIAccountMatchesSchedulingGroup(account, req.GroupID) ||
+			!s.isAccountTransportCompatible(account, req.RequiredTransport) {
+			return nil, false, fmt.Errorf("%w: strong-bound account %d cannot continue request", ErrOpenAIAffinityStateUnbound, accountID)
+		}
+		result, acquireErr := s.service.tryAcquireAccountSlot(ctx, accountID, account.Concurrency)
+		if acquireErr != nil {
+			return nil, false, acquireErr
+		}
+		if result != nil && result.Acquired {
+			return &AccountSelectionResult{Account: account, Acquired: true, ReleaseFunc: result.ReleaseFunc}, false, nil
+		}
+		if s.service.concurrencyService != nil {
+			cfg := s.service.schedulingConfig()
+			return &AccountSelectionResult{Account: account, WaitPlan: &AccountWaitPlan{AccountID: accountID, MaxConcurrency: account.Concurrency, Timeout: cfg.StickySessionWaitTimeout, MaxWaiting: cfg.StickySessionMaxWaiting}}, false, nil
+		}
+		return nil, false, fmt.Errorf("%w: strong-bound account %d has no capacity", ErrOpenAIAffinityStateUnbound, accountID)
+	}
+	if shouldClearStickySession(account, req.RequestedModel) || account.Platform != normalizeOpenAICompatiblePlatform(req.Platform) || !account.IsOpenAICompatible() || !account.IsSchedulableForModel(req.RequestedModel) {
+		clearBinding()
 		return nil, false, nil
 	}
 	if !s.isAccountRequestCompatible(ctx, account, req) {
@@ -807,19 +807,19 @@ func (s *defaultOpenAIAccountScheduler) selectBySessionHash(
 	}
 	// Free-tier soft gate: sticky session must not pin an over-quota free OAuth account.
 	// Admin QueryQuota / import probes do not use this path.
-		if !persistentStrong && account != nil && len(s.filterGrokFreeQuotaAccounts(ctx, []Account{*account})) == 0 {
-			clearBinding()
+	if !persistentStrong && account != nil && len(s.filterGrokFreeQuotaAccounts(ctx, []Account{*account})) == 0 {
+		clearBinding()
 		return nil, false, nil
 	}
 	// Team+model cool: sticky must not pin a sibling under the same team 429 window.
 	now := time.Now()
 	upstreamModel := canonicalOpenAIAccountSchedulingModel(account, req.RequestedModel)
-		if !persistentStrong && account != nil && isGrokTeamModelRateLimited(account, upstreamModel, now) {
-			clearBinding()
-			return nil, false, nil
-		}
-		if !persistentStrong && account != nil && isGrokModelQuotaBlocked(account.ID, upstreamModel, now) {
-			clearBinding()
+	if !persistentStrong && account != nil && isGrokTeamModelRateLimited(account, upstreamModel, now) {
+		clearBinding()
+		return nil, false, nil
+	}
+	if !persistentStrong && account != nil && isGrokModelQuotaBlocked(account.ID, upstreamModel, now) {
+		clearBinding()
 		return nil, false, nil
 	}
 	escapeCfg := s.service.openAIStickyEscapeConfig()
@@ -2674,32 +2674,32 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 	if requiredImageCapability == "" {
 		ctx = s.withOpenAIProfitControlGate(ctx, groupID)
 	}
-		platform = normalizeOpenAICompatiblePlatform(platform)
-		priorityMode, err := s.resolveOpenAIAccountPriorityMode(ctx, groupID)
-		if err != nil {
-			return nil, OpenAIAccountScheduleDecision{}, err
+	platform = normalizeOpenAICompatiblePlatform(platform)
+	priorityMode, err := s.resolveOpenAIAccountPriorityMode(ctx, groupID)
+	if err != nil {
+		return nil, OpenAIAccountScheduleDecision{}, err
+	}
+	decision := OpenAIAccountScheduleDecision{PrioritySource: priorityMode}
+	populateLegacyDecision := func(selection *AccountSelectionResult) {
+		if selection == nil || selection.Account == nil {
+			return
 		}
-		decision := OpenAIAccountScheduleDecision{PrioritySource: priorityMode}
-		populateLegacyDecision := func(selection *AccountSelectionResult) {
-			if selection == nil || selection.Account == nil {
-				return
-			}
-			decision.SelectedAccountID = selection.Account.ID
-			decision.SelectedAccountType = selection.Account.Type
-			if selection.stickySessionHit {
-				decision.Layer = openAIAccountScheduleLayerSessionSticky
-				decision.StickySessionHit = true
-			}
-			if priorityMode == OpenAIAccountPriorityModeBinding {
-				if priority, ok := openAIAccountBindingPriority(selection.Account, groupID); ok {
-					decision.SelectedBindingPriority = priority
-				}
+		decision.SelectedAccountID = selection.Account.ID
+		decision.SelectedAccountType = selection.Account.Type
+		if selection.stickySessionHit {
+			decision.Layer = openAIAccountScheduleLayerSessionSticky
+			decision.StickySessionHit = true
+		}
+		if priorityMode == OpenAIAccountPriorityModeBinding {
+			if priority, ok := openAIAccountBindingPriority(selection.Account, groupID); ok {
+				decision.SelectedBindingPriority = priority
 			}
 		}
-		preserveGuardianParentBinding := preserveOpenAIGuardianParentBinding(ctx, sessionHash)
-		guardianParentAccountID := int64(0)
-		if strings.TrimSpace(previousResponseID) == "" {
-			guardianParentAccountID = s.resolveOpenAIGuardianParentAccountID(ctx, groupID)
+	}
+	preserveGuardianParentBinding := preserveOpenAIGuardianParentBinding(ctx, sessionHash)
+	guardianParentAccountID := int64(0)
+	if strings.TrimSpace(previousResponseID) == "" {
+		guardianParentAccountID = s.resolveOpenAIGuardianParentAccountID(ctx, groupID)
 	}
 	scheduler := s.getOpenAIAccountScheduler(ctx)
 	if scheduler == nil {

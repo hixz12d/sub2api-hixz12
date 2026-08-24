@@ -2344,7 +2344,7 @@ func (s *OpenAIGatewayService) handlePassthroughSSEToJSON(resp *http.Response, c
 	}
 	responseID := extractOpenAIResponseIDFromJSONBytes(body)
 	if responseID != "" {
-		if bindErr := s.bindPersistentOpenAIResponse(ctx, c, account, responseID); bindErr != nil {
+		if bindErr := s.bindPersistentOpenAIResponse(c.Request.Context(), c, account, responseID); bindErr != nil {
 			return nil, fmt.Errorf("persist passthrough SSE-to-JSON ownership before output: %w", bindErr)
 		}
 	}

@@ -697,7 +697,6 @@ func TestOpenAIGatewayService_SelectAccountWithLoadAwareness_LegacyStickyWaitsOn
 		})
 	}
 }
-}
 
 func TestOpenAIGatewayService_SelectAccountWithScheduler_DefaultDisabled_RequiredWSV2_SkipsHTTPOnlyAccount(t *testing.T) {
 	resetOpenAIAdvancedSchedulerSettingCacheForTest()

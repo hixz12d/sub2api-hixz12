@@ -315,28 +315,6 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		eventStartsVisibleOutput = false
 		eventShouldFlush = false
 	}
-		sendErrorEvent := func(reason string) {
-			if errorEventSent || clientDisconnected || failureDelivered {
-				return
-			}
-			errorEventSent = true
-			payload := `{"type":"error","sequence_number":0,"error":{"type":"upstream_error","message":` + strconv.Quote(reason) + `,"code":` + strconv.Quote(reason) + `}}`
-			if err := flushBuffered(); err != nil {
-				clientDisconnected = true
-				return
-			}
-			if _, err := writePendingString("data: " + payload + "\n\n"); err != nil {
-				clientDisconnected = true
-				return
-			}
-			if err := flushBuffered(); err != nil {
-				clientDisconnected = true
-				return
-			}
-			clientOutputStarted = true
-			lastDownstreamWriteAt = time.Now()
-		}
-
 	needModelReplace := originalModel != mappedModel
 	streamOutputAccumulator := apicompat.NewBufferedResponseAccumulator()
 	streamDoneItems := newResponsesStreamOutputItems()
@@ -1737,21 +1715,21 @@ func (s *OpenAIGatewayService) handleSSEToJSON(resp *http.Response, c *gin.Conte
 
 func (s *OpenAIGatewayService) handleSSEToJSONWithAffinity(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, body []byte, originalModel, mappedModel string) (*openaiNonStreamingResult, error) {
 	bodyText := string(body)
-		fallbackCreatedAt := time.Now().Unix()
-		if account != nil && account.IsGrok() {
-			body = normalizeGrokResponsesSSEBodyForClient(body, fallbackCreatedAt)
-			bodyText = string(body)
+	fallbackCreatedAt := time.Now().Unix()
+	if account != nil && account.IsGrok() {
+		body = normalizeGrokResponsesSSEBodyForClient(body, fallbackCreatedAt)
+		bodyText = string(body)
+	}
+	terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)
+	if terminalOK && (terminalType == "response.failed" || terminalType == "error") {
+		msg := extractOpenAISSEErrorMessage(terminalPayload)
+		if msg == "" {
+			msg = "Upstream compact response failed"
 		}
-		terminalType, terminalPayload, terminalOK := extractOpenAISSETerminalEvent(bodyText)
-		if terminalOK && (terminalType == "response.failed" || terminalType == "error") {
-			msg := extractOpenAISSEErrorMessage(terminalPayload)
-			if msg == "" {
-				msg = "Upstream compact response failed"
-			}
-			if compactErr := newOpenAICompactFallbackSignal(c, terminalPayload, msg); compactErr != nil {
-				return nil, compactErr
-			}
-			return nil, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
+		if compactErr := newOpenAICompactFallbackSignal(c, terminalPayload, msg); compactErr != nil {
+			return nil, compactErr
+		}
+		return nil, s.writeOpenAINonStreamingProtocolError(resp, c, msg)
 	}
 	finalResponse, ok := extractCodexFinalResponse(bodyText)
 

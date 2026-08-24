@@ -181,7 +181,7 @@ func (s *OpenAIGatewayService) OpenGrokRealtime(ctx context.Context, account *Ac
 	if account.ProxyID != nil && account.Proxy != nil {
 		proxyURL = account.Proxy.URL()
 	}
-	conn, status, _, err := s.getOpenAIWSPassthroughDialer().Dial(ctx, u.String(), headers, proxyURL)
+	conn, status, _, err := s.getOpenAIWSPassthroughDialer().Dial(ctx, u.String(), headers, proxyURL, resolveAccountTLSFingerprintProfile(account))
 	if err != nil {
 		return nil, &GrokRealtimeDialError{StatusCode: status, Err: err}
 	}
@@ -287,7 +287,7 @@ func (s *OpenAIGatewayService) ProbeGrokRealtime(ctx context.Context, account *A
 		proxyURL = account.Proxy.URL()
 	}
 	dialer := s.getOpenAIWSPassthroughDialer()
-	conn, _, _, err := dialer.Dial(ctx, u.String(), headers, proxyURL)
+	conn, _, _, err := dialer.Dial(ctx, u.String(), headers, proxyURL, resolveAccountTLSFingerprintProfile(account))
 	if err != nil {
 		return err
 	}

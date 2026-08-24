@@ -1765,7 +1765,6 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			var rejectedFieldErr *openAIWSRejectedFieldRetryError
 			if errors.As(relayErr, &rejectedFieldErr) && rejectedFieldErr != nil && len(rejectedFieldErr.body) > 0 {
 				currentPayload = append([]byte(nil), rejectedFieldErr.body...)
-				currentPayloadBytes = len(currentPayload)
 				skipBeforeTurn = true
 				continue
 			}
@@ -1921,8 +1920,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		currentImageBillingModel = nextPayload.imageBillingModel
 		currentImageSizeTier = nextPayload.imageSizeTier
 		currentImageInputSize = nextPayload.imageInputSize
-			currentPayloadBytes = nextPayload.payloadBytes
-			rejectedFieldRetryState = newOpenAIResponsesRejectedFieldRetryState(currentPayload)
+		rejectedFieldRetryState = newOpenAIResponsesRejectedFieldRetryState(currentPayload)
 		storeDisabled = s.isOpenAIWSStoreDisabledInRequestRaw(currentPayload, account)
 		if !storeDisabled {
 			unpinSessionConn(sessionConnID)

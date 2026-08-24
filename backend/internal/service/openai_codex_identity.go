@@ -125,6 +125,27 @@ func codexClientVersionFromUA(ua string) string {
 	return version
 }
 
+type codexOutboundIdentity struct {
+	userAgent  string
+	originator string
+	version    string
+}
+
+// resolveCodexOutboundIdentity keeps the official models-sync helper on the
+// local outbound identity policy instead of the retired official pairing path.
+func resolveCodexOutboundIdentity(candidateUA string) codexOutboundIdentity {
+	var account *Account
+	if ua := strings.TrimSpace(candidateUA); ua != "" {
+		account = &Account{Platform: PlatformOpenAI, Credentials: map[string]any{"user_agent": ua}}
+	}
+	identity := resolveOpenAIOutboundIdentityWithPolicy(context.Background(), account, nil, nil, false, candidateUA)
+	return codexOutboundIdentity{
+		userAgent:  identity.UserAgent,
+		originator: identity.Originator,
+		version:    identity.Version,
+	}
+}
+
 // ensureCodexIdentityHeaders 补齐 OAuth（ChatGPT 内部接口）出站请求所需的 Codex 身份头。
 // 已有 User-Agent 与 version 保持不变，交给紧随其后的 enforceCodexIdentityHeaders 收口。
 func ensureCodexIdentityHeaders(h http.Header) {

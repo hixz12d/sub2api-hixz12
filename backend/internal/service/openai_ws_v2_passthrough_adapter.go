@@ -694,7 +694,6 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	requestModel := strings.TrimSpace(gjson.GetBytes(firstClientMessage, "model").String())
 	promptCacheKey := strings.TrimSpace(gjson.GetBytes(firstClientMessage, "prompt_cache_key").String())
 	requestPreviousResponseID := strings.TrimSpace(gjson.GetBytes(firstClientMessage, "previous_response_id").String())
-	promptCacheKey := strings.TrimSpace(gjson.GetBytes(firstClientMessage, "prompt_cache_key").String())
 	logOpenAIWSV2Passthrough(
 		"relay_start account_id=%d model=%s previous_response_id=%s first_message_type=%s first_message_bytes=%d",
 		account.ID,
@@ -1119,11 +1118,8 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			//     service_tier 时按 default 处理，billing 应如实反映。
 			if policyErr == nil && blocked == nil && isResponseCreate {
 				usageMeta.updateFromResponseCreate(out, model, requestModelForThisFrame)
-					_, actualModel := usageMeta.turnModels(requestModelForThisFrame)
-					SetOpsUpstreamModel(c, actualModel)
-					responseCreateAtCopy := responseCreateAt
-					acceptedTurnStartedAt.Store(&responseCreateAtCopy)
-
+				_, actualModel := usageMeta.turnModels(requestModelForThisFrame)
+				SetOpsUpstreamModel(c, actualModel)
 				acceptedTurn = true
 			}
 			if isResponseCreate && account.IsOpenAIOAuth() {
@@ -1197,7 +1193,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 		}
 	}
 
-		failureAccountSideEffectsApplied := false
+	failureAccountSideEffectsApplied := false
 	relayResult, relayExit := openaiwsv2.RunEntry(openaiwsv2.EntryInput{
 		Ctx:                ctx,
 		ClientConn:         policyClientConn,
@@ -1278,12 +1274,12 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 				}
 			},
 			AfterClientWrite: func(msgType coderws.MessageType, payload []byte, writeErr error) {
-					if writeErr == nil {
-						MarkOpenAIAttemptTransportCommitted(c)
-					}
-					if msgType == coderws.MessageText && writeErr == nil {
-						eventType, _, _ := parseOpenAIWSEventEnvelope(payload)
-						markOpenAIWSClientVisibleFailure(c, eventType, payload)
+				if writeErr == nil {
+					MarkOpenAIAttemptTransportCommitted(c)
+				}
+				if msgType == coderws.MessageText && writeErr == nil {
+					eventType, _, _ := parseOpenAIWSEventEnvelope(payload)
+					markOpenAIWSClientVisibleFailure(c, eventType, payload)
 				}
 				if msgType == coderws.MessageText && openAIWSPassthroughIsTerminalOutput(payload) {
 					turnLifecycle.finishTerminalWrite(writeErr == nil, clientFrameConn.markTurnCompleted)
