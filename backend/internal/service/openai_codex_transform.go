@@ -1567,13 +1567,12 @@ func isCodexToolCallItemType(typ string) bool {
 
 // isCodexToolCallInputType 仅匹配仍要求 fc 前缀的 call-input 类型（不含 output）。
 // 上游会校验 "Expected an ID that begins with 'fc'."。tool_search_call 使用独立的
-// tsc 前缀，见 shouldStripOpenAIResponsesInputItemID。
+// tsc 前缀，custom_tool_call 使用独立的 ctc 前缀，见 shouldStripOpenAIResponsesInputItemID。
 func isCodexToolCallInputType(typ string) bool {
 	switch typ {
 	case "function_call",
 		"tool_call",
 		"local_shell_call",
-		"custom_tool_call",
 		"mcp_tool_call":
 		return true
 	default:

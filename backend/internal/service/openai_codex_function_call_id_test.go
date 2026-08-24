@@ -109,6 +109,49 @@ func TestFilterCodexInput_StripsFcIDFromToolSearchCall_WhenPreservingReferences(
 	require.Equal(t, "fc_search2", good["call_id"])
 }
 
+// TestFilterCodexInput_StripsFcIDFromCustomToolCall_WhenPreservingReferences
+// verifies that custom_tool_call items keep ctc* ids but drop replayed fc_* ids.
+// OpenAI upstream requires custom_tool_call ids to begin with "ctc" and rejects
+// fc_* with 400: "Expected an ID that begins with 'ctc'."
+func TestFilterCodexInput_StripsFcIDFromCustomToolCall_WhenPreservingReferences(t *testing.T) {
+	input := []any{
+		map[string]any{
+			"type":    "custom_tool_call",
+			"id":      "fc_04da631661f928f7016a87b53bdba887d09b0939bcf3231f90",
+			"call_id": "fc_custom",
+			"name":    "exec",
+			"input":   "dir",
+		},
+		map[string]any{
+			"type":    "custom_tool_call",
+			"id":      "ctc_validID123",
+			"call_id": "fc_custom2",
+			"name":    "exec",
+			"input":   "pwd",
+		},
+	}
+
+	filtered := filterCodexInputWithOptions(input, codexInputFilterOptions{
+		PreserveReferences: true,
+	})
+
+	require.Len(t, filtered, 2)
+
+	bad, ok := filtered[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "custom_tool_call", bad["type"])
+	_, hasID := bad["id"]
+	require.False(t, hasID, "fc_* id should be stripped from custom_tool_call")
+	require.Equal(t, "fc_custom", bad["call_id"], "call_id must be preserved")
+	require.Equal(t, "exec", bad["name"])
+	require.Equal(t, "dir", bad["input"])
+
+	good, ok := filtered[1].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "ctc_validID123", good["id"], "valid ctc* id must be preserved")
+	require.Equal(t, "fc_custom2", good["call_id"])
+}
+
 // TestFilterCodexInput_StripsItemIDFromAllToolCallInputTypes verifies that
 // item_* ids are stripped from all call-input types (not output types).
 func TestFilterCodexInput_StripsItemIDFromAllToolCallInputTypes(t *testing.T) {

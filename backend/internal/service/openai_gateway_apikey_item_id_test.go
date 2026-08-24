@@ -42,7 +42,9 @@ func TestOpenAIGatewayService_APIKeyPassthrough_StripsInvalidInputItemIDs(t *tes
 			{"type":"function_call_output","id":"item_output","call_id":"call_123","output":"done"},
 			{"type":"web_search_call","id":"item_unconstrained"},
 			{"type":"tool_search_call","id":"fc_0bc1462075ce15c2016a87cb89e73887d085f05d00654737da","call_id":"call_search","arguments":{"query":"subagent"}},
-			{"type":"tool_search_call","id":"tsc_valid","call_id":"call_search2","arguments":{"query":"github"}}
+			{"type":"tool_search_call","id":"tsc_valid","call_id":"call_search2","arguments":{"query":"github"}},
+			{"type":"custom_tool_call","id":"fc_04da631661f928f7016a87b53bdba887d09b0939bcf3231f90","call_id":"call_custom","name":"exec","input":"dir"},
+			{"type":"custom_tool_call","id":"ctc_valid","call_id":"call_custom2","name":"exec","input":"pwd"}
 		]
 	}`)
 
@@ -66,6 +68,9 @@ func TestOpenAIGatewayService_APIKeyPassthrough_StripsInvalidInputItemIDs(t *tes
 	require.False(t, gjson.GetBytes(forwarded, "input.6.id").Exists(), "fc_* id should be stripped from tool_search_call")
 	require.Equal(t, "call_search", gjson.GetBytes(forwarded, "input.6.call_id").String())
 	require.Equal(t, "tsc_valid", gjson.GetBytes(forwarded, "input.7.id").String(), "valid tsc* id must be preserved")
+	require.False(t, gjson.GetBytes(forwarded, "input.8.id").Exists(), "fc_* id should be stripped from custom_tool_call")
+	require.Equal(t, "call_custom", gjson.GetBytes(forwarded, "input.8.call_id").String())
+	require.Equal(t, "ctc_valid", gjson.GetBytes(forwarded, "input.9.id").String(), "valid ctc* id must be preserved")
 }
 
 // TestOpenAIGatewayService_APIKeyPassthrough_StripsInvalidReasoningItemIDs
@@ -129,6 +134,10 @@ func TestShouldStripOpenAIResponsesInputItemID_Reasoning(t *testing.T) {
 		{"tool_search_call fc id", "tool_search_call", "fc_0bc1462075ce15c2016a87cb89e73887d085f05d00654737da", true},
 		{"tool_search_call item id", "tool_search_call", "item_x", true},
 		{"tool_search_call empty id", "tool_search_call", "", false},
+		{"custom_tool_call ctc id", "custom_tool_call", "ctc_abc123", false},
+		{"custom_tool_call fc id", "custom_tool_call", "fc_04da631661f928f7016a87b53bdba887d09b0939bcf3231f90", true},
+		{"custom_tool_call item id", "custom_tool_call", "item_x", true},
+		{"custom_tool_call empty id", "custom_tool_call", "", false},
 		{"unconstrained type", "web_search_call", "ws_001", false},
 	}
 	for _, tc := range cases {
