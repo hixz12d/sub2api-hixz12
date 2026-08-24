@@ -132,12 +132,12 @@ func TestOpenAIAgentIdentityPassthroughUsesAccountFingerprintAndStripsPromptCach
 	require.NoError(t, err)
 	require.Equal(t, "AgentAssertion", strings.SplitN(req.Header.Get("Authorization"), " ", 2)[0])
 	require.Equal(t, "account-agent-passthrough", req.Header.Get("chatgpt-account-id"))
-	agentSessionID := isolateOpenAISessionID(0, "client-session")
-	agentConversationID := isolateOpenAISessionID(0, "client-conversation")
-	require.Equal(t, agentSessionID, req.Header.Get(codexSessionHeader))
-	require.Equal(t, agentConversationID, req.Header.Get("conversation_id"))
-	require.NotEqual(t, "client-session", agentSessionID)
-	require.NotEqual(t, "client-conversation", agentSessionID)
+		agentSessionID := isolateOpenAISessionID(0, "client-session")
+		agentConversationID := isolateOpenAISessionID(0, "client-conversation")
+		require.Equal(t, agentSessionID, req.Header.Get(codexSessionHeader))
+		require.Equal(t, agentConversationID, req.Header.Get("conversation_id"))
+		require.NotEqual(t, "client-session", agentSessionID)
+		require.NotEqual(t, "client-conversation", agentSessionID)
 	requestBody, err := io.ReadAll(req.Body)
 	require.NoError(t, err)
 	require.Equal(t, agentSessionID, gjson.GetBytes(requestBody, "prompt_cache_key").String())
@@ -150,7 +150,7 @@ func TestOpenAIAgentIdentityPassthroughUsesAccountFingerprintAndStripsPromptCach
 		Platform: PlatformOpenAI,
 		Type:     AccountTypeOAuth,
 		Credentials: map[string]any{
-			"chatgpt_account_id": "account-oauth-passthrough",
+			"chatgpt_account_id": "account-agent-passthrough",
 		},
 	}
 	oauthRecorder := httptest.NewRecorder()

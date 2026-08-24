@@ -430,7 +430,7 @@ func TestOpenAIGatewayService_BuildOpenAIWSHeadersUsesAPIKeyLegacySessionContrac
 	require.Empty(t, headers.Get("X-Test"))
 }
 
-func TestOpenAIGatewayService_BuildOpenAIWSHeadersDeviceModePreservesThreadAndIsolatesSession(t *testing.T) {
+func TestOpenAIGatewayService_BuildOpenAIWSHeadersDeviceModePreservesNamespacedClientSessionIdentity(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	rec := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(rec)
@@ -465,10 +465,10 @@ func TestOpenAIGatewayService_BuildOpenAIWSHeadersDeviceModePreservesThreadAndIs
 	require.NoError(t, err)
 	require.Equal(t, ids.installationID, headers.Get("x-codex-installation-id"))
 	require.NotEqual(t, "client-installation", headers.Get("x-codex-installation-id"))
-	require.Equal(t, "client-window", headers.Get("x-codex-window-id"))
-	require.Equal(t, svc.openAIOutboundSessionID(account, 0, "client-session"), headers.Get("session-id"))
-	require.Equal(t, "client-thread", headers.Get("thread-id"))
-	require.Empty(t, headers.Get("x-client-request-id"))
+		require.Equal(t, "client-window", headers.Get("x-codex-window-id"))
+		require.Equal(t, svc.openAIOutboundSessionID(account, 0, "client-session"), headers.Get("session-id"))
+		require.Equal(t, "client-thread", headers.Get("thread-id"))
+		require.Empty(t, headers.Get("x-client-request-id"))
 }
 
 func TestLogOpenAIWSBindResponseAccountWarn(t *testing.T) {
@@ -799,13 +799,13 @@ func TestOpenAIGatewayService_Forward_WSv2_OAuthStoreFalseByDefault(t *testing.T
 	require.Equal(t, "native-wsv2", gjson.Get(requestJSON, "input.0.namespace").String(), "OAuth WSv2 应保留原生 namespace")
 	require.Equal(t, openAIWSBetaV2Value, captureDialer.lastHeaders.Get("OpenAI-Beta"))
 	require.Equal(t, "remote_compaction_v2", captureDialer.lastHeaders.Get("x-codex-beta-features"))
-	expectedSessionID := isolateOpenAISessionID(0, "sess-oauth-1")
-	expectedConversationID := isolateOpenAISessionID(0, "conv-oauth-1")
-	require.Equal(t, expectedSessionID, captureDialer.lastHeaders.Get(codexSessionHeader))
-	require.Empty(t, captureDialer.lastHeaders.Get(legacyCodexSessionHeader))
-	require.Empty(t, gjson.Get(requestJSON, "client_metadata.session_id").String())
-	require.Equal(t, expectedSessionID, gjson.Get(requestJSON, "prompt_cache_key").String())
-	require.Equal(t, expectedConversationID, captureDialer.lastHeaders.Get("conversation_id"))
+		expectedSessionID := isolateOpenAISessionID(0, "sess-oauth-1")
+		expectedConversationID := isolateOpenAISessionID(0, "conv-oauth-1")
+		require.Equal(t, expectedSessionID, captureDialer.lastHeaders.Get(codexSessionHeader))
+		require.Empty(t, captureDialer.lastHeaders.Get(legacyCodexSessionHeader))
+		require.Empty(t, gjson.Get(requestJSON, "client_metadata.session_id").String())
+		require.Equal(t, expectedSessionID, gjson.Get(requestJSON, "prompt_cache_key").String())
+		require.Equal(t, expectedConversationID, captureDialer.lastHeaders.Get("conversation_id"))
 }
 
 func TestOpenAIGatewayService_Forward_WSv2_OAuthOriginatorCompatibility(t *testing.T) {
@@ -1025,10 +1025,10 @@ func TestOpenAIGatewayService_Forward_WSv2_HeaderSessionFallbackFromPromptCacheK
 	require.NotNil(t, result)
 	require.Equal(t, "resp_prompt_cache_key", result.RequestID)
 
-	// Unset fingerprint mode is off: prompt_cache_key remains stable and becomes
-	// the isolated session-id fallback, without fabricating conversation_id.
-	require.Equal(t, svc.openAIOutboundSessionID(account, 0, "pcache_123"), captureDialer.lastHeaders.Get(codexSessionHeader))
-	require.Empty(t, captureDialer.lastHeaders.Get(legacyCodexSessionHeader))
+		// Unset fingerprint mode is off: prompt_cache_key remains stable and becomes
+		// the isolated session-id fallback, without fabricating conversation_id.
+		require.Equal(t, svc.openAIOutboundSessionID(account, 0, "pcache_123"), captureDialer.lastHeaders.Get(codexSessionHeader))
+		require.Empty(t, captureDialer.lastHeaders.Get(legacyCodexSessionHeader))
 	require.Empty(t, captureDialer.lastHeaders.Get("conversation_id"))
 	require.NotNil(t, captureConn.lastWrite)
 	requestJSON := requestToJSONString(captureConn.lastWrite)
@@ -1910,13 +1910,13 @@ func (c *openAIWSCaptureConn) WriteJSON(ctx context.Context, value any) error {
 		c.writes = append(c.writes, cloneMapStringAny(payload))
 	case json.RawMessage:
 		var parsed map[string]any
-		if err := json.Unmarshal(payload, &parsed); err == nil {
+		if err := decodeOpenAIJSONUseNumber(payload, &parsed); err == nil {
 			c.lastWrite = cloneMapStringAny(parsed)
 			c.writes = append(c.writes, cloneMapStringAny(parsed))
 		}
 	case []byte:
 		var parsed map[string]any
-		if err := json.Unmarshal(payload, &parsed); err == nil {
+		if err := decodeOpenAIJSONUseNumber(payload, &parsed); err == nil {
 			c.lastWrite = cloneMapStringAny(parsed)
 			c.writes = append(c.writes, cloneMapStringAny(parsed))
 		}

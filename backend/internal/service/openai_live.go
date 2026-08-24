@@ -334,7 +334,7 @@ func (s *OpenAIGatewayService) createUpstreamLiveCall(
 		logLiveCreateStageFailure(ctx, account.ID, "egress", err)
 		return nil, err
 	}
-	resp, err := s.httpUpstream.Do(upstreamReq, proxyURL, account.ID, account.Concurrency)
+	resp, err := s.doOpenAIUpstream(upstreamReq, proxyURL, account)
 	if err != nil {
 		logLiveCreateStageFailure(ctx, account.ID, "upstream_transport", err)
 		return nil, err

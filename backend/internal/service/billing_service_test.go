@@ -1179,7 +1179,7 @@ func TestCalculateCostWithLongContext_PropagatesError(t *testing.T) {
 func TestGetModelPricing_Grok45OfficialFallback(t *testing.T) {
 	svc := newTestBillingService()
 
-	for _, model := range []string{"grok", "grok-latest", "grok-4.5", "grok-4.5-latest"} {
+	for _, model := range []string{"grok-4.5", "grok-4.5-latest"} {
 		model := model
 		t.Run(model, func(t *testing.T) {
 			pricing, err := svc.GetModelPricing(model)
@@ -1189,6 +1189,17 @@ func TestGetModelPricing_Grok45OfficialFallback(t *testing.T) {
 			require.InDelta(t, 0.3e-6, pricing.CacheReadPricePerToken, 1e-12)
 			require.False(t, pricing.SupportsCacheBreakdown)
 		})
+	}
+}
+
+func TestGetModelPricing_GrokBareAliasesUseGrok46(t *testing.T) {
+	svc := newTestBillingService()
+	for _, model := range []string{"grok", "grok-latest"} {
+		pricing, err := svc.GetModelPricing(model)
+		require.NoError(t, err)
+		require.InDelta(t, 2e-6, pricing.InputPricePerToken, 1e-12)
+		require.InDelta(t, 0.5e-6, pricing.CacheReadPricePerToken, 1e-12)
+		require.InDelta(t, 6e-6, pricing.OutputPricePerToken, 1e-12)
 	}
 }
 
@@ -1238,6 +1249,26 @@ func TestCalculateCost_Grok46LongContextStartsAt200KPromptTokens(t *testing.T) {
 	require.InDelta(t, 1000*12e-6, atThreshold.OutputCost, 1e-12)
 	require.True(t, atThreshold.LongContextBillingApplied)
 }
+
+func TestGetModelPricing_GrokOfficialFamilyCards(t *testing.T) {
+	svc := newTestBillingService()
+	for _, tc := range []struct {
+		model                 string
+		input, cached, output float64
+	}{
+		{"grok-4.3", 1.25e-6, 0.2e-6, 2.5e-6},
+		{"grok-4.20-0309-reasoning", 1.25e-6, 0.2e-6, 2.5e-6},
+		{"grok-build-0.1", 1e-6, 0.2e-6, 2e-6},
+	} {
+		p, err := svc.GetModelPricing(tc.model)
+		require.NoError(t, err, tc.model)
+		require.InDelta(t, tc.input, p.InputPricePerToken, 1e-12)
+		require.InDelta(t, tc.cached, p.CacheReadPricePerToken, 1e-12)
+		require.InDelta(t, tc.output, p.OutputPricePerToken, 1e-12)
+		require.Equal(t, 200000, p.LongContextInputThreshold)
+	}
+}
+
 func TestCalculateCostUnified_GroupLongContextToggleUsesPresetLadder(t *testing.T) {
 	svc := newTestBillingService()
 	resolver := NewModelPricingResolver(nil, svc)
@@ -1281,9 +1312,9 @@ func TestCalculateCostUnified_Grok46OfficialLadderIgnoresGroupOptOut(t *testing.
 	require.True(t, cost.LongContextBillingApplied)
 }
 
-func TestGetModelPricing_UnknownGrokTextFallsBackToGrok45(t *testing.T) {
+func TestGetModelPricing_UnknownGrokTextFallsBackToGrok46(t *testing.T) {
 	svc := newTestBillingService()
-	baseline, err := svc.GetModelPricing("grok-4.5")
+	baseline, err := svc.GetModelPricing("grok-4.6")
 	require.NoError(t, err)
 
 	for _, model := range []string{"grok-5", "grok-5-latest", "x-ai/grok-7", "grok-4.7-beta"} {

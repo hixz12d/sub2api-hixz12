@@ -22,6 +22,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	c *gin.Context,
 	account *Account,
 	reqBody map[string]any,
+	clientPromptCacheKey string,
 	token string,
 	decision OpenAIWSProtocolDecision,
 	isCodexCLI bool,
@@ -73,7 +74,15 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 	payloadStrategy, removedKeys := applyOpenAIWSRetryPayloadStrategy(payload, attempt)
 	previousResponseID := openAIWSPayloadString(payload, "previous_response_id")
 	previousResponseIDKind := ClassifyOpenAIPreviousResponseIDKind(previousResponseID)
-	promptCacheKey := rawPromptCacheKey
+	promptCacheKey := strings.TrimSpace(rawPromptCacheKey)
+	if promptCacheKey == "" {
+		promptCacheKey = strings.TrimSpace(clientPromptCacheKey)
+	}
+	if promptCacheKey == "" {
+		// Fingerprint convergence may inject a default key when the client did
+		// not send one; retain that fallback without replacing an explicit raw key.
+		promptCacheKey = openAIWSPayloadString(payload, "prompt_cache_key")
+	}
 	_, hasTools := payload["tools"]
 	debugEnabled := isOpenAIWSModeDebugEnabled()
 	payloadBytes := -1
@@ -592,8 +601,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 					message = corrected
 				}
 			}
+			message = restoreCodexToolNamesFromContext(c, message)
 		}
-		if openAIWSEventShouldParseUsage(eventType) {
+		if openAIWSMessageShouldParseUsage(eventType, message) {
 			parseOpenAIWSResponseUsageFromCompletedEvent(message, usage)
 		}
 		imageCounter.AddSSEData(message)
@@ -711,6 +721,9 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 
 		if isTerminalEvent {
+			if !clientDisconnected {
+				markOpenAIWSClientVisibleFailure(c, eventType, message)
+			}
 			upstreamTerminalEvent = s.handleOpenAIWSTerminalTransientFailure(ctx, account, mappedModel, lease.HandshakeHeaders(), message)
 			// A terminal event must be the final JSON document in its WS message.
 			// Ignore any tail for the completed client turn, but never reuse the
@@ -789,9 +802,10 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		UpstreamModel:                 mappedModel,
 		UpstreamResponseModel:         responseModelObserver.Model(),
 		UpstreamResponseModelConflict: responseModelObserver.Conflict(),
+		UpstreamResponseServiceTier:   responseModelObserver.ServiceTier(),
 		ImageCount:                    imageCounter.Count(),
 		ImageOutputSizes:              imageCounter.Sizes(),
-		ServiceTier:                   extractOpenAIServiceTier(reqBody),
+		ServiceTier:                   resolvedOpenAIUpstreamServiceTierFromObserver(responseModelObserver, extractOpenAIServiceTier(reqBody)),
 		ReasoningEffort:               extractOpenAIReasoningEffort(reqBody, mappedModel, originalModel),
 		Stream:                        reqStream,
 		OpenAIWSMode:                  true,
