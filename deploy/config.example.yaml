@@ -312,6 +312,10 @@ gateway:
   # Docker 用户可将宿主机文件挂载到 /app/data/codex-instructions.md.tmpl，
   # 然后把本字段指向该路径。
   forced_codex_instructions_template_file: ""
+  # Account-level Super-Instruct bridge file (hot-reloaded by mtime).
+  # Only applied when account.extra.super_instruct=true. Empty disables the feature.
+  # Docker: mount host bridge to /app/data/super-instruct/bridge.md and set this path.
+  super_instruct_bridge_file: ""
   # OpenAI 透传模式是否放行客户端超时头（如 x-stainless-timeout）
   # 默认 false：过滤超时头，降低上游提前断流风险。
   openai_passthrough_allow_timeout_headers: false

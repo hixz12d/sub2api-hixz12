@@ -569,6 +569,11 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				markDecodedModified()
 			}
 		}
+		// Account-level Super-Instruct whitelist (extra.super_instruct=true).
+		// Applied after Codex transform so bridge sits on final instructions.
+		if applyAccountSuperInstructBridgeFromConfig(decoded, account, resolveSuperInstructBridgeFile(s.cfg)) {
+			markDecodedModified()
+		}
 	}
 
 	if !SupportsVerbosity(upstreamModel) && gjson.GetBytes(body, "text.verbosity").Exists() {

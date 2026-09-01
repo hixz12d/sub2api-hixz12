@@ -1025,6 +1025,9 @@ type GatewayConfig struct {
 	// ForcedCodexInstructionsTemplate: 启动时从模板文件读取并缓存的模板内容。
 	// 该字段不直接参与配置反序列化，仅用于请求热路径避免重复读盘。
 	ForcedCodexInstructionsTemplate string `mapstructure:"-"`
+	// SuperInstructBridgeFile: 账号级 Super-Instruct bridge 文本路径（热加载）。
+	// 仅当账号 extra.super_instruct=true 时注入到 Codex instructions；默认空=功能关闭。
+	SuperInstructBridgeFile string `mapstructure:"super_instruct_bridge_file"`
 	// OpenAIPassthroughAllowTimeoutHeaders: OpenAI 透传模式是否放行客户端超时头
 	// 关闭（默认）可避免 x-stainless-timeout 等头导致上游提前断流。
 	OpenAIPassthroughAllowTimeoutHeaders bool `mapstructure:"openai_passthrough_allow_timeout_headers"`
@@ -1942,6 +1945,7 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 		}
 		cfg.Gateway.ForcedCodexInstructionsTemplate = string(content)
 	}
+	cfg.Gateway.SuperInstructBridgeFile = strings.TrimSpace(cfg.Gateway.SuperInstructBridgeFile)
 
 	// 兼容旧键 gateway.disable_codex_originator_normalization：语义已被
 	// disable_codex_identity_enforcement 取代（身份改写升级为强制统一出口），
@@ -2633,6 +2637,7 @@ func setDefaults() {
 // unmarshal, exactly as before.
 func setEnvReachableDefaults() {
 	viper.SetDefault("gateway.forced_codex_instructions_template_file", "")
+	viper.SetDefault("gateway.super_instruct_bridge_file", "")
 	viper.SetDefault("gateway.session_idle_timeout_minutes", 0)
 	viper.SetDefault("gateway.user_message_queue.mode", "")
 	viper.SetDefault("update.proxy_url", "")
