@@ -36,6 +36,10 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	ctx = s.snapshotOpenAIOutboundIdentity(ctx, account, c.GetHeader("User-Agent"))
 	beginUpstreamResponseModelObservation(c)
 	EnsureOpenAIRetryBudget(c, account, body)
+	ClearActualOpenAIUpstreamEndpoint(c)
+	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
+		SetActualOpenAIUpstreamEndpoint(c, "/v1/chat/completions")
+	}
 	setCodexToolNameReverse(c, nil)
 	if _, err := s.prepareCodexAccountIdentitySource(ctx, c, account); err != nil {
 		return nil, err
@@ -232,8 +236,8 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		if codexResult.PromptCacheKey != "" {
 			promptCacheKey = codexResult.PromptCacheKey
 		}
-			applyCodexAccountIdentityClientMetadataMap(reqBody, codexAccountIdentitySource(c, account), apiKeyID)
-			delete(reqBody, "prompt_cache_key")
+		applyCodexAccountIdentityClientMetadataMap(reqBody, codexAccountIdentitySource(c, account), apiKeyID)
+		delete(reqBody, "prompt_cache_key")
 		if shouldAutoInjectPromptCacheKeyForCompat(upstreamModel) {
 			compatTurnState = s.getOpenAICompatSessionTurnState(ctx, c, account, promptCacheKey)
 		}
@@ -347,26 +351,26 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		return nil, fmt.Errorf("build upstream request: %w", err)
 	}
 
-		// API-key compatibility paths retain their legacy cache-key session header;
-		// OAuth identity is finalized in buildUpstreamRequest so prompt_cache_key
-		// and any client-provided session header share one boundary.
-		if account.Platform != PlatformGrok && account.Type != AccountTypeOAuth && promptCacheKey != "" {
-			isolatedSessionID := generateSessionUUID(isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), promptCacheKey))
-			upstreamReq.Header.Set(legacyCodexSessionHeader, isolatedSessionID)
+	// API-key compatibility paths retain their legacy cache-key session header;
+	// OAuth identity is finalized in buildUpstreamRequest so prompt_cache_key
+	// and any client-provided session header share one boundary.
+	if account.Platform != PlatformGrok && account.Type != AccountTypeOAuth && promptCacheKey != "" {
+		isolatedSessionID := generateSessionUUID(isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), promptCacheKey))
+		upstreamReq.Header.Set(legacyCodexSessionHeader, isolatedSessionID)
 		if upstreamReq.Header.Get("conversation_id") != "" {
 			upstreamReq.Header.Set("conversation_id", isolatedSessionID)
 		}
 	}
-		if account.Type == AccountTypeOAuth && account.Platform != PlatformGrok {
-			// Preserve the bridge-specific beta declaration, then run the same final
-			// identity boundary used by Responses, passthrough and WS.
-			upstreamReq.Header.Set("OpenAI-Beta", codexHTTPBetaValue)
-		}
-		if compatTurnState != "" && upstreamReq.Header.Get("x-codex-turn-state") == "" {
-			upstreamReq.Header.Set("x-codex-turn-state", compatTurnState)
-		}
-		if account.Type == AccountTypeOAuth && account.Platform != PlatformGrok {
-			s.finalizeCodexOAuthHeaders(ctx, c, account, upstreamReq.Header, codexFingerprintIDsFromContext(c), promptCacheKey)
+	if account.Type == AccountTypeOAuth && account.Platform != PlatformGrok {
+		// Preserve the bridge-specific beta declaration, then run the same final
+		// identity boundary used by Responses, passthrough and WS.
+		upstreamReq.Header.Set("OpenAI-Beta", codexHTTPBetaValue)
+	}
+	if compatTurnState != "" && upstreamReq.Header.Get("x-codex-turn-state") == "" {
+		upstreamReq.Header.Set("x-codex-turn-state", compatTurnState)
+	}
+	if account.Type == AccountTypeOAuth && account.Platform != PlatformGrok {
+		s.finalizeCodexOAuthHeaders(ctx, c, account, upstreamReq.Header, codexFingerprintIDsFromContext(c), promptCacheKey)
 		logger.L().Debug("openai messages: upstream identity restored",
 			zap.Int64("account_id", account.ID),
 			zap.String("upstream_model", upstreamModel),
@@ -395,10 +399,10 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 				return nil, fmt.Errorf("build grok retry request: %w", err)
 			}
 		}
-			if reserveErr := ReserveOpenAIUpstreamAttempt(c, account.ID); reserveErr != nil {
-				return nil, reserveErr
-			}
-			resp, err = s.doOpenAIUpstream(upstreamReq, proxyURL, account)
+		if reserveErr := ReserveOpenAIUpstreamAttempt(c, account.ID); reserveErr != nil {
+			return nil, reserveErr
+		}
+		resp, err = s.doOpenAIUpstream(upstreamReq, proxyURL, account)
 		if err != nil {
 			transportErr := s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 			RecordOpenAIRetryFailure(c, 0, transportErr)
@@ -623,7 +627,7 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 		}
 		message := openAICompatFailedResponseMessage(finalResponse)
 		if openAIStreamFailedEventShouldFailover(payload, message) {
-			return nil, s.newOpenAIStreamFailoverError(c, account, false, requestID, payload, message, resp.Header)
+			return nil, s.newOpenAIStreamFailoverErrorWithModel(c, account, false, requestID, payload, message, upstreamModel, resp.Header)
 		}
 		message = s.recordOpenAIStreamUpstreamError(c, account, false, requestID, "http_error", payload, message)
 		// 统一走语义状态推断 + body 归一化（与 /v1/responses 路径一致），
@@ -1065,7 +1069,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 					shouldFailover = openAIStreamErrorEventShouldFailover(payloadBytes, message)
 				}
 				if !clientOutputStarted && shouldFailover {
-					streamFailoverErr = s.newOpenAIStreamFailoverError(c, account, false, requestID, payloadBytes, message, resp.Header)
+					streamFailoverErr = s.newOpenAIStreamFailoverErrorWithModel(c, account, false, requestID, payloadBytes, message, upstreamModel, resp.Header)
 					return true
 				}
 				message = s.recordOpenAIStreamUpstreamError(c, account, false, requestID, "http_error", payloadBytes, message)
