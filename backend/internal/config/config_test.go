@@ -424,6 +424,20 @@ func TestLoadOpenAIAccountScopedIdentityDefaultEnabled(t *testing.T) {
 	require.True(t, cfg.Gateway.OpenAIAccountScopedIdentity.Enabled)
 }
 
+func TestLoadOpenAIAffinitySecretFromEnv(t *testing.T) {
+	resetViperWithJWTSecret(t)
+	secret := strings.Repeat("a", 32)
+	t.Setenv("GATEWAY_OPENAI_AFFINITY_ENABLED", "true")
+	t.Setenv("GATEWAY_OPENAI_AFFINITY_WRITES_ENABLED", "false")
+	t.Setenv("GATEWAY_OPENAI_AFFINITY_SECRET", secret)
+
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.True(t, cfg.Gateway.OpenAIAffinity.Enabled)
+	require.False(t, cfg.Gateway.OpenAIAffinity.WritesEnabled)
+	require.Equal(t, secret, cfg.Gateway.OpenAIAffinity.Secret)
+}
+
 func TestLoadOpenAIAccountScopedIdentityFromEnv(t *testing.T) {
 	resetViperWithJWTSecret(t)
 	t.Setenv("GATEWAY_OPENAI_ACCOUNT_SCOPED_IDENTITY_ENABLED", "true")

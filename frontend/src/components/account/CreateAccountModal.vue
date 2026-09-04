@@ -3842,6 +3842,7 @@ import {
   type CodexRelaySettingsValue,
   createDefaultCodexRelaySettings,
   serializeCodexRelaySettingsToExtra,
+  mapCodexRelayApiError,
 } from '@/components/account/codexRelaySchema'
 import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import GroupSelector from '@/components/common/GroupSelector.vue'
@@ -5131,7 +5132,7 @@ const submitCreateAccount = async (payload: CreateAccountRequest) => {
       })
       return
     }
-    appStore.showError(error.response?.data?.message || error.response?.data?.detail || t('admin.accounts.failedToCreate'))
+    appStore.showError(mapCodexRelayApiError(error, t) || error.response?.data?.message || error.response?.data?.detail || t('admin.accounts.failedToCreate'))
   } finally {
     submitting.value = false
   }

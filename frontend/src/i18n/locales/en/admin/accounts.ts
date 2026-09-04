@@ -689,6 +689,7 @@ export default {
         codexRelayShadowEnabledDesc: 'Run dual-track comparison and divergence sampling in the background without affecting client responses.',
         codexRelayKernelRequiresV2: 'Enabling Relay Kernel requires v2 session identity policy',
         codexRelayKernelRequiresManagedFingerprint: 'Codex fingerprint convergence cannot be disabled when Relay Kernel is active',
+        codexRelaySecretMissing: 'Relay Kernel needs a global identity derivation secret (gateway.openai_affinity.secret or jwt.secret, at least 32 bytes). This instance is missing it, so the mode cannot be saved.',
         codexImageTool: 'Codex image bridge policy',
         codexImageToolDesc:
           'Controls the hosted image_generation bridge and client-declared image tools on Codex /responses text requests. Hosted auto-injection applies only to non-Responses Lite requests. Account policy takes precedence over channel and global settings; standalone image-generation endpoints are unaffected.',

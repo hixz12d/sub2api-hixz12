@@ -7,11 +7,30 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
 
 const testCodexRelaySecret = "test-codex-relay-secret-at-least-32-bytes"
+
+func TestResolveCodexIdentityDerivationSecretFallsBackToJWT(t *testing.T) {
+	require.Empty(t, ResolveCodexIdentityDerivationSecret(nil))
+
+	cfg := &config.Config{}
+	require.Empty(t, ResolveCodexIdentityDerivationSecret(cfg))
+
+	cfg.JWT.Secret = "short"
+	require.Empty(t, ResolveCodexIdentityDerivationSecret(cfg))
+
+	cfg.JWT.Secret = testCodexRelaySecret
+	require.Equal(t, testCodexRelaySecret, ResolveCodexIdentityDerivationSecret(cfg))
+
+	affinitySecret := "affinity-secret-at-least-32-bytes!!"
+	cfg.Gateway.OpenAIAffinity.Secret = affinitySecret
+	require.Equal(t, affinitySecret, ResolveCodexIdentityDerivationSecret(cfg))
+}
 
 func TestCodexIdentityDeriverNamespaceSeparationAndStability(t *testing.T) {
 	deriver, err := NewCodexIdentityDeriver(testCodexRelaySecret)

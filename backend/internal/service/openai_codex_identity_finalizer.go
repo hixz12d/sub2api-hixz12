@@ -149,8 +149,9 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthIdentity(
 	if err != nil {
 		return nil, infraerrors.Newf(http.StatusBadRequest, "OPENAI_CODEX_RELAY_SETTINGS_INVALID", "%v", err)
 	}
-	if s == nil || s.cfg == nil || strings.TrimSpace(s.cfg.Gateway.OpenAIAffinity.Secret) == "" {
-		return nil, infraerrors.New(http.StatusInternalServerError, "OPENAI_CODEX_RELAY_SECRET_MISSING", "relay kernel requires gateway.openai_affinity.secret")
+	derivationSecret := ResolveCodexIdentityDerivationSecret(s.cfg)
+	if _, err := NewCodexIdentityDeriver(derivationSecret); err != nil {
+		return nil, infraerrors.New(http.StatusInternalServerError, "OPENAI_CODEX_RELAY_SECRET_MISSING", "relay kernel requires gateway.openai_affinity.secret or jwt.secret with at least 32 bytes")
 	}
 	if c == nil || c.Request == nil {
 		return nil, infraerrors.New(http.StatusInternalServerError, "OPENAI_CODEX_REQUEST_PLAN_MISSING", "relay kernel requires a request plan")
@@ -174,7 +175,7 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthIdentity(
 		}
 		routeKey = current.RouteKey
 	}
-	deriver, err := NewCodexIdentityDeriver(s.cfg.Gateway.OpenAIAffinity.Secret)
+	deriver, err := NewCodexIdentityDeriver(derivationSecret)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +195,7 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthIdentity(
 		EgressRoute:            routeKey,
 		TransportConfigVersion: fmt.Sprintf("tls:%d", account.GetTLSFingerprintProfileID()),
 	}
-	state, err := FinalizeCodexAttempt(plan, attemptInput, s.cfg.Gateway.OpenAIAffinity.Secret)
+	state, err := FinalizeCodexAttempt(plan, attemptInput, derivationSecret)
 	if err != nil {
 		return nil, err
 	}

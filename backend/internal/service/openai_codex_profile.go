@@ -408,7 +408,7 @@ func ValidateCodexRelayAccountExtra(platform, accountType string, extra map[stri
 	}
 	if settings.Mode == CodexRelayModeKernel || settings.ShadowEnabled {
 		if _, err := NewCodexIdentityDeriver(derivationSecret); err != nil {
-			return infraerrors.BadRequest("CODEX_RELAY_SECRET_INVALID", err.Error())
+			return infraerrors.BadRequest("CODEX_RELAY_SECRET_INVALID", "gateway.openai_affinity.secret or jwt.secret must contain at least 32 bytes")
 		}
 	}
 	return nil

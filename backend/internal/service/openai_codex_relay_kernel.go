@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/config"
 )
 
 const (
@@ -63,6 +65,25 @@ func NewCodexIdentityDeriver(secret string) (*CodexIdentityDeriver, error) {
 	deriver.macs.New = func() any { return hmac.New(sha256.New, deriver.secret) }
 	deriver.buffers.New = func() any { return new([512]byte) }
 	return deriver, nil
+}
+
+// ResolveCodexIdentityDerivationSecret returns the HMAC secret used by Relay Kernel.
+// gateway.openai_affinity.secret is preferred; jwt.secret is a stable fallback so
+// dual-instance deployments that already share JWT can enable Relay Kernel without
+// a second independently configured secret.
+func ResolveCodexIdentityDerivationSecret(cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+	secret := strings.TrimSpace(cfg.Gateway.OpenAIAffinity.Secret)
+	if len([]byte(secret)) >= openAIAffinityMinSecretBytes {
+		return secret
+	}
+	fallback := strings.TrimSpace(cfg.JWT.Secret)
+	if len([]byte(fallback)) >= openAIAffinityMinSecretBytes {
+		return fallback
+	}
+	return secret
 }
 
 func (d *CodexIdentityDeriver) digest(namespace string, parts ...string) [sha256.Size]byte {

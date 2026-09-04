@@ -771,6 +771,7 @@ export default {
         codexRelayShadowEnabledDesc: '在后端异步执行新旧路径的双轨对照与行为差异采样观测，不影响当前主请求返回。',
         codexRelayKernelRequiresV2: '启用 Relay Kernel 必须使用 v2 会话身份策略',
         codexRelayKernelRequiresManagedFingerprint: '启用 Relay Kernel 时，Codex 指纹收敛不可关闭',
+        codexRelaySecretMissing: '启用 Relay Kernel 需要全局身份派生密钥（gateway.openai_affinity.secret 或 jwt.secret，至少 32 字节）。当前实例未配置，无法保存该模式。',
         codexImageTool: 'Codex 图片桥接策略',
         codexImageToolDesc:
           '统一控制 Codex /responses 文本请求的 hosted image_generation 桥接和客户端图片工具声明。hosted 工具自动注入仅适用于非 Responses Lite 请求；账号级策略优先于渠道和全局配置，不影响独立图片生成接口。',

@@ -4,6 +4,7 @@ import {
   createDefaultCodexRelaySettings,
   extractCodexRelaySettingsFromExtra,
   serializeCodexRelaySettingsToExtra,
+  mapCodexRelayApiError,
   validateCodexRelayState,
   type CodexRelayFormState
 } from '../codexRelaySchema'
@@ -106,5 +107,11 @@ describe('codexRelaySchema', () => {
     expect(ids).toContain('codex_desktop')
     expect(ids).toContain('opencode')
     expect(ids).toContain('pi')
+  })
+
+  it('maps relay secret API errors to the operator-facing warning', () => {
+    expect(mapCodexRelayApiError({ reason: 'CODEX_RELAY_SECRET_INVALID' }, dummyT)).toBe('admin.accounts.openai.codexRelaySecretMissing')
+    expect(mapCodexRelayApiError({ response: { data: { reason: 'OPENAI_CODEX_RELAY_SECRET_MISSING' } } }, dummyT)).toBe('admin.accounts.openai.codexRelaySecretMissing')
+    expect(mapCodexRelayApiError({ message: 'unrelated' }, dummyT)).toBeNull()
   })
 })

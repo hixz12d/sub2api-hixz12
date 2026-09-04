@@ -2400,10 +2400,7 @@ func (h *OpenAIGatewayHandler) prepareCodexRequestPlan(
 	if isOpenAIRemoteCompactPath(c) {
 		operation = service.CodexOperationCompact
 	}
-	derivationSecret := ""
-	if h.cfg != nil {
-		derivationSecret = h.cfg.Gateway.OpenAIAffinity.Secret
-	}
+	derivationSecret := service.ResolveCodexIdentityDerivationSecret(h.cfg)
 	plan, err := service.NewCodexRequestPlan(service.CodexRequestPlanInput{
 		LogicalRequestID:   logicalRequestID,
 		SessionHash:        sessionHash,

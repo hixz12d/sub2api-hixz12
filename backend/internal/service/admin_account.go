@@ -470,7 +470,7 @@ func (s *adminServiceImpl) codexRelayDerivationSecret() string {
 	if s == nil || s.cfg == nil {
 		return ""
 	}
-	return s.cfg.Gateway.OpenAIAffinity.Secret
+	return ResolveCodexIdentityDerivationSecret(s.cfg)
 }
 
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {

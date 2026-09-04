@@ -329,6 +329,14 @@ gateway:
   # openai_account_scoped_identity_enabled can disable one-account canaries.
   openai_account_scoped_identity:
     enabled: true
+  # Codex Relay Kernel HMAC secret. Disabled by default. If secret is empty,
+  # Relay Kernel falls back to jwt.secret when that value is at least 32 bytes.
+  # Codex Relay Kernel HMAC 密钥；默认关闭。secret 为空时，若 jwt.secret 至少 32 字节则作为稳定回退。
+  # 环境变量：GATEWAY_OPENAI_AFFINITY_SECRET
+  openai_affinity:
+    enabled: false
+    writes_enabled: false
+    secret: ""
   # ChatGPT Frameless Live 单会话硬上限（秒）。
   live:
     max_session_duration_seconds: 3600

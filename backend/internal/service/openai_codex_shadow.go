@@ -79,7 +79,8 @@ func (s *OpenAIGatewayService) compareCodexRelayShadowForRequest(account *Accoun
 			)
 		}
 	}()
-	if s == nil || s.cfg == nil || strings.TrimSpace(s.cfg.Gateway.OpenAIAffinity.Secret) == "" {
+	derivationSecret := ResolveCodexIdentityDerivationSecret(s.cfg)
+	if _, err := NewCodexIdentityDeriver(derivationSecret); err != nil {
 		comparison.ErrorCategory = "missing_secret"
 		return
 	}
@@ -97,7 +98,7 @@ func (s *OpenAIGatewayService) compareCodexRelayShadowForRequest(account *Accoun
 		comparison.ErrorCategory = "invalid_identity_mode"
 		return
 	}
-	deriver, err := NewCodexIdentityDeriver(s.cfg.Gateway.OpenAIAffinity.Secret)
+	deriver, err := NewCodexIdentityDeriver(derivationSecret)
 	if err != nil {
 		comparison.ErrorCategory = "invalid_secret"
 		return
@@ -116,7 +117,7 @@ func (s *OpenAIGatewayService) compareCodexRelayShadowForRequest(account *Accoun
 		FingerprintMode:        string(mode),
 		AttemptNumber:          0,
 		TransportConfigVersion: "tls:" + strconv.FormatInt(account.GetTLSFingerprintProfileID(), 10),
-	}, s.cfg.Gateway.OpenAIAffinity.Secret)
+	}, derivationSecret)
 	if err != nil {
 		comparison.ErrorCategory = "v2_finalize_failed"
 		return

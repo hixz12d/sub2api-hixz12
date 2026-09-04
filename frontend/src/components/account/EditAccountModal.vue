@@ -2982,6 +2982,7 @@ import {
   createDefaultCodexRelaySettings,
   extractCodexRelaySettingsFromExtra,
   serializeCodexRelaySettingsToExtra,
+  mapCodexRelayApiError,
 } from '@/components/account/codexRelaySchema'
 import OllamaCloudUsageSettings from '@/components/account/OllamaCloudUsageSettings.vue'
 import {
@@ -4835,7 +4836,7 @@ const submitUpdateAccount = async (accountID: number, updatePayload: Record<stri
       }
       return
     }
-    appStore.showError(error.message || t('admin.accounts.failedToUpdate'))
+    appStore.showError(mapCodexRelayApiError(error, t) || error.message || t('admin.accounts.failedToUpdate'))
   } finally {
     submitting.value = false
   }
@@ -5579,7 +5580,7 @@ const handleSubmit = async () => {
 
     await submitUpdateAccount(accountID, updatePayload)
   } catch (error: any) {
-    appStore.showError(error.message || t('admin.accounts.failedToUpdate'))
+    appStore.showError(mapCodexRelayApiError(error, t) || error.message || t('admin.accounts.failedToUpdate'))
   }
 }
 

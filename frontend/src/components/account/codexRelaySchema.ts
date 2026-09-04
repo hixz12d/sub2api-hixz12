@@ -195,3 +195,19 @@ export function serializeCodexRelayToExtra(
     delete targetExtra.codex_fingerprint_mode
   }
 }
+
+export function mapCodexRelayApiError(
+  error: {
+    reason?: string
+    code?: string | number
+    message?: string
+    response?: { data?: { reason?: string; code?: string | number; message?: string } }
+  } | null | undefined,
+  t: (key: string) => string
+): string | null {
+  const reason = String(error?.reason || error?.code || error?.response?.data?.reason || error?.response?.data?.code || '')
+  if (reason === 'CODEX_RELAY_SECRET_INVALID' || reason === 'OPENAI_CODEX_RELAY_SECRET_MISSING') {
+    return t('admin.accounts.openai.codexRelaySecretMissing')
+  }
+  return null
+}

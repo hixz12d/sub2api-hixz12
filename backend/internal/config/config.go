@@ -2641,6 +2641,14 @@ func setEnvReachableDefaults() {
 	viper.SetDefault("gateway.session_idle_timeout_minutes", 0)
 	viper.SetDefault("gateway.user_message_queue.mode", "")
 	viper.SetDefault("update.proxy_url", "")
+	viper.SetDefault("gateway.openai_affinity.enabled", false)
+	viper.SetDefault("gateway.openai_affinity.writes_enabled", false)
+	viper.SetDefault("gateway.openai_affinity.secret", "")
+	viper.SetDefault("gateway.openai_affinity.response_ttl_hours", 0)
+	viper.SetDefault("gateway.openai_affinity.strong_ttl_hours", 0)
+	viper.SetDefault("gateway.openai_affinity.explicit_ttl_hours", 0)
+	viper.SetDefault("gateway.openai_affinity.weak_ttl_minutes", 0)
+	viper.SetDefault("gateway.openai_affinity.refresh_min_interval_seconds", 0)
 
 	// sticky_escape_enabled is the one exception to the zero-value rule: its
 	// effective default is true, applied post-unmarshal via a viper.IsSet guard.
