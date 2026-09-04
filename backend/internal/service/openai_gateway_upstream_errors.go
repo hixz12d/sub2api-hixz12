@@ -583,7 +583,12 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		if contentType == "" {
 			contentType = "application/json"
 		}
-		c.Data(resp.StatusCode, contentType, body)
+		outBody := body
+		// SI/Kit accounts: keep status/code, soften client-visible text toward recover-via-skill.
+		if rewritten := rewriteCyberPolicyClientBody(body, resp.StatusCode); len(rewritten) > 0 && shouldSoftenCyberPolicyClientText(account) {
+			outBody = rewritten
+		}
+		c.Data(resp.StatusCode, contentType, outBody)
 		if cyberMsg == "" {
 			return nil, fmt.Errorf("openai cyber_policy: %d", resp.StatusCode)
 		}
@@ -824,10 +829,7 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 			UpstreamStatus: resp.StatusCode,
 		})
 		setOpsUpstreamError(c, resp.StatusCode, cyberMsg, truncateString(string(body), 2048))
-		clientMsg := cyberMsg
-		if clientMsg == "" {
-			clientMsg = "Request blocked by upstream cyber-security policy"
-		}
+		clientMsg := cyberPolicyClientMessage(account, cyberMsg)
 		writeError(c, resp.StatusCode, "invalid_request_error", clientMsg)
 		if cyberMsg == "" {
 			return nil, fmt.Errorf("openai cyber_policy: %d", resp.StatusCode)

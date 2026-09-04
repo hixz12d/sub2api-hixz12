@@ -2,6 +2,8 @@ package service
 
 import (
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -13,25 +15,41 @@ import (
 //
 // Default is off. Enable per account with extra.super_instruct=true.
 // Optional extra.super_instruct_mode: "prepend" (default) | "replace".
-// Bridge text is loaded from gateway.super_instruct_bridge_file with mtime hot-reload.
+// Optional extra.super_instruct_profile: selects bridge file under profiles/.
+//
+//	empty | default | super-instruct → gateway.super_instruct_bridge_file
+//	portable-kit | <name> → <bridgeDir>/profiles/<name>.md
+//
+// Bridge text is loaded with mtime hot-reload (per path).
 const (
-	SuperInstructExtraKey     = "super_instruct"
-	SuperInstructModeExtraKey = "super_instruct_mode"
-	SuperInstructModePrepend  = "prepend"
-	SuperInstructModeReplace  = "replace"
+	SuperInstructExtraKey        = "super_instruct"
+	SuperInstructModeExtraKey    = "super_instruct_mode"
+	SuperInstructProfileExtraKey = "super_instruct_profile"
+	SuperInstructModePrepend     = "prepend"
+	SuperInstructModeReplace     = "replace"
 
-	// superInstructMarker is used to avoid double-injecting the same bridge.
-	superInstructMarker = "[Super-Instruct"
+	SuperInstructProfileDefault       = "default"
+	SuperInstructProfileSuperInstruct = "super-instruct"
+	SuperInstructProfilePortableKit   = "portable-kit"
+
+	// Markers used to avoid double-injecting any known bridge profile.
+	superInstructMarkerSI  = "[Super-Instruct"
+	superInstructMarkerKit = "[Portable-Kit"
 
 	superInstructBridgeReloadMinInterval = 2 * time.Second
 )
 
+var superInstructProfileNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
+
+type superInstructBridgeCacheEntry struct {
+	text      string
+	modTime   time.Time
+	checkedAt time.Time
+}
+
 var (
-	superInstructBridgeMu        sync.Mutex
-	superInstructBridgePath      string
-	superInstructBridgeText      string
-	superInstructBridgeModTime   time.Time
-	superInstructBridgeCheckedAt time.Time
+	superInstructBridgeMu    sync.Mutex
+	superInstructBridgeCache = map[string]*superInstructBridgeCacheEntry{}
 )
 
 // IsSuperInstructEnabled reports whether this account opted into bridge injection.
@@ -56,8 +74,29 @@ func (a *Account) SuperInstructMode() string {
 	return SuperInstructModePrepend
 }
 
+// SuperInstructProfile returns the sanitized profile name for bridge selection.
+// Empty / default / super-instruct all mean the primary bridge.md.
+func (a *Account) SuperInstructProfile() string {
+	if a == nil {
+		return SuperInstructProfileDefault
+	}
+	raw := strings.ToLower(strings.TrimSpace(a.GetExtraString(SuperInstructProfileExtraKey)))
+	if raw == "" || raw == SuperInstructProfileDefault || raw == SuperInstructProfileSuperInstruct {
+		return SuperInstructProfileDefault
+	}
+	if !superInstructProfileNameRe.MatchString(raw) {
+		return SuperInstructProfileDefault
+	}
+	return raw
+}
+
+func instructionsAlreadyInjected(existing string) bool {
+	return strings.Contains(existing, superInstructMarkerSI) ||
+		strings.Contains(existing, superInstructMarkerKit)
+}
+
 // loadSuperInstructBridgeText reads bridge text from path with a short-interval
-// mtime cache. On read errors it keeps the last good content (if any).
+// mtime cache (per path). On read errors it keeps the last good content (if any).
 func loadSuperInstructBridgeText(path string) string {
 	path = strings.TrimSpace(path)
 	if path == "" {
@@ -68,41 +107,59 @@ func loadSuperInstructBridgeText(path string) string {
 	superInstructBridgeMu.Lock()
 	defer superInstructBridgeMu.Unlock()
 
-	if path == superInstructBridgePath &&
-		!superInstructBridgeCheckedAt.IsZero() &&
-		now.Sub(superInstructBridgeCheckedAt) < superInstructBridgeReloadMinInterval {
-		return superInstructBridgeText
+	entry := superInstructBridgeCache[path]
+	if entry != nil &&
+		!entry.checkedAt.IsZero() &&
+		now.Sub(entry.checkedAt) < superInstructBridgeReloadMinInterval {
+		return entry.text
 	}
-	superInstructBridgeCheckedAt = now
-	superInstructBridgePath = path
+	if entry == nil {
+		entry = &superInstructBridgeCacheEntry{}
+		superInstructBridgeCache[path] = entry
+	}
+	entry.checkedAt = now
 
 	info, err := os.Stat(path)
 	if err != nil {
-		return superInstructBridgeText
+		return entry.text
 	}
-	if !superInstructBridgeModTime.IsZero() &&
-		info.ModTime().Equal(superInstructBridgeModTime) &&
-		superInstructBridgeText != "" {
-		return superInstructBridgeText
+	if !entry.modTime.IsZero() &&
+		info.ModTime().Equal(entry.modTime) &&
+		entry.text != "" {
+		return entry.text
 	}
 
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return superInstructBridgeText
+		return entry.text
 	}
-	superInstructBridgeText = string(raw)
-	superInstructBridgeModTime = info.ModTime()
-	return superInstructBridgeText
+	entry.text = string(raw)
+	entry.modTime = info.ModTime()
+	return entry.text
 }
 
 // resetSuperInstructBridgeCacheForTest clears the package cache (unit tests only).
 func resetSuperInstructBridgeCacheForTest() {
 	superInstructBridgeMu.Lock()
 	defer superInstructBridgeMu.Unlock()
-	superInstructBridgePath = ""
-	superInstructBridgeText = ""
-	superInstructBridgeModTime = time.Time{}
-	superInstructBridgeCheckedAt = time.Time{}
+	superInstructBridgeCache = map[string]*superInstructBridgeCacheEntry{}
+}
+
+// resolveAccountSuperInstructBridgePath picks bridge.md or profiles/<name>.md.
+func resolveAccountSuperInstructBridgePath(account *Account, defaultBridgeFile string) string {
+	defaultBridgeFile = strings.TrimSpace(defaultBridgeFile)
+	if defaultBridgeFile == "" {
+		return ""
+	}
+	profile := SuperInstructProfileDefault
+	if account != nil {
+		profile = account.SuperInstructProfile()
+	}
+	if profile == SuperInstructProfileDefault {
+		return defaultBridgeFile
+	}
+	dir := filepath.Dir(defaultBridgeFile)
+	return filepath.Join(dir, "profiles", profile+".md")
 }
 
 // applyAccountSuperInstructBridge mutates reqBody["instructions"] when the
@@ -119,8 +176,8 @@ func applyAccountSuperInstructBridge(reqBody map[string]any, account *Account, b
 
 	existing, _ := reqBody["instructions"].(string)
 	existingTrimmed := strings.TrimSpace(existing)
-	// Already injected (same process path or client already carried the marker).
-	if strings.Contains(existingTrimmed, superInstructMarker) {
+	// Already injected (same process path or client already carried a known marker).
+	if instructionsAlreadyInjected(existingTrimmed) {
 		return false
 	}
 
@@ -144,9 +201,10 @@ func applyAccountSuperInstructBridge(reqBody map[string]any, account *Account, b
 }
 
 // applyAccountSuperInstructBridgeFromConfig is the gateway hot-path helper:
-// resolve bridge file from config (if any) and apply account whitelist injection.
+// resolve bridge file (default or per-account profile) and apply injection.
 func applyAccountSuperInstructBridgeFromConfig(reqBody map[string]any, account *Account, bridgeFile string) bool {
-	return applyAccountSuperInstructBridge(reqBody, account, loadSuperInstructBridgeText(bridgeFile))
+	path := resolveAccountSuperInstructBridgePath(account, bridgeFile)
+	return applyAccountSuperInstructBridge(reqBody, account, loadSuperInstructBridgeText(path))
 }
 
 // resolveSuperInstructBridgeFile returns the configured bridge path from gateway cfg.

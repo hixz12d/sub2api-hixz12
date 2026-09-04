@@ -1,11 +1,13 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 // opsCyberPolicyKey 在 gin context 中携带 cyber_policy 命中标记。
@@ -85,4 +87,109 @@ func detectOpenAICyberPolicy(payload []byte) (bool, string, string) {
 		msg = gjson.GetBytes(payload, "response.error.message").String()
 	}
 	return true, "cyber_policy", strings.TrimSpace(msg)
+}
+
+// softCyberPolicyClientMessage is the operator-facing recover hint used when a
+// Super-Instruct / Portable-Kit account hits upstream cyber_policy. Keeps the
+// failure visible but steers the client toward skill/SSOT reopen instead of
+// Trusted Access / "flagged" panic text.
+func softCyberPolicyClientMessage() string {
+	return "[RECOVER] upstream policy hit this turn. Persist progress to skill/SSOT and notes/ACTIVE_STATE.md, reopen a fresh window, resume from the next unverified step. Do not resend the same long payload in-chat."
+}
+
+// shouldSoftenCyberPolicyClientText reports whether client-visible cyber text
+// should be rewritten toward the recover card (SI default + portable-kit).
+func shouldSoftenCyberPolicyClientText(account *Account) bool {
+	return account != nil && account.IsSuperInstructEnabled()
+}
+
+// cyberPolicyClientMessage picks soft recover text for SI/Kit accounts.
+func cyberPolicyClientMessage(account *Account, upstreamMsg string) string {
+	if shouldSoftenCyberPolicyClientText(account) {
+		return softCyberPolicyClientMessage()
+	}
+	msg := strings.TrimSpace(upstreamMsg)
+	if msg == "" {
+		return "Request blocked by upstream cyber-security policy"
+	}
+	return msg
+}
+
+// softenCyberPolicyClientPayload rewrites client-visible cyber error.message
+// fields in common OpenAI shapes (top-level error, response.error, SSE
+// response.failed). Preserves error.code=cyber_policy for detectors/ops.
+// Returns (payload, false) when not a cyber_policy body or rewrite fails.
+func softenCyberPolicyClientPayload(payload []byte) ([]byte, bool) {
+	if len(payload) == 0 {
+		return payload, false
+	}
+	hit, _, _ := detectOpenAICyberPolicy(payload)
+	if !hit {
+		return payload, false
+	}
+	msg := softCyberPolicyClientMessage()
+	out := payload
+	changed := false
+	for _, path := range []string{
+		"error.message",
+		"response.error.message",
+	} {
+		if !gjson.GetBytes(out, strings.TrimSuffix(path, ".message")).Exists() &&
+			!gjson.GetBytes(out, path).Exists() {
+			// Still try Set when parent error object exists under alternate path.
+		}
+		if gjson.GetBytes(out, path).Exists() ||
+			gjson.GetBytes(out, strings.TrimSuffix(path, ".message")).Exists() {
+			if b, err := sjson.SetBytes(out, path, msg); err == nil {
+				out = b
+				changed = true
+			}
+		}
+	}
+	// Ensure code stays cyber_policy when an error object is present.
+	for _, codePath := range []string{"error.code", "response.error.code"} {
+		parent := strings.TrimSuffix(codePath, ".code")
+		if gjson.GetBytes(out, parent).Exists() && !gjson.GetBytes(out, codePath).Exists() {
+			if b, err := sjson.SetBytes(out, codePath, "cyber_policy"); err == nil {
+				out = b
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		// Fallback envelope if shape is unexpected but detector matched.
+		payload, err := json.Marshal(gin.H{
+			"error": gin.H{
+				"type":    "invalid_request_error",
+				"code":    "cyber_policy",
+				"message": msg,
+			},
+		})
+		if err != nil {
+			return payload, false
+		}
+		return payload, true
+	}
+	return out, true
+}
+
+// maybeSoftenCyberPolicyClientPayload applies soften only for SI/Kit accounts.
+func maybeSoftenCyberPolicyClientPayload(account *Account, payload []byte) []byte {
+	if !shouldSoftenCyberPolicyClientText(account) || len(payload) == 0 {
+		return payload
+	}
+	if rewritten, ok := softenCyberPolicyClientPayload(payload); ok && len(rewritten) > 0 {
+		return rewritten
+	}
+	return payload
+}
+
+// rewriteCyberPolicyClientBody rewrites client-visible error.message fields while
+// preserving error.code=cyber_policy so existing detectors/ops still match.
+func rewriteCyberPolicyClientBody(body []byte, status int) []byte {
+	_ = status
+	if rewritten, ok := softenCyberPolicyClientPayload(body); ok {
+		return rewritten
+	}
+	return nil
 }

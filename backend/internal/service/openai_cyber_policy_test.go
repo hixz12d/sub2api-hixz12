@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 func TestMarkAndGetOpsCyberPolicy(t *testing.T) {
@@ -85,4 +86,27 @@ func TestDetectOpenAICyberPolicy(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSoftenCyberPolicyClientPayload(t *testing.T) {
+	body := []byte(`{"error":{"code":"cyber_policy","message":"This content was flagged for possible cybersecurity risk. Trusted Access for Cyber"}}`)
+	out, ok := softenCyberPolicyClientPayload(body)
+	require.True(t, ok)
+	require.Contains(t, string(out), "[RECOVER]")
+	require.NotContains(t, string(out), "Trusted Access")
+	require.Equal(t, "cyber_policy", gjson.GetBytes(out, "error.code").String())
+
+	failed := []byte(`{"type":"response.failed","response":{"error":{"code":"cyber_policy","message":"flagged"}}}`)
+	out, ok = softenCyberPolicyClientPayload(failed)
+	require.True(t, ok)
+	require.Contains(t, gjson.GetBytes(out, "response.error.message").String(), "[RECOVER]")
+}
+
+func TestCyberPolicyClientMessageForSI(t *testing.T) {
+	si := &Account{Extra: map[string]any{SuperInstructExtraKey: true}}
+	plain := &Account{}
+	require.Contains(t, cyberPolicyClientMessage(si, "flagged"), "[RECOVER]")
+	require.Equal(t, "flagged", cyberPolicyClientMessage(plain, "flagged"))
+	require.True(t, shouldSoftenCyberPolicyClientText(si))
+	require.False(t, shouldSoftenCyberPolicyClientText(plain))
 }

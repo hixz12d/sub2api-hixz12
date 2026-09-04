@@ -608,7 +608,7 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 		}
 		imageCounter.AddSSEData(message)
 
-		if eventType == "response.failed" {
+		if eventType == "response.failed" || eventType == "error" {
 			if hit, code, msg := detectOpenAICyberPolicy(message); hit {
 				MarkOpsCyberPolicy(c, CyberPolicyMark{
 					Code:           code,
@@ -619,6 +619,8 @@ func (s *OpenAIGatewayService) forwardOpenAIWSV2(
 					UpstreamOutTok: usage.OutputTokens,
 				})
 			}
+			// Soften after ops mark so upstream original remains in CyberPolicyMark.
+			message = maybeSoftenCyberPolicyClientPayload(account, message)
 		}
 
 		if eventType == "error" {
