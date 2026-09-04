@@ -2123,24 +2123,15 @@
         </div>
       </div>
 
-      <!-- Codex 指纹收敛模式（仅 OpenAI OAuth） -->
-      <div
-        v-if="account?.platform === 'openai' && account?.type === 'oauth'"
-        class="border-t border-gray-200 pt-4 dark:border-dark-600"
-      >
-        <div class="flex items-center justify-between gap-4">
-          <div class="min-w-0">
-            <label class="input-label mb-0">{{ t('admin.accounts.openai.codexFingerprintMode') }}</label>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
-              {{ t('admin.accounts.openai.codexFingerprintModeDesc') }}
-            </p>
-          </div>
-          <div class="w-52 flex-shrink-0">
-            <Select v-model="codexFingerprintMode" data-testid="edit-codex-fingerprint-mode-select" :options="codexFingerprintModeOptions" />
-          </div>
-        </div>
-      </div>
-
+      <!-- OpenAI Codex Relay Kernel 表单 -->
+      <CodexRelaySettings
+        v-if="
+          account?.platform === 'openai' &&
+          (account.type === 'oauth' || account.type === 'setup-token') &&
+          !isSparkShadow
+        "
+        v-model="codexRelaySettings"
+      />
       <!-- OpenAI OAuth TLS：默认 Chrome/Electron -->
       <div
         v-if="account?.platform === 'openai' && account?.type === 'oauth'"
@@ -2985,6 +2976,13 @@ import {
 } from '@/components/account/accountCreateTemplate'
 import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
 import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
+import CodexRelaySettings from '@/components/account/CodexRelaySettings.vue'
+import {
+  type CodexRelaySettingsValue,
+  createDefaultCodexRelaySettings,
+  extractCodexRelaySettingsFromExtra,
+  serializeCodexRelaySettingsToExtra,
+} from '@/components/account/codexRelaySchema'
 import OllamaCloudUsageSettings from '@/components/account/OllamaCloudUsageSettings.vue'
 import {
   applyAntigravityProjectID,
@@ -3367,6 +3365,7 @@ type CodexFingerprintMode = 'off' | 'device' | 'session' | 'window' | 'window40'
 const codexFingerprintMode = ref<CodexFingerprintMode>('device')
 type CodexImageToolMode = 'inherit' | 'enabled' | 'disabled' | 'block'
 const codexImageToolMode = ref<CodexImageToolMode>('inherit')
+const codexRelaySettings = ref<CodexRelaySettingsValue>(createDefaultCodexRelaySettings())
 type AnthropicAPIKeyAuthScheme = 'x_api_key' | 'authorization_bearer'
 const anthropicPassthroughEnabled = ref(false)
 const anthropicAPIKeyAuthScheme = ref<AnthropicAPIKeyAuthScheme>('x_api_key')
@@ -3397,14 +3396,6 @@ const editWeeklyResetDay = ref<number | null>(null)
 const editWeeklyResetHour = ref<number | null>(null)
 const editResetTimezone = ref<string | null>(null)
 const editQuotaExemptModels = ref('')
-const codexFingerprintModeOptions = computed(() => [
-  { value: 'off' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintOff') },
-  { value: 'device' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintDevice') },
-  { value: 'session' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintSession') },
-  { value: 'window' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintWindow') },
-  { value: 'window40' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintWindow40') },
-  { value: 'full' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintFull') },
-])
 
 const openAIWSModeOptions = computed(() => [
   { value: OPENAI_WS_MODE_OFF, label: t('admin.accounts.openai.wsModeOff') },
@@ -3477,6 +3468,10 @@ const applyAccountCreateTemplateSnapshot = (
   codexCLIOnlyEnabled.value = next.codex_cli_only
   codexCLIOnlyAppServerEnabled.value = next.codex_cli_only_app_server
   codexFingerprintMode.value = next.codex_fingerprint_mode
+  codexRelaySettings.value = {
+    ...codexRelaySettings.value,
+    codex_fingerprint_mode: next.codex_fingerprint_mode,
+  }
   tlsFingerprintEnabled.value = next.tls_fingerprint_enabled
   tlsFingerprintProfileId.value = next.tls_fingerprint_profile_id
 }
@@ -3913,6 +3908,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   codexCLIOnlyAppServerEnabled.value = false
   codexFingerprintMode.value = 'off'
   codexImageToolMode.value = 'inherit'
+  codexRelaySettings.value = extractCodexRelaySettingsFromExtra(extra)
   anthropicPassthroughEnabled.value = false
   anthropicAPIKeyAuthScheme.value = 'x_api_key'
   webSearchEmulationMode.value = 'default'
@@ -5487,6 +5483,14 @@ const handleSubmit = async () => {
         } else {
           delete newExtra.codex_fingerprint_mode
         }
+      }
+
+      // Relay 配置仅适用于 OpenAI OAuth/setup-token 的非影子账号。
+      if (
+        (props.account.type === 'oauth' || props.account.type === 'setup-token') &&
+        !isSparkShadow.value
+      ) {
+        serializeCodexRelaySettingsToExtra(codexRelaySettings.value, newExtra)
       }
       if (props.account.type === 'oauth') {
         newExtra.enable_tls_fingerprint = !!tlsFingerprintEnabled.value
