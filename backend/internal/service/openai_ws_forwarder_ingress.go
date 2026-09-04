@@ -95,7 +95,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	if account.Platform == PlatformOpenAI {
 		ctx = s.snapshotOpenAIOutboundIdentity(ctx, account, c.GetHeader("User-Agent"))
 		promptCacheKey := strings.TrimSpace(gjson.GetBytes(firstClientMessage, "prompt_cache_key").String())
-		ids, identityErr := finalizeCodexOAuthIdentity(account, c, c.Request.Header, promptCacheKey)
+		ids, identityErr := s.finalizeCodexOAuthIdentity(account, c, c.Request.Header, promptCacheKey)
 		if identityErr != nil {
 			return fmt.Errorf("finalize Codex OAuth websocket identity: %w", identityErr)
 		}
@@ -777,15 +777,17 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	if buildHdrErr != nil {
 		return fmt.Errorf("build ws headers: %w", buildHdrErr)
 	}
+	transportScopeKey := s.finalizeCodexAttemptWSWire(c, wsHeaders, firstClientMessage)
 	egressRoute, egressErr := s.resolveOpenAICompatibleEgressRoute(ctx, account)
 	if egressErr != nil {
 		return fmt.Errorf("resolve websocket egress: %w", egressErr)
 	}
 	baseAcquireReq := openAIWSAcquireRequest{
-		Account:          account,
-		WSURL:            wsURL,
-		Headers:          wsHeaders,
-		SessionScopeHash: sessionScopeHash,
+		Account:           account,
+		WSURL:             wsURL,
+		Headers:           wsHeaders,
+		SessionScopeHash:  sessionScopeHash,
+		TransportScopeKey: transportScopeKey,
 		HeadersFactory: func(factoryCtx context.Context, headers http.Header) (http.Header, error) {
 			return s.refreshOpenAIAgentIdentityHeaders(factoryCtx, account, headers)
 		},
@@ -1025,6 +1027,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				responseID = eventResponseID
 				if bindErr := s.bindPersistentOpenAIResponse(ctx, c, account, responseID); bindErr != nil {
 					return nil, fmt.Errorf("persist WS response ownership before output: %w", bindErr)
+				}
+				if c != nil && c.Request != nil {
+					if commitErr := s.CommitCodexConversation(c.Request.Context()); commitErr != nil {
+						return nil, fmt.Errorf("commit Codex conversation before output: %w", commitErr)
+					}
 				}
 			}
 			if eventType != "" {
@@ -1476,7 +1483,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		// clones these refreshed headers and remains consistent with the payload.
 		if !skipBeforeTurn && account.IsOpenAIOAuth() {
 			promptCacheKey := openAIWSPayloadStringFromRaw(currentPayload, "prompt_cache_key")
-			snapshot, identityErr := finalizeCodexOAuthIdentity(account, c, c.Request.Header, promptCacheKey)
+			snapshot, identityErr := s.finalizeCodexOAuthIdentity(account, c, c.Request.Header, promptCacheKey)
 			if identityErr != nil {
 				return fmt.Errorf("finalize Codex OAuth websocket turn identity: %w", identityErr)
 			}
@@ -1854,6 +1861,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		if responseID != "" {
 			if bindErr := s.bindPersistentOpenAIResponse(ctx, c, account, responseID); bindErr != nil {
 				return bindErr
+			}
+			if c != nil && c.Request != nil {
+				if commitErr := s.CommitCodexConversation(c.Request.Context()); commitErr != nil {
+					return commitErr
+				}
 			}
 		}
 		if responseID != "" && stateStore != nil {

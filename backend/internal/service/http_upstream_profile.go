@@ -1,6 +1,9 @@
 package service
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // HTTPUpstreamProfile marks HTTP upstream requests that need provider-specific
 // transport policy.
@@ -13,6 +16,7 @@ const (
 )
 
 type httpUpstreamProfileContextKey struct{}
+type httpUpstreamPoolScopeContextKey struct{}
 type httpUpstreamDisableRedirectsContextKey struct{}
 
 // WithHTTPUpstreamProfile injects an upstream transport profile into ctx.
@@ -41,6 +45,25 @@ func HTTPUpstreamProfileFromContext(ctx context.Context) HTTPUpstreamProfile {
 	default:
 		return HTTPUpstreamProfileDefault
 	}
+}
+
+func WithHTTPUpstreamPoolScope(ctx context.Context, scope string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	scope = strings.TrimSpace(scope)
+	if scope == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, httpUpstreamPoolScopeContextKey{}, scope)
+}
+
+func HTTPUpstreamPoolScopeFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	scope, _ := ctx.Value(httpUpstreamPoolScopeContextKey{}).(string)
+	return strings.TrimSpace(scope)
 }
 
 // WithHTTPUpstreamRedirectsDisabled prevents credential-bearing probes from

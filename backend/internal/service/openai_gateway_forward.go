@@ -540,7 +540,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if c != nil && c.Request != nil {
 			clientHeaders = c.Request.Header
 		}
-		fpIDs, identityErr := finalizeCodexOAuthIdentity(account, c, clientHeaders, promptCacheKey)
+		fpIDs, identityErr := s.finalizeCodexOAuthIdentity(account, c, clientHeaders, promptCacheKey)
 		if identityErr != nil {
 			return nil, fmt.Errorf("finalize Codex OAuth identity: %w", identityErr)
 		}
@@ -548,7 +548,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if c != nil {
 			c.Set("codex_fingerprint_ids", fpIDs)
 		}
-		if !isCompactRequest && applyCodexAccountIdentityClientMetadataMap(decoded, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c)) {
+		if wsDecision.Transport == OpenAIUpstreamTransportResponsesWebsocketV2 && !isCompactRequest && !s.isOpenAIAccountScopedIdentityEnabled(account) && applyCodexAccountIdentityClientMetadataMap(decoded, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c)) {
 			markDecodedModified()
 		}
 		if codexResult.NormalizedModel != "" {
@@ -1342,7 +1342,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	if accountIdentitySessionID == "" {
 		accountIdentitySessionID = resolveOpenAIWSSessionHeaders(c, promptCacheKey).SessionID
 	}
-	if account.Type == AccountTypeOAuth {
+	if account.Type == AccountTypeOAuth || usesCodexRelayKernel(account) || (account.IsOpenAIOAuthLike() && !isOpenAICompatMessagesBridgeContext(c)) {
 		bodySnapshot := fingerprintIDs
 		if isOpenAIResponsesCompactPath(c) && !gjson.GetBytes(body, "client_metadata").Exists() {
 			bodySnapshot = nil
@@ -1472,8 +1472,10 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// Apply account overrides before the final identity stage. Protected OpenAI
 	// identity/session headers are excluded by ApplyHeaderOverrides.
 	account.ApplyHeaderOverrides(req.Header)
-	if account.Type == AccountTypeOAuth {
+	if account.Type == AccountTypeOAuth || usesCodexRelayKernel(account) {
 		s.finalizeCodexOAuthHeaders(ctx, c, account, req.Header, fingerprintIDs, accountIdentitySessionID)
+	} else if account.IsOpenAIOAuthLike() {
+		s.applyOpenAIOutboundIdentityPolicy(ctx, account, req.Header, openAIOutboundOAuthPolicy)
 	} else {
 		policy := openAIOutboundAPIKeyPolicy
 		if isOpenAIResponsesCompactPath(c) {
@@ -1485,6 +1487,9 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	applyOpenAICodexBetaFeatures(c, account, req.Header)
 	setOpenAICodexRoutingHintFromBody(req.Header, account, body)
 	logOpenAIRoutingDiagnosticsFromBody(ctx, account, "http", req.Header, body, "not_applicable")
+	if account.Type == AccountTypeOAuth || usesCodexRelayKernel(account) {
+		s.finalizeCodexAttemptHTTPWire(c, req, body)
+	}
 
 	return req, nil
 }

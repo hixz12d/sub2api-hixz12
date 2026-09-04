@@ -44,12 +44,12 @@ const (
 const (
 	codexFingerprintModeExtraKey = "codex_fingerprint_mode"
 	codexFingerprintSeedExtraKey = "codex_fingerprint_seed"
-	codexThreadWindowHours = 8
-	codexThreadWindowSlots = 8
-	codexWindow40Budget    = 40
+	codexThreadWindowHours       = 8
+	codexThreadWindowSlots       = 8
+	codexWindow40Budget          = 40
 	// UUIDv7 稳定时间戳落在 2025-01-01 起的 600 天内，避免派生 ID 看起来像未来时间。
-	uuidv7StableOriginMS   = 1735689600000
-	uuidv7StableSpanMS     = 600 * 24 * 60 * 60 * 1000
+	uuidv7StableOriginMS = 1735689600000
+	uuidv7StableSpanMS   = 600 * 24 * 60 * 60 * 1000
 	// 官方桌面端普通对话的环境默认值；仅在客户端没带这些字段时补齐。
 	codexWindow40DefaultSandbox      = "danger-full-access"
 	codexWindow40DefaultThreadSource = "user"
@@ -92,8 +92,31 @@ func stripCodexFingerprintSeed(extra map[string]any) map[string]any {
 	if extra == nil {
 		return nil
 	}
-	stripped := maps.Clone(extra)
+	stripped := stripCodexRelaySensitiveExtra(extra)
 	delete(stripped, codexFingerprintSeedExtraKey)
+	return stripped
+}
+
+var codexRelaySensitiveExtraKeys = []string{
+	"codex_relay_secret",
+	"codex_identity_derivation_secret",
+	"codex_identity_installation_id",
+	"codex_identity_session_id",
+	"codex_identity_thread_id",
+	"codex_identity_turn_id",
+	"codex_identity_transport_key",
+	"codex_identity_conversation_digest",
+	"codex_identity_credential_version",
+}
+
+func stripCodexRelaySensitiveExtra(extra map[string]any) map[string]any {
+	if extra == nil {
+		return nil
+	}
+	stripped := maps.Clone(extra)
+	for _, key := range codexRelaySensitiveExtraKeys {
+		delete(stripped, key)
+	}
 	return stripped
 }
 
@@ -163,6 +186,9 @@ func sanitizedCodexFingerprintExtraUpdates(updates map[string]any) map[string]an
 	}
 	sanitized := maps.Clone(updates)
 	delete(sanitized, codexFingerprintSeedExtraKey)
+	for _, key := range codexRelaySensitiveExtraKeys {
+		delete(sanitized, key)
+	}
 	return sanitized
 }
 
@@ -557,7 +583,7 @@ func fillMissingCodexConversationHeaders(h http.Header, ids *codexFingerprintIDs
 		h.Set("x-codex-window-id", ids.windowID)
 		filled = true
 	}
-	if strings.TrimSpace(h.Get("x-client-request-id")) == "" && strings.TrimSpace(ids.clientRequestID) != "" {
+	if filled && strings.TrimSpace(h.Get("x-client-request-id")) == "" && strings.TrimSpace(ids.clientRequestID) != "" {
 		h.Set("x-client-request-id", ids.clientRequestID)
 		filled = true
 	}

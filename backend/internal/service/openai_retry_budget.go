@@ -270,6 +270,9 @@ func ReserveOpenAIUpstreamAttempt(c *gin.Context, accountID int64) error {
 	if budget == nil {
 		return nil
 	}
+	if err := NewCodexCommitGuard(c).CanStartAttempt(accountID); err != nil {
+		return err
+	}
 	return budget.Reserve(accountID)
 }
 

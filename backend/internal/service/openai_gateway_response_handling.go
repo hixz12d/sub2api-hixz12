@@ -337,7 +337,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	}
 	newPreOutputFailoverError := func(payload []byte, message string) *UpstreamFailoverError {
 		failoverErr := s.newOpenAIStreamFailoverErrorWithModel(c, account, false, upstreamRequestID, payload, message, mappedModel, resp.Header)
-		if attemptWriterSizeBefore >= 0 || downstreamKeepaliveBytes > 0 {
+		if attemptWriterSizeBefore >= 0 || downstreamKeepaliveBytes > 0 || openAIStreamKeepaliveBytes(c) > 0 {
 			failoverErr.SafeToFailoverAfterWrite = true
 		}
 		return failoverErr
@@ -1473,6 +1473,10 @@ func (s *OpenAIGatewayService) bindHTTPResponseAccount(ctx context.Context, c *g
 	ctx = WithOpenAIWSRequestOwner(ctx, c)
 	if err := s.bindPersistentOpenAIResponse(ctx, c, account, responseID); err != nil {
 		slog.Warn("openai.affinity_response_bind_failed", "account_id", account.ID, "error", err)
+	} else if c != nil && c.Request != nil {
+		if err := s.CommitCodexConversation(c.Request.Context()); err != nil {
+			slog.Warn("openai.codex_conversation_commit_failed", "account_id", account.ID, "error", err)
+		}
 	}
 	store := s.getOpenAIWSStateStore()
 	if store == nil {

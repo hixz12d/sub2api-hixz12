@@ -602,6 +602,11 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	if h.rejectIfCyberSessionBlocked(c, apiKey, sessionHashBody, reqModel, cyberBlockFormatResponses) {
 		return
 	}
+	if _, err := h.prepareCodexRequestPlan(c, forwardBody, sessionHash, previousResponseID, reqModel, service.CodexTransportHTTP); err != nil {
+		reqLog.Error("openai.codex_request_plan_failed", zap.Error(err))
+		h.errorResponse(c, http.StatusInternalServerError, "internal_error", "failed to prepare upstream request")
+		return
+	}
 	c.Request = c.Request.WithContext(service.WithOpenAIGuardianParentAffinity(
 		c.Request.Context(), c, sessionHashBody, reqModel,
 	))
@@ -2365,6 +2370,60 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 	return wrapReleaseOnDone(ctx, accountReleaseFunc), openAISlotAcquireOK
 }
 
+func (h *OpenAIGatewayHandler) prepareCodexRequestPlan(
+	c *gin.Context,
+	body []byte,
+	sessionHash string,
+	previousResponseID string,
+	requestedModel string,
+	transport service.CodexEgressTransport,
+) (*service.CodexRequestPlan, error) {
+	if c == nil || c.Request == nil {
+		return nil, errors.New("request context is required")
+	}
+	requestCtx := c.Request.Context()
+	logicalRequestID, _ := requestCtx.Value(ctxkey.ClientRequestID).(string)
+	if strings.TrimSpace(logicalRequestID) == "" {
+		logicalRequestID, _ = requestCtx.Value(ctxkey.RequestID).(string)
+	}
+	if strings.TrimSpace(logicalRequestID) == "" {
+		logicalRequestID = uuid.NewString()
+	}
+	promptCacheKey := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String())
+	if promptCacheKey == "" {
+		promptCacheKey = strings.TrimSpace(gjson.GetBytes(body, "response.prompt_cache_key").String())
+	}
+	operation := service.CodexOperationResponses
+	if strings.TrimSpace(previousResponseID) != "" {
+		operation = service.CodexOperationResume
+	}
+	if isOpenAIRemoteCompactPath(c) {
+		operation = service.CodexOperationCompact
+	}
+	derivationSecret := ""
+	if h.cfg != nil {
+		derivationSecret = h.cfg.Gateway.OpenAIAffinity.Secret
+	}
+	plan, err := service.NewCodexRequestPlan(service.CodexRequestPlanInput{
+		LogicalRequestID:   logicalRequestID,
+		SessionHash:        sessionHash,
+		PreviousResponseID: previousResponseID,
+		PromptCacheKey:     promptCacheKey,
+		RequestedModel:     requestedModel,
+		Operation:          operation,
+		Transport:          transport,
+		InboundHeaders:     c.Request.Header,
+		Body:               body,
+		CreatedAt:          time.Now().UTC(),
+		DerivationSecret:   derivationSecret,
+	})
+	if err != nil {
+		return nil, err
+	}
+	c.Request = c.Request.WithContext(service.ContextWithCodexRequestPlan(requestCtx, plan))
+	return plan, nil
+}
+
 // ResponsesWebSocket handles OpenAI Responses API WebSocket ingress endpoint
 // GET /openai/v1/responses (Upgrade: websocket)
 func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
@@ -2618,6 +2677,13 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		firstMessage,
 		openAIWSIngressFallbackSessionSeed(subject.UserID, apiKey.ID, apiKey.GroupID),
 	)
+	requestPlan, err := h.prepareCodexRequestPlan(c, firstMessage, sessionHash, previousResponseID, reqModel, service.CodexTransportWS)
+	if err != nil {
+		reqLog.Error("openai.websocket_codex_request_plan_failed", zap.Error(err))
+		closeOpenAIClientWS(wsConn, coderws.StatusInternalError, "failed to prepare upstream request")
+		return
+	}
+	ctx = service.ContextWithCodexRequestPlan(ctx, requestPlan)
 	ctx = service.WithOpenAIWSRequestOwner(ctx, c, sessionHash)
 	ctx = service.WithOpenAIGuardianParentAffinity(ctx, c, firstMessage, reqModel)
 	service.PrepareOpenAIRetryBudget(c, firstMessage)

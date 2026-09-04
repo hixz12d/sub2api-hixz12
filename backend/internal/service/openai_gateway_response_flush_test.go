@@ -385,7 +385,7 @@ func TestOpenAIResponseFlush_KeepalivePreservesCapacityFailoverBeforeSemanticOut
 	require.NotContains(t, body, "response.failed")
 }
 
-func TestOpenAIResponseFlush_OversizedPreambleDisablesReplaySafely(t *testing.T) {
+func TestOpenAIResponseFlush_OversizedPreambleRetainsReplayWithinStageLimit(t *testing.T) {
 	preamble := `data: {"type":"response.created","response":{"id":"resp_large","metadata":{"padding":"` +
 		strings.Repeat("x", 8*1024) + `"}}}` + "\n\n"
 	failedEvent := `data: {"type":"response.failed","response":{"error":{"code":"server_is_overloaded","message":"Please retry later."}}}` + "\n\n"
@@ -398,15 +398,16 @@ func TestOpenAIResponseFlush_OversizedPreambleDisablesReplaySafely(t *testing.T)
 	)
 
 	require.NotNil(t, result)
-	require.Error(t, err)
 	var failoverErr *UpstreamFailoverError
-	require.False(t, errors.As(err, &failoverErr))
+	require.ErrorAs(t, err, &failoverErr)
+	require.False(t, failoverErr.SafeToFailoverAfterWrite)
 	body, _ := recorder.snapshot()
-	require.Contains(t, body, "response.created")
-	require.Contains(t, body, "response.failed")
+	require.Empty(t, body)
+	require.NotContains(t, body, "response.created")
+	require.NotContains(t, body, "response.failed")
 }
 
-func TestOpenAIResponseFlush_KeepaliveDoesNotSplitOversizedPreamble(t *testing.T) {
+func TestOpenAIResponseFlush_KeepaliveDoesNotExposeOversizedPreamble(t *testing.T) {
 	preamble := `data: {"type":"response.created","response":{"id":"resp_large_keepalive","metadata":{"padding":"` +
 		strings.Repeat("x", 8*1024) + `"}}}` + "\n\n"
 	failedEvent := `data: {"type":"response.failed","response":{"error":{"code":"server_is_overloaded","message":"Please retry later."}}}` + "\n\n"
@@ -416,7 +417,7 @@ func TestOpenAIResponseFlush_KeepaliveDoesNotSplitOversizedPreamble(t *testing.T
 
 	_, err := writer.Write([]byte(preamble))
 	require.NoError(t, err)
-	waitOpenAIResponseFlushCount(t, recorder, 2)
+	waitOpenAIResponseFlushCount(t, recorder, 1)
 	_, err = writer.Write([]byte(failedEvent))
 	require.NoError(t, err)
 	require.NoError(t, writer.Close())
@@ -424,13 +425,14 @@ func TestOpenAIResponseFlush_KeepaliveDoesNotSplitOversizedPreamble(t *testing.T
 	result := <-resultCh
 	forwardErr := <-errCh
 	require.NotNil(t, result)
-	require.Error(t, forwardErr)
 	var failoverErr *UpstreamFailoverError
-	require.False(t, errors.As(forwardErr, &failoverErr))
+	require.ErrorAs(t, forwardErr, &failoverErr)
+	require.True(t, failoverErr.SafeToFailoverAfterWrite)
 	body, flushes := recorder.snapshot()
-	forwardedFailedEvent := strings.Replace(failedEvent, `"code":"server_is_overloaded"`, `"code":"server_error"`, 1)
-	require.Equal(t, preamble+":\n\n"+forwardedFailedEvent, body)
-	require.GreaterOrEqual(t, len(flushes), 3)
+	require.Equal(t, ":\n\n", body)
+	require.Equal(t, []string{":\n\n"}, flushes)
+	require.NotContains(t, body, "response.created")
+	require.NotContains(t, body, "response.failed")
 }
 
 func TestOpenAIStreamClientOutputStartedUsesAttemptWriterBaseline(t *testing.T) {

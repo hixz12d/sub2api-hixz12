@@ -466,6 +466,13 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 	return account, nil
 }
 
+func (s *adminServiceImpl) codexRelayDerivationSecret() string {
+	if s == nil || s.cfg == nil {
+		return ""
+	}
+	return s.cfg.Gateway.OpenAIAffinity.Secret
+}
+
 func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccountInput) (*Account, error) {
 	accountExtra, err := normalizeOpenAILongContextBillingExtra(input.Platform, input.Extra)
 	if err != nil {
@@ -477,6 +484,9 @@ func (s *adminServiceImpl) CreateAccount(ctx context.Context, input *CreateAccou
 	}
 	accountExtra, err = normalizeOpenAIAutoResetCreditExtra(input.Platform, input.Type, false, accountExtra)
 	if err != nil {
+		return nil, err
+	}
+	if err := ValidateCodexRelayAccountExtra(input.Platform, input.Type, accountExtra, s.codexRelayDerivationSecret()); err != nil {
 		return nil, err
 	}
 
@@ -577,6 +587,9 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		}
 		normalizedExtra, err = normalizeOpenAIAutoResetCreditExtra(account.Platform, effectiveType, account.IsShadow(), normalizedExtra)
 		if err != nil {
+			return nil, err
+		}
+		if err := ValidateCodexRelayAccountExtra(account.Platform, effectiveType, normalizedExtra, s.codexRelayDerivationSecret()); err != nil {
 			return nil, err
 		}
 	}
@@ -893,6 +906,20 @@ func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, upd
 	delete(updates, OllamaCloudUsageSessionExtraKey)
 	delete(updates, OllamaCloudUsageAutoRefreshExtraKey)
 	delete(updates, OllamaCloudUsageSnapshotExtraKey)
+	if hasCodexRelayAccountExtraUpdate(updates) {
+		account, err := s.accountRepo.GetByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		merged := maps.Clone(account.Extra)
+		if merged == nil {
+			merged = make(map[string]any)
+		}
+		maps.Copy(merged, updates)
+		if err := ValidateCodexRelayAccountExtra(account.Platform, account.Type, merged, s.codexRelayDerivationSecret()); err != nil {
+			return err
+		}
+	}
 	if _, exists := updates[openAILongContextBillingEnabledKey]; exists {
 		account, err := s.accountRepo.GetByID(ctx, id)
 		if err != nil {
@@ -946,10 +973,11 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 
 	needMixedChannelCheck := input.GroupIDs != nil && !input.SkipMixedChannelCheck
 	_, hasLongContextBillingUpdate := input.Extra[openAILongContextBillingEnabledKey]
+	hasCodexRelayUpdate := hasCodexRelayAccountExtraUpdate(input.Extra)
 
 	// 预取所有目标账号，供凭据守卫/代理守卫/混合渠道检查共用，避免多次 DB 查询。
 	var cachedTargets []*Account
-	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || hasLongContextBillingUpdate || input.ProbeEnabled != nil || input.RateMultiplier != nil {
+	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || hasLongContextBillingUpdate || hasCodexRelayUpdate || input.ProbeEnabled != nil || input.RateMultiplier != nil {
 		loaded, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
 		if err != nil {
 			return nil, err
@@ -982,6 +1010,21 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 				return nil, err
 			}
 			break
+		}
+	}
+	if hasCodexRelayUpdate {
+		for _, account := range cachedTargets {
+			if account == nil {
+				return nil, ErrAccountNotFound
+			}
+			merged := maps.Clone(account.Extra)
+			if merged == nil {
+				merged = make(map[string]any)
+			}
+			maps.Copy(merged, input.Extra)
+			if err := ValidateCodexRelayAccountExtra(account.Platform, account.Type, merged, s.codexRelayDerivationSecret()); err != nil {
+				return nil, err
+			}
 		}
 	}
 

@@ -325,12 +325,12 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 	responsesBody = updatedBody
 	responsesReq.ServiceTier = normalizedOpenAIServiceTierValue(gjson.GetBytes(responsesBody, "service_tier").String())
 
-	if account.Type == AccountTypeOAuth {
+	if account.IsOpenAIOAuthLike() {
 		var clientHeaders http.Header
 		if c != nil && c.Request != nil {
 			clientHeaders = c.Request.Header
 		}
-		ids, identityErr := finalizeCodexOAuthIdentity(account, c, clientHeaders, promptCacheKey)
+		ids, identityErr := s.finalizeCodexOAuthIdentity(account, c, clientHeaders, promptCacheKey)
 		if identityErr != nil {
 			return nil, fmt.Errorf("finalize Codex OAuth identity for chat completions bridge: %w", identityErr)
 		}
@@ -361,7 +361,7 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 			sessionKey = isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), promptCacheKey)
 		}
 		sessionID := generateSessionUUID(sessionKey)
-		if account.Type == AccountTypeOAuth {
+		if account.Type == AccountTypeOAuth || usesCodexRelayKernel(account) {
 			if codexFingerprintIDsFromContext(c) == nil {
 				normalizeCodexOAuthHeaders(upstreamReq.Header, sessionID, resolveCodexThreadHeader(upstreamReq.Header))
 			}
@@ -369,9 +369,10 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 			upstreamReq.Header.Set(legacyCodexSessionHeader, sessionID)
 		}
 	}
-	if account.Type == AccountTypeOAuth {
+	if account.Type == AccountTypeOAuth || usesCodexRelayKernel(account) {
 		s.finalizeCodexOAuthHeaders(ctx, c, account, upstreamReq.Header, codexFingerprintIDsFromContext(c), promptCacheKey)
 	}
+	s.finalizeCodexAttemptHTTPWire(c, upstreamReq, nil)
 
 	// 7. Send request
 	proxyURL, err := s.resolveOpenAICompatibleProxyURL(ctx, account)

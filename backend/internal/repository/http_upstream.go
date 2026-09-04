@@ -207,7 +207,8 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 	}
 
 	// 获取或创建对应的客户端，并标记请求占用
-	entry, err := s.acquireClientWithProfile(proxyURL, accountID, accountConcurrency, profile)
+	poolScope := service.HTTPUpstreamPoolScopeFromContext(req.Context())
+	entry, err := s.acquireClientWithProfileAndScope(proxyURL, accountID, accountConcurrency, profile, poolScope)
 	if err != nil {
 		return nil, err
 	}
@@ -255,6 +256,11 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 	upstreamProfile := service.HTTPUpstreamProfileDefault
 	if req != nil {
 		upstreamProfile = service.HTTPUpstreamProfileFromContext(req.Context())
+	}
+	if scope := service.HTTPUpstreamPoolScopeFromContext(req.Context()); scope != "" {
+		scopedProfile := *profile
+		scopedProfile.CacheScopeKey = scope
+		profile = &scopedProfile
 	}
 
 	targetHost := ""
@@ -490,6 +496,9 @@ func (s *httpUpstreamService) acquireClientWithTLS(proxyURL string, accountID in
 // TLS 指纹客户端使用独立的缓存键，与普通客户端隔离
 func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile, upstreamProfile service.HTTPUpstreamProfile, markInFlight bool, enforceLimit bool) (*upstreamClientEntry, error) {
 	isolation := s.getIsolationMode()
+	if upstreamProfile == service.HTTPUpstreamProfileOpenAI && accountID > 0 {
+		isolation = config.ConnectionPoolIsolationAccountProxy
+	}
 	proxyKey, parsedProxy, err := normalizeProxyURL(proxyURL)
 	if err != nil {
 		return nil, err
@@ -625,6 +634,10 @@ func (s *httpUpstreamService) acquireClientWithProfile(proxyURL string, accountI
 	return s.getClientEntry(proxyURL, accountID, accountConcurrency, profile, true, true)
 }
 
+func (s *httpUpstreamService) acquireClientWithProfileAndScope(proxyURL string, accountID int64, accountConcurrency int, profile service.HTTPUpstreamProfile, poolScope string) (*upstreamClientEntry, error) {
+	return s.getClientEntryWithScope(proxyURL, accountID, accountConcurrency, profile, poolScope, true, true)
+}
+
 // getOrCreateClient 获取或创建客户端
 // 根据隔离策略和参数决定缓存键，处理代理变更和配置变更
 //
@@ -648,8 +661,15 @@ func (s *httpUpstreamService) getOrCreateClient(proxyURL string, accountID int64
 // markInFlight=true 时会标记进行中请求，用于请求路径防止被淘汰
 // enforceLimit=true 时会限制客户端数量，超限且无法淘汰时返回错误
 func (s *httpUpstreamService) getClientEntry(proxyURL string, accountID int64, accountConcurrency int, profile service.HTTPUpstreamProfile, markInFlight bool, enforceLimit bool) (*upstreamClientEntry, error) {
+	return s.getClientEntryWithScope(proxyURL, accountID, accountConcurrency, profile, "", markInFlight, enforceLimit)
+}
+
+func (s *httpUpstreamService) getClientEntryWithScope(proxyURL string, accountID int64, accountConcurrency int, profile service.HTTPUpstreamProfile, poolScope string, markInFlight bool, enforceLimit bool) (*upstreamClientEntry, error) {
 	// 获取隔离模式
 	isolation := s.getIsolationMode()
+	if profile == service.HTTPUpstreamProfileOpenAI && accountID > 0 {
+		isolation = config.ConnectionPoolIsolationAccountProxy
+	}
 	// 标准化代理 URL 并解析
 	proxyKey, parsedProxy, err := normalizeProxyURL(proxyURL)
 	if err != nil {
@@ -663,6 +683,10 @@ func (s *httpUpstreamService) getClientEntry(proxyURL string, accountID int64, a
 	cacheKey := buildCacheKey(isolation, proxyKey, accountID, protocolMode)
 	// 构建连接池配置键（用于检测配置变更）
 	poolKey := buildPoolKey(settings, protocolMode)
+	if poolScope = strings.TrimSpace(poolScope); poolScope != "" {
+		cacheKey += ":scope:" + poolScope
+		poolKey += ":scope:" + poolScope
+	}
 
 	now := time.Now()
 	nowUnix := now.UnixNano()

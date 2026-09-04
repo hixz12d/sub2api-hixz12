@@ -590,7 +590,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 			clientHeaders = c.Request.Header
 		}
 		var identityErr error
-		fingerprintIDs, identityErr = finalizeCodexOAuthIdentity(account, c, clientHeaders, accountIdentityPromptCacheKey)
+		fingerprintIDs, identityErr = s.finalizeCodexOAuthIdentity(account, c, clientHeaders, accountIdentityPromptCacheKey)
 		if identityErr != nil {
 			return nil, fmt.Errorf("finalize Codex OAuth passthrough identity: %w", identityErr)
 		}
@@ -734,6 +734,9 @@ func (s *OpenAIGatewayService) buildUpstreamRequestOpenAIPassthrough(
 	applyOpenAICodexBetaFeatures(c, account, req.Header)
 	setOpenAICodexRoutingHintFromBody(req.Header, account, body)
 	logOpenAIRoutingDiagnosticsFromBody(ctx, account, "http_passthrough", req.Header, body, "not_applicable")
+	if account.Type == AccountTypeOAuth {
+		s.finalizeCodexAttemptHTTPWire(c, req, body)
+	}
 
 	return req, nil
 }
@@ -1063,6 +1066,18 @@ func recordOpenAIStreamKeepaliveBytes(c *gin.Context, written int) {
 		current, _ = value.(int)
 	}
 	c.Set(openAIStreamKeepaliveBytesKey, current+written)
+}
+
+func openAIStreamKeepaliveBytes(c *gin.Context) int {
+	if c == nil {
+		return 0
+	}
+	value, ok := c.Get(openAIStreamKeepaliveBytesKey)
+	if !ok {
+		return 0
+	}
+	written, _ := value.(int)
+	return written
 }
 
 func openAIStreamClientOutputStarted(c *gin.Context, localStarted bool, attemptState ...int) bool {
@@ -2071,7 +2086,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	}
 	newPreOutputFailoverError := func(payload []byte, message string) *UpstreamFailoverError {
 		failoverErr := s.newOpenAIStreamFailoverError(c, account, true, upstreamRequestID, payload, message, resp.Header)
-		if attemptWriterSizeBefore >= 0 {
+		if attemptWriterSizeBefore >= 0 || openAIStreamKeepaliveBytes(c) > 0 {
 			failoverErr.SafeToFailoverAfterWrite = true
 		}
 		return failoverErr
@@ -2187,8 +2202,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 						}
 					}
 					if shouldFailover {
-						return resultWithUsage(),
-							s.newOpenAIStreamFailoverErrorWithModel(c, account, true, upstreamRequestID, dataBytes, failedMessage, mappedModel, resp.Header)
+						return resultWithUsage(), newPreOutputFailoverError(dataBytes, failedMessage)
 					}
 					if !cyberHit && !sawBareError {
 						if status, errType, errMsg, matched := applyOpenAIStreamFailedErrorPassthroughRule(c, account.Platform, dataBytes, failedMessage); matched {

@@ -870,6 +870,11 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 	if buildHdrErr != nil {
 		return fmt.Errorf("build ws headers: %w", buildHdrErr)
 	}
+	transportScopeKey := s.finalizeCodexAttemptWSWire(c, headers, firstClientMessage)
+	tlsProfile := resolveAccountTLSFingerprintProfile(account)
+	if tlsProfile != nil {
+		tlsProfile.CacheScopeKey = transportScopeKey
+	}
 	proxyURL, err := s.resolveOpenAICompatibleProxyURL(ctx, account)
 	if err != nil {
 		return err
@@ -894,7 +899,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			return NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "upstream retry budget exhausted", reserveErr)
 		}
 		dialCtx, cancelDial := context.WithTimeout(ctx, s.openAIWSDialTimeout())
-		upstreamConn, statusCode, handshakeHeaders, err = dialer.Dial(dialCtx, wsURL, headers, proxyURL, resolveAccountTLSFingerprintProfile(account))
+		upstreamConn, statusCode, handshakeHeaders, err = dialer.Dial(dialCtx, wsURL, headers, proxyURL, tlsProfile)
 		cancelDial()
 		if err == nil {
 			break
@@ -1151,7 +1156,7 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 					clientHeaders = c.Request.Header
 				}
 				promptCacheKey := strings.TrimSpace(gjson.GetBytes(out, "prompt_cache_key").String())
-				ids, identityErr := finalizeCodexOAuthIdentity(account, c, clientHeaders, promptCacheKey)
+				ids, identityErr := s.finalizeCodexOAuthIdentity(account, c, clientHeaders, promptCacheKey)
 				if identityErr != nil {
 					return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid Codex identity mode", identityErr)
 				}

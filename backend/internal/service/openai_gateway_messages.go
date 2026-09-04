@@ -323,12 +323,12 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		}
 	}
 
-	if account.Type == AccountTypeOAuth && account.Platform != PlatformGrok {
+	if account.IsOpenAIOAuthLike() && account.Platform != PlatformGrok {
 		var clientHeaders http.Header
 		if c != nil && c.Request != nil {
 			clientHeaders = c.Request.Header
 		}
-		ids, identityErr := finalizeCodexOAuthIdentity(account, c, clientHeaders, promptCacheKey)
+		ids, identityErr := s.finalizeCodexOAuthIdentity(account, c, clientHeaders, promptCacheKey)
 		if identityErr != nil {
 			return nil, fmt.Errorf("finalize Codex OAuth identity for messages bridge: %w", identityErr)
 		}
@@ -366,14 +366,14 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	// API-key compatibility paths retain their legacy cache-key session header;
 	// OAuth identity is finalized in buildUpstreamRequest so prompt_cache_key
 	// and any client-provided session header share one boundary.
-	if account.Platform != PlatformGrok && account.Type != AccountTypeOAuth && promptCacheKey != "" {
+	if account.Platform != PlatformGrok && account.Type != AccountTypeOAuth && !usesCodexRelayKernel(account) && promptCacheKey != "" {
 		isolatedSessionID := generateSessionUUID(isolateOpenAIUpstreamSessionID(apiKeyID, codexAccountIdentitySource(c, account), promptCacheKey))
 		upstreamReq.Header.Set(legacyCodexSessionHeader, isolatedSessionID)
 		if upstreamReq.Header.Get("conversation_id") != "" {
 			upstreamReq.Header.Set("conversation_id", isolatedSessionID)
 		}
 	}
-	if account.Type == AccountTypeOAuth && account.Platform != PlatformGrok {
+	if account.IsOpenAIOAuthLike() && account.Platform != PlatformGrok {
 		// Preserve the bridge-specific beta declaration, then run the same final
 		// identity boundary used by Responses, passthrough and WS.
 		upstreamReq.Header.Set("OpenAI-Beta", codexHTTPBetaValue)
@@ -381,7 +381,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if compatTurnState != "" && upstreamReq.Header.Get("x-codex-turn-state") == "" {
 		upstreamReq.Header.Set("x-codex-turn-state", compatTurnState)
 	}
-	if account.Type == AccountTypeOAuth && account.Platform != PlatformGrok {
+	if (account.Type == AccountTypeOAuth || usesCodexRelayKernel(account)) && account.Platform != PlatformGrok {
 		s.finalizeCodexOAuthHeaders(ctx, c, account, upstreamReq.Header, codexFingerprintIDsFromContext(c), promptCacheKey)
 		logger.L().Debug("openai messages: upstream identity restored",
 			zap.Int64("account_id", account.ID),
@@ -389,6 +389,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 			zap.Bool("compat_identity_restored", true),
 		)
 	}
+	s.finalizeCodexAttemptHTTPWire(c, upstreamReq, nil)
 
 	// 7. Send request
 	proxyURL, err := s.resolveOpenAICompatibleProxyURL(ctx, account)

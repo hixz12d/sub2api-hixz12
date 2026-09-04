@@ -1,6 +1,10 @@
 package service
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
+)
 
 func (s *OpenAIGatewayService) SetPluginManager(manager *PluginManager) {
 	s.pluginManager = manager
@@ -13,6 +17,14 @@ func (s *OpenAIGatewayService) doOpenAIUpstream(request *http.Request, proxyURL 
 		response, handled, err := s.pluginManager.RoundTripOpenAIOAuth(request.Context(), request, proxyURL, account)
 		if handled {
 			return response, err
+		}
+	}
+	if state, ok := CodexAttemptStateFromContext(request.Context()); ok && state.PolicyVersion() == CodexIdentityPolicyV2 {
+		profile := state.Profile()
+		if profile.Transport.TLSProfileID == tlsfingerprint.HelloPresetChromeAuto {
+			tlsProfile := tlsfingerprint.BuiltinChromeAutoProfile()
+			tlsProfile.CacheScopeKey = state.TransportKey()
+			return s.httpUpstream.DoWithTLS(request, proxyURL, account.ID, account.Concurrency, tlsProfile)
 		}
 	}
 	return s.httpUpstream.Do(request, proxyURL, account.ID, account.Concurrency)

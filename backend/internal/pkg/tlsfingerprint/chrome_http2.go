@@ -22,6 +22,7 @@ const (
 	ChromeHTTP2InitialWindowSize    uint32 = 6291456
 	ChromeHTTP2MaxHeaderListSize    uint32 = 262144
 	ChromeHTTP2ConnectionFlow       uint32 = 15663105
+	ChromeHTTP2ProfileID                   = "chrome-h2-v1"
 )
 
 // ChromeHTTP2Options tunes pool and keepalive on the impersonating transport.
@@ -75,6 +76,10 @@ var chromeHTTP2HeaderOrder = []string{
 	"x-client-request-id",
 	"x-session-id",
 	"cookie",
+}
+
+func ChromeHTTP2HeaderOrder() []string {
+	return append([]string(nil), chromeHTTP2HeaderOrder...)
 }
 
 type chromeHTTP2RoundTripper struct {

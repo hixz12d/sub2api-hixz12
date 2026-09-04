@@ -28,8 +28,10 @@ const HelloPresetChromeAuto = "chrome_auto"
 // Profile contains TLS fingerprint configuration.
 // All slice fields use built-in defaults when empty.
 type Profile struct {
-	Name                string // Profile name for identification
-	HelloPreset         string // empty = custom/Node spec; chrome_auto = HelloChrome_Auto
+	Name        string // Profile name for identification
+	HelloPreset string // empty = custom/Node spec; chrome_auto = HelloChrome_Auto
+	// CacheScopeKey isolates connection pools without changing the wire fingerprint.
+	CacheScopeKey       string
 	CipherSuites        []uint16
 	Curves              []uint16
 	PointFormats        []uint16
@@ -63,13 +65,16 @@ func (p *Profile) CacheID() string {
 	if p == nil {
 		return "default"
 	}
+	base := "custom"
 	if p.HelloPreset != "" {
-		return p.HelloPreset
+		base = p.HelloPreset
+	} else if strings.TrimSpace(p.Name) != "" {
+		base = strings.TrimSpace(p.Name)
 	}
-	if strings.TrimSpace(p.Name) != "" {
-		return strings.TrimSpace(p.Name)
+	if scope := strings.TrimSpace(p.CacheScopeKey); scope != "" {
+		return base + "\x00" + scope
 	}
-	return "custom"
+	return base
 }
 
 // Dialer creates TLS connections with custom fingerprints.

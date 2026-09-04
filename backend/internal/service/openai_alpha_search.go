@@ -254,7 +254,8 @@ func (s *OpenAIGatewayService) buildOpenAIAlphaSearchResponsesWebSearchRequest(c
 		req.Header.Set("X-Codex-Turn-Metadata", turnMetadata)
 	}
 	account.ApplyHeaderOverrides(req.Header)
-	s.applyOpenAIOutboundIdentity(ctx, account, req.Header, account.Type == AccountTypeOAuth)
+	s.applyOpenAIAlphaSearchIdentity(ctx, account, req.Header)
+	applyCodexAccountIdentityHeaders(req.Header, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
 	return req, nil
 }
 
@@ -372,9 +373,23 @@ func (s *OpenAIGatewayService) buildOpenAIAlphaSearchRequest(ctx context.Context
 		}
 	}
 	account.ApplyHeaderOverrides(req.Header)
-	s.applyOpenAIOutboundIdentity(ctx, account, req.Header, account.Type == AccountTypeOAuth)
+	s.applyOpenAIAlphaSearchIdentity(ctx, account, req.Header)
+	applyCodexAccountIdentityHeaders(req.Header, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
 	stripOpenAIAlphaSearchResponsesHeaders(req.Header)
 	return req, nil
+}
+
+func (s *OpenAIGatewayService) applyOpenAIAlphaSearchIdentity(ctx context.Context, account *Account, headers http.Header) {
+	if account == nil || account.Type != AccountTypeOAuth {
+		s.applyOpenAIOutboundIdentity(ctx, account, headers, false)
+		return
+	}
+	if usesCodexRelayKernel(account) {
+		s.applyOpenAIOutboundIdentity(ctx, account, headers, true)
+		return
+	}
+	canonical := resolveOpenAIOutboundIdentityWithVersion("", codexCLIUserAgent, codexCLIVersion)
+	applyResolvedOpenAIOutboundIdentityWithPolicy(headers, canonical, openAIOutboundOAuthPolicy)
 }
 
 // stripOpenAIAlphaSearchResponsesHeaders 让独立搜索请求与官方 Codex

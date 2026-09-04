@@ -106,6 +106,9 @@ func resolveCodexFingerprintModeForFinalizer(account *Account) (codexFingerprint
 // attempt/turn. It is intentionally side-effect free; sinks only apply the
 // returned immutable snapshot.
 func finalizeCodexOAuthIdentity(account *Account, c *gin.Context, clientHeaders http.Header, promptCacheKey string) (*CodexIdentitySnapshot, error) {
+	if account != nil && account.IsOpenAIAgentIdentity() {
+		return nil, nil
+	}
 	mode, err := resolveCodexFingerprintModeForFinalizer(account)
 	if err != nil {
 		return nil, err
@@ -129,6 +132,140 @@ func finalizeCodexOAuthIdentity(account *Account, c *gin.Context, clientHeaders 
 	return snapshot, nil
 }
 
+func (s *OpenAIGatewayService) finalizeCodexOAuthIdentity(
+	account *Account,
+	c *gin.Context,
+	clientHeaders http.Header,
+	promptCacheKey string,
+) (*CodexIdentitySnapshot, error) {
+	if account == nil || strings.ToLower(strings.TrimSpace(account.GetExtraString(CodexRelayModeExtraKey))) != string(CodexRelayModeKernel) {
+		legacy, err := finalizeCodexOAuthIdentity(account, c, clientHeaders, promptCacheKey)
+		if err == nil {
+			s.compareCodexRelayShadowForRequest(account, c, legacy)
+		}
+		return legacy, err
+	}
+	settings, err := ResolveCodexRelaySettings(account)
+	if err != nil {
+		return nil, infraerrors.Newf(http.StatusBadRequest, "OPENAI_CODEX_RELAY_SETTINGS_INVALID", "%v", err)
+	}
+	if s == nil || s.cfg == nil || strings.TrimSpace(s.cfg.Gateway.OpenAIAffinity.Secret) == "" {
+		return nil, infraerrors.New(http.StatusInternalServerError, "OPENAI_CODEX_RELAY_SECRET_MISSING", "relay kernel requires gateway.openai_affinity.secret")
+	}
+	if c == nil || c.Request == nil {
+		return nil, infraerrors.New(http.StatusInternalServerError, "OPENAI_CODEX_REQUEST_PLAN_MISSING", "relay kernel requires a request plan")
+	}
+	plan, ok := CodexRequestPlanFromContext(c.Request.Context())
+	if !ok {
+		return nil, infraerrors.New(http.StatusInternalServerError, "OPENAI_CODEX_REQUEST_PLAN_MISSING", "relay kernel requires a request plan")
+	}
+	mode, err := resolveCodexFingerprintModeForFinalizer(account)
+	if err != nil {
+		return nil, err
+	}
+	if mode == codexFingerprintOff {
+		return nil, infraerrors.New(http.StatusBadRequest, "OPENAI_CODEX_RELAY_IDENTITY_REQUIRED", "relay kernel requires a managed codex_fingerprint_mode")
+	}
+	attemptNumber := 0
+	routeKey := ""
+	if current := OpenAIAttemptStateFromContext(c); current != nil {
+		if current.Attempt > 0 {
+			attemptNumber = current.Attempt - 1
+		}
+		routeKey = current.RouteKey
+	}
+	deriver, err := NewCodexIdentityDeriver(s.cfg.Gateway.OpenAIAffinity.Secret)
+	if err != nil {
+		return nil, err
+	}
+	credentialVersion := deriver.DigestHex("codex/credential-version/v2", account.GetOpenAIAccessToken())
+	proxyIdentity := "direct"
+	if account.ProxyID != nil {
+		proxyIdentity = fmt.Sprintf("proxy:%d", *account.ProxyID)
+	}
+	attemptInput := CodexAttemptInput{
+		AccountID:              account.ID,
+		AccountVersion:         account.UpdatedAt.UTC().Format("20060102T150405.000000000Z"),
+		CredentialVersion:      credentialVersion,
+		ProxyIdentity:          proxyIdentity,
+		ProfileID:              settings.ProfileID,
+		FingerprintMode:        string(mode),
+		AttemptNumber:          attemptNumber,
+		EgressRoute:            routeKey,
+		TransportConfigVersion: fmt.Sprintf("tls:%d", account.GetTLSFingerprintProfileID()),
+	}
+	state, err := FinalizeCodexAttempt(plan, attemptInput, s.cfg.Gateway.OpenAIAffinity.Secret)
+	if err != nil {
+		return nil, err
+	}
+	state, err = s.resolveCodexConversationAttempt(c.Request.Context(), plan, state, attemptInput)
+	if err != nil {
+		return nil, err
+	}
+	c.Request = c.Request.WithContext(ContextWithCodexAttemptState(c.Request.Context(), state))
+	return state.Identity(), nil
+}
+
+func codexAttemptStateFromGin(c *gin.Context) (*CodexAttemptState, bool) {
+	if c == nil || c.Request == nil {
+		return nil, false
+	}
+	return CodexAttemptStateFromContext(c.Request.Context())
+}
+
+func attachCodexAttemptStateToGin(c *gin.Context, state *CodexAttemptState) {
+	if c == nil || c.Request == nil || state == nil {
+		return
+	}
+	c.Request = c.Request.WithContext(ContextWithCodexAttemptState(c.Request.Context(), state))
+}
+
+func applyCodexAttemptProfile(profile CodexClientProfile, headers http.Header) {
+	if headers == nil || profile.ID == CodexProfilePassthrough {
+		return
+	}
+	headers.Set("User-Agent", profile.App.UserAgent)
+	headers.Set("originator", profile.App.Originator)
+	if profile.App.Version != "" {
+		headers.Set("x-openai-client-version", profile.App.Version)
+	}
+	if profile.App.BetaFeatures != "" {
+		headers.Set("OpenAI-Beta", profile.App.BetaFeatures)
+	}
+}
+
+func (s *OpenAIGatewayService) finalizeCodexAttemptHTTPWire(c *gin.Context, req *http.Request, body []byte) {
+	state, ok := codexAttemptStateFromGin(c)
+	if !ok || req == nil {
+		return
+	}
+	profile := state.Profile()
+	applyCodexAttemptProfile(profile, req.Header)
+	ordered := buildCodexAttemptIdentityHeaders(profile, nil, req.Header)
+	if len(body) == 0 {
+		body = state.FinalHTTPBody()
+	}
+	state = state.WithFinalHTTPWire(ordered, body)
+	attachCodexAttemptStateToGin(c, state)
+	requestContext := WithHTTPUpstreamPoolScope(req.Context(), state.TransportKey())
+	requestContext = ContextWithCodexAttemptState(requestContext, state)
+	reqWithScope := req.WithContext(requestContext)
+	*req = *reqWithScope
+}
+
+func (s *OpenAIGatewayService) finalizeCodexAttemptWSWire(c *gin.Context, headers http.Header, payload []byte) string {
+	state, ok := codexAttemptStateFromGin(c)
+	if !ok {
+		return ""
+	}
+	profile := state.Profile()
+	applyCodexAttemptProfile(profile, headers)
+	ordered := buildCodexAttemptIdentityHeaders(profile, nil, headers)
+	state = state.WithFinalWSWire(ordered, payload)
+	attachCodexAttemptStateToGin(c, state)
+	return state.TransportKey()
+}
+
 func (s *OpenAIGatewayService) resolveCodexOutboundPromptCacheKey(c *gin.Context, account *Account, snapshot *CodexIdentitySnapshot, rawSessionID string) string {
 	if snapshot != nil && snapshot.mode != codexFingerprintDevice && strings.TrimSpace(snapshot.sessionID) != "" {
 		return strings.TrimSpace(snapshot.sessionID)
@@ -137,7 +274,35 @@ func (s *OpenAIGatewayService) resolveCodexOutboundPromptCacheKey(c *gin.Context
 	if rawSessionID == "" {
 		return ""
 	}
+	identityAccount := codexAccountIdentitySource(c, account)
+	if identityAccount != nil && account != nil && identityAccount.ID != account.ID {
+		return isolateOpenAIUpstreamSessionID(getAPIKeyIDFromContext(c), identityAccount, rawSessionID)
+	}
 	return s.openAIOutboundSessionID(account, getAPIKeyIDFromContext(c), rawSessionID)
+}
+
+func (s *OpenAIGatewayService) shouldApplyLegacyCodexAccountIdentity(c *gin.Context, account *Account) bool {
+	if account == nil || account.Type != AccountTypeOAuth || account.IsOpenAIAgentIdentity() || usesCodexRelayKernel(account) || s.isOpenAIAccountScopedIdentityEnabled(account) {
+		return false
+	}
+	hasAPIKeyContext := getAPIKeyIDFromContext(c) > 0
+	if c != nil {
+		_, hasLegacyAPIKeyID := c.Get("api_key_id")
+		hasAPIKeyContext = hasAPIKeyContext || hasLegacyAPIKeyID
+	}
+	if !hasAPIKeyContext {
+		return false
+	}
+	if _, configured := account.Extra[codexFingerprintModeExtraKey]; configured {
+		return false
+	}
+	if source := codexAccountIdentitySource(c, account); source != nil && source.ID != account.ID {
+		return false
+	}
+	if c == nil || c.Request == nil || c.Request.URL == nil {
+		return false
+	}
+	return strings.TrimRight(c.Request.URL.Path, "/") == "/v1/responses"
 }
 
 // finalizeCodexOAuthBody is the sole OAuth body identity boundary. Fingerprint
@@ -164,7 +329,20 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthBody(
 			}
 		}
 	}
-	return s.applyOpenAIAccountScopedBody(ctx, c, account, updated, accountIdentitySessionID)
+	updated, err = s.applyOpenAIAccountScopedBody(ctx, c, account, updated, accountIdentitySessionID)
+	if err != nil {
+		return nil, err
+	}
+	if s.shouldApplyLegacyCodexAccountIdentity(c, account) {
+		updated, _, err = applyCodexAccountIdentityClientMetadataRaw(updated, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
+		if err != nil {
+			return nil, fmt.Errorf("scope Codex account request identity: %w", err)
+		}
+	}
+	if state, ok := codexAttemptStateFromGin(c); ok {
+		attachCodexAttemptStateToGin(c, state.WithFinalHTTPWire(state.FinalHeaders(), updated))
+	}
+	return updated, nil
 }
 
 // finalizeCodexOAuthHeaders runs after inbound passthrough and account header
@@ -178,7 +356,12 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthHeaders(
 	accountIdentitySessionID string,
 ) {
 	sanitizeCodexOAuthHeaders(headers)
-	s.applyOpenAIOutboundIdentityPolicy(ctx, account, headers, openAIOutboundOAuthPolicy)
+	if isOpenAICompatMessagesBridgeContext(c) {
+		canonical := resolveOpenAIOutboundIdentityWithVersion("", codexCLIUserAgent, codexCLIVersion)
+		applyResolvedOpenAIOutboundIdentityWithPolicy(headers, canonical, openAIOutboundOAuthPolicy)
+	} else {
+		s.applyOpenAIOutboundIdentityPolicy(ctx, account, headers, openAIOutboundOAuthPolicy)
+	}
 	s.applyOpenAIAccountScopedHeaders(ctx, c, account, headers, accountIdentitySessionID)
 	applyCodexFingerprintHeaders(headers, snapshot)
 	outboundSessionID := resolveCodexSessionHeader(headers)
@@ -194,4 +377,24 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthHeaders(
 	}
 	applyCodexOAuthStableEnvironmentHeaders(headers, account)
 	applyOpenAICodexBetaFeatures(c, account, headers)
+	if s.shouldApplyLegacyCodexAccountIdentity(c, account) {
+		applyCodexAccountIdentityHeaders(headers, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
+	}
+	if account != nil && account.IsOpenAIAgentIdentity() && c != nil && c.Request != nil && strings.HasSuffix(c.Request.URL.Path, "/chat/completions") {
+		sessionID := ""
+		if rawSessionID := strings.TrimSpace(accountIdentitySessionID); rawSessionID != "" {
+			bodySessionID := s.openAIOutboundSessionID(account, getAPIKeyIDFromContext(c), rawSessionID)
+			sessionID = generateSessionUUID(isolateOpenAIUpstreamSessionID(getAPIKeyIDFromContext(c), codexAccountIdentitySource(c, account), bodySessionID))
+		}
+		deleteOpenAIHeaderEqualFold(headers, codexSessionHeader)
+		if sessionID != "" {
+			headers.Set(legacyCodexSessionHeader, sessionID)
+		}
+	}
+	if state, ok := codexAttemptStateFromGin(c); ok {
+		profile := state.Profile()
+		applyCodexAttemptProfile(profile, headers)
+		ordered := buildCodexAttemptIdentityHeaders(profile, nil, headers)
+		attachCodexAttemptStateToGin(c, state.WithFinalHTTPWire(ordered, state.FinalHTTPBody()))
+	}
 }

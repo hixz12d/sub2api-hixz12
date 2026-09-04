@@ -70,11 +70,12 @@ type openAIWSAcquireRequest struct {
 	// HeadersFactory is evaluated inside dialConn. It exists so credentials
 	// whose authorization is per-dial (Agent Identity) are never cached in
 	// lastAcquire or delayed prewarm state.
-	HeadersFactory   func(context.Context, http.Header) (http.Header, error)
-	ProxyURL         string
-	RouteKey         string
-	PreferredConnID  string
-	SessionScopeHash string
+	HeadersFactory    func(context.Context, http.Header) (http.Header, error)
+	ProxyURL          string
+	RouteKey          string
+	PreferredConnID   string
+	SessionScopeHash  string
+	TransportScopeKey string
 	// ForceNewConn: 强制本次获取新连接（避免复用导致连接内续链状态互相污染）。
 	ForceNewConn bool
 	// ForcePreferredConn: 强制本次只使用 PreferredConnID，禁止漂移到其它连接。
@@ -85,6 +86,7 @@ type openAIWSHandshakeCompatibilityKey struct {
 	betaFeatures        string
 	sessionScopeHash    string
 	routeKey            string
+	transportScopeKey   string
 	codexInstallationID string
 	sessionIDHyphen     string
 	sessionIDUnderscore string
@@ -873,7 +875,7 @@ func (p *openAIWSConnPool) acquire(ctx context.Context, req openAIWSAcquireReque
 
 retryAcquire:
 	accountID := req.Account.ID
-	compatibility := normalizeOpenAIWSHandshakeCompatibilityForAccount(req.Account, req.Headers, req.SessionScopeHash, req.RouteKey)
+	compatibility := normalizeOpenAIWSHandshakeCompatibilityForAccount(req.Account, req.Headers, req.SessionScopeHash, req.RouteKey, req.TransportScopeKey)
 	routingAffinity := normalizeOpenAIWSRoutingAffinity(req.Headers)
 	effectiveMaxConns := p.effectiveMaxConnsByAccount(req.Account)
 	if effectiveMaxConns <= 0 {
@@ -1814,7 +1816,11 @@ func (p *openAIWSConnPool) dialConn(ctx context.Context, req openAIWSAcquireRequ
 			return nil, err
 		}
 	}
-	conn, status, handshakeHeaders, err := p.clientDialer.Dial(ctx, req.WSURL, headers, req.ProxyURL, resolveAccountTLSFingerprintProfile(req.Account))
+	tlsProfile := resolveAccountTLSFingerprintProfile(req.Account)
+	if tlsProfile != nil {
+		tlsProfile.CacheScopeKey = stringsTrim(req.TransportScopeKey)
+	}
+	conn, status, handshakeHeaders, err := p.clientDialer.Dial(ctx, req.WSURL, headers, req.ProxyURL, tlsProfile)
 	if err != nil {
 		var handshakeErr *openAIWSHandshakeError
 		var responseBody []byte
@@ -1837,7 +1843,7 @@ func (p *openAIWSConnPool) dialConn(ctx context.Context, req openAIWSAcquireRequ
 	}
 	id := p.nextConnID(req.Account.ID)
 	pooledConn := newOpenAIWSConn(id, req.Account.ID, conn, handshakeHeaders)
-	pooledConn.handshakeCompatibility = normalizeOpenAIWSHandshakeCompatibilityForAccount(req.Account, req.Headers, req.SessionScopeHash, req.RouteKey)
+	pooledConn.handshakeCompatibility = normalizeOpenAIWSHandshakeCompatibilityForAccount(req.Account, req.Headers, req.SessionScopeHash, req.RouteKey, req.TransportScopeKey)
 	pooledConn.routingAffinity = normalizeOpenAIWSRoutingAffinity(req.Headers)
 	pooledConn.routeKey = stringsTrim(req.RouteKey)
 	return pooledConn, nil
@@ -2059,10 +2065,15 @@ func normalizeOpenAIWSHandshakeCompatibilityForAccount(account *Account, headers
 	if len(sessionScopeHash) > 1 {
 		routeKey = stringsTrim(sessionScopeHash[1])
 	}
+	transportScopeKey := ""
+	if len(sessionScopeHash) > 2 {
+		transportScopeKey = stringsTrim(sessionScopeHash[2])
+	}
 	key := openAIWSHandshakeCompatibilityKey{
-		betaFeatures:     normalizeOpenAIWSBetaFeatures(headers),
-		sessionScopeHash: scope,
-		routeKey:         routeKey,
+		betaFeatures:      normalizeOpenAIWSBetaFeatures(headers),
+		sessionScopeHash:  scope,
+		routeKey:          routeKey,
+		transportScopeKey: transportScopeKey,
 	}
 	mode := activeCodexFingerprintMode(account)
 	if mode == codexFingerprintOff {

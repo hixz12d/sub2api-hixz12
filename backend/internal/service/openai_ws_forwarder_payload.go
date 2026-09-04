@@ -109,13 +109,13 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 			}
 		}
 	}
-		applyOpenAICodexBetaFeatures(c, account, headers)
-		// OAuth/SetupToken accounts isolate the session while preserving the current Codex wire names.
-		if account != nil && account.UsesOpenAICodexProtocol() {
+	applyOpenAICodexBetaFeatures(c, account, headers)
+	// OAuth/SetupToken accounts isolate the session while preserving the current Codex wire names.
+	if account != nil && account.UsesOpenAICodexProtocol() {
 		apiKeyID := getAPIKeyIDFromContext(c)
 		outboundSessionID := ""
 		if sessionResolution.SessionID != "" {
-				outboundSessionID = s.openAIOutboundSessionID(account, apiKeyID, sessionResolution.SessionID)
+			outboundSessionID = s.openAIOutboundSessionID(account, apiKeyID, sessionResolution.SessionID)
 		}
 		clientThreadID := ""
 		if c != nil && c.Request != nil {
@@ -123,7 +123,7 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 		}
 		normalizeCodexOAuthHeaders(headers, outboundSessionID, clientThreadID)
 		if sessionResolution.ConversationID != "" {
-				headers.Set("conversation_id", s.openAIOutboundSessionID(account, apiKeyID, sessionResolution.ConversationID))
+			headers.Set("conversation_id", s.openAIOutboundSessionID(account, apiKeyID, sessionResolution.ConversationID))
 		}
 	} else {
 		if sessionResolution.SessionID != "" {
@@ -159,11 +159,13 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	}
 	headers.Set("OpenAI-Beta", betaValue)
 
-		// Apply account overrides before the shared final identity stage. The
-		// identity resolver intentionally ignores inbound client User-Agent values.
+	// Apply account overrides before the shared final identity stage. The
+	// identity resolver intentionally ignores inbound client User-Agent values.
 	account.ApplyHeaderOverrides(headers)
-	if account != nil && account.Type == AccountTypeOAuth {
+	if account != nil && (account.Type == AccountTypeOAuth || usesCodexRelayKernel(account)) {
 		s.finalizeCodexOAuthHeaders(ctx, c, account, headers, codexFingerprintIDsFromContext(c), bodyIdentitySessionID)
+	} else if account != nil && account.IsOpenAIOAuthLike() {
+		s.applyOpenAIOutboundIdentityPolicy(ctx, account, headers, openAIOutboundOAuthPolicy)
 	} else {
 		s.applyOpenAIOutboundIdentityPolicy(ctx, account, headers, openAIOutboundAPIKeyPolicy)
 	}
@@ -198,13 +200,13 @@ func (s *OpenAIGatewayService) buildOpenAIWSCreatePayload(reqBody map[string]any
 	payload["type"] = "response.create"
 
 	// OAuth 默认保持 store=false，避免误依赖服务端历史。
-		if account != nil && account.UsesOpenAICodexProtocol() {
-			if account.Type == AccountTypeOAuth {
-				sanitizeOpenAIOutboundBrandMarkers(payload)
-			}
-			if !s.isOpenAIWSStoreRecoveryAllowed(account) {
-				payload["store"] = false
-			}
+	if account != nil && account.UsesOpenAICodexProtocol() {
+		if account.Type == AccountTypeOAuth {
+			sanitizeOpenAIOutboundBrandMarkers(payload)
+		}
+		if !s.isOpenAIWSStoreRecoveryAllowed(account) {
+			payload["store"] = false
+		}
 	}
 	return payload
 }
