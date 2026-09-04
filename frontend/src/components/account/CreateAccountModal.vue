@@ -4234,7 +4234,7 @@ const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OF
 const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAppServerEnabled = ref(false)
 type CodexFingerprintMode = 'off' | 'device' | 'session' | 'window' | 'window40' | 'full'
-const codexFingerprintMode = ref<CodexFingerprintMode>('device')
+const codexFingerprintMode = ref<CodexFingerprintMode>('off')
 const codexRelaySettings = ref<CodexRelaySettingsValue>(createDefaultCodexRelaySettings())
 type AnthropicAPIKeyAuthScheme = 'x_api_key' | 'authorization_bearer'
 const anthropicPassthroughEnabled = ref(false)
@@ -5306,15 +5306,16 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
   } else {
     delete extra.codex_cli_only_allow_app_server
   }
-  if (codexFingerprintMode.value !== 'off') {
-    extra.codex_fingerprint_mode = codexFingerprintMode.value
-  } else {
-    delete extra.codex_fingerprint_mode
-  }
-
-  // 写入 OpenAI Codex Relay Kernel 配置
+  // Codex 指纹/Relay 只属于 OpenAI OAuth/setup-token。
+  // 默认 device 不能写进别的平台，否则创建会被 CODEX_RELAY_ACCOUNT_INVALID 直接拒绝。
   if (form.platform === 'openai' && accountCategory.value === 'oauth-based') {
     serializeCodexRelaySettingsToExtra(codexRelaySettings.value, extra)
+  } else {
+    delete extra.codex_fingerprint_mode
+    delete extra.codex_relay_mode
+    delete extra.codex_identity_policy_version
+    delete extra.codex_client_profile
+    delete extra.codex_relay_shadow_enabled
   }
   if (openAICompactMode.value !== 'auto') {
     extra.openai_compact_mode = openAICompactMode.value

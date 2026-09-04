@@ -120,6 +120,11 @@ func TestValidateCodexRelayAccountExtra(t *testing.T) {
 	require.ErrorContains(t, ValidateCodexRelayAccountExtra(PlatformOpenAI, AccountTypeOAuth, missingIdentity, testCodexRelaySecret), "requires a managed")
 }
 
+func TestValidateCodexRelayAccountExtraIgnoresUnconfiguredAccounts(t *testing.T) {
+	require.NoError(t, ValidateCodexRelayAccountExtra(PlatformAnthropic, AccountTypeAPIKey, nil, testCodexRelaySecret))
+	require.NoError(t, ValidateCodexRelayAccountExtra(PlatformOpenAI, AccountTypeAPIKey, map[string]any{"foo": "bar"}, testCodexRelaySecret))
+}
+
 func TestCodexRelaySensitiveExtraIsNotPersistable(t *testing.T) {
 	input := map[string]any{
 		CodexRelayModeExtraKey:             string(CodexRelayModeLegacy),

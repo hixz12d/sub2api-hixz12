@@ -249,6 +249,18 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     expect(createAccountMock.mock.calls[0]?.[0]?.extra?.openai_long_context_billing_enabled).toBe(false)
   })
 
+  it('does not send Codex relay extras when creating a non-OpenAI API key account', async () => {
+    await submitApiKeyAccount('anthropic')
+
+    expect(createAccountMock).toHaveBeenCalledTimes(1)
+    const extra = createAccountMock.mock.calls[0]?.[0]?.extra || {}
+    expect(extra.codex_fingerprint_mode).toBeUndefined()
+    expect(extra.codex_relay_mode).toBeUndefined()
+    expect(extra.codex_client_profile).toBeUndefined()
+    expect(extra.codex_identity_policy_version).toBeUndefined()
+    expect(extra.codex_relay_shadow_enabled).toBeUndefined()
+  })
+
   it('persists upstream model metadata after creating an account from preview', async () => {
     const wrapper = mountModal()
     await selectButtonByText(wrapper, 'OpenAI')

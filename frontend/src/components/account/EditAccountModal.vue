@@ -3363,7 +3363,7 @@ const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OF
 const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAppServerEnabled = ref(false)
 type CodexFingerprintMode = 'off' | 'device' | 'session' | 'window' | 'window40' | 'full'
-const codexFingerprintMode = ref<CodexFingerprintMode>('device')
+const codexFingerprintMode = ref<CodexFingerprintMode>('off')
 type CodexImageToolMode = 'inherit' | 'enabled' | 'disabled' | 'block'
 const codexImageToolMode = ref<CodexImageToolMode>('inherit')
 const codexRelaySettings = ref<CodexRelaySettingsValue>(createDefaultCodexRelaySettings())
@@ -5477,21 +5477,19 @@ const handleSubmit = async () => {
         }
       }
 
-      // 指纹收敛默认关闭；仅显式启用时写入模式。
-      if (props.account.type === 'oauth') {
-        if (codexFingerprintMode.value !== 'off') {
-          newExtra.codex_fingerprint_mode = codexFingerprintMode.value
-        } else {
-          delete newExtra.codex_fingerprint_mode
-        }
-      }
-
-      // Relay 配置仅适用于 OpenAI OAuth/setup-token 的非影子账号。
+      // Codex 指纹/Relay 只属于 OpenAI OAuth/setup-token。
       if (
+        props.account.platform === 'openai' &&
         (props.account.type === 'oauth' || props.account.type === 'setup-token') &&
         !isSparkShadow.value
       ) {
         serializeCodexRelaySettingsToExtra(codexRelaySettings.value, newExtra)
+      } else {
+        delete newExtra.codex_fingerprint_mode
+        delete newExtra.codex_relay_mode
+        delete newExtra.codex_identity_policy_version
+        delete newExtra.codex_client_profile
+        delete newExtra.codex_relay_shadow_enabled
       }
       if (props.account.type === 'oauth') {
         newExtra.enable_tls_fingerprint = !!tlsFingerprintEnabled.value
