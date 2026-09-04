@@ -4,6 +4,7 @@ import {
   createDefaultCodexRelaySettings,
   extractCodexRelaySettingsFromExtra,
   serializeCodexRelaySettingsToExtra,
+  serializeCodexRelayToBulkExtra,
   mapCodexRelayApiError,
   validateCodexRelayState,
   type CodexRelayFormState
@@ -96,6 +97,26 @@ describe('codexRelaySchema', () => {
     expect(extra.codex_client_profile).toBe('pi')
     expect(extra.codex_relay_shadow_enabled).toBe(true)
     expect(extra.codex_fingerprint_mode).toBe('window')
+  })
+
+  it('serializes bulk extra with explicit default sentinels', () => {
+    const extra: Record<string, any> = {
+      other_key: 'preserve_this',
+      codex_relay_mode: 'relay_kernel',
+      codex_identity_policy_version: 'v2',
+      codex_client_profile: 'codex_exec',
+      codex_relay_shadow_enabled: true,
+      codex_fingerprint_mode: 'full'
+    }
+
+    serializeCodexRelayToBulkExtra(createDefaultCodexRelaySettings(), extra)
+
+    expect(extra.other_key).toBe('preserve_this')
+    expect(extra.codex_relay_mode).toBe('legacy')
+    expect(extra.codex_identity_policy_version).toBe('v1')
+    expect(extra.codex_client_profile).toBe('auto')
+    expect(extra.codex_relay_shadow_enabled).toBe(false)
+    expect(extra.codex_fingerprint_mode).toBe('off')
   })
 
   it('contains expected catalog items in CODEX_CLIENT_PROFILES', () => {

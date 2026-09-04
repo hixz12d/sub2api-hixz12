@@ -196,6 +196,21 @@ export function serializeCodexRelayToExtra(
   }
 }
 
+/**
+ * 批量 JSONB 顶层合并不能靠删键恢复默认值，必须把每个白名单键都写成显式值。
+ * 单账号 Create/Edit 仍走 serializeCodexRelayToExtra；批量路径专用本函数。
+ */
+export function serializeCodexRelayToBulkExtra(
+  state: CodexRelayFormState,
+  targetExtra: Record<string, any>
+): void {
+  targetExtra.codex_relay_mode = state.codex_relay_mode
+  targetExtra.codex_identity_policy_version = state.codex_identity_policy_version
+  targetExtra.codex_client_profile = state.codex_client_profile
+  targetExtra.codex_relay_shadow_enabled = Boolean(state.codex_relay_shadow_enabled)
+  targetExtra.codex_fingerprint_mode = state.codex_fingerprint_mode
+}
+
 export function mapCodexRelayApiError(
   error: {
     reason?: string

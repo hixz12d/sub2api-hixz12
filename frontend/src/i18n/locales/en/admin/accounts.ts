@@ -515,7 +515,9 @@ export default {
         noFieldsSelected: 'Select at least one field to update',
         rateSyncWarning: 'Accounts with upstream rate sync enabled cannot be changed in bulk. Disable sync in the account editor first.',
         rateSyncConflict: 'Cannot change account rates: {count} target account(s) have upstream rate sync enabled.',
-        mixedPlatformWarning: 'Selected accounts span multiple platforms ({platforms}). Model mapping presets shown are combined — ensure mappings are appropriate for each platform.'
+        mixedPlatformWarning: 'Selected accounts span multiple platforms ({platforms}). Model mapping presets shown are combined — ensure mappings are appropriate for each platform.',
+        codexRelayHint: 'Checking this overwrites relay mode, identity policy, client profile, fingerprint isolation, and shadow comparison as a group. Relay Kernel forces identity policy v2 and requires a managed fingerprint mode.',
+        tlsFingerprintHint: 'Checking this applies the TLS fingerprint toggle below to every selected account. Turn it off and save to use the system TLS handshake instead of impersonation.'
       },
       bulkDeleteTitle: 'Bulk Delete Accounts',
       bulkDeleteConfirm: 'Delete the selected {count} account(s)? This action cannot be undone.',

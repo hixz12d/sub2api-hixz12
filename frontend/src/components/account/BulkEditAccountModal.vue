@@ -973,22 +973,88 @@
         </div>
       </div>
 
-      <!-- Codex 指纹收敛模式（仅 OpenAI OAuth） -->
+      <!-- Codex Relay Kernel（仅 OpenAI OAuth / Setup Token） -->
       <div v-if="allOpenAIOAuth" class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div class="mb-3 flex items-center justify-between">
-          <label class="input-label mb-0">{{ t('admin.accounts.openai.codexFingerprintMode') }}</label>
+          <label
+            id="bulk-edit-openai-codex-relay-label"
+            class="input-label mb-0"
+            for="bulk-edit-openai-codex-relay-enabled"
+          >
+            {{ t('admin.accounts.openai.codexRelayKernelSectionTitle') }}
+          </label>
           <input
-            id="bulk-edit-openai-codex-fingerprint-mode-enabled"
-            v-model="enableCodexFingerprintMode"
+            id="bulk-edit-openai-codex-relay-enabled"
+            v-model="enableCodexRelaySettings"
             type="checkbox"
+            aria-controls="bulk-edit-openai-codex-relay-body"
             class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
           />
         </div>
-        <div :class="!enableCodexFingerprintMode && 'pointer-events-none opacity-50'">
-          <p class="mb-2 text-xs text-gray-500 dark:text-gray-400">
-            {{ t('admin.accounts.openai.codexFingerprintModeDesc') }}
+        <p class="mb-3 text-xs text-gray-500 dark:text-gray-400">
+          {{ t('admin.accounts.bulkEdit.codexRelayHint') }}
+        </p>
+        <div
+          id="bulk-edit-openai-codex-relay-body"
+          :class="!enableCodexRelaySettings && 'pointer-events-none opacity-50'"
+        >
+          <CodexRelaySettings
+            v-model="codexRelaySettings"
+            :disabled="!enableCodexRelaySettings"
+            :errors="codexRelayErrors"
+          />
+        </div>
+      </div>
+
+      <!-- TLS 指纹模拟（仅 OpenAI OAuth / Setup Token） -->
+      <div v-if="allOpenAIOAuth" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+        <div class="mb-3 flex items-center justify-between">
+          <label
+            id="bulk-edit-openai-tls-fingerprint-label"
+            class="input-label mb-0"
+            for="bulk-edit-openai-tls-fingerprint-enabled"
+          >
+            {{ t('admin.accounts.quotaControl.tlsFingerprint.label') }}
+          </label>
+          <input
+            id="bulk-edit-openai-tls-fingerprint-enabled"
+            v-model="enableTLSFingerprint"
+            type="checkbox"
+            aria-controls="bulk-edit-openai-tls-fingerprint-body"
+            class="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          />
+        </div>
+        <p class="mb-3 text-xs text-gray-500 dark:text-gray-400">
+          {{ t('admin.accounts.bulkEdit.tlsFingerprintHint') }}
+        </p>
+        <div
+          id="bulk-edit-openai-tls-fingerprint-body"
+          :class="!enableTLSFingerprint && 'pointer-events-none opacity-50'"
+          class="flex items-center justify-between gap-4"
+        >
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.quotaControl.tlsFingerprint.hint') }}
           </p>
-          <Select v-model="codexFingerprintMode" data-testid="bulk-codex-fingerprint-mode-select" :options="codexFingerprintModeOptions" />
+          <button
+            id="bulk-edit-openai-tls-fingerprint-toggle"
+            type="button"
+            data-testid="bulk-edit-openai-tls-fingerprint-toggle"
+            role="switch"
+            :disabled="!enableTLSFingerprint"
+            :aria-checked="tlsFingerprintEnabled"
+            :class="[
+              'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              tlsFingerprintEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
+            ]"
+            @click="tlsFingerprintEnabled = !tlsFingerprintEnabled"
+          >
+            <span
+              :class="[
+                'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out',
+                tlsFingerprintEnabled ? 'translate-x-5' : 'translate-x-0'
+              ]"
+            />
+          </button>
         </div>
       </div>
 
@@ -1507,6 +1573,13 @@ import {
   type HeaderOverrideRow
 } from '@/components/account/credentialsBuilder'
 import GrokBaseUrlPresets from '@/components/account/GrokBaseUrlPresets.vue'
+import CodexRelaySettings from '@/components/account/CodexRelaySettings.vue'
+import {
+  createDefaultCodexRelaySettings,
+  serializeCodexRelayToBulkExtra,
+  validateCodexRelayState,
+  type CodexRelayFormState
+} from '@/components/account/codexRelaySchema'
 import {
   OPENAI_WS_MODE_CTX_POOL,
   OPENAI_WS_MODE_OFF,
@@ -1667,6 +1740,8 @@ const enableOpenAIAPIKeyWSMode = ref(false)
 const enableUpstreamBillingAutoProbe = ref(false)
 const enableCodexCLIOnly = ref(false)
 const enableCodexCLIOnlyAppServer = ref(false)
+const enableCodexRelaySettings = ref(false)
+const enableTLSFingerprint = ref(false)
 const enableOpenAICompactMode = ref(false)
 const enableOpenAICompactModelMapping = ref(false)
 const enableRpmLimit = ref(false)
@@ -1706,17 +1781,14 @@ const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OF
 const upstreamBillingAutoProbeMode = ref<'enabled' | 'disabled'>('enabled')
 const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAppServerEnabled = ref(false)
-type CodexFingerprintMode = 'off' | 'device' | 'session' | 'window' | 'window40' | 'full'
-const enableCodexFingerprintMode = ref(false)
-const codexFingerprintMode = ref<CodexFingerprintMode>('off')
-const codexFingerprintModeOptions = computed(() => [
-  { value: 'off' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintOff') },
-  { value: 'device' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintDevice') },
-  { value: 'session' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintSession') },
-  { value: 'window' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintWindow') },
-  { value: 'window40' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintWindow40') },
-  { value: 'full' as CodexFingerprintMode, label: t('admin.accounts.openai.codexFingerprintFull') },
-])
+const codexRelaySettings = ref<CodexRelayFormState>(createDefaultCodexRelaySettings())
+const tlsFingerprintEnabled = ref(true)
+const codexRelayErrors = computed(() => {
+  if (!enableCodexRelaySettings.value) {
+    return {}
+  }
+  return validateCodexRelayState(codexRelaySettings.value, t).errors
+})
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAICompactModelMappings = ref<ModelMapping[]>([])
 const rpmLimitEnabled = ref(false)
@@ -2090,25 +2162,14 @@ const buildUpdatePayload = (): Record<string, unknown> | null => {
     extra.codex_cli_only_allow_app_server = codexCLIOnlyAppServerEnabled.value
   }
 
-  if (enableCodexFingerprintMode.value) {
+  if (enableCodexRelaySettings.value && allOpenAIOAuth.value) {
     const extra = ensureExtra()
-    // off 必须显式落键，不能靠删本地键表达。批量更新走 JSONB 顶层合并
-    // （extra = COALESCE(extra,'{}') || payload），删掉 payload 里的键只表示
-    // "本次不更新该键"，清不掉账号上已有的 device/session/full；而且只删不写会让
-    // 整个 payload 退化成 {extra:{}}，被后端 len(req.Extra) > 0 判为空更新直接 400
-    // "No updates provided"（#6327）。
-    //
-    // Create/Edit 那两个表单可以删键，是因为它们提交完整 extra 对象、后端整体
-    // SetExtra 覆盖；批量接口只合并增量键，两种持久化语义不能共用同一套写法。
-    //
-    // 显式 off 与不设置在读取侧完全等价：codexFingerprintModeFromExtra 对空值/
-    // 非法值走 default 回落 off，对 "off" 命中同一分支，所以 #5610 定下的
-    // "不显式 opt-in 就保持旧客户端身份" 不受影响；ShouldEnsureCodexFingerprintSeed-
-    // ForExtraUpdates 同样只在 device/session/full 时要种子，off 不会触发。
-    //
-    // 与本函数里其它"关闭/清除"字段的写法一致：codex_cli_only 直接落 false，
-    // load_factor 落 0，proxy_id 落 0 —— 批量路径一律用显式哨兵值，不用省略。
-    extra.codex_fingerprint_mode = codexFingerprintMode.value
+    serializeCodexRelayToBulkExtra(codexRelaySettings.value, extra)
+  }
+
+  if (enableTLSFingerprint.value && allOpenAIOAuth.value) {
+    const extra = ensureExtra()
+    extra.enable_tls_fingerprint = !!tlsFingerprintEnabled.value
   }
 
   if (enableOpenAICompactMode.value) {
@@ -2224,7 +2285,8 @@ const handleSubmit = async () => {
     enableUpstreamBillingAutoProbe.value ||
     enableCodexCLIOnly.value ||
     enableCodexCLIOnlyAppServer.value ||
-    enableCodexFingerprintMode.value ||
+    enableCodexRelaySettings.value ||
+    enableTLSFingerprint.value ||
     enableOpenAICompactMode.value ||
     enableOpenAICompactModelMapping.value ||
     enableRpmLimit.value ||
@@ -2241,6 +2303,17 @@ const handleSubmit = async () => {
     const trimmedBaseUrl = baseUrl.value.trim()
     if (trimmedBaseUrl && !/^https?:\/\//i.test(trimmedBaseUrl)) {
       appStore.showError(t('admin.accounts.grokCustomBaseUrl.invalid'))
+      return
+    }
+  }
+
+  if (enableCodexRelaySettings.value && allOpenAIOAuth.value) {
+    const validation = validateCodexRelayState(codexRelaySettings.value, t)
+    if (!validation.valid) {
+      const firstError = Object.values(validation.errors)[0]
+      if (firstError) {
+        appStore.showError(firstError)
+      }
       return
     }
   }
@@ -2375,8 +2448,8 @@ watch(
       enableUpstreamBillingAutoProbe.value = false
       enableCodexCLIOnly.value = false
       enableCodexCLIOnlyAppServer.value = false
-      enableCodexFingerprintMode.value = false
-      codexFingerprintMode.value = 'off'
+      enableCodexRelaySettings.value = false
+      enableTLSFingerprint.value = false
       enableOpenAICompactMode.value = false
       enableOpenAICompactModelMapping.value = false
       enableRpmLimit.value = false
@@ -2408,6 +2481,8 @@ watch(
       upstreamBillingAutoProbeMode.value = 'enabled'
       codexCLIOnlyEnabled.value = false
       codexCLIOnlyAppServerEnabled.value = false
+      codexRelaySettings.value = createDefaultCodexRelaySettings()
+      tlsFingerprintEnabled.value = true
       openAICompactMode.value = 'auto'
       openAICompactModelMappings.value = []
       rpmLimitEnabled.value = false

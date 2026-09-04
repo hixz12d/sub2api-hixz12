@@ -605,7 +605,9 @@ export default {
         noFieldsSelected: '请至少选择一个要更新的字段',
         rateSyncWarning: '已开启上游倍率同步的账号不能批量手工修改倍率，请先在账号编辑页关闭同步。',
         rateSyncConflict: '无法修改账号倍率：{count} 个目标账号已开启上游倍率同步。',
-        mixedPlatformWarning: '所选账号跨越多个平台（{platforms}）。显示的模型映射预设为合并结果——请确保映射对每个平台都适用。'
+        mixedPlatformWarning: '所选账号跨越多个平台（{platforms}）。显示的模型映射预设为合并结果——请确保映射对每个平台都适用。',
+        codexRelayHint: '勾选后会整组覆盖中继架构、会话策略、客户端画像、指纹收敛和 Shadow 对照。Relay Kernel 会强制会话策略 v2，并要求指纹收敛不是关闭。',
+        tlsFingerprintHint: '勾选后会把所选账号的 TLS 指纹模拟统一成下面这个开关。关掉后保存即改用系统默认 TLS，不再伪装。'
       },
       bulkDeleteTitle: '批量删除账号',
       bulkDeleteConfirm: '确定要删除选中的 {count} 个账号吗？此操作无法撤销。',

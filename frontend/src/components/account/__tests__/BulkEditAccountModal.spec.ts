@@ -58,12 +58,13 @@ function mountModal(extraProps: Record<string, unknown> = {}) {
         BaseDialog: { template: '<div><slot /><slot name="footer" /></div>' },
         ConfirmDialog: true,
         Select: {
-          props: ['modelValue', 'options'],
+          props: ['modelValue', 'options', 'disabled'],
           emits: ['update:modelValue'],
           template: `
             <select
               v-bind="$attrs"
               :value="modelValue"
+              :disabled="disabled"
               @change="$emit('update:modelValue', $event.target.value)"
             >
               <option v-for="option in options" :key="option.value" :value="option.value">
@@ -920,61 +921,71 @@ describe('BulkEditAccountModal', () => {
       status: 'active'
     })
   })
-  // issue #6327：批量编辑无法把 Codex 指纹收敛关掉。
-  //
-  // 批量更新走 JSONB 顶层合并（extra = COALESCE(extra,'{}') || payload），删掉 payload
-  // 里的键只表示「本次不更新该键」，清不掉账号已有的 device/session/full；而且只删不写会让
-  // payload 退化成 {extra:{}}，被后端 len(req.Extra) > 0 判为空更新直接 400
-  // "No updates provided"。Create/Edit 那两个表单能删键，是因为它们提交完整 extra 对象、
-  // 后端整体 SetExtra 覆盖——两种持久化语义不能共用同一套写法。
-  it('OpenAI OAuth 批量编辑选择「关闭」时应显式提交 codex_fingerprint_mode=off（issue #6327）', async () => {
+  it('OpenAI OAuth 批量编辑可一键统一 Relay Kernel 整组配置', async () => {
     const wrapper = mountModal({
       selectedPlatforms: ['openai'],
       selectedTypes: ['oauth']
     })
 
-    // 下拉框默认就是 off，用户只勾选「编辑该项」即提交——正是 issue 描述的操作路径。
-    await wrapper.get('#bulk-edit-openai-codex-fingerprint-mode-enabled').setValue(true)
+    await wrapper.get('#bulk-edit-openai-codex-relay-enabled').setValue(true)
+    await wrapper.get('[data-testid="codex-relay-mode-select"]').setValue('relay_kernel')
+    await wrapper.get('[data-testid="codex-client-profile-select"]').setValue('codex_cli')
+    await wrapper.get('[data-testid="codex-fingerprint-mode-select"]').setValue('session')
     await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
     await flushPromises()
 
     expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
     expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
       extra: {
-        codex_fingerprint_mode: 'off'
-      }
-    })
-
-    // 缺陷时期的形状：extra 为空对象，后端必然回 400。显式钉死不得回退。
-    const payload = vi.mocked(adminAPI.accounts.bulkUpdate).mock.calls[0][1] as {
-      extra: Record<string, unknown>
-    }
-    expect(Object.keys(payload.extra).length).toBeGreaterThan(0)
-  })
-
-  // 与兄弟字段 codex_cli_only 的写法对齐：关闭态同样落显式值，不靠省略表达。
-  it('OpenAI OAuth 批量编辑显式 opt-in 模式仍原样提交', async () => {
-    const wrapper = mountModal({
-      selectedPlatforms: ['openai'],
-      selectedTypes: ['oauth']
-    })
-
-    await wrapper.get('#bulk-edit-openai-codex-fingerprint-mode-enabled').setValue(true)
-    await wrapper
-      .get('[data-testid="bulk-codex-fingerprint-mode-select"]')
-      .setValue('session')
-    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
-    await flushPromises()
-
-    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
-      extra: {
+        codex_relay_mode: 'relay_kernel',
+        codex_identity_policy_version: 'v2',
+        codex_client_profile: 'codex_cli',
+        codex_relay_shadow_enabled: false,
         codex_fingerprint_mode: 'session'
       }
     })
   })
 
-  // 未勾选「编辑该项」时不得写入该键，否则批量编辑别的字段会顺手清掉账号的收敛设置。
-  it('未勾选编辑该项时不写入 codex_fingerprint_mode', async () => {
+  it('OpenAI OAuth 批量编辑切回 Legacy 时仍显式提交默认哨兵值', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['oauth']
+    })
+
+    await wrapper.get('#bulk-edit-openai-codex-relay-enabled').setValue(true)
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      extra: {
+        codex_relay_mode: 'legacy',
+        codex_identity_policy_version: 'v1',
+        codex_client_profile: 'auto',
+        codex_relay_shadow_enabled: false,
+        codex_fingerprint_mode: 'off'
+      }
+    })
+  })
+
+  it('OpenAI OAuth 批量编辑可统一关闭 TLS 指纹模拟', async () => {
+    const wrapper = mountModal({
+      selectedPlatforms: ['openai'],
+      selectedTypes: ['oauth']
+    })
+
+    await wrapper.get('#bulk-edit-openai-tls-fingerprint-enabled').setValue(true)
+    await wrapper.get('[data-testid="bulk-edit-openai-tls-fingerprint-toggle"]').trigger('click')
+    await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+
+    expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
+      extra: {
+        enable_tls_fingerprint: false
+      }
+    })
+  })
+
+  it('未勾选 Relay Kernel / TLS 时不写入对应 extra 键', async () => {
     const wrapper = mountModal({
       selectedPlatforms: ['openai'],
       selectedTypes: ['oauth']
