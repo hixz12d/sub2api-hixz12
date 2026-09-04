@@ -1025,7 +1025,7 @@ export default {
         },
         tlsFingerprint: {
           label: 'TLS 指纹模拟',
-          hint: 'Anthropic 模拟 Claude Code / Node.js；OpenAI OAuth 默认模拟 Chrome / Electron，多人共用同一账号时不要改成每人一套',
+          hint: 'Anthropic 模拟 Claude Code / Node.js；OpenAI OAuth 默认模拟 Chrome / Electron。关掉后需保存，账号会改用系统默认 TLS，不再伪装。多人共用同一账号时不要改成每人一套',
           defaultProfile: '内置默认',
           randomProfile: '随机'
         },

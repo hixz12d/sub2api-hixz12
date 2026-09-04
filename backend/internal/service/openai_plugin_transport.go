@@ -20,11 +20,15 @@ func (s *OpenAIGatewayService) doOpenAIUpstream(request *http.Request, proxyURL 
 		}
 	}
 	if state, ok := CodexAttemptStateFromContext(request.Context()); ok && state.PolicyVersion() == CodexIdentityPolicyV2 {
-		profile := state.Profile()
-		if profile.Transport.TLSProfileID == tlsfingerprint.HelloPresetChromeAuto {
-			tlsProfile := tlsfingerprint.BuiltinChromeAutoProfile()
-			tlsProfile.CacheScopeKey = state.TransportKey()
-			return s.httpUpstream.DoWithTLS(request, proxyURL, account.ID, account.Concurrency, tlsProfile)
+		// Relay Kernel 的 Chrome/uTLS 只在账号显式允许 TLS 伪装时生效。
+		// 关闭 enable_tls_fingerprint 后必须走普通握手，否则账号开关形同虚设。
+		if account.IsTLSFingerprintEnabled() {
+			profile := state.Profile()
+			if profile.Transport.TLSProfileID == tlsfingerprint.HelloPresetChromeAuto {
+				tlsProfile := tlsfingerprint.BuiltinChromeAutoProfile()
+				tlsProfile.CacheScopeKey = state.TransportKey()
+				return s.httpUpstream.DoWithTLS(request, proxyURL, account.ID, account.Concurrency, tlsProfile)
+			}
 		}
 	}
 	return s.httpUpstream.Do(request, proxyURL, account.ID, account.Concurrency)

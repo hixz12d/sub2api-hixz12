@@ -950,7 +950,7 @@ export default {
         },
         tlsFingerprint: {
           label: 'TLS Fingerprint Simulation',
-          hint: 'Anthropic uses Claude Code/Node.js. OpenAI OAuth defaults to Chrome/Electron. Shared accounts should keep one handshake.',
+          hint: 'Anthropic uses Claude Code/Node.js. OpenAI OAuth defaults to Chrome/Electron. Turn it off and save to use the system TLS handshake. Shared accounts should keep one handshake.',
           defaultProfile: 'Built-in Default',
           randomProfile: 'Random'
         },

@@ -84,6 +84,27 @@ func TestRelayKernelHTTPUsesProfiledTLSExactlyOnce(t *testing.T) {
 	require.Equal(t, int32(1), upstream.tlsCalls.Load())
 }
 
+func TestRelayKernelHTTPHonorsDisabledTLSFingerprint(t *testing.T) {
+	plan := mustCodexPlanForTest(t, "transport-logical", "transport-conversation", CodexTransportHTTP, time.Unix(1_800_000_000, 0))
+	state, err := FinalizeCodexAttempt(plan, CodexAttemptInput{
+		AccountID:         702,
+		CredentialVersion: "credential-v1",
+		ProfileID:         CodexProfileCLI,
+		FingerprintMode:   string(codexFingerprintSession),
+	}, testCodexRelaySecret)
+	require.NoError(t, err)
+	upstream := &codexTransportCountingUpstream{}
+	svc := &OpenAIGatewayService{httpUpstream: upstream}
+	account := newTestOAuthAccount(702, map[string]any{"enable_tls_fingerprint": false})
+	req := httptest.NewRequest(http.MethodPost, "https://chatgpt.com/backend-api/codex/responses", nil)
+	req = req.WithContext(ContextWithCodexAttemptState(req.Context(), state))
+
+	_, err = svc.doOpenAIUpstream(req, "", account)
+	require.Error(t, err)
+	require.Equal(t, int32(1), upstream.plainCalls.Load())
+	require.Zero(t, upstream.tlsCalls.Load())
+}
+
 type codexTransportCountingUpstream struct {
 	plainCalls atomic.Int32
 	tlsCalls   atomic.Int32
