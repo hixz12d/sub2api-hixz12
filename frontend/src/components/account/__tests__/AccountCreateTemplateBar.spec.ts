@@ -47,7 +47,7 @@ const BaseDialogStub = defineComponent({
 })
 
 const SelectStub = defineComponent({
-  name: 'Select',
+  name: 'SelectStub',
   props: { modelValue: { type: String, default: '' }, options: { type: Array, default: () => [] } },
   emits: ['update:modelValue'],
   template: '<select :value="modelValue" data-testid="account-create-template-select" @change="$emit(\'update:modelValue\', ($event.target).value)"><option v-for="opt in options" :key="opt.value" :value="opt.value">{{ opt.label }}</option></select>',
