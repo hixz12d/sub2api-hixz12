@@ -340,11 +340,16 @@ const handleSave = async () => {
 
   try {
 
-    // 构建 allowed_groups：专属分组中被勾选的，以及开启限制后被勾选的公开分组。
-    // 未开启限制时不写入公开分组，保持该表"额外授予"的原有语义。
-    const allowedGroups = groupConfigs.value
-      .filter((c) => c.isSelected && (c.isExclusive || restrictPublicGroups.value))
-      .map((c) => c.groupId)
+    // 只改写弹窗实际加载到的分组；保留不在当前列表中的既有授权，避免因
+    // 分页、类型过滤或分组删除状态导致静默丢失。
+    const managedGroupIds = new Set(groupConfigs.value.map((config) => config.groupId))
+    const preservedHiddenGroupIds = originalAllowedGroups.value.filter(
+      (groupId) => !managedGroupIds.has(groupId)
+    )
+    const selectedGroupIds = groupConfigs.value
+      .filter((config) => config.isSelected && (config.isExclusive || restrictPublicGroups.value))
+      .map((config) => config.groupId)
+    const allowedGroups = [...preservedHiddenGroupIds, ...selectedGroupIds]
 
     // 构建 group_rates
     // - 有新专属倍率: 设置为该值

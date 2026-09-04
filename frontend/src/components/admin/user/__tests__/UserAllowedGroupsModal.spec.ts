@@ -103,6 +103,7 @@ describe('UserAllowedGroupsModal', () => {
 
     expect(updateUser).toHaveBeenCalledWith(7, {
       allowed_groups: [999, 39],
+      restrict_public_groups: false,
       group_rates: undefined,
     })
   })
@@ -116,6 +117,7 @@ describe('UserAllowedGroupsModal', () => {
 
     expect(updateUser).toHaveBeenCalledWith(7, {
       allowed_groups: [999],
+      restrict_public_groups: false,
       group_rates: undefined,
     })
   })
