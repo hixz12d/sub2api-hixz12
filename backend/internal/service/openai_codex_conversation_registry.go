@@ -166,7 +166,16 @@ func (s *OpenAIGatewayService) resolveCodexConversationAttempt(
 	if err != nil {
 		return nil, err
 	}
-	resolved, created, err := registry.ResolveOrCreateCodexConversation(ctx, plan.ConversationDigest(), candidate, s.openAIAffinityTTL(AffinityStrong))
+	var resolved CodexConversationState
+	created := false
+	if plan.requireExistingConversation {
+		resolved, err = registry.GetCodexConversation(ctx, plan.ConversationDigest())
+		if errors.Is(err, ErrCodexConversationNotFound) {
+			return nil, codexRecoveryFailure(codexRecoverySnapshotMissing)
+		}
+	} else {
+		resolved, created, err = registry.ResolveOrCreateCodexConversation(ctx, plan.ConversationDigest(), candidate, s.codexConversationTTL(plan))
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -191,8 +200,17 @@ func (s *OpenAIGatewayService) resolveCodexConversationAttempt(
 		}
 		// A CAS loser must not replace a healthy winner still preparing output.
 		recoveringCommitted = recoveringCommitted || resolved.Committed
-		if recoveringCommitted && !s.canRecoverUnavailableCodexConversation(ctx, plan, resolved, candidate, replaySafe) {
-			return nil, openAIConversationRecoveryError()
+		refreshTransport := codexConversationTransportRefreshAllowed(resolved, candidate)
+		if recoveringCommitted && !refreshTransport && !s.canRecoverUnavailableCodexConversation(ctx, plan, resolved, candidate, replaySafe) {
+			if resolved.AccountID == candidate.AccountID {
+				return nil, codexRecoveryFailure(codexRecoveryRouteChanged)
+			}
+			return nil, codexRecoveryFailure(codexRecoveryAccountMismatch)
+		}
+		if refreshTransport {
+			transportVersion := candidate.TransportConfigVersion
+			candidate = resolved
+			candidate.TransportConfigVersion = transportVersion
 		}
 		if retries >= 3 {
 			return nil, ErrCodexConversationCASConflict
@@ -205,7 +223,7 @@ func (s *OpenAIGatewayService) resolveCodexConversationAttempt(
 			resolved.Revision,
 			resolved.AccountID,
 			candidate,
-			s.openAIAffinityTTL(AffinityStrong),
+			s.codexConversationTTL(plan),
 		)
 		if replaceErr == nil {
 			resolved = replaced
@@ -263,7 +281,7 @@ func (s *OpenAIGatewayService) CommitCodexConversation(ctx context.Context) erro
 	if err != nil {
 		return err
 	}
-	if !codexConversationMatchesAttempt(current, attempt) {
+	if !codexConversationMatchesCompletedAttempt(current, attempt) {
 		return ErrCodexConversationCASConflict
 	}
 	next := current
@@ -284,11 +302,11 @@ func (s *OpenAIGatewayService) CommitCodexConversation(ctx context.Context) erro
 		current.Revision,
 		current.AccountID,
 		next,
-		s.openAIAffinityTTL(AffinityStrong),
+		s.codexConversationTTL(plan),
 	)
 	if errors.Is(err, ErrCodexConversationCASConflict) {
 		latest, getErr := registry.GetCodexConversation(ctx, plan.ConversationDigest())
-		if getErr == nil && codexConversationMatchesAttempt(latest, attempt) && latest.Committed {
+		if getErr == nil && codexConversationMatchesCompletedAttempt(latest, attempt) && latest.Committed {
 			return nil
 		}
 	}

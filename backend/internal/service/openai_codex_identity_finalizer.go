@@ -179,9 +179,13 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthIdentity(
 	if err != nil {
 		return nil, err
 	}
-	plan, err = s.resolveCodexResponseConversationPlan(c, plan, settings.InstallationPolicy, deriver)
+	var legacyContinuation bool
+	plan, legacyContinuation, err = s.resolveCodexResponseConversationPlan(c, plan, settings.InstallationPolicy, deriver, account)
 	if err != nil {
 		return nil, err
+	}
+	if legacyContinuation {
+		settings.InstallationPolicy = CodexInstallationLegacyV2
 	}
 	credentialVersion := deriver.DigestHex("codex/credential-version/v2", account.GetOpenAIAccessToken())
 	proxyIdentity := "direct"

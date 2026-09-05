@@ -176,17 +176,18 @@ type CodexRequestPlanInput struct {
 }
 
 type CodexRequestPlan struct {
-	logicalRequestID   string
-	conversationDigest string
-	clientRequestID    string
-	previousResponseID string
-	promptCacheKey     string
-	requestedModel     string
-	operation          CodexOperationKind
-	transport          CodexEgressTransport
-	inboundHeaders     http.Header
-	body               []byte
-	createdAt          time.Time
+	requireExistingConversation bool
+	logicalRequestID            string
+	conversationDigest          string
+	clientRequestID             string
+	previousResponseID          string
+	promptCacheKey              string
+	requestedModel              string
+	operation                   CodexOperationKind
+	transport                   CodexEgressTransport
+	inboundHeaders              http.Header
+	body                        []byte
+	createdAt                   time.Time
 }
 
 func NewCodexRequestPlan(input CodexRequestPlanInput) (*CodexRequestPlan, error) {

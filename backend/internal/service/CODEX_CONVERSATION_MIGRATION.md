@@ -35,11 +35,11 @@ Redis deletion, image release or VPS deployment is part of the source push.
   keyed by HMAC of group, authenticated user and response ID. A continuation
   adopts that snapshot even when no original prompt/session key is available.
   Existing HTTP/WS ownership authorization is still mandatory and unchanged.
-- A response snapshot uses the configured strong-session TTL, just like the
-  primary registry (24 hours by default, bounded 1 hour to 7 days). Response
-  ownership may live longer (72 hours by default); authorization alone does not
-  guarantee an unexpired conversation pin. Redis clock tests are not live TTL
-  observation evidence.
+- Response snapshots and continuation activity use the greater of strong-session
+  and persistent response ownership TTLs (72 hours by default). Primary sessions
+  without a previous response keep the strong-session TTL (24 hours by default).
+  Include the longer retention in Redis memory preflight. Clock tests are not
+  evidence of a production TTL observation window.
 
 ## Installation Policies
 
@@ -75,11 +75,24 @@ retain the old continuation behavior for compatibility; their historical wire
 version cannot be reconstructed from a response ID alone. This is NOT a promise
 that pre-upgrade response chains are retroactively pinned.
 
-On `stable_v1`, missing/expired response snapshots return conversation recovery
-required instead of inventing a new identity or switching accounts. Before
-activating stable policy, allow legacy chains to obtain snapshots on the upgraded
-fleet, or drain them and use new conversations. Unknown legacy state must not be
-mass-rewritten to fabricated snapshots.
+On `stable_v1`, a missing response snapshot first checks authenticated response
+ownership and the original account's availability. If the response-keyed legacy
+registry record still exists, recover its actual IDs/profile and backfill on
+success; the account's new policy must not reset that conversation. An expired
+record must not be recreated between lookup and finalization. Missing ownership,
+a different/unavailable account, corrupt data or absence of the original identity
+still stops recovery. Caller-supplied root keys are not trusted substitutes.
+
+Connection configuration version changes on the same account, proxy and route
+can CAS-refresh transport scope while retaining identity and profile. Already
+in-flight requests can commit without reverting the new configuration. Actual
+proxy/route/account changes retain the original stateful recovery restrictions.
+
+Client messages now distinguish ownership, missing identity, account mismatch,
+account unavailability, route changes and OAuth refresh failure; terminal 409 and
+no-cross-account-retry semantics remain. Automatic full-history replay and durable
+snapshot storage are not implemented in this fix. Truly untracked chains still
+need warming or explicit context recovery, not a fabricated legacy identity.
 
 ## Production Preflight (Not Yet Executed)
 

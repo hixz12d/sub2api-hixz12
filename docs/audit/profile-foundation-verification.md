@@ -132,3 +132,33 @@ inference, image release or deployment was performed. Production activation
 still requires the approved manifest/CAS executor, shared-secret check, memory
 budget, canary and actual observation window. A missing pre-upgrade response
 snapshot is not retroactively fabricated; stable policy requires recovery.
+
+
+## Continuation Experience Fix
+
+The blanket missing-snapshot rejection above is superseded by verified recovery:
+response ownership, original account availability and the response-keyed legacy
+record must all agree. Existing IDs/profile are preserved; absent/corrupt identity
+is not synthesized. Caller-provided root keys are not used to infer ownership.
+
+Connection-only configuration changes retain identity through CAS, and in-flight
+old-connection commits cannot roll back newer configuration. Actual account,
+proxy and route changes remain protected. Response pin retention now covers the
+larger of strong-session and persistent response TTLs (default 72 hours); account
+memory preflight must include that increase. Error messages distinguish the
+recovery cause without changing terminal retry policy.
+
+- Service/repository/handler focused Codex, validation and OpenAI OAuth refresh
+  regression tests passed.
+- Five added top-level tests cover verified legacy recovery, ownership rejection,
+  missing identity, connection-only refresh/late commit, TTL, error classification
+  and expiry between lookup/finalization. New tests passed five repeated runs.
+- Seven selected new/existing recovery and CAS tests passed 20 repeated runs in
+  a separate invocation with a 20-second test timeout. An earlier parallel outer
+  timeout is excluded from passing evidence; no test process remained afterward.
+- Embedded server compilation and `git diff --check` passed.
+- This follow-up did not rerun Linux race, frontend or full-suite tests; the prior
+  16 full-suite baseline failures remain tracked. No production activity occurred.
+
+This is not universal recovery of untracked history, durable snapshot storage or
+automatic replay. Truly missing identity still requires explicit context recovery.

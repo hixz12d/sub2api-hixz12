@@ -117,7 +117,7 @@ func (s *OpenAIGatewayService) handleOpenAIRefreshFailure(ctx context.Context, c
 	if sharedFailure {
 		failure.Scope = GatewayFailureScopeProvider
 	} else if guard.Stateful {
-		failure = openAIConversationRecoveryError()
+		failure = codexRecoveryFailure(codexRecoveryRefreshFailed)
 	} else if canSwitch {
 		failure.NextAccountAction = NextAccountRetry
 	}

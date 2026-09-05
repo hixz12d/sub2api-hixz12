@@ -22,37 +22,42 @@ func codexResponseConversationDigest(c *gin.Context, responseID string, deriver 
 	return deriver.DigestHex("codex/conversation-response/v1", scope, strings.TrimSpace(responseID)), nil
 }
 
-func (s *OpenAIGatewayService) resolveCodexResponseConversationPlan(c *gin.Context, plan *CodexRequestPlan, policy string, deriver *CodexIdentityDeriver) (*CodexRequestPlan, error) {
+func (s *OpenAIGatewayService) resolveCodexResponseConversationPlan(c *gin.Context, plan *CodexRequestPlan, policy string, deriver *CodexIdentityDeriver, account *Account) (*CodexRequestPlan, bool, error) {
 	if plan == nil || plan.previousResponseID == "" {
-		return plan, nil
+		return plan, false, nil
 	}
 	digest, err := codexResponseConversationDigest(c, plan.previousResponseID, deriver)
 	if err != nil {
 		if policy == CodexInstallationStableV1 {
-			return nil, openAIConversationRecoveryError()
+			return nil, false, codexRecoveryFailure(codexRecoveryOwnerMissing)
 		}
-		return plan, nil
+		return plan, false, nil
 	}
 	registry, ok := s.codexConversationRegistry()
 	if !ok {
-		return nil, errors.New("relay kernel requires a Codex conversation registry")
+		return nil, false, errors.New("relay kernel requires a Codex conversation registry")
 	}
 	_, err = registry.GetCodexConversation(c.Request.Context(), digest)
 	if errors.Is(err, ErrCodexConversationNotFound) {
-		// Old binaries never recorded response snapshots. Keep the legacy path only
-		// while explicitly on legacy policy; stable migration must not guess a pin.
 		if policy == CodexInstallationStableV1 {
-			return nil, openAIConversationRecoveryError()
+			if err := s.validateCodexLegacyContinuation(c, plan.previousResponseID, account); err != nil {
+				return nil, false, err
+			}
+			clone := *plan
+			clone.requireExistingConversation = true
+			c.Request = c.Request.WithContext(ContextWithCodexRequestPlan(c.Request.Context(), &clone))
+			return &clone, true, nil
 		}
-		return plan, nil
+		return plan, false, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	clone := *plan
 	clone.conversationDigest = digest
+	clone.requireExistingConversation = true
 	c.Request = c.Request.WithContext(ContextWithCodexRequestPlan(c.Request.Context(), &clone))
-	return &clone, nil
+	return &clone, false, nil
 }
 
 // CommitCodexConversationResponse snapshots the successful response's pin using
@@ -86,14 +91,18 @@ func (s *OpenAIGatewayService) CommitCodexConversationResponse(c *gin.Context, r
 	if err != nil {
 		return err
 	}
-	if !current.Committed || !codexConversationMatchesAttempt(current, attempt) {
+	if !current.Committed || !codexConversationMatchesCompletedAttempt(current, attempt) {
 		return ErrCodexConversationCASConflict
 	}
-	resolved, _, err := registry.ResolveOrCreateCodexConversation(ctx, digest, current, s.openAIAffinityTTL(AffinityStrong))
+	ttl := s.openAIAffinityTTL(AffinityStrong)
+	if responseTTL := s.openAIAffinityResponseTTL(); responseTTL > ttl {
+		ttl = responseTTL
+	}
+	resolved, _, err := registry.ResolveOrCreateCodexConversation(ctx, digest, current, ttl)
 	if err != nil {
 		return err
 	}
-	if !resolved.Committed || !codexConversationMatchesAttempt(resolved, attempt) {
+	if !resolved.Committed || !codexConversationMatchesCompletedAttempt(resolved, attempt) {
 		return ErrCodexConversationCASConflict
 	}
 	return nil
