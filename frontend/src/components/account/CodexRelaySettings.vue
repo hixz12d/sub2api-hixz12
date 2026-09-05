@@ -40,11 +40,22 @@ const relayMode = computed<CodexRelayMode>({
         next.codex_fingerprint_mode = 'device'
       }
     }
+    if (val === 'legacy') next.codex_installation_policy = 'legacy_v2'
     emit('update:modelValue', next)
   }
 })
 
 const isKernelActive = computed(() => relayMode.value === 'relay_kernel')
+
+const installationPolicy = computed<'legacy_v2' | 'stable_v1'>({
+  get: () => props.modelValue.codex_installation_policy ?? 'legacy_v2',
+  set: (value) => emit('update:modelValue', { ...props.modelValue, codex_installation_policy: value })
+})
+
+const installationPolicyOptions = computed(() => [
+  { value: 'legacy_v2', label: t('admin.accounts.openai.codexInstallationLegacy') },
+  { value: 'stable_v1', label: t('admin.accounts.openai.codexInstallationStable') }
+])
 
 const identityPolicy = computed<CodexIdentityPolicyVersion>({
   get: () => props.modelValue.codex_identity_policy_version,
@@ -123,19 +134,48 @@ const currentProfileMeta = computed(() => {
     CODEX_CLIENT_PROFILES[0]
   )
 })
+
+const profileVersionLabel = computed(() => {
+  const version = currentProfileMeta.value.appVersion
+  if (version === 'dynamic') return t('admin.accounts.openai.codexProfilePending')
+  if (version === 'caller supplied') return t('admin.accounts.openai.codexProfileCallerSupplied')
+  if (version === 'not asserted') return t('admin.accounts.openai.codexProfileUnverified')
+  return version
+})
+
+const profileFidelityLabel = computed(() => {
+  const keys = {
+    'caller-resolved': 'codexProfilePending',
+    'passthrough/degraded': 'codexProfileCallerSupplied',
+    degraded: 'codexProfileDegraded',
+    'unsupported strict parity': 'codexProfileUnverified'
+  } as const
+  return t(`admin.accounts.openai.${keys[currentProfileMeta.value.fidelity]}`)
+})
+
+const profileCapabilities = computed(() => [
+  { name: 'HTTP', supported: currentProfileMeta.value.http },
+  { name: 'WS', supported: currentProfileMeta.value.ws },
+  { name: 'Compact', supported: currentProfileMeta.value.compact }
+])
+
+function capabilityLabel(supported: boolean | null): string {
+  if (supported === null) return t('admin.accounts.openai.codexProfilePending')
+  return t(`admin.accounts.openai.${supported ? 'codexProfileSupported' : 'codexProfileUnsupported'}`)
+}
 </script>
 
 <template>
   <div class="col-span-full border-t border-dashed border-gray-200 dark:border-dark-600 pt-4 mt-2">
     <!-- Header with optional Active Badge -->
     <div class="flex items-center justify-between mb-3">
-      <div class="flex items-center gap-2">
+      <div class="flex min-w-0 flex-wrap items-center gap-2">
         <h4 class="text-sm font-medium text-gray-900 dark:text-white">
           {{ t('admin.accounts.openai.codexRelayKernelSectionTitle') }}
         </h4>
         <span
           v-if="isKernelActive"
-          class="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+          class="inline-flex shrink-0 whitespace-nowrap items-center px-2 py-0.5 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
         >
           {{ t('admin.accounts.openai.codexRelayKernelBadge') }}
         </span>
@@ -201,32 +241,28 @@ const currentProfileMeta = computed(() => {
           data-testid="codex-client-profile-select"
         />
 
-        <!-- Readonly Profile Capabilities Info -->
-        <div class="mt-2 p-2 rounded bg-gray-50 dark:bg-dark-700/60 border border-gray-200 dark:border-dark-600 text-xs flex flex-wrap items-center gap-x-3 gap-y-1 text-gray-600 dark:text-gray-300">
-          <div>
-            <span class="text-gray-500 dark:text-gray-400">{{ t('admin.accounts.openai.codexProfileAppVersion') }}:</span>
-            <span class="ml-1 font-mono text-gray-900 dark:text-white">{{ currentProfileMeta.appVersion }}</span>
+        <dl class="mt-3 space-y-2 text-xs" data-testid="codex-profile-summary">
+          <div class="flex flex-wrap justify-between gap-x-3 gap-y-1">
+            <dt class="text-gray-500 dark:text-gray-400">{{ t('admin.accounts.openai.codexProfileAppVersion') }}</dt>
+            <dd class="min-w-0 break-words text-gray-900 dark:text-white" data-testid="codex-profile-version">{{ profileVersionLabel }}</dd>
           </div>
-          <div class="flex items-center gap-1.5">
-            <span class="text-gray-500 dark:text-gray-400">{{ t('admin.accounts.openai.codexProfileCapabilities') }}:</span>
-            <span
-              class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono"
-              :class="currentProfileMeta.http ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-zinc-500/10 text-zinc-500'"
-            >
-              HTTP
-            </span>
-            <span
-              class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono"
-              :class="currentProfileMeta.ws ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'"
-            >
-              {{ currentProfileMeta.ws ? 'WS' : 'WS Degraded' }}
-            </span>
+          <div class="flex flex-wrap justify-between gap-x-3 gap-y-1">
+            <dt class="text-gray-500 dark:text-gray-400">{{ t('admin.accounts.openai.codexProfileFidelity') }}</dt>
+            <dd class="min-w-0 break-words text-gray-700 dark:text-gray-300" data-testid="codex-profile-fidelity">{{ profileFidelityLabel }}</dd>
           </div>
-          <div>
-            <span class="text-gray-500 dark:text-gray-400">{{ t('admin.accounts.openai.codexProfileFidelity') }}:</span>
-            <span class="ml-1 font-mono text-[11px] text-gray-900 dark:text-white">{{ currentProfileMeta.fidelity }}</span>
+          <div
+            v-for="capability in profileCapabilities"
+            :key="capability.name"
+            class="flex flex-wrap justify-between gap-x-3 gap-y-1"
+            :data-testid="`codex-profile-capability-${capability.name.toLowerCase()}`"
+          >
+            <dt class="font-mono text-gray-500 dark:text-gray-400">{{ capability.name }}</dt>
+            <dd
+              :data-supported="capability.supported === null ? 'pending' : String(capability.supported)"
+              :class="capability.supported === true ? 'text-emerald-700 dark:text-emerald-400' : 'text-gray-600 dark:text-gray-400'"
+            >{{ capabilityLabel(capability.supported) }}</dd>
           </div>
-        </div>
+        </dl>
       </div>
 
       <!-- 4. Fingerprint Mode -->
@@ -235,7 +271,7 @@ const currentProfileMeta = computed(() => {
           {{ t('admin.accounts.openai.codexFingerprintMode') }}
         </label>
         <p class="text-xs text-gray-500 dark:text-gray-400 mb-1.5 leading-relaxed">
-          {{ t('admin.accounts.openai.codexFingerprintModeDesc') }}
+          {{ t(isKernelActive ? 'admin.accounts.openai.codexKernelFingerprintDesc' : 'admin.accounts.openai.codexFingerprintModeDesc') }}
         </p>
         <Select
           v-model="fingerprintMode"
@@ -248,6 +284,16 @@ const currentProfileMeta = computed(() => {
         </p>
       </div>
 
+      <div>
+        <label class="input-label mb-1">{{ t('admin.accounts.openai.codexInstallationPolicy') }}</label>
+        <Select
+          v-model="installationPolicy"
+          :options="installationPolicyOptions"
+          :disabled="disabled || !isKernelActive"
+          data-testid="codex-installation-policy-select"
+        />
+        <p v-if="errors?.codex_installation_policy" class="mt-1 text-xs text-red-600 dark:text-red-400">{{ errors.codex_installation_policy }}</p>
+      </div>
       <!-- 5. Shadow Comparison Switch -->
       <div class="col-span-full pt-1">
         <div class="flex items-center justify-between">

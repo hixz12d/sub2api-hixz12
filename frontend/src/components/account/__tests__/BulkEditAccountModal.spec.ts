@@ -938,6 +938,7 @@ describe('BulkEditAccountModal', () => {
     expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
       extra: {
         codex_relay_mode: 'relay_kernel',
+        codex_installation_policy: 'legacy_v2',
         codex_identity_policy_version: 'v2',
         codex_client_profile: 'codex_cli',
         codex_relay_shadow_enabled: false,
@@ -959,6 +960,7 @@ describe('BulkEditAccountModal', () => {
     expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
       extra: {
         codex_relay_mode: 'legacy',
+        codex_installation_policy: 'legacy_v2',
         codex_identity_policy_version: 'v1',
         codex_client_profile: 'auto',
         codex_relay_shadow_enabled: false,

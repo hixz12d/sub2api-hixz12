@@ -11,22 +11,26 @@ var ErrCodexConversationNotFound = errors.New("codex conversation not found")
 var ErrCodexConversationCASConflict = errors.New("codex conversation compare-and-swap conflict")
 
 type CodexConversationState struct {
-	Revision               int64  `json:"revision"`
-	AccountID              int64  `json:"account_id"`
-	ProxyIdentity          string `json:"proxy_identity"`
-	ProfileID              string `json:"profile_id"`
-	IdentityPolicyVersion  string `json:"identity_policy_version"`
-	PoolSlot               int    `json:"pool_slot"`
-	DeviceID               string `json:"device_id"`
-	SessionID              string `json:"session_id"`
-	ThreadID               string `json:"thread_id"`
-	WindowID               string `json:"window_id"`
-	EgressRoute            string `json:"egress_route"`
-	TransportConfigVersion string `json:"transport_config_version"`
-	Committed              bool   `json:"committed"`
-	Active                 bool   `json:"active"`
-	CreatedAtUnixMS        int64  `json:"created_at_unix_ms"`
-	LastActivityUnixMS     int64  `json:"last_activity_unix_ms"`
+	ProfileSnapshot        *CodexClientProfile `json:"profile_snapshot,omitempty"`
+	ProfileDigest          string              `json:"profile_digest,omitempty"`
+	FingerprintMode        string              `json:"fingerprint_mode,omitempty"`
+	InstallationPolicy     string              `json:"installation_policy,omitempty"`
+	Revision               int64               `json:"revision"`
+	AccountID              int64               `json:"account_id"`
+	ProxyIdentity          string              `json:"proxy_identity"`
+	ProfileID              string              `json:"profile_id"`
+	IdentityPolicyVersion  string              `json:"identity_policy_version"`
+	PoolSlot               int                 `json:"pool_slot"`
+	DeviceID               string              `json:"device_id"`
+	SessionID              string              `json:"session_id"`
+	ThreadID               string              `json:"thread_id"`
+	WindowID               string              `json:"window_id"`
+	EgressRoute            string              `json:"egress_route"`
+	TransportConfigVersion string              `json:"transport_config_version"`
+	Committed              bool                `json:"committed"`
+	Active                 bool                `json:"active"`
+	CreatedAtUnixMS        int64               `json:"created_at_unix_ms"`
+	LastActivityUnixMS     int64               `json:"last_activity_unix_ms"`
 }
 
 func (s CodexConversationState) Validate() error {
@@ -41,6 +45,23 @@ func (s CodexConversationState) Validate() error {
 	}
 	if strings.TrimSpace(s.DeviceID) == "" || strings.TrimSpace(s.SessionID) == "" || strings.TrimSpace(s.ThreadID) == "" || strings.TrimSpace(s.WindowID) == "" {
 		return errors.New("codex conversation identity is incomplete")
+	}
+	if (s.ProfileSnapshot == nil) != (s.ProfileDigest == "") {
+		return errors.New("codex conversation profile snapshot is incomplete")
+	}
+	if s.ProfileSnapshot != nil {
+		if _, err := s.pinnedProfile(); err != nil {
+			return err
+		}
+	}
+	if _, err := normalizeCodexInstallationPolicy(s.InstallationPolicy); err != nil {
+		return err
+	}
+	if s.FingerprintMode != "" {
+		mode := normalizeCodexFingerprintMode(s.FingerprintMode)
+		if string(mode) != s.FingerprintMode || mode == codexFingerprintOff {
+			return errors.New("invalid pinned fingerprint mode")
+		}
 	}
 	return nil
 }
@@ -61,8 +82,17 @@ func codexConversationStateFromAttempt(plan *CodexRequestPlan, attempt *CodexAtt
 		return CodexConversationState{}, errors.New("codex conversation registry requires managed identity")
 	}
 	nowMS := time.Now().UTC().UnixMilli()
+	profile := attempt.Profile()
+	digest, err := codexProfileSnapshotDigest(profile)
+	if err != nil {
+		return CodexConversationState{}, err
+	}
 	return CodexConversationState{
 		Revision:               1,
+		ProfileSnapshot:        &profile,
+		ProfileDigest:          digest,
+		FingerprintMode:        string(identity.mode),
+		InstallationPolicy:     attempt.installationPolicy,
 		AccountID:              attempt.AccountID(),
 		ProxyIdentity:          strings.TrimSpace(input.ProxyIdentity),
 		ProfileID:              attempt.Profile().ID,
@@ -86,12 +116,16 @@ func applyCodexConversationState(attempt *CodexAttemptState, state CodexConversa
 		return attempt
 	}
 	clone := *attempt
+	binding := state
+	binding.ProfileSnapshot = nil
+	clone.conversationBinding = &binding
 	clone.identity = cloneCodexIdentitySnapshot(attempt.identity)
 	clone.profile = attempt.Profile()
 	clone.finalHeaders = attempt.FinalHeaders()
 	clone.finalHTTPBody = attempt.FinalHTTPBody()
 	clone.finalWSPayload = attempt.FinalWSPayload()
 	clone.identity.installationID = state.DeviceID
+	clone.poolSlot = state.PoolSlot
 	clone.identity.sessionID = state.SessionID
 	clone.identity.threadID = state.ThreadID
 	clone.identity.windowID = state.WindowID
@@ -137,7 +171,24 @@ func (s *OpenAIGatewayService) resolveCodexConversationAttempt(
 		return nil, err
 	}
 	recoveringCommitted := resolved.Committed
-	for retries := 0; !created && !codexConversationAttemptTupleEqual(resolved, candidate); retries++ {
+	for retries := 0; !created; retries++ {
+		if resolved.AccountID == candidate.AccountID {
+			pinnedInput, pinErr := pinCodexInputToConversation(input, resolved)
+			if pinErr != nil {
+				return nil, pinErr
+			}
+			attempt, err = finalizeCodexAttemptWithDeriver(plan, pinnedInput, attempt.deriver)
+			if err != nil {
+				return nil, err
+			}
+			candidate, err = codexConversationStateFromAttempt(plan, attempt, pinnedInput)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if codexConversationAttemptTupleEqual(resolved, candidate) {
+			break
+		}
 		// A CAS loser must not replace a healthy winner still preparing output.
 		recoveringCommitted = recoveringCommitted || resolved.Committed
 		if recoveringCommitted && !s.canRecoverUnavailableCodexConversation(ctx, plan, resolved, candidate, replaySafe) {
@@ -212,13 +263,18 @@ func (s *OpenAIGatewayService) CommitCodexConversation(ctx context.Context) erro
 	if err != nil {
 		return err
 	}
-	if current.AccountID != attempt.AccountID() {
+	if !codexConversationMatchesAttempt(current, attempt) {
 		return ErrCodexConversationCASConflict
 	}
-	if current.Committed {
-		return nil
-	}
 	next := current
+	profile := attempt.Profile()
+	next.ProfileSnapshot = &profile
+	next.ProfileDigest, err = codexProfileSnapshotDigest(profile)
+	if err != nil {
+		return err
+	}
+	next.FingerprintMode = string(attempt.identity.mode)
+	next.InstallationPolicy = attempt.installationPolicy
 	next.Committed = true
 	next.Active = true
 	next.LastActivityUnixMS = time.Now().UTC().UnixMilli()
@@ -232,7 +288,7 @@ func (s *OpenAIGatewayService) CommitCodexConversation(ctx context.Context) erro
 	)
 	if errors.Is(err, ErrCodexConversationCASConflict) {
 		latest, getErr := registry.GetCodexConversation(ctx, plan.ConversationDigest())
-		if getErr == nil && latest.AccountID == attempt.AccountID() && latest.Committed {
+		if getErr == nil && codexConversationMatchesAttempt(latest, attempt) && latest.Committed {
 			return nil
 		}
 	}

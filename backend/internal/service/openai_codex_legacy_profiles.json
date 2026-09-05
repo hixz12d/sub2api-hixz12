@@ -1,0 +1,236 @@
+[
+  {
+    "ID": "passthrough",
+    "Revision": 1,
+    "App": {
+      "UserAgent": "",
+      "Originator": "",
+      "Version": "",
+      "BetaFeatures": "",
+      "ClientEnvironment": ""
+    },
+    "Transport": {
+      "TLSProfileID": "",
+      "HTTP2ProfileID": "",
+      "HeaderOrder": null
+    },
+    "Capabilities": 31,
+    "Fidelity": "degraded",
+    "FidelityNote": "application identity is caller supplied; transport parity cannot be asserted"
+  },
+  {
+    "ID": "codex_cli",
+    "Revision": 1,
+    "App": {
+      "UserAgent": "codex-tui/0.148.0 (Windows 10.0.26100; x86_64) WindowsTerminal/1.23.20211.0",
+      "Originator": "codex_cli_rs",
+      "Version": "0.148.0",
+      "BetaFeatures": "responses_websockets=2026-02-06",
+      "ClientEnvironment": "windows-terminal"
+    },
+    "Transport": {
+      "TLSProfileID": "chrome_auto",
+      "HTTP2ProfileID": "chrome-h2-v1",
+      "HeaderOrder": [
+        "host",
+        "authorization",
+        "content-type",
+        "accept",
+        "accept-encoding",
+        "accept-language",
+        "user-agent",
+        "openai-beta",
+        "openai-organization",
+        "openai-project",
+        "openai-intent",
+        "originator",
+        "session-id",
+        "session_id",
+        "thread-id",
+        "thread_id",
+        "conversation_id",
+        "x-codex-installation-id",
+        "x-codex-window-id",
+        "x-codex-turn-metadata",
+        "x-client-request-id",
+        "x-session-id",
+        "cookie"
+      ]
+    },
+    "Capabilities": 31,
+    "Fidelity": "degraded",
+    "FidelityNote": "application identity is known, but the built-in transport is Chrome/uTLS rather than the measured CLI SChannel ClientHello"
+  },
+  {
+    "ID": "codex_exec",
+    "Revision": 1,
+    "App": {
+      "UserAgent": "codex_exec/0.148.0 (Windows 10.0.26100; x86_64) unknown/0",
+      "Originator": "codex_exec",
+      "Version": "0.148.0",
+      "BetaFeatures": "responses_websockets=2026-02-06",
+      "ClientEnvironment": ""
+    },
+    "Transport": {
+      "TLSProfileID": "chrome_auto",
+      "HTTP2ProfileID": "chrome-h2-v1",
+      "HeaderOrder": [
+        "host",
+        "authorization",
+        "content-type",
+        "accept",
+        "accept-encoding",
+        "accept-language",
+        "user-agent",
+        "openai-beta",
+        "openai-organization",
+        "openai-project",
+        "openai-intent",
+        "originator",
+        "session-id",
+        "session_id",
+        "thread-id",
+        "thread_id",
+        "conversation_id",
+        "x-codex-installation-id",
+        "x-codex-window-id",
+        "x-codex-turn-metadata",
+        "x-client-request-id",
+        "x-session-id",
+        "cookie"
+      ]
+    },
+    "Capabilities": 31,
+    "Fidelity": "degraded",
+    "FidelityNote": "application identity is known, but strict native-agent SChannel parity is not implemented"
+  },
+  {
+    "ID": "codex_desktop",
+    "Revision": 1,
+    "App": {
+      "UserAgent": "Codex Desktop/0.148.0 (Windows 10.0.26100; x86_64)",
+      "Originator": "Codex Desktop",
+      "Version": "0.148.0",
+      "BetaFeatures": "responses_websockets=2026-02-06",
+      "ClientEnvironment": "electron"
+    },
+    "Transport": {
+      "TLSProfileID": "chrome_auto",
+      "HTTP2ProfileID": "chrome-h2-v1",
+      "HeaderOrder": [
+        "host",
+        "authorization",
+        "content-type",
+        "accept",
+        "accept-encoding",
+        "accept-language",
+        "user-agent",
+        "openai-beta",
+        "openai-organization",
+        "openai-project",
+        "openai-intent",
+        "originator",
+        "session-id",
+        "session_id",
+        "thread-id",
+        "thread_id",
+        "conversation_id",
+        "x-codex-installation-id",
+        "x-codex-window-id",
+        "x-codex-turn-metadata",
+        "x-client-request-id",
+        "x-session-id",
+        "cookie"
+      ]
+    },
+    "Capabilities": 31,
+    "Fidelity": "degraded",
+    "FidelityNote": "Electron shell Chrome parity is available; Desktop agent SChannel parity is not"
+  },
+  {
+    "ID": "opencode",
+    "Revision": 1,
+    "App": {
+      "UserAgent": "opencode/1.2.4 windows/x64",
+      "Originator": "opencode",
+      "Version": "1.2.4",
+      "BetaFeatures": "",
+      "ClientEnvironment": ""
+    },
+    "Transport": {
+      "TLSProfileID": "chrome_auto",
+      "HTTP2ProfileID": "chrome-h2-v1",
+      "HeaderOrder": [
+        "host",
+        "authorization",
+        "content-type",
+        "accept",
+        "accept-encoding",
+        "accept-language",
+        "user-agent",
+        "openai-beta",
+        "openai-organization",
+        "openai-project",
+        "openai-intent",
+        "originator",
+        "session-id",
+        "session_id",
+        "thread-id",
+        "thread_id",
+        "conversation_id",
+        "x-codex-installation-id",
+        "x-codex-window-id",
+        "x-codex-turn-metadata",
+        "x-client-request-id",
+        "x-session-id",
+        "cookie"
+      ]
+    },
+    "Capabilities": 13,
+    "Fidelity": "degraded",
+    "FidelityNote": "application headers are observed; no official strict TLS or WebSocket profile is asserted"
+  },
+  {
+    "ID": "pi",
+    "Revision": 1,
+    "App": {
+      "UserAgent": "pi (windows; x64)",
+      "Originator": "pi",
+      "Version": "",
+      "BetaFeatures": "",
+      "ClientEnvironment": ""
+    },
+    "Transport": {
+      "TLSProfileID": "chrome_auto",
+      "HTTP2ProfileID": "chrome-h2-v1",
+      "HeaderOrder": [
+        "host",
+        "authorization",
+        "content-type",
+        "accept",
+        "accept-encoding",
+        "accept-language",
+        "user-agent",
+        "openai-beta",
+        "openai-organization",
+        "openai-project",
+        "openai-intent",
+        "originator",
+        "session-id",
+        "session_id",
+        "thread-id",
+        "thread_id",
+        "conversation_id",
+        "x-codex-installation-id",
+        "x-codex-window-id",
+        "x-codex-turn-metadata",
+        "x-client-request-id",
+        "x-session-id",
+        "cookie"
+      ]
+    },
+    "Capabilities": 13,
+    "Fidelity": "unsupported",
+    "FidelityNote": "no measured official wire profile is available; HTTP application compatibility only"
+  }
+]

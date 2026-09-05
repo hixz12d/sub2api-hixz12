@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "bundle_id": "pi-0.57.1-oauth-sse-r1",
+  "family": "pi",
+  "app_version": "0.57.1",
+  "revision": 1,
+  "status": "candidate",
+  "source": {
+    "repository": "earendil-works/pi",
+    "ref": "v0.57.1",
+    "path": "packages/ai/src/providers/openai-codex-responses.ts",
+    "observed_blob": "8c9b8aae5f66ce9ac4e96afc0ca84dcc1075adc3",
+    "resolved_commit": ""
+  },
+  "user_agent": "pi (win32 10.0.26200; x64)",
+  "session_header": "session_id",
+  "default_verbosity": "medium",
+  "evidence": {
+    "application": "blueprint_source_reference",
+    "wire_capture": "pending",
+    "native_transport": "unverified"
+  }
+}

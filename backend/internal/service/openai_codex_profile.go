@@ -296,10 +296,11 @@ const (
 )
 
 type CodexRelaySettings struct {
-	Mode          CodexRelayMode
-	PolicyVersion string
-	ProfileID     string
-	ShadowEnabled bool
+	InstallationPolicy string
+	Mode               CodexRelayMode
+	PolicyVersion      string
+	ProfileID          string
+	ShadowEnabled      bool
 }
 
 func usesCodexRelayKernel(account *Account) bool {
@@ -311,9 +312,10 @@ func usesCodexRelayKernel(account *Account) bool {
 
 func ResolveCodexRelaySettings(account *Account) (CodexRelaySettings, error) {
 	settings := CodexRelaySettings{
-		Mode:          CodexRelayModeLegacy,
-		PolicyVersion: CodexIdentityPolicyV1,
-		ProfileID:     CodexProfileCLI,
+		InstallationPolicy: CodexInstallationLegacyV2,
+		Mode:               CodexRelayModeLegacy,
+		PolicyVersion:      CodexIdentityPolicyV1,
+		ProfileID:          CodexProfileCLI,
 	}
 	if account == nil || account.Extra == nil {
 		return settings, nil
@@ -328,6 +330,14 @@ func ResolveCodexRelaySettings(account *Account) (CodexRelaySettings, error) {
 		settings.ProfileID = raw
 	}
 	settings.ShadowEnabled, _ = account.Extra[CodexRelayShadowEnabledExtraKey].(bool)
+	var installationErr error
+	settings.InstallationPolicy, installationErr = normalizeCodexInstallationPolicy(account.GetExtraString(CodexInstallationPolicyExtraKey))
+	if installationErr != nil {
+		return CodexRelaySettings{}, installationErr
+	}
+	if settings.InstallationPolicy == CodexInstallationStableV1 && settings.Mode != CodexRelayModeKernel {
+		return CodexRelaySettings{}, errors.New("stable_v1 installation policy requires relay_kernel")
+	}
 
 	if settings.Mode != CodexRelayModeLegacy && settings.Mode != CodexRelayModeKernel {
 		return CodexRelaySettings{}, fmt.Errorf("invalid %s %q", CodexRelayModeExtraKey, settings.Mode)
@@ -347,6 +357,7 @@ func ResolveCodexRelaySettings(account *Account) (CodexRelaySettings, error) {
 }
 
 var codexRelayAccountExtraKeys = []string{
+	CodexInstallationPolicyExtraKey,
 	CodexRelayModeExtraKey,
 	CodexIdentityPolicyVersionExtraKey,
 	CodexClientProfileExtraKey,
@@ -380,6 +391,13 @@ func ValidateCodexRelayAccountExtra(platform, accountType string, extra map[stri
 	}
 	if platform != PlatformOpenAI || (accountType != AccountTypeOAuth && accountType != AccountTypeSetupToken) {
 		return infraerrors.BadRequest("CODEX_RELAY_ACCOUNT_INVALID", "Codex relay settings require an OpenAI OAuth or setup-token account")
+	}
+	for _, key := range []string{CodexRelayModeExtraKey, CodexIdentityPolicyVersionExtraKey, CodexClientProfileExtraKey, CodexInstallationPolicyExtraKey} {
+		if raw, present := extra[key]; present {
+			if _, valid := raw.(string); !valid {
+				return infraerrors.BadRequest("CODEX_RELAY_SETTINGS_INVALID", key+" must be a string")
+			}
+		}
 	}
 	if raw, ok := extra[CodexRelayShadowEnabledExtraKey]; ok {
 		if _, valid := raw.(bool); !valid {

@@ -133,6 +133,10 @@ deploy/docker-compose.override.yml
 .gocache/
 vite.config.js
 docs/*
+!docs/audit/
+docs/audit/*
+!docs/audit/runtime-egress-map.md
+!docs/audit/profile-foundation-verification.md
 !docs/PAYMENT.md
 !docs/PAYMENT_CN.md
 !docs/ADMIN_PAYMENT_INTEGRATION_API.md

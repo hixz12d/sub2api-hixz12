@@ -5313,6 +5313,7 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
   } else {
     delete extra.codex_fingerprint_mode
     delete extra.codex_relay_mode
+    delete extra.codex_installation_policy
     delete extra.codex_identity_policy_version
     delete extra.codex_client_profile
     delete extra.codex_relay_shadow_enabled

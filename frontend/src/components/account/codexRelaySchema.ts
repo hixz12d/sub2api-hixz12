@@ -12,6 +12,7 @@ export type CodexClientProfile =
 export type CodexFingerprintMode = 'off' | 'device' | 'session' | 'window' | 'window40' | 'full'
 
 export interface CodexRelayFormState {
+  codex_installation_policy?: 'legacy_v2' | 'stable_v1'
 
   codex_relay_mode: CodexRelayMode
   codex_identity_policy_version: CodexIdentityPolicyVersion
@@ -29,7 +30,8 @@ export interface ClientProfileCatalogItem {
   id: CodexClientProfile
   appVersion: string
   http: boolean
-  ws: boolean
+  ws: boolean | null
+  compact: boolean | null
   fidelity: 'passthrough/degraded' | 'degraded' | 'unsupported strict parity' | 'caller-resolved'
 }
 
@@ -38,7 +40,8 @@ export const CODEX_CLIENT_PROFILES: readonly ClientProfileCatalogItem[] = [
     id: 'auto',
     appVersion: 'dynamic',
     http: true,
-    ws: true,
+    ws: null,
+    compact: null,
     fidelity: 'caller-resolved'
   },
   {
@@ -46,6 +49,7 @@ export const CODEX_CLIENT_PROFILES: readonly ClientProfileCatalogItem[] = [
     appVersion: 'caller supplied',
     http: true,
     ws: true,
+    compact: true,
     fidelity: 'passthrough/degraded'
   },
   {
@@ -53,6 +57,7 @@ export const CODEX_CLIENT_PROFILES: readonly ClientProfileCatalogItem[] = [
     appVersion: '0.148.0',
     http: true,
     ws: true,
+    compact: true,
     fidelity: 'degraded'
   },
   {
@@ -60,6 +65,7 @@ export const CODEX_CLIENT_PROFILES: readonly ClientProfileCatalogItem[] = [
     appVersion: '0.148.0',
     http: true,
     ws: true,
+    compact: true,
     fidelity: 'degraded'
   },
   {
@@ -67,6 +73,7 @@ export const CODEX_CLIENT_PROFILES: readonly ClientProfileCatalogItem[] = [
     appVersion: '0.148.0',
     http: true,
     ws: true,
+    compact: true,
     fidelity: 'degraded'
   },
   {
@@ -74,6 +81,7 @@ export const CODEX_CLIENT_PROFILES: readonly ClientProfileCatalogItem[] = [
     appVersion: '1.2.4',
     http: true,
     ws: false,
+    compact: false,
     fidelity: 'degraded'
   },
   {
@@ -81,11 +89,13 @@ export const CODEX_CLIENT_PROFILES: readonly ClientProfileCatalogItem[] = [
     appVersion: 'not asserted',
     http: true,
     ws: false,
-    fidelity: 'degraded'
+    compact: false,
+    fidelity: 'unsupported strict parity'
   }
 ] as const
 
 export const DEFAULT_CODEX_RELAY_STATE: CodexRelayFormState = {
+  codex_installation_policy: 'legacy_v2',
   codex_relay_mode: 'legacy',
   codex_identity_policy_version: 'v1',
   codex_client_profile: 'auto',
@@ -108,6 +118,9 @@ export function validateCodexRelayState(
   t: (key: string) => string
 ): CodexRelayValidationResult {
   const errors: Record<string, string> = {}
+  if (state.codex_installation_policy === 'stable_v1' && state.codex_relay_mode !== 'relay_kernel') {
+    errors.codex_installation_policy = t('admin.accounts.openai.codexInstallationRequiresKernel')
+  }
 
   if (state.codex_relay_mode === 'relay_kernel') {
     if (state.codex_identity_policy_version !== 'v2') {
@@ -141,7 +154,7 @@ export function extractCodexRelayState(extra?: Record<string, any> | null): Code
     ? (extra.codex_client_profile as CodexClientProfile)
     : 'auto'
 
-  const shadow = Boolean(extra.codex_relay_shadow_enabled)
+  const shadow = extra.codex_relay_shadow_enabled === true
 
   const validFpModes: CodexFingerprintMode[] = ['off', 'device', 'session', 'window', 'window40', 'full']
   const fpMode = validFpModes.includes(extra.codex_fingerprint_mode)
@@ -150,6 +163,7 @@ export function extractCodexRelayState(extra?: Record<string, any> | null): Code
 
   return {
     codex_relay_mode: mode,
+    codex_installation_policy: extra.codex_installation_policy === 'stable_v1' ? 'stable_v1' : 'legacy_v2',
     codex_identity_policy_version: policy,
     codex_client_profile: profile,
     codex_relay_shadow_enabled: shadow,
@@ -165,6 +179,11 @@ export function serializeCodexRelayToExtra(
   targetExtra: Record<string, any>
 ): void {
   // 1. codex_relay_mode
+  if (state.codex_installation_policy === 'stable_v1') {
+    targetExtra.codex_installation_policy = 'stable_v1'
+  } else {
+    delete targetExtra.codex_installation_policy
+  }
   if (state.codex_relay_mode === 'relay_kernel') {
     targetExtra.codex_relay_mode = 'relay_kernel'
   } else {
@@ -205,6 +224,7 @@ export function serializeCodexRelayToBulkExtra(
   targetExtra: Record<string, any>
 ): void {
   targetExtra.codex_relay_mode = state.codex_relay_mode
+  targetExtra.codex_installation_policy = state.codex_installation_policy ?? 'legacy_v2'
   targetExtra.codex_identity_policy_version = state.codex_identity_policy_version
   targetExtra.codex_client_profile = state.codex_client_profile
   targetExtra.codex_relay_shadow_enabled = Boolean(state.codex_relay_shadow_enabled)

@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "bundle_id": "opencode-1.2.4-oauth-sse-r1",
+  "family": "opencode",
+  "app_version": "1.2.4",
+  "revision": 1,
+  "status": "candidate",
+  "source": {
+    "repository": "anomalyco/opencode",
+    "ref": "v1.2.4",
+    "path": "packages/opencode/src/plugin/codex.ts",
+    "observed_blob": "56931b2ed62cd4f7d077ddea74cb406bef0d8b72",
+    "resolved_commit": ""
+  },
+  "user_agent": "opencode/1.2.4 (win32 10.0.26200; x64)",
+  "session_header": "session_id",
+  "default_verbosity": "",
+  "evidence": {
+    "application": "blueprint_source_reference",
+    "wire_capture": "pending",
+    "native_transport": "unverified"
+  }
+}

@@ -5487,6 +5487,7 @@ const handleSubmit = async () => {
       } else {
         delete newExtra.codex_fingerprint_mode
         delete newExtra.codex_relay_mode
+        delete newExtra.codex_installation_policy
         delete newExtra.codex_identity_policy_version
         delete newExtra.codex_client_profile
         delete newExtra.codex_relay_shadow_enabled

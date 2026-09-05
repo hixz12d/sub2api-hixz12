@@ -179,12 +179,17 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthIdentity(
 	if err != nil {
 		return nil, err
 	}
+	plan, err = s.resolveCodexResponseConversationPlan(c, plan, settings.InstallationPolicy, deriver)
+	if err != nil {
+		return nil, err
+	}
 	credentialVersion := deriver.DigestHex("codex/credential-version/v2", account.GetOpenAIAccessToken())
 	proxyIdentity := "direct"
 	if account.ProxyID != nil {
 		proxyIdentity = fmt.Sprintf("proxy:%d", *account.ProxyID)
 	}
 	attemptInput := CodexAttemptInput{
+		InstallationPolicy:     settings.InstallationPolicy,
 		AccountID:              account.ID,
 		AccountVersion:         account.UpdatedAt.UTC().Format("20060102T150405.000000000Z"),
 		CredentialVersion:      credentialVersion,
@@ -194,6 +199,10 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthIdentity(
 		AttemptNumber:          attemptNumber,
 		EgressRoute:            routeKey,
 		TransportConfigVersion: fmt.Sprintf("tls:%d", account.GetTLSFingerprintProfileID()),
+	}
+	attemptInput, err = s.pinCodexAttemptInput(c.Request.Context(), plan, attemptInput)
+	if err != nil {
+		return nil, err
 	}
 	state, err := FinalizeCodexAttempt(plan, attemptInput, derivationSecret)
 	if err != nil {

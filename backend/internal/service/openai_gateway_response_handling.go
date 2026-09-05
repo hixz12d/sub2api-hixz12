@@ -1474,7 +1474,7 @@ func (s *OpenAIGatewayService) bindHTTPResponseAccount(ctx context.Context, c *g
 	if err := s.bindPersistentOpenAIResponse(ctx, c, account, responseID); err != nil {
 		slog.Warn("openai.affinity_response_bind_failed", "account_id", account.ID, "error", err)
 	} else if c != nil && c.Request != nil {
-		if err := s.CommitCodexConversation(c.Request.Context()); err != nil {
+		if err := s.CommitCodexConversationResponse(c, responseID); err != nil {
 			slog.Warn("openai.codex_conversation_commit_failed", "account_id", account.ID, "error", err)
 		}
 	}

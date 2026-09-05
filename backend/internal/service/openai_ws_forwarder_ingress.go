@@ -1029,7 +1029,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					return nil, fmt.Errorf("persist WS response ownership before output: %w", bindErr)
 				}
 				if c != nil && c.Request != nil {
-					if commitErr := s.CommitCodexConversation(c.Request.Context()); commitErr != nil {
+					if commitErr := s.CommitCodexConversationResponse(c, responseID); commitErr != nil {
 						return nil, fmt.Errorf("commit Codex conversation before output: %w", commitErr)
 					}
 				}
@@ -1863,7 +1863,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				return bindErr
 			}
 			if c != nil && c.Request != nil {
-				if commitErr := s.CommitCodexConversation(c.Request.Context()); commitErr != nil {
+				if commitErr := s.CommitCodexConversationResponse(c, responseID); commitErr != nil {
 					return commitErr
 				}
 			}

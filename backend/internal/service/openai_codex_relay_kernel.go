@@ -305,6 +305,8 @@ func (p *CodexRequestPlan) InboundHeaders() http.Header {
 }
 
 type CodexAttemptInput struct {
+	ProfileSnapshot        *CodexClientProfile
+	InstallationPolicy     string
 	AccountID              int64
 	AccountVersion         string
 	CredentialVersion      string
@@ -322,18 +324,21 @@ type CodexOrderedHeader struct {
 }
 
 type CodexAttemptState struct {
-	policyVersion     string
-	attemptNumber     int
-	accountID         int64
-	poolSlot          int
-	clientRequestID   string
-	internalAttemptID string
-	transportKey      string
-	profile           CodexClientProfile
-	identity          *CodexIdentitySnapshot
-	finalHeaders      []CodexOrderedHeader
-	finalHTTPBody     []byte
-	finalWSPayload    []byte
+	policyVersion       string
+	attemptNumber       int
+	accountID           int64
+	poolSlot            int
+	clientRequestID     string
+	internalAttemptID   string
+	transportKey        string
+	profile             CodexClientProfile
+	identity            *CodexIdentitySnapshot
+	finalHeaders        []CodexOrderedHeader
+	finalHTTPBody       []byte
+	finalWSPayload      []byte
+	installationPolicy  string
+	deriver             *CodexIdentityDeriver
+	conversationBinding *CodexConversationState
 }
 
 func FinalizeCodexAttempt(plan *CodexRequestPlan, input CodexAttemptInput, derivationSecret string) (*CodexAttemptState, error) {
@@ -350,7 +355,14 @@ func FinalizeCodexAttempt(plan *CodexRequestPlan, input CodexAttemptInput, deriv
 	if err != nil {
 		return nil, err
 	}
-	profile, err := ResolveCodexClientProfileForRequest(input.ProfileID, plan.inboundHeaders)
+	return finalizeCodexAttemptWithDeriver(plan, input, deriver)
+}
+
+func finalizeCodexAttemptWithDeriver(plan *CodexRequestPlan, input CodexAttemptInput, deriver *CodexIdentityDeriver) (*CodexAttemptState, error) {
+	if plan == nil || deriver == nil {
+		return nil, errors.New("codex request plan and deriver are required")
+	}
+	profile, err := resolveCodexAttemptProfile(input, plan.inboundHeaders)
 	if err != nil {
 		return nil, err
 	}
@@ -367,6 +379,13 @@ func FinalizeCodexAttempt(plan *CodexRequestPlan, input CodexAttemptInput, deriv
 	accountScope := strconv.FormatInt(input.AccountID, 10) + ":" + strings.TrimSpace(input.AccountVersion)
 	credentialScope := strings.TrimSpace(input.CredentialVersion)
 	deviceID := deriver.UUIDv4(codexNamespaceDevice, accountScope, credentialScope, profile.ID, strconv.Itoa(profile.Revision))
+	installationPolicy, err := normalizeCodexInstallationPolicy(input.InstallationPolicy)
+	if err != nil {
+		return nil, err
+	}
+	if installationPolicy == CodexInstallationStableV1 {
+		deviceID = codexStableInstallationID(deriver, input.AccountID, profile.ID)
+	}
 	mode := normalizeCodexFingerprintMode(input.FingerprintMode)
 	clientRequestID := plan.clientRequestID
 	if clientRequestID == "" {
@@ -387,22 +406,29 @@ func FinalizeCodexAttempt(plan *CodexRequestPlan, input CodexAttemptInput, deriv
 		strings.TrimSpace(input.EgressRoute),
 	)
 
+	profileDigest, err := codexProfileSnapshotDigest(profile)
+	if err != nil {
+		return nil, err
+	}
+	transportKey = deriver.DigestHex("codex/transport/profile-snapshot/v1", transportKey, profileDigest, installationPolicy)
 	finalBody, err := applyCodexFingerprintToRawBody(plan.body, identity)
 	if err != nil {
 		return nil, err
 	}
 	return &CodexAttemptState{
-		policyVersion:     CodexIdentityPolicyV2,
-		attemptNumber:     input.AttemptNumber,
-		accountID:         input.AccountID,
-		poolSlot:          poolSlot,
-		clientRequestID:   clientRequestID,
-		internalAttemptID: internalAttemptID,
-		transportKey:      transportKey,
-		profile:           profile,
-		identity:          cloneCodexIdentitySnapshot(identity),
-		finalHeaders:      buildCodexAttemptIdentityHeaders(profile, identity, plan.inboundHeaders),
-		finalHTTPBody:     append([]byte(nil), finalBody...),
+		policyVersion:      CodexIdentityPolicyV2,
+		installationPolicy: installationPolicy,
+		deriver:            deriver,
+		attemptNumber:      input.AttemptNumber,
+		accountID:          input.AccountID,
+		poolSlot:           poolSlot,
+		clientRequestID:    clientRequestID,
+		internalAttemptID:  internalAttemptID,
+		transportKey:       transportKey,
+		profile:            profile,
+		identity:           cloneCodexIdentitySnapshot(identity),
+		finalHeaders:       buildCodexAttemptIdentityHeaders(profile, identity, plan.inboundHeaders),
+		finalHTTPBody:      append([]byte(nil), finalBody...),
 	}, nil
 }
 
