@@ -20,13 +20,17 @@ func TestOpenAIOAuthRecoveryErrorsReturnFixedSafeResponses(t *testing.T) {
 		message string
 	}{
 		{service.OpenAIOAuthRefreshFailedReason, http.StatusServiceUnavailable, service.OpenAIOAuthUnavailableClientMessage},
-		{service.OpenAIConversationRecoveryRequiredReason, http.StatusConflict, service.OpenAIConversationRecoveryClientMessage},
+		{service.OpenAIConversationRecoveryRequiredReason, http.StatusConflict, "The original conversation account is unavailable. Retry after it recovers, or restore the full conversation context."},
 	} {
 		recorder := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(recorder)
+		clientMessage := "refresh_token=secret"
+		if tc.reason == service.OpenAIConversationRecoveryRequiredReason {
+			clientMessage = tc.message
+		}
 		failure := &service.UpstreamFailoverError{Stage: service.GatewayFailureStageAccountAuth, Reason: tc.reason,
 			NextAccountAction: service.NextAccountStop, ClientStatusCode: http.StatusTeapot,
-			ClientMessage: "refresh_token=secret", ResponseBody: []byte(`{"error":{"message":"secret"}}`)}
+			ClientMessage: clientMessage, ResponseBody: []byte(`{"error":{"message":"secret"}}`)}
 		(&OpenAIGatewayHandler{}).handleFailoverExhausted(c, failure, false)
 		require.Equal(t, tc.status, recorder.Code)
 		require.Contains(t, recorder.Body.String(), tc.message)

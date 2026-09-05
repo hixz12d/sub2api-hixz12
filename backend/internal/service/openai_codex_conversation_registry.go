@@ -140,6 +140,25 @@ func (s *OpenAIGatewayService) codexConversationRegistry() (CodexConversationReg
 	return registry, ok
 }
 
+func (s *OpenAIGatewayService) boundCodexConversationAccountID(ctx context.Context) int64 {
+	registry, ok := s.codexConversationRegistry()
+	if !ok {
+		return 0
+	}
+	plan, hasPlan := CodexRequestPlanFromContext(ctx)
+	if !hasPlan || plan == nil || strings.TrimSpace(plan.ConversationDigest()) == "" {
+		return 0
+	}
+	state, err := registry.GetCodexConversation(ctx, plan.ConversationDigest())
+	if err != nil {
+		return 0
+	}
+	if state.AccountID <= 0 {
+		return 0
+	}
+	return state.AccountID
+}
+
 func codexConversationAttemptTupleEqual(left, right CodexConversationState) bool {
 	return left.AccountID == right.AccountID &&
 		left.ProxyIdentity == right.ProxyIdentity &&
@@ -195,6 +214,7 @@ func (s *OpenAIGatewayService) resolveCodexConversationAttempt(
 				return nil, err
 			}
 		}
+		candidate = adoptCodexConversationConnectionDefaults(candidate, resolved)
 		if codexConversationAttemptTupleEqual(resolved, candidate) {
 			break
 		}
@@ -208,8 +228,16 @@ func (s *OpenAIGatewayService) resolveCodexConversationAttempt(
 			return nil, codexRecoveryFailure(codexRecoveryAccountMismatch)
 		}
 		if refreshTransport {
+			proxyIdentity := candidate.ProxyIdentity
+			egressRoute := candidate.EgressRoute
 			transportVersion := candidate.TransportConfigVersion
 			candidate = resolved
+			if proxyIdentity != "" {
+				candidate.ProxyIdentity = proxyIdentity
+			}
+			if egressRoute != "" {
+				candidate.EgressRoute = egressRoute
+			}
 			candidate.TransportConfigVersion = transportVersion
 		}
 		if retries >= 3 {

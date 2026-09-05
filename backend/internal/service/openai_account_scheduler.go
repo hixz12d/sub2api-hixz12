@@ -519,6 +519,25 @@ func (s *defaultOpenAIAccountScheduler) Select(
 			return nil, decision, affinityErr
 		}
 	}
+	if previousResponseID == "" && normalizeOpenAICompatiblePlatform(req.Platform) == PlatformOpenAI {
+		if conversationAccountID := s.service.boundCodexConversationAccountID(ctx); conversationAccountID > 0 {
+			selection, err := s.selectPinnedCodexConversationAccount(ctx, req, conversationAccountID)
+			if err != nil {
+				return nil, decision, err
+			}
+			if selection != nil && selection.Account != nil {
+				decision.Layer = openAIAccountScheduleLayerSessionSticky
+				decision.StickySessionHit = true
+				decision.SelectedAccountID = selection.Account.ID
+				decision.SelectedAccountType = selection.Account.Type
+				populateOpenAIAccountPriorityDecision(&decision, req, selection.Account)
+				if req.SessionHash != "" {
+					_ = s.service.bindOpenAIStickySessionDuringSelection(ctx, req.GroupID, req.SessionHash, selection.Account.ID)
+				}
+				return selection, decision, nil
+			}
+		}
+	}
 	if previousResponseID != "" && normalizeOpenAICompatiblePlatform(req.Platform) == PlatformOpenAI &&
 		(!req.StickyWeighted || !req.PreviousResponseCanMove) {
 		selection, err := s.service.selectAccountByPreviousResponseIDForCapability(
@@ -673,6 +692,59 @@ func (s *defaultOpenAIAccountScheduler) bestEligibleBindingPriority(ctx context.
 	return best, found, nil
 }
 
+func (s *defaultOpenAIAccountScheduler) selectPinnedCodexConversationAccount(
+	ctx context.Context,
+	req OpenAIAccountScheduleRequest,
+	accountID int64,
+) (*AccountSelectionResult, error) {
+	if s == nil || s.service == nil || accountID <= 0 {
+		return nil, nil
+	}
+	if req.ExcludedIDs != nil {
+		if _, excluded := req.ExcludedIDs[accountID]; excluded {
+			return nil, nil
+		}
+	}
+	account, err := s.service.getSchedulableAccount(ctx, accountID)
+	if err != nil || account == nil {
+		return nil, nil
+	}
+	compatible, _ := s.isAccountRequestCompatibleReason(ctx, account, req)
+	hasGroupMetadata := len(account.GroupIDs) > 0 || len(account.AccountGroups) > 0
+	groupCompatible := !hasGroupMetadata || openAIStickyAccountMatchesGroup(account, req.GroupID)
+	if hasGroupMetadata {
+		groupCompatible = s.service.openAIAccountMatchesSchedulingGroup(account, req.GroupID)
+	}
+	if !groupCompatible || !compatible || !s.isAccountTransportCompatible(account, req.RequiredTransport) {
+		return nil, nil
+	}
+	if req.PriorityMode == OpenAIAccountPriorityModeBinding {
+		if _, ok := openAIAccountBindingPriority(account, req.GroupID); !ok {
+			return nil, nil
+		}
+	}
+	result, acquireErr := s.service.tryAcquireAccountSlot(ctx, accountID, account.Concurrency)
+	if acquireErr == nil && result != nil && result.Acquired {
+		return attachSelectionProfitGate(ctx, &AccountSelectionResult{
+			Account:     account,
+			Acquired:    true,
+			ReleaseFunc: result.ReleaseFunc,
+		}), nil
+	}
+	if s.service.concurrencyService != nil {
+		cfg := s.service.schedulingConfig()
+		return attachSelectionProfitGate(ctx, &AccountSelectionResult{
+			Account: account,
+			WaitPlan: &AccountWaitPlan{
+				AccountID:      accountID,
+				MaxConcurrency: account.Concurrency,
+				Timeout:        cfg.StickySessionWaitTimeout,
+				MaxWaiting:     cfg.StickySessionMaxWaiting,
+			},
+		}), nil
+	}
+	return nil, nil
+}
 func populateOpenAIAccountPriorityDecision(decision *OpenAIAccountScheduleDecision, req OpenAIAccountScheduleRequest, account *Account) {
 	if decision == nil || account == nil || req.PriorityMode != OpenAIAccountPriorityModeBinding {
 		return

@@ -86,11 +86,14 @@ func TestCodexConnectionOnlyRefreshPreservesIdentityAndLateCommit(t *testing.T) 
 	input.ProxyIdentity = "proxy:other"
 	changed, err := FinalizeCodexAttempt(plan, input, testCodexRelaySecret)
 	require.NoError(t, err)
-	_, err = svc.resolveCodexConversationAttempt(context.Background(), plan, changed, input, false)
-	var failure *UpstreamFailoverError
-	require.ErrorAs(t, err, &failure)
-	require.Equal(t, codexRecoveryRouteChanged, failure.ClientMessage)
-	require.False(t, failure.ShouldRetryNextAccount())
+	changed, err = svc.resolveCodexConversationAttempt(context.Background(), plan, changed, input, false)
+	require.NoError(t, err)
+	require.Equal(t, original.Identity().InstallationID(), changed.Identity().InstallationID())
+	require.Equal(t, original.Identity().SessionID(), changed.Identity().SessionID())
+	require.NoError(t, svc.CommitCodexConversation(ContextWithCodexAttemptState(ContextWithCodexRequestPlan(context.Background(), plan), changed)))
+	current, err = registry.GetCodexConversation(context.Background(), plan.ConversationDigest())
+	require.NoError(t, err)
+	require.Equal(t, "proxy:other", current.ProxyIdentity)
 }
 
 func TestCodexResponsePinTTLDoesNotUndercutOwnership(t *testing.T) {

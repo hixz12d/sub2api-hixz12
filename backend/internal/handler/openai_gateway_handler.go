@@ -3589,7 +3589,7 @@ func credentialFailoverClientResponse(failoverErr *service.UpstreamFailoverError
 		case service.OpenAIOAuthRefreshFailedReason:
 			return http.StatusServiceUnavailable, service.OpenAIOAuthUnavailableClientMessage
 		case service.OpenAIConversationRecoveryRequiredReason:
-			return http.StatusConflict, service.OpenAIConversationRecoveryClientMessage
+			return http.StatusConflict, service.SanitizeOpenAIConversationRecoveryMessage(failoverErr.ClientMessage)
 		}
 	}
 	if failoverErr != nil && failoverErr.Reason == service.OpenAIUpstreamAccessStateReason && strings.TrimSpace(failoverErr.ClientMessage) != "" {
@@ -3995,6 +3995,12 @@ func closeOpenAIWSFailoverExhausted(c *gin.Context, conn *coderws.Conn, failover
 			errorType = "api_error"
 			message = service.GrokCredentialUnavailableClientMessage
 			closeStatus = coderws.StatusTryAgainLater
+			if failoverErr.Reason == service.OpenAIConversationRecoveryRequiredReason {
+				intendedStatus = http.StatusConflict
+				errorType = "upstream_error"
+				message = service.SanitizeOpenAIConversationRecoveryMessage(failoverErr.ClientMessage)
+				closeStatus = coderws.StatusPolicyViolation
+			}
 		} else {
 			switch failoverErr.StatusCode {
 			case http.StatusTooManyRequests:

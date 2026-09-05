@@ -18,7 +18,7 @@ const (
 
 func codexRecoveryFailure(message string) *UpstreamFailoverError {
 	failure := openAIConversationRecoveryError()
-	failure.ClientMessage = message
+	failure.ClientMessage = conversationRecoveryClientMessage(message)
 	return failure
 }
 
@@ -85,17 +85,35 @@ func (s *OpenAIGatewayService) validateCodexLegacyContinuation(c *gin.Context, r
 
 func codexConversationTransportRefreshAllowed(current, candidate CodexConversationState) bool {
 	return current.AccountID == candidate.AccountID &&
-		current.ProxyIdentity == candidate.ProxyIdentity &&
-		current.EgressRoute == candidate.EgressRoute &&
 		current.ProfileID == candidate.ProfileID &&
 		current.IdentityPolicyVersion == candidate.IdentityPolicyVersion &&
-		current.TransportConfigVersion != candidate.TransportConfigVersion
+		(current.ProxyIdentity != candidate.ProxyIdentity ||
+			current.EgressRoute != candidate.EgressRoute ||
+			current.TransportConfigVersion != candidate.TransportConfigVersion)
+}
+
+func adoptCodexConversationConnectionDefaults(candidate, resolved CodexConversationState) CodexConversationState {
+	if candidate.AccountID != resolved.AccountID {
+		return candidate
+	}
+	if candidate.EgressRoute == "" {
+		candidate.EgressRoute = resolved.EgressRoute
+	}
+	if candidate.ProxyIdentity == "" {
+		candidate.ProxyIdentity = resolved.ProxyIdentity
+	}
+	if candidate.TransportConfigVersion == "" {
+		candidate.TransportConfigVersion = resolved.TransportConfigVersion
+	}
+	return candidate
 }
 
 // An in-flight request may finish after a connection-only configuration change.
 // Commit its success without rolling back the newest transport configuration.
 func codexConversationMatchesCompletedAttempt(state CodexConversationState, attempt *CodexAttemptState) bool {
 	if attempt != nil && attempt.conversationBinding != nil {
+		state.ProxyIdentity = attempt.conversationBinding.ProxyIdentity
+		state.EgressRoute = attempt.conversationBinding.EgressRoute
 		state.TransportConfigVersion = attempt.conversationBinding.TransportConfigVersion
 	}
 	return codexConversationMatchesAttempt(state, attempt)

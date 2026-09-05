@@ -166,10 +166,11 @@ func TestCodexCommitRejectsSameAccountStaleIdentityAndRoute(t *testing.T) {
 				registry.state.Committed = committed
 				if change == "session" {
 					registry.state.SessionID = "concurrent-winner"
+					require.ErrorIs(t, svc.CommitCodexConversation(c.Request.Context()), ErrCodexConversationCASConflict)
 				} else {
 					registry.state.EgressRoute = "another-route"
+					require.NoError(t, svc.CommitCodexConversation(c.Request.Context()))
 				}
-				require.ErrorIs(t, svc.CommitCodexConversation(c.Request.Context()), ErrCodexConversationCASConflict)
 			})
 		}
 	}

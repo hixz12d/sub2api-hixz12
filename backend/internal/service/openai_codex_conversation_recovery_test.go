@@ -56,7 +56,7 @@ func TestCodexCommittedConversationRecoversOnlyUnavailableReplayableAccount(t *t
 		{name: "output_started", status: StatusError, body: `{"input":"hello"}`, output: true},
 		{name: "database_failure", status: StatusError, body: `{"input":"hello"}`, repoErr: errors.New("database unavailable")},
 		{name: "deleted", body: `{"input":"hello"}`, repoErr: ErrAccountNotFound, recover: true},
-		{name: "same_account_transport_changed", status: StatusError, body: `{"input":"hello"}`, sameAccount: true},
+		{name: "same_account_transport_changed", status: StatusError, body: `{"input":"hello"}`, sameAccount: true, recover: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := &config.Config{}
@@ -103,11 +103,17 @@ func TestCodexCommittedConversationRecoversOnlyUnavailableReplayableAccount(t *t
 			require.NoError(t, readErr)
 			if tc.recover {
 				require.NoError(t, err)
-				require.Equal(t, int64(12), stored.AccountID)
-				require.Greater(t, stored.Revision, original.Revision)
-				require.False(t, stored.Committed)
-				require.NotEqual(t, original.SessionID, stored.SessionID)
-				require.ErrorIs(t, svc.CommitCodexConversation(oldContext.Request.Context()), ErrCodexConversationCASConflict)
+				if tc.sameAccount {
+					require.Equal(t, int64(11), stored.AccountID)
+					require.Greater(t, stored.Revision, original.Revision)
+					require.Equal(t, original.SessionID, stored.SessionID)
+				} else {
+					require.Equal(t, int64(12), stored.AccountID)
+					require.Greater(t, stored.Revision, original.Revision)
+					require.False(t, stored.Committed)
+					require.NotEqual(t, original.SessionID, stored.SessionID)
+					require.ErrorIs(t, svc.CommitCodexConversation(oldContext.Request.Context()), ErrCodexConversationCASConflict)
+				}
 				require.NoError(t, svc.CommitCodexConversation(c.Request.Context()))
 			} else {
 				var failure *UpstreamFailoverError

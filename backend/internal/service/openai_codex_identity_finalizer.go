@@ -175,6 +175,12 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthIdentity(
 		}
 		routeKey = current.RouteKey
 	}
+	if strings.TrimSpace(routeKey) == "" && c != nil && c.Request != nil {
+		if route, routeErr := s.resolveOpenAICompatibleEgressRoute(c.Request.Context(), account); routeErr == nil {
+			routeKey = route.RouteKey
+			SetOpenAIAttemptRouteKeyFromContext(c.Request.Context(), routeKey)
+		}
+	}
 	deriver, err := NewCodexIdentityDeriver(derivationSecret)
 	if err != nil {
 		return nil, err

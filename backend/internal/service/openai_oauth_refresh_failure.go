@@ -83,6 +83,25 @@ func openAIConversationRecoveryError() *UpstreamFailoverError {
 	}
 }
 
+func SanitizeOpenAIConversationRecoveryMessage(message string) string {
+	return conversationRecoveryClientMessage(message)
+}
+
+func conversationRecoveryClientMessage(message string) string {
+	switch strings.TrimSpace(message) {
+	case OpenAIConversationRecoveryClientMessage,
+		codexRecoveryOwnerMissing,
+		codexRecoverySnapshotMissing,
+		codexRecoveryAccountUnavailable,
+		codexRecoveryAccountMismatch,
+		codexRecoveryRouteChanged,
+		codexRecoveryRefreshFailed:
+		return strings.TrimSpace(message)
+	default:
+		return OpenAIConversationRecoveryClientMessage
+	}
+}
+
 // A rejected refresh ends same-account recovery. Grant only the unused portion
 // of the existing request budget to a different account, never a new budget.
 func (s *OpenAIGatewayService) handleOpenAIRefreshFailure(ctx context.Context, c *gin.Context, account *Account, refreshErr error, passthrough bool) error {

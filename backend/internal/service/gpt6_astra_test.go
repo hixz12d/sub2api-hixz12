@@ -27,14 +27,14 @@ func TestGPT6AstraOfficialPricingCard(t *testing.T) {
 	pricing, err := billing.GetModelPricing("gpt-6-astra")
 	require.NoError(t, err)
 
-	require.InDelta(t, 10e-6, pricing.InputPricePerToken, 1e-12)
-	require.InDelta(t, 1e-6, pricing.CacheReadPricePerToken, 1e-12)
-	require.InDelta(t, 12.5e-6, pricing.CacheCreationPricePerToken, 1e-12)
-	require.InDelta(t, 50e-6, pricing.OutputPricePerToken, 1e-12)
-	require.InDelta(t, 20e-6, pricing.InputPricePerTokenPriority, 1e-12)
-	require.InDelta(t, 2e-6, pricing.CacheReadPricePerTokenPriority, 1e-12)
-	require.InDelta(t, 25e-6, pricing.CacheCreationPricePerTokenPriority, 1e-12)
-	require.InDelta(t, 100e-6, pricing.OutputPricePerTokenPriority, 1e-12)
+	require.InDelta(t, 18e-6, pricing.InputPricePerToken, 1e-12)
+	require.InDelta(t, 1.8e-6, pricing.CacheReadPricePerToken, 1e-12)
+	require.InDelta(t, 22.5e-6, pricing.CacheCreationPricePerToken, 1e-12)
+	require.InDelta(t, 90e-6, pricing.OutputPricePerToken, 1e-12)
+	require.InDelta(t, 36e-6, pricing.InputPricePerTokenPriority, 1e-12)
+	require.InDelta(t, 3.6e-6, pricing.CacheReadPricePerTokenPriority, 1e-12)
+	require.InDelta(t, 45e-6, pricing.CacheCreationPricePerTokenPriority, 1e-12)
+	require.InDelta(t, 180e-6, pricing.OutputPricePerTokenPriority, 1e-12)
 	require.Equal(t, 272000, pricing.LongContextInputThreshold)
 	require.InDelta(t, 2.0, pricing.LongContextInputMultiplier, 1e-12)
 	require.InDelta(t, 1.5, pricing.LongContextOutputMultiplier, 1e-12)
@@ -60,18 +60,18 @@ func TestGPT6AstraPricingBoundaryAndServiceTiers(t *testing.T) {
 	atBoundary := calculate(UsageTokens{
 		InputTokens: 100000, CacheCreationTokens: 100000, CacheReadTokens: 72000, OutputTokens: 1000,
 	}, "")
-	require.InDelta(t, 100000*10e-6, atBoundary.InputCost, 1e-12)
-	require.InDelta(t, 100000*12.5e-6, atBoundary.CacheCreationCost, 1e-12)
-	require.InDelta(t, 72000*1e-6, atBoundary.CacheReadCost, 1e-12)
-	require.InDelta(t, 1000*50e-6, atBoundary.OutputCost, 1e-12)
+	require.InDelta(t, 100000*18e-6, atBoundary.InputCost, 1e-12)
+	require.InDelta(t, 100000*22.5e-6, atBoundary.CacheCreationCost, 1e-12)
+	require.InDelta(t, 72000*1.8e-6, atBoundary.CacheReadCost, 1e-12)
+	require.InDelta(t, 1000*90e-6, atBoundary.OutputCost, 1e-12)
 	require.False(t, atBoundary.LongContextBillingApplied)
 
 	above := UsageTokens{InputTokens: 100000, CacheCreationTokens: 100000, CacheReadTokens: 72001, OutputTokens: 1000}
 	standard := calculate(above, "")
-	require.InDelta(t, 100000*10e-6*2, standard.InputCost, 1e-12)
-	require.InDelta(t, 100000*12.5e-6*2, standard.CacheCreationCost, 1e-12)
-	require.InDelta(t, 72001*1e-6*2, standard.CacheReadCost, 1e-12)
-	require.InDelta(t, 1000*50e-6*1.5, standard.OutputCost, 1e-12)
+	require.InDelta(t, 100000*18e-6*2, standard.InputCost, 1e-12)
+	require.InDelta(t, 100000*22.5e-6*2, standard.CacheCreationCost, 1e-12)
+	require.InDelta(t, 72001*1.8e-6*2, standard.CacheReadCost, 1e-12)
+	require.InDelta(t, 1000*90e-6*1.5, standard.OutputCost, 1e-12)
 	require.True(t, standard.LongContextBillingApplied)
 
 	fast := calculate(above, "fast")
@@ -94,8 +94,8 @@ func TestGPT6AstraSubscriptionAccountDefaultsToNoLongContextSurcharge(t *testing
 		Resolver: resolver, LongContextBillingEnabled: &accountDefault,
 	})
 	require.NoError(t, err)
-	require.InDelta(t, 300000*10e-6, cost.InputCost, 1e-12)
-	require.InDelta(t, 1000*50e-6, cost.OutputCost, 1e-12)
+	require.InDelta(t, 300000*18e-6, cost.InputCost, 1e-12)
+	require.InDelta(t, 1000*90e-6, cost.OutputCost, 1e-12)
 	require.False(t, cost.LongContextBillingApplied)
 }
 
@@ -104,8 +104,8 @@ func TestGPT6AstraStaticFallbackNeverFallsThroughToOlderGPT(t *testing.T) {
 	for _, model := range []string{"gpt-6-astra", "openai/gpt-6-astra", "gpt-6-astra-preview"} {
 		pricing, err := billing.GetModelPricing(model)
 		require.NoError(t, err, model)
-		require.InDelta(t, 10e-6, pricing.InputPricePerToken, 1e-12, model)
-		require.InDelta(t, 50e-6, pricing.OutputPricePerToken, 1e-12, model)
+		require.InDelta(t, 18e-6, pricing.InputPricePerToken, 1e-12, model)
+		require.InDelta(t, 90e-6, pricing.OutputPricePerToken, 1e-12, model)
 	}
 }
 
