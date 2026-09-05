@@ -1,9 +1,11 @@
 # Candidate Client Profile Contracts
 
-Status: offline PR-3 foundation only. This package is deliberately NOT imported
-by the Relay Kernel. It must not be exposed as a production account selector yet.
-Existing `codex_client_profile`, v2 identity derivation, TLS, secret selection and
-Redis records are unchanged.
+Status: explicit HTTP/SSE runtime integration for the two versioned IDs below.
+The Relay Kernel imports this package at its final HTTP dispatch boundary. The
+short `pi` / `opencode` selectors and existing conversations are NOT automatically
+migrated. Bundle ID and exact artifact digest are included in the pinned profile.
+Native TLS/HTTP2 parity is still unverified; this is not a fully verified native
+client impersonation release. See INTEGRATION.md for the bounded canary contract.
 
 ## Packaged Candidates
 
@@ -53,9 +55,15 @@ conversation by the integrating caller. It cannot validate that ownership itself
   isolation policy. OpenCode preserves the caller cache key.
 - Rejects `client_metadata` and `conversation_id` instead of silently discarding
   caller body data. This candidate restriction requires review before activation.
-- Does not assert WS/Compact support, change TLS or impose store/stream policy.
+- Does not assert WS/Compact support or impose store/stream policy. Versioned
+  runtime profiles currently use native Go HTTP transport; Python uses httpx /
+  OpenSSL in the verified path. These are NOT equivalent native TLS fingerprints.
 
-## Activation Gates
+## Original Activation Gates
+
+Runtime application integration, profile/digest pinning and cross-language local
+final-sender comparison are now implemented. Native transport evidence, upstream
+source approval and authorized production canary remain separate gates.
 
 1. Resolve upstream commits and dependency evidence; approve the schema/fixtures.
 2. Persist desired bundle and pin effective bundle/digest to a conversation.

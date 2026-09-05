@@ -773,6 +773,7 @@ export default {
         codexInstallationPolicy: '安装身份策略（仅新会话）',
         codexInstallationLegacy: '兼容旧派生（legacy_v2）',
         codexInstallationStable: '稳定安装（stable_v1）',
+        codexBundleRequiresKernel: '共享版本档案需要 Relay Kernel。',
         codexInstallationRequiresKernel: '稳定安装策略需要 Relay Kernel。',
         codexKernelFingerprintDesc: '会话内身份保持固定；新会话的安装 ID 由安装身份策略决定。',
         codexProfileCallerSupplied: '客户端提供，未验证',

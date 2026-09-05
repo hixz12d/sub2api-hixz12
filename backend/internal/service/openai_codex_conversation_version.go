@@ -33,6 +33,10 @@ func codexStableInstallationID(deriver *CodexIdentityDeriver, accountID int64, p
 	switch profileID {
 	case CodexProfileCLI, CodexProfileExec, CodexProfileDesktop:
 		family = "codex"
+	case CodexProfilePiBundle:
+		family = CodexProfilePi
+	case CodexProfileOpenCodeBundle:
+		family = CodexProfileOpenCode
 	}
 	return deriver.UUIDv4("codex/installation/stable/v1", strconv.FormatInt(accountID, 10), family)
 }

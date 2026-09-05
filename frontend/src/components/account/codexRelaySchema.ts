@@ -8,6 +8,8 @@ export type CodexClientProfile =
   | 'codex_desktop'
   | 'opencode'
   | 'pi'
+  | 'pi-0.57.1-oauth-sse-r1'
+  | 'opencode-1.2.4-oauth-sse-r1'
 
 export type CodexFingerprintMode = 'off' | 'device' | 'session' | 'window' | 'window40' | 'full'
 
@@ -91,7 +93,9 @@ export const CODEX_CLIENT_PROFILES: readonly ClientProfileCatalogItem[] = [
     ws: false,
     compact: false,
     fidelity: 'unsupported strict parity'
-  }
+  },
+  { id: 'pi-0.57.1-oauth-sse-r1', appVersion: '0.57.1', http: true, ws: false, compact: false, fidelity: 'degraded' },
+  { id: 'opencode-1.2.4-oauth-sse-r1', appVersion: '1.2.4', http: true, ws: false, compact: false, fidelity: 'degraded' }
 ] as const
 
 export const DEFAULT_CODEX_RELAY_STATE: CodexRelayFormState = {
@@ -118,6 +122,9 @@ export function validateCodexRelayState(
   t: (key: string) => string
 ): CodexRelayValidationResult {
   const errors: Record<string, string> = {}
+  if (state.codex_client_profile.endsWith('-oauth-sse-r1') && state.codex_relay_mode !== 'relay_kernel') {
+    errors.codex_client_profile = t('admin.accounts.openai.codexBundleRequiresKernel')
+  }
   if (state.codex_installation_policy === 'stable_v1' && state.codex_relay_mode !== 'relay_kernel') {
     errors.codex_installation_policy = t('admin.accounts.openai.codexInstallationRequiresKernel')
   }
@@ -147,9 +154,7 @@ export function extractCodexRelayState(extra?: Record<string, any> | null): Code
 
   const mode = extra.codex_relay_mode === 'relay_kernel' ? 'relay_kernel' : 'legacy'
   const policy = extra.codex_identity_policy_version === 'v2' ? 'v2' : 'v1'
-  const validProfiles: CodexClientProfile[] = [
-    'auto', 'passthrough', 'codex_cli', 'codex_exec', 'codex_desktop', 'opencode', 'pi'
-  ]
+  const validProfiles = CODEX_CLIENT_PROFILES.map((item) => item.id)
   const profile = validProfiles.includes(extra.codex_client_profile)
     ? (extra.codex_client_profile as CodexClientProfile)
     : 'auto'

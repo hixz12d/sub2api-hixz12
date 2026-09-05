@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
@@ -13,7 +14,20 @@ func (s *OpenAIGatewayService) SetPluginManager(manager *PluginManager) {
 // doOpenAIUpstream 只在 OpenAI OAuth 能力绑定已启用时把真实请求交给插件。
 // 插件返回标准 http.Response，响应解析、错误映射、SSE 和计费仍由现有核心链处理。
 func (s *OpenAIGatewayService) doOpenAIUpstream(request *http.Request, proxyURL string, account *Account) (*http.Response, error) {
-	if s.pluginManager != nil {
+	state, hasState := CodexAttemptStateFromContext(request.Context())
+	bundleRequest := hasState && state.Profile().BundleID != ""
+	if bundleRequest {
+		if account == nil || account.IsTLSFingerprintEnabled() {
+			return nil, errors.New("shared client bundles require native transport; disable enable_tls_fingerprint")
+		}
+		if s.pluginManager != nil && s.pluginManager.ShouldRouteOpenAIOAuth(account) {
+			return nil, errors.New("shared client bundles require the built-in HTTP sender; plugin transport is not verified")
+		}
+	}
+	if err := applyCodexBundleAtDispatch(request); err != nil {
+		return nil, err
+	}
+	if s.pluginManager != nil && !bundleRequest {
 		response, handled, err := s.pluginManager.RoundTripOpenAIOAuth(request.Context(), request, proxyURL, account)
 		if handled {
 			return response, err

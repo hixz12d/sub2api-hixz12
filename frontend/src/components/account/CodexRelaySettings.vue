@@ -109,6 +109,8 @@ const identityPolicyOptions = computed(() => [
 ])
 
 const clientProfileOptions = computed(() => [
+  { value: 'pi-0.57.1-oauth-sse-r1', label: 'Pi 0.57.1 (HTTP/SSE bundle)', disabled: !isKernelActive.value },
+  { value: 'opencode-1.2.4-oauth-sse-r1', label: 'OpenCode 1.2.4 (HTTP/SSE bundle)', disabled: !isKernelActive.value },
   { value: 'auto', label: t('admin.accounts.openai.codexClientProfileAuto') },
   { value: 'passthrough', label: t('admin.accounts.openai.codexClientProfilePassthrough') },
   { value: 'codex_cli', label: t('admin.accounts.openai.codexClientProfileCodexCli') },

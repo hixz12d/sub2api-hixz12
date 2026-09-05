@@ -2,9 +2,11 @@
 
 ## Delivery Boundary
 
-This change pins the existing built-in runtime catalog. The candidate bundles in
-`internal/pkg/clientprofile` remain offline and are NOT activated by this change.
-No claim of native TLS/HTTP2 parity is introduced.
+This runbook covers conversation pinning and installation migration. A subsequent
+change adds explicit versioned HTTP/SSE bundle selectors; see
+`internal/pkg/clientprofile/INTEGRATION.md` for their separate rollout gates.
+Short selectors and existing pins are not automatically migrated. No claim of
+native TLS/HTTP2 parity is introduced.
 
 The requested delivery order is source/tests -> push GitHub main -> separately
 approved production rollout. No production secret rotation, database migration,

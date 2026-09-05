@@ -54,6 +54,8 @@ type CodexTransportProfile struct {
 }
 
 type CodexClientProfile struct {
+	BundleID     string `json:"BundleID,omitempty"`
+	BundleDigest string `json:"BundleDigest,omitempty"`
 	ID           string
 	Revision     int
 	App          CodexAppIdentityProfile
@@ -167,7 +169,7 @@ var codexProfileCatalog = map[string]CodexClientProfile{
 }
 
 func CodexClientProfiles() []CodexClientProfile {
-	ids := []string{CodexProfilePassthrough, CodexProfileCLI, CodexProfileExec, CodexProfileDesktop, CodexProfileOpenCode, CodexProfilePi}
+	ids := []string{CodexProfilePassthrough, CodexProfileCLI, CodexProfileExec, CodexProfileDesktop, CodexProfileOpenCode, CodexProfilePi, CodexProfilePiBundle, CodexProfileOpenCodeBundle}
 	out := make([]CodexClientProfile, 0, len(ids))
 	for _, id := range ids {
 		profile, _ := ResolveCodexClientProfile(id)
@@ -180,6 +182,9 @@ func ResolveCodexClientProfile(id string) (CodexClientProfile, error) {
 	id = strings.ToLower(strings.TrimSpace(id))
 	if id == "" {
 		id = CodexProfileCLI
+	}
+	if isCodexBundleProfile(id) {
+		return resolveCodexBundleProfile(id)
 	}
 	profile, ok := codexProfileCatalog[id]
 	if !ok {
@@ -220,6 +225,9 @@ func ResolveCodexClientProfileForRequest(id string, inbound http.Header) (CodexC
 }
 
 func ValidateCodexClientProfile(profile CodexClientProfile) error {
+	if profile.BundleID != "" || profile.BundleDigest != "" || isCodexBundleProfile(profile.ID) {
+		return validateCodexBundleProfile(profile)
+	}
 	if strings.TrimSpace(profile.ID) == "" || profile.Revision <= 0 {
 		return errors.New("codex profile id and positive revision are required")
 	}
@@ -345,6 +353,12 @@ func ResolveCodexRelaySettings(account *Account) (CodexRelaySettings, error) {
 	if settings.PolicyVersion != CodexIdentityPolicyV1 && settings.PolicyVersion != CodexIdentityPolicyV2 {
 		return CodexRelaySettings{}, fmt.Errorf("invalid %s %q", CodexIdentityPolicyVersionExtraKey, settings.PolicyVersion)
 	}
+	if isCodexBundleProfile(settings.ProfileID) && settings.Mode != CodexRelayModeKernel {
+		return CodexRelaySettings{}, errors.New("versioned client bundles require relay_kernel")
+	}
+	if isCodexBundleProfile(settings.ProfileID) && account.IsTLSFingerprintEnabled() {
+		return CodexRelaySettings{}, errors.New("shared client bundles require native transport; disable enable_tls_fingerprint")
+	}
 	if settings.ProfileID != CodexProfileAuto {
 		if _, err := ResolveCodexClientProfile(settings.ProfileID); err != nil {
 			return CodexRelaySettings{}, err
@@ -368,6 +382,9 @@ var codexRelayAccountExtraKeys = []string{
 // hasCodexRelayAccountExtraUpdate keeps generic JSONB merge paths under the
 // same validation contract as full account updates.
 func hasCodexRelayAccountExtraUpdate(extra map[string]any) bool {
+	if _, present := extra["enable_tls_fingerprint"]; present {
+		return true
+	}
 	for _, key := range codexRelayAccountExtraKeys {
 		if _, ok := extra[key]; ok {
 			return true

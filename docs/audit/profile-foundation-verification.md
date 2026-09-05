@@ -162,3 +162,31 @@ recovery cause without changing terminal retry policy.
 
 This is not universal recovery of untracked history, durable snapshot storage or
 automatic replay. Truly missing identity still requires explicit context recovery.
+
+
+## Shared HTTP Runtime Integration
+
+The package is no longer offline-only. Explicit versioned Pi/OpenCode selectors
+now reach Sub2API's final HTTP dispatch; the local Hixz12-Relay builder uses the
+same exact JSON artifacts. Both sides pin artifact ID/digest. Python conversation
+and slot pins survive persistence/restart and selector changes. Legacy short
+selectors are unchanged. See `internal/pkg/clientprofile/INTEGRATION.md` in backend.
+
+- Actual loopback receivers captured requests from Go's final dispatch path and
+  Python's StdHttpxClient. Both bundle cases matched artifact digest, application
+  headers and the entire decoded JSON body. Only Host, Content-Length,
+  Accept-Encoding and Connection were excluded from header comparison. This
+  does not validate raw header order, JSON encoding bytes, TLS or HTTP/2 SETTINGS.
+- Final focused service/repository/handler/clientprofile Go tests passed.
+- Python shared-bundle, Codex and session-slot tests: 54 passed.
+- Three related frontend suites: 11 tests passed; typecheck/build passed.
+- Existing full-suite failures were not rerun or hidden; no fresh race claim.
+- No production connection, paid inference, deployment or secret rotation.
+
+The canary contract is deliberately restricted to native Go HTTP and Python
+`tls_profile=none`. Managed uTLS and plugin routes are rejected for these new
+selectors, not treated as verified equivalents. Native-client fidelity remains
+unverified; CLI/WS and Compact are not part of this integration.
+
+The Python repository had extensive pre-existing changes. Targeted edits preserve
+that baseline; no blanket commit/push of its existing work was performed.

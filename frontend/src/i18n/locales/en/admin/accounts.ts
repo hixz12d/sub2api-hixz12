@@ -691,6 +691,7 @@ export default {
         codexInstallationPolicy: 'Installation Policy (New Conversations)',
         codexInstallationLegacy: 'Legacy derivation (legacy_v2)',
         codexInstallationStable: 'Stable installation (stable_v1)',
+        codexBundleRequiresKernel: 'Shared versioned bundles require Relay Kernel.',
         codexInstallationRequiresKernel: 'Stable installation requires Relay Kernel.',
         codexKernelFingerprintDesc: 'Identity is pinned within a conversation; the installation policy determines IDs for new conversations.',
         codexProfileCallerSupplied: 'Caller supplied, unverified',

@@ -1,5 +1,6 @@
-// Package clientprofile contains offline candidate wire contracts. It is not
-// connected to the production Relay Kernel until conversation bundle pinning exists.
+// Package clientprofile contains immutable candidate application wire contracts.
+// Versioned opt-in Relay Kernel profiles use these at final HTTP dispatch;
+// native transport equivalence remains unverified.
 package clientprofile
 
 import (

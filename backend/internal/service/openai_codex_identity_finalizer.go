@@ -265,6 +265,9 @@ func (s *OpenAIGatewayService) finalizeCodexAttemptHTTPWire(c *gin.Context, req 
 	attachCodexAttemptStateToGin(c, state)
 	requestContext := WithHTTPUpstreamPoolScope(req.Context(), state.TransportKey())
 	requestContext = ContextWithCodexAttemptState(requestContext, state)
+	if plan, hasPlan := CodexRequestPlanFromContext(c.Request.Context()); hasPlan {
+		requestContext = ContextWithCodexRequestPlan(requestContext, plan)
+	}
 	reqWithScope := req.WithContext(requestContext)
 	*req = *reqWithScope
 }

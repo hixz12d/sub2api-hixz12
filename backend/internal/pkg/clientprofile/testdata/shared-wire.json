@@ -1,0 +1,15 @@
+{
+  "session": "shared-fixture-session",
+  "body": {
+    "model": "fixture-model",
+    "instructions": "Preserve the caller instructions.",
+    "input": [{"role": "user", "content": "fixture input"}],
+    "tools": [{"type": "function", "name": "lookup", "description": "fixture tool", "parameters": {"type": "object", "properties": {}}}],
+    "reasoning": {"effort": "low"},
+    "text": {},
+    "prompt_cache_key": "caller-cache-key",
+    "previous_response_id": "resp_fixture",
+    "stream": true,
+    "store": false
+  }
+}

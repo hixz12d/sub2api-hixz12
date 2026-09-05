@@ -197,6 +197,11 @@ func TestCodexSnapshotOwnsCopyAndRejectsCorruption(t *testing.T) {
 
 func TestCodexFrozenLegacyCatalogIsIndependent(t *testing.T) {
 	for _, current := range CodexClientProfiles() {
+		if current.BundleID != "" {
+			_, err := resolveLegacyCodexConversationProfile(current.ID)
+			require.Error(t, err, "new bundles must not fabricate legacy entries")
+			continue
+		}
 		frozen, err := resolveLegacyCodexConversationProfile(current.ID)
 		require.NoError(t, err)
 		require.Equal(t, 1, frozen.Revision)
