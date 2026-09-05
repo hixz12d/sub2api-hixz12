@@ -150,6 +150,8 @@ func TestFilterCodexInput_StripsFcIDFromCustomToolCall_WhenPreservingReferences(
 	require.True(t, ok)
 	require.Equal(t, "ctc_validID123", good["id"], "valid ctc* id must be preserved")
 	require.Equal(t, "fc_custom2", good["call_id"])
+}
+
 func TestFilterCodexInput_PreservesNativeCustomAndToolSearchIDs(t *testing.T) {
 	input := []any{
 		map[string]any{"type": "custom_tool_call", "id": "ctc_valid", "call_id": "call_custom", "name": "apply_patch"},

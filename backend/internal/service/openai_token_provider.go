@@ -283,6 +283,7 @@ func (p *OpenAITokenProvider) RefreshAfterUnauthorized(ctx context.Context, acco
 	result, err := p.refreshAPI.RefreshIfNeeded(ctx, account, p.executor, 0, true)
 	if err != nil {
 		p.metrics.refreshFailure.Add(1)
+		p.quarantineRejectedRefresh(ctx, result, err)
 		return "", err
 	}
 	if result == nil || result.Account == nil {

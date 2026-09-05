@@ -187,7 +187,10 @@ func TestRelayKernelFinalizerStagesV2AttemptWithoutChangingLegacyDefault(t *test
 	otherContext, _ := gin.CreateTestContext(httptest.NewRecorder())
 	otherContext.Request = otherRequest
 	_, err = svc.finalizeCodexOAuthIdentity(otherAccount, otherContext, otherRequest.Header, "")
-	require.ErrorContains(t, err, "bound to account")
+	var recoveryErr *UpstreamFailoverError
+	require.ErrorAs(t, err, &recoveryErr)
+	require.Equal(t, OpenAIConversationRecoveryRequiredReason, recoveryErr.Reason)
+	require.False(t, recoveryErr.ShouldRetryNextAccount())
 }
 
 func TestRelayKernelAllowsCASFailoverBeforeSemanticCommit(t *testing.T) {

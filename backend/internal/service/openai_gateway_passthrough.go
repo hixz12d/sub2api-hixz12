@@ -378,7 +378,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 					_ = resp.Body.Close()
 					refreshedToken, refreshErr := s.openAITokenProvider.RefreshAfterUnauthorized(ctx, account, token)
 					if refreshErr != nil {
-						return nil, fmt.Errorf("refresh OpenAI token after passthrough 401: %w", refreshErr)
+						return nil, s.handleOpenAIRefreshFailure(ctx, c, account, refreshErr, true)
 					}
 					token = refreshedToken
 					continue

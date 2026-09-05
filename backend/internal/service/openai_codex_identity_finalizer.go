@@ -199,7 +199,9 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthIdentity(
 	if err != nil {
 		return nil, err
 	}
-	state, err = s.resolveCodexConversationAttempt(c.Request.Context(), plan, state, attemptInput)
+	guard := NewCodexCommitGuard(c).Snapshot()
+	replaySafe := guard.ReplaySafe && !guard.Stateful && !guard.SemanticOutputStarted && !guard.ResponseOwnershipBound
+	state, err = s.resolveCodexConversationAttempt(c.Request.Context(), plan, state, attemptInput, replaySafe)
 	if err != nil {
 		return nil, err
 	}

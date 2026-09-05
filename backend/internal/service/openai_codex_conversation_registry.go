@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 )
@@ -120,6 +119,7 @@ func (s *OpenAIGatewayService) resolveCodexConversationAttempt(
 	plan *CodexRequestPlan,
 	attempt *CodexAttemptState,
 	input CodexAttemptInput,
+	replaySafe bool,
 ) (*CodexAttemptState, error) {
 	if attempt == nil || attempt.Identity() == nil {
 		return attempt, nil
@@ -136,9 +136,12 @@ func (s *OpenAIGatewayService) resolveCodexConversationAttempt(
 	if err != nil {
 		return nil, err
 	}
+	recoveringCommitted := resolved.Committed
 	for retries := 0; !created && !codexConversationAttemptTupleEqual(resolved, candidate); retries++ {
-		if resolved.Committed {
-			return nil, fmt.Errorf("codex conversation is bound to account %d and committed to its transport tuple", resolved.AccountID)
+		// A CAS loser must not replace a healthy winner still preparing output.
+		recoveringCommitted = recoveringCommitted || resolved.Committed
+		if recoveringCommitted && !s.canRecoverUnavailableCodexConversation(ctx, plan, resolved, candidate, replaySafe) {
+			return nil, openAIConversationRecoveryError()
 		}
 		if retries >= 3 {
 			return nil, ErrCodexConversationCASConflict
@@ -172,6 +175,27 @@ func (s *OpenAIGatewayService) resolveCodexConversationAttempt(
 		return nil, err
 	}
 	return resolvedAttempt, nil
+}
+
+// Recover only replayable requests whose old account is durably unavailable.
+// The caller CASes the observed revision and account; a concurrent new binding
+// must be revalidated instead of being deleted or overwritten unconditionally.
+func (s *OpenAIGatewayService) canRecoverUnavailableCodexConversation(ctx context.Context, plan *CodexRequestPlan, current, candidate CodexConversationState, replaySafe bool) bool {
+	if !replaySafe || plan == nil || current.AccountID == candidate.AccountID || s.accountRepo == nil {
+		return false
+	}
+	if plan.previousResponseID != "" || plan.operation == CodexOperationResume ||
+		strings.TrimSpace(plan.inboundHeaders.Get(openAIWSTurnStateHeader)) != "" || openAIRetryRequestIsStateful(plan.body) {
+		return false
+	}
+	account, err := s.accountRepo.GetByID(ctx, current.AccountID)
+	if errors.Is(err, ErrAccountNotFound) {
+		return true
+	}
+	if err != nil || account == nil {
+		return false
+	}
+	return account.Status != StatusActive || !account.Schedulable
 }
 
 func (s *OpenAIGatewayService) CommitCodexConversation(ctx context.Context) error {

@@ -168,14 +168,29 @@ func openAIRetryRequestIsStateful(body []byte) bool {
 	if len(body) == 0 || !gjson.ValidBytes(body) {
 		return true
 	}
-	if strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String()) != "" {
+	if !gjson.ParseBytes(body).IsObject() || strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String()) != "" {
 		return true
 	}
 	lower := strings.ToLower(string(body))
-	return strings.Contains(lower, `"type":"function_call_output"`) ||
-		strings.Contains(lower, `"type": "function_call_output"`) ||
-		strings.Contains(lower, "encrypted_content") ||
-		strings.Contains(lower, "encrypted_reasoning")
+	if strings.Contains(lower, "encrypted_content") || strings.Contains(lower, "encrypted_reasoning") {
+		return true
+	}
+	var containsState func(gjson.Result) bool
+	containsState = func(value gjson.Result) bool {
+		found := false
+		value.ForEach(func(key, child gjson.Result) bool {
+			if key.String() == "encrypted_content" || key.String() == "encrypted_reasoning" ||
+				(key.String() == "type" && (strings.HasSuffix(child.String(), "_call_output") ||
+					child.String() == "tool_search_output" || child.String() == "item_reference" || child.String() == "mcp_approval_response")) {
+				found = true
+			} else if child.IsObject() || child.IsArray() {
+				found = containsState(child)
+			}
+			return !found
+		})
+		return found
+	}
+	return containsState(gjson.ParseBytes(body))
 }
 
 func OpenAIRetryRequestIsStateful(c *gin.Context, body []byte) bool {

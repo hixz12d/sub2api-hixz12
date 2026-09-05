@@ -3584,6 +3584,14 @@ func (h *OpenAIGatewayHandler) handleFailoverExhausted(c *gin.Context, failoverE
 }
 
 func credentialFailoverClientResponse(failoverErr *service.UpstreamFailoverError) (int, string) {
+	if failoverErr != nil {
+		switch failoverErr.Reason {
+		case service.OpenAIOAuthRefreshFailedReason:
+			return http.StatusServiceUnavailable, service.OpenAIOAuthUnavailableClientMessage
+		case service.OpenAIConversationRecoveryRequiredReason:
+			return http.StatusConflict, service.OpenAIConversationRecoveryClientMessage
+		}
+	}
 	if failoverErr != nil && failoverErr.Reason == service.OpenAIUpstreamAccessStateReason && strings.TrimSpace(failoverErr.ClientMessage) != "" {
 		status := failoverErr.ClientStatusCode
 		if status <= 0 {

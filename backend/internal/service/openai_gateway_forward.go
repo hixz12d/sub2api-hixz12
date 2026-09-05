@@ -1078,7 +1078,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 				if decision.RefreshCredential && budget != nil && budget.UseRefresh() && s.openAITokenProvider != nil {
 					refreshedToken, refreshErr := s.openAITokenProvider.RefreshAfterUnauthorized(ctx, account, token)
 					if refreshErr != nil {
-						return nil, fmt.Errorf("refresh OpenAI token after 401: %w", refreshErr)
+						return nil, s.handleOpenAIRefreshFailure(ctx, c, account, refreshErr, false)
 					}
 					token = refreshedToken
 					continue
