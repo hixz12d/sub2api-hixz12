@@ -372,6 +372,21 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 			// passthrough error handling sees the same response after recovery fails.
 			probeBody := s.readUpstreamErrorBody(resp)
 			if resp.StatusCode == http.StatusUnauthorized && account.IsOpenAIOAuth() {
+				if isOpenAIPermanentOAuthUnauthorized(resp.StatusCode, probeBody) {
+					_ = resp.Body.Close()
+					shouldDisable := s.handleFailoverSideEffects(ctx, resp, account, probeBody)
+					if budget := OpenAIRetryBudgetFromContext(c); budget != nil {
+						budget.allowExtraAccountForCredentialDeath()
+						budget.RecordFailure(OpenAIRetryDecision{
+							Class:             OpenAIRetryFailureCredential,
+							Scope:             OpenAIRetryScopeAccount,
+							RetryOtherAccount: true,
+						})
+					}
+					RecordOpenAIRetryFailure(c, resp.StatusCode, nil)
+					upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(probeBody)))
+					return nil, s.newOpenAIPermanentOAuthUnauthorizedFailover(account, resp, probeBody, upstreamMsg, shouldDisable)
+				}
 				decision := RecordOpenAIRetryFailure(c, resp.StatusCode, nil)
 				budget := OpenAIRetryBudgetFromContext(c)
 				if decision.RefreshCredential && budget != nil && budget.UseRefresh() && s.openAITokenProvider != nil {

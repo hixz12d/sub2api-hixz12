@@ -40,7 +40,7 @@ func TestOpenAIForwardRefreshFailureCanSwitchWithinOriginalBudget(t *testing.T) 
 			provider := NewOpenAITokenProvider(repo, cache, nil)
 			provider.SetRefreshAPI(NewOAuthRefreshAPI(repo, cache), executor)
 			upstream := &httpUpstreamRecorder{responses: []*http.Response{
-				{StatusCode: http.StatusUnauthorized, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"error":{"code":"token_revoked"}}`))},
+				{StatusCode: http.StatusUnauthorized, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"error":{"code":"token_expired","message":"access token expired"}}`))},
 				{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: io.NopCloser(strings.NewReader("data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\ndata: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_healthy\",\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n"))},
 			}}
 			svc := &OpenAIGatewayService{cfg: &config.Config{}, accountRepo: repo, openAITokenProvider: provider, httpUpstream: upstream}

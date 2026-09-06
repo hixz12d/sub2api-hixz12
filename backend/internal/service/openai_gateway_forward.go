@@ -1103,6 +1103,21 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
 			upstreamCode := extractUpstreamErrorCode(respBody)
 			if resp.StatusCode == http.StatusUnauthorized && account.IsOpenAIOAuth() {
+				// token_revoked / token_invalidated cannot be healed by refresh. Mark the
+				// account immediately and hand control to the multi-account failover path.
+				if isOpenAIPermanentOAuthUnauthorized(resp.StatusCode, respBody) {
+					shouldDisable := s.handleFailoverSideEffects(ctx, resp, account, respBody, upstreamModel)
+					if budget := OpenAIRetryBudgetFromContext(c); budget != nil {
+						budget.allowExtraAccountForCredentialDeath()
+						budget.RecordFailure(OpenAIRetryDecision{
+							Class:             OpenAIRetryFailureCredential,
+							Scope:             OpenAIRetryScopeAccount,
+							RetryOtherAccount: true,
+						})
+					}
+					RecordOpenAIRetryFailure(c, resp.StatusCode, nil)
+					return nil, s.newOpenAIPermanentOAuthUnauthorizedFailover(account, resp, respBody, upstreamMsg, shouldDisable)
+				}
 				decision := RecordOpenAIRetryFailure(c, resp.StatusCode, nil)
 				budget := OpenAIRetryBudgetFromContext(c)
 				if decision.RefreshCredential && budget != nil && budget.UseRefresh() && s.openAITokenProvider != nil {

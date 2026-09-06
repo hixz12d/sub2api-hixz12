@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 )
 
 const (
@@ -22,6 +23,36 @@ const (
 // not a scheduler snapshot that may predate a concurrent reauthorization.
 type OpenAIOAuthConditionalErrorRepository interface {
 	SetOpenAIOAuthErrorIfCredentialsUnchanged(context.Context, int64, map[string]any, string) (bool, error)
+}
+
+
+// isOpenAIPermanentOAuthUnauthorized reports provider evidence that the OAuth
+// credential is dead. Refresh cannot heal these codes; mark the account and
+// switch immediately instead of burning the only refresh slot.
+func isOpenAIPermanentOAuthUnauthorized(statusCode int, body []byte) bool {
+	if statusCode != http.StatusUnauthorized {
+		return false
+	}
+	code := strings.ToLower(strings.TrimSpace(extractUpstreamErrorCode(body)))
+	switch code {
+	case "token_revoked", "token_invalidated", "invalid_api_key", "account_deactivated", "access_terminated":
+		return true
+	}
+	if gjson.GetBytes(body, "detail").String() == "Unauthorized" {
+		return true
+	}
+	msg := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(body)))
+	for _, marker := range []string{
+		"invalidated oauth token",
+		"token has been revoked",
+		"token_revoked",
+		"token_invalidated",
+	} {
+		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func openAIPermanentRefreshRejection(err error) bool {
@@ -104,6 +135,34 @@ func conversationRecoveryClientMessage(message string) string {
 
 // A rejected refresh ends same-account recovery. Grant only the unused portion
 // of the existing request budget to a different account, never a new budget.
+func openAIRequestBodyHasRecoverableFullContext(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	if c.Request != nil {
+		if plan, ok := CodexRequestPlanFromContext(c.Request.Context()); ok {
+			return codexPlanHasRecoverableFullContext(plan)
+		}
+	}
+	return false
+}
+
+func (b *OpenAIRetryBudget) allowExtraAccountForCredentialDeath() {
+	if b == nil {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	// A permanently dead OAuth credential must not exhaust the single-account
+	// sticky budget: grant one additional distinct account for this request.
+	if b.maxDistinctAccounts < 2 {
+		b.maxDistinctAccounts = 2
+	}
+	if b.maxAttempts < b.maxDistinctAccounts {
+		b.maxAttempts = b.maxDistinctAccounts
+	}
+}
+
 func (s *OpenAIGatewayService) handleOpenAIRefreshFailure(ctx context.Context, c *gin.Context, account *Account, refreshErr error, passthrough bool) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
@@ -114,17 +173,18 @@ func (s *OpenAIGatewayService) handleOpenAIRefreshFailure(ctx context.Context, c
 	guard := NewCodexCommitGuard(c).Snapshot()
 	// previous_response_id alone is stateful, but Pi/OpenCode often resend the full
 	// conversation input. Those turns can move to another account after OAuth death.
-	fullContextRecoverable := false
-	if c != nil && c.Request != nil {
-		if plan, ok := CodexRequestPlanFromContext(c.Request.Context()); ok {
-			fullContextRecoverable = codexPlanHasRecoverableFullContext(plan)
-		}
-	}
+	fullContextRecoverable := openAIRequestBodyHasRecoverableFullContext(c)
+	permanent := openAIPermanentRefreshRejection(refreshErr)
+	// Permanent credential death still needs a rebuildable body (or a non-sticky
+	// turn). A pure previous_response_id chain cannot safely move accounts.
 	canSwitch := !guard.SemanticOutputStarted && !guard.ResponseOwnershipBound &&
 		(fullContextRecoverable || (guard.ReplaySafe && !guard.Stateful))
 	sharedFailure := isSharedProviderRefreshError(refreshErr)
 	canSwitch = canSwitch && !sharedFailure
 	if budget := OpenAIRetryBudgetFromContext(c); budget != nil {
+		if permanent && canSwitch {
+			budget.allowExtraAccountForCredentialDeath()
+		}
 		budget.RecordFailure(OpenAIRetryDecision{
 			Class:             OpenAIRetryFailureCredential,
 			Scope:             OpenAIRetryScopeAccount,
@@ -156,5 +216,31 @@ func (s *OpenAIGatewayService) handleOpenAIRefreshFailure(ctx context.Context, c
 		UpstreamStatusCode: http.StatusUnauthorized, Passthrough: passthrough,
 		Kind: "credential_error", Message: failure.ClientMessage,
 	})
+	return failure
+}
+
+
+func (s *OpenAIGatewayService) newOpenAIPermanentOAuthUnauthorizedFailover(
+	account *Account,
+	resp *http.Response,
+	body []byte,
+	upstreamMsg string,
+	shouldDisable bool,
+) *UpstreamFailoverError {
+	headers := http.Header{}
+	if resp != nil {
+		headers = resp.Header
+	}
+	failure := s.newOpenAIAccountFailoverError(account, http.StatusUnauthorized, headers, body, upstreamMsg, shouldDisable, false)
+	if failure == nil {
+		failure = &UpstreamFailoverError{StatusCode: http.StatusUnauthorized}
+	}
+	failure.Stage = GatewayFailureStageAccountAuth
+	failure.Scope = GatewayFailureScopeAccount
+	failure.Reason = OpenAIOAuthRefreshFailedReason
+	failure.NextAccountAction = NextAccountRetry
+	failure.RetryableOnSameAccount = false
+	failure.ClientStatusCode = http.StatusServiceUnavailable
+	failure.ClientMessage = OpenAIOAuthUnavailableClientMessage
 	return failure
 }
