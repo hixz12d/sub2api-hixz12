@@ -585,6 +585,14 @@ export default {
       apiKeyRequired: 'API Key *',
       apiKeyPlaceholder: 'sk-ant-api03-...',
       apiKeyHint: 'Your Claude Console API Key',
+      upstreamRequestIdHeader: 'Upstream ID',
+      upstreamRequestIdHeaderPlaceholder: 'Leave empty to record nothing',
+      upstreamRequestIdHeaderHelp: {
+        intro: 'Name of the response header in which the direct upstream declares its request ID. The value is recorded in the "Upstream ID" column of the usage log; leave empty to record nothing.',
+        examplesTitle: 'Common values',
+        sub2apiNote: 'Matches the request ID column of its usage log',
+        official: '{platform} official API'
+      },
       // OpenAI specific hints
       openai: {
         baseUrlHint:
@@ -630,6 +638,9 @@ export default {
         responsesModeForceChatCompletions: 'Chat Completions compatible',
         responsesModeTextDisabledHint:
           'Not applicable when the Responses / Chat Completions endpoint is not enabled.',
+        imagesUrlToB64Json: 'Image result URL to base64',
+        imagesUrlToB64JsonDesc:
+          'Only applies to non-streaming Images responses of OpenAI API Key accounts. When an upstream image item has a url but no b64_json, the gateway downloads the url and fills b64_json with its base64 content (url is kept) for clients built on the official API; the response is returned unchanged if the download fails.',
         completionsApiHint:
           'This gateway also accepts legacy OpenAI text completions at /v1/completions and converts them through the same compatible routing path.',
         endpointCapabilities: 'Endpoint capabilities',

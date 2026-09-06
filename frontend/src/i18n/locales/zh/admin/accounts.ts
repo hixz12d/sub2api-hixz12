@@ -674,6 +674,14 @@ export default {
       apiKeyRequired: 'API Key *',
       apiKeyPlaceholder: 'sk-ant-api03-...',
       apiKeyHint: '您的 Claude Console API Key',
+      upstreamRequestIdHeader: '上游ID',
+      upstreamRequestIdHeaderPlaceholder: '留空不记录',
+      upstreamRequestIdHeaderHelp: {
+        intro: '填写直接上游在响应头中声明请求标识的头名，记录到用量明细的“上游ID”列；留空则不记录。',
+        examplesTitle: '常见取值',
+        sub2apiNote: '对应对方用量明细的请求ID列',
+        official: '{platform} 官方 API'
+      },
       // OpenAI specific hints
       openai: {
         baseUrlHint:
@@ -715,6 +723,9 @@ export default {
         responsesModeForceResponses: 'Responses API',
         responsesModeForceChatCompletions: 'Chat Completions 兼容',
         responsesModeTextDisabledHint: '未启用 Responses / Chat Completions 端点时，此设置不适用。',
+        imagesUrlToB64Json: '生图结果 URL 转 base64',
+        imagesUrlToB64JsonDesc:
+          '仅对 OpenAI API Key 的 Images 非流式响应生效。上游返回的图片缺少 b64_json 但带 url 时，网关下载该 url 并以 base64 回填 b64_json（url 保留），兼容按官方接口实现的客户端；下载失败则原样返回。',
         completionsApiHint:
           '本网关同时支持 OpenAI 传统文本补全请求 /v1/completions，并复用同一套兼容调度链路。',
         endpointCapabilities: '端点能力',

@@ -59,6 +59,7 @@ func TestMigrationsRunner_IsIdempotent_AndSchemaIsUpToDate(t *testing.T) {
 	requireColumn(t, tx, "groups", "allow_live", "boolean", 0, false)
 	requireColumn(t, tx, "groups", "force_openai_fast", "boolean", 0, false)
 	requireColumn(t, tx, "groups", "free_openai_fast", "boolean", 0, false)
+	requireColumn(t, tx, "groups", "codex_models_manifest_config", "jsonb", 0, false)
 
 	// api_keys: key length should be 128
 	requireColumn(t, tx, "api_keys", "key", "character varying", 128, false)
@@ -82,7 +83,9 @@ func TestMigrationsRunner_IsIdempotent_AndSchemaIsUpToDate(t *testing.T) {
 	requireColumn(t, tx, "usage_logs", "video_duration_seconds", "integer", 0, true)
 	requireColumn(t, tx, "usage_logs", "upstream_response_model", "character varying", 200, true)
 	requireColumn(t, tx, "usage_logs", "upstream_model_mismatch", "boolean", 0, true)
+	requireColumn(t, tx, "usage_logs", "upstream_request_id", "character varying", 128, true)
 	requireIndex(t, tx, "usage_logs", usageLogsUpstreamModelMismatchIndex)
+	requireIndex(t, tx, "usage_logs", usageLogsUpstreamRequestIDIndex)
 
 	var mismatchIndexDef string
 	require.NoError(t, tx.QueryRowContext(context.Background(), `
