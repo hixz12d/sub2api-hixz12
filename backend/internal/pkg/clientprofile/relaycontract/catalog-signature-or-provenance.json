@@ -1,0 +1,9 @@
+{
+  "catalog_sha256": "cbad840e3d9c536336a74059962c12d9e88ec91610e86d84ebae5c79223fe4db",
+  "contract": "relay-profile-contract/1",
+  "remote_loading": "disabled",
+  "signature": "unsigned-local-build",
+  "source_manifest": "source-manifest.json",
+  "trust": "reviewed-source-checkout-only",
+  "upstream_signature_verified": false
+}

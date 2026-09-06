@@ -1,0 +1,50 @@
+{
+  "contract": "relay-profile-contract/1",
+  "fixtures": [
+    {
+      "path": "fixtures/cli-win32-x64.json",
+      "sha256": "a33ac475beb183c53adc50667c6d8562f163280d11965c38c7b899e29af49c9a",
+      "synthetic": true
+    },
+    {
+      "path": "fixtures/pi-win32-x64.json",
+      "sha256": "d94c5e99357654b791adf16131302a55704fe041ad0e3d4fde65f6375f462a74",
+      "synthetic": true
+    },
+    {
+      "path": "fixtures/pi-darwin-arm64.json",
+      "sha256": "ffb74a81ce4a3037268a1c176d561a0c2d486b036a060564d1e532ddbcffc8f7",
+      "synthetic": true
+    },
+    {
+      "path": "fixtures/pi-linux-x64.json",
+      "sha256": "ca39897b0fa63c6633dd5dbaac98879f6b42583fc629ae7e21f905500dad2bb8",
+      "synthetic": true
+    },
+    {
+      "path": "fixtures/pi-0.57.1-oauth-sse-r1-win32-x64.json",
+      "sha256": "7743f571e19da1ba8a07f9ab2e1ed71144eb3e4688e0e5cc8f42590f92a49284",
+      "synthetic": true
+    },
+    {
+      "path": "fixtures/opencode-win32-x64.json",
+      "sha256": "0b9317c63a37a5f76e0d13fbd66f3eae6148d06dd64c92c36c026c103c3d283d",
+      "synthetic": true
+    },
+    {
+      "path": "fixtures/opencode-darwin-arm64.json",
+      "sha256": "c827d7fc49dbcc6b37a7507bb76a16f2bf22015ee8974a5dd220eee9881c32d6",
+      "synthetic": true
+    },
+    {
+      "path": "fixtures/opencode-linux-x64.json",
+      "sha256": "1718bdcddf71b001ddbf216fb93f29372e0e1d48f209125be0a3a6aa649827d8",
+      "synthetic": true
+    },
+    {
+      "path": "fixtures/opencode-1.2.4-oauth-sse-r1-win32-x64.json",
+      "sha256": "aabf72b3147d5852279b3eff7ea495a86544f108b793b4b15f7ee1d5e4fb36cb",
+      "synthetic": true
+    }
+  ]
+}

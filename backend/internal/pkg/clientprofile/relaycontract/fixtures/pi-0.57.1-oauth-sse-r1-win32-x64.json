@@ -1,0 +1,44 @@
+{
+  "body": {
+    "input": [
+      {
+        "content": [
+          {
+            "text": "synthetic-contract-input",
+            "type": "input_text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "model": "synthetic-model",
+    "prompt_cache_key": "ed40b533-298e-5737-9cc3-7c5c33732b02",
+    "text": {
+      "verbosity": "medium"
+    }
+  },
+  "contract": "relay-profile-contract/1",
+  "headers": {
+    "accept": "text/event-stream",
+    "content-type": "application/json",
+    "originator": "pi",
+    "session_id": "ed40b533-298e-5737-9cc3-7c5c33732b02",
+    "user-agent": "pi (win32 10.0.26200; x64)"
+  },
+  "method": "POST",
+  "prewarm_body": null,
+  "profile_pin": {
+    "artifact_digest": "5c33743b71343c3c1ce37b9b29fde9c99278a3e59dacc593d01036fb13f9b1d1",
+    "device": {
+      "arch": "x64",
+      "platform": "win32",
+      "release": "10.0.26200"
+    },
+    "profile_id": "pi-0.57.1-oauth-sse-r1"
+  },
+  "selector": "pi-0.57.1-oauth-sse-r1",
+  "sender_scope": "decoded-http-or-ws-content-not-tls-h2",
+  "synthetic": true,
+  "transport": "http"
+}

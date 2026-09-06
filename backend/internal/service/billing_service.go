@@ -116,12 +116,6 @@ type ModelPricing struct {
 	ImageOutputPriceExplicit           bool     // 是否由渠道定价显式设定（为 true 时即使 == 0 也不回退）
 }
 
-const (
-	openAIGPT54LongContextInputThreshold   = 272000
-	openAIGPT54LongContextInputMultiplier  = 2.0
-	openAIGPT54LongContextOutputMultiplier = 1.5
-)
-
 func normalizeBillingServiceTier(serviceTier string) string {
 	return strings.ToLower(strings.TrimSpace(serviceTier))
 }
@@ -1346,10 +1340,10 @@ func (s *BillingService) CalculateCostUnified(input CostInput) (*CostBreakdown, 
 func (s *BillingService) calculateTokenCost(resolved *ResolvedPricing, input CostInput) (*CostBreakdown, error) {
 	totalContext := input.Tokens.InputTokens + input.Tokens.CacheCreationTokens + input.Tokens.CacheReadTokens
 
-	// 分组开关是统一入口；账号 API 开关保留为额外开启能力，但 false 不否决分组配置。
+	// 渠道区间可由分组或账号启用；默认价卡阶梯仍由下面的双开关单独约束。
 	contextTierPricingEnabled := resolved.longContextPricingEnabled
-	if input.LongContextBillingEnabled != nil && !*input.LongContextBillingEnabled {
-		contextTierPricingEnabled = false
+	if input.LongContextBillingEnabled != nil && *input.LongContextBillingEnabled {
+		contextTierPricingEnabled = true
 	}
 
 	pricingContext := totalContext
@@ -1386,9 +1380,9 @@ func (s *BillingService) calculateTokenCost(resolved *ResolvedPricing, input Cos
 		}
 	}
 
-	// 长上下文定价仅在无区间定价时应用（区间定价已包含上下文分层）。
+	// 区间价已包含分层；无区间时，默认阶梯需要分组和账号都允许（Grok 例外）。
 	automaticLongContextPricing := isGrok46BillingModel(input.Model)
-	applyLongCtx := len(resolved.Intervals) == 0 && (contextTierPricingEnabled || automaticLongContextPricing)
+	applyLongCtx := len(resolved.Intervals) == 0 && (resolved.longContextPricingEnabled || automaticLongContextPricing)
 	if input.LongContextBillingEnabled != nil && !automaticLongContextPricing {
 		applyLongCtx = applyLongCtx && *input.LongContextBillingEnabled
 	}
@@ -1676,19 +1670,16 @@ func (s *BillingService) applyModelSpecificPricingPolicyEx(model string, pricing
 	}
 	normalized := normalizeKnownOpenAICodexModel(model)
 	isOpenAICacheWritePremiumModel := isOpenAIGPT56Model(normalized) || isOpenAIGPT6AstraModel(normalized)
-	usesLegacyLongContextPricing := usesOpenAILegacyLongContextPricing(normalized)
+	fastRatio := openAIModelFastPricingRatio(normalized)
 	isGrok46 := isGrok46BillingModel(model)
-	if !isOpenAICacheWritePremiumModel && !usesLegacyLongContextPricing && !isGrok46 {
+	if !isOpenAICacheWritePremiumModel && fastRatio <= 0 && !isGrok46 {
 		return pricing
 	}
-	needsLongContextPolicy := usesLegacyLongContextPricing &&
-		(pricing.LongContextInputThreshold <= 0 || pricing.LongContextInputMultiplier <= 0 || pricing.LongContextOutputMultiplier <= 0)
 	needsGrok46Policy := isGrok46 && (pricing.LongContextInputThreshold != 200000 ||
 		!pricing.LongContextThresholdInclusive || pricing.LongContextInputMultiplier != 2 || pricing.LongContextOutputMultiplier != 2)
 	needsCacheCreationPolicy := isOpenAICacheWritePremiumModel && !pricing.CacheCreationPriceExplicit && (pricing.CacheCreationPricePerToken <= 0 ||
 		(pricing.InputPricePerTokenPriority > 0 && pricing.CacheCreationPricePerTokenPriority <= 0))
-	fastRatio := openAIModelFastPricingRatio(normalized)
-	if !needsLongContextPolicy && !needsGrok46Policy && !needsCacheCreationPolicy && fastRatio <= 0 {
+	if !needsGrok46Policy && !needsCacheCreationPolicy && fastRatio <= 0 {
 		return pricing
 	}
 	cloned := *pricing
@@ -1698,17 +1689,6 @@ func (s *BillingService) applyModelSpecificPricingPolicyEx(model string, pricing
 		}
 		if cloned.CacheCreationPricePerTokenPriority <= 0 {
 			cloned.CacheCreationPricePerTokenPriority = cloned.InputPricePerTokenPriority * 1.25
-		}
-	}
-	if usesLegacyLongContextPricing {
-		if cloned.LongContextInputThreshold <= 0 {
-			cloned.LongContextInputThreshold = openAIGPT54LongContextInputThreshold
-		}
-		if cloned.LongContextInputMultiplier <= 0 {
-			cloned.LongContextInputMultiplier = openAIGPT54LongContextInputMultiplier
-		}
-		if cloned.LongContextOutputMultiplier <= 0 {
-			cloned.LongContextOutputMultiplier = openAIGPT54LongContextOutputMultiplier
 		}
 	}
 	if isGrok46 {
@@ -1776,10 +1756,6 @@ func (s *BillingService) shouldApplySessionLongContextPricing(tokens UsageTokens
 		return totalInputTokens >= pricing.LongContextInputThreshold
 	}
 	return totalInputTokens > pricing.LongContextInputThreshold
-}
-
-func usesOpenAILegacyLongContextPricing(normalized string) bool {
-	return normalized == "gpt-5.4" || normalized == "gpt-5.5" || normalized == "gpt-5.5-pro"
 }
 
 // CalculateCostWithConfig 使用配置中的默认倍率计算费用

@@ -25,7 +25,7 @@ func TestSanitizeCodexBodyForCrossAccountRecovery(t *testing.T) {
 func TestCodexPlanHasRecoverableFullContextWithForeignCrumbs(t *testing.T) {
 	plan, err := NewCodexRequestPlan(CodexRequestPlanInput{
 		LogicalRequestID: "req", SessionHash: "sess",
-		Body: []byte(`{"previous_response_id":"resp_old","input":[{"type":"item_reference","id":"msg_old"},{"type":"message","role":"user","content":"hello"}]}`),
+		Body: []byte(`{"previous_response_id":"resp_old","input":[{"type":"item_reference","id":"msg_old"},{"type":"message","id":"msg_old","role":"user","content":"hello"},{"type":"message","role":"assistant","content":"hello there"},{"type":"message","role":"user","content":"continue"}]}`),
 		PreviousResponseID: "resp_old", Operation: CodexOperationResume,
 	})
 	require.NoError(t, err)

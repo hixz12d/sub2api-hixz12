@@ -3245,6 +3245,8 @@
       <CodexRelaySettings
         v-if="form.platform === 'openai' && accountCategory === 'oauth-based'"
         v-model="codexRelaySettings"
+        :tls-enabled="tlsFingerprintEnabled"
+        :account-type="form.type"
       />
       <!-- OpenAI OAuth TLS：默认 Chrome/Electron，不按用户拆标签 -->
       <div
@@ -3880,6 +3882,7 @@ import {
   type CodexRelaySettingsValue,
   createDefaultCodexRelaySettings,
   serializeCodexRelaySettingsToExtra,
+  validateCodexRelayState,
   mapCodexRelayApiError,
 } from '@/components/account/codexRelaySchema'
 import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
@@ -5360,6 +5363,8 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
   // Codex 指纹/Relay 只属于 OpenAI OAuth/setup-token。
   // 默认 device 不能写进别的平台，否则创建会被 CODEX_RELAY_ACCOUNT_INVALID 直接拒绝。
   if (form.platform === 'openai' && accountCategory.value === 'oauth-based') {
+    const relayValidation = validateCodexRelayState(codexRelaySettings.value, t, { tlsEnabled: tlsFingerprintEnabled.value })
+    if (!relayValidation.valid) throw new Error(Object.values(relayValidation.errors).join('; '))
     serializeCodexRelaySettingsToExtra(codexRelaySettings.value, extra)
   } else {
     delete extra.codex_fingerprint_mode

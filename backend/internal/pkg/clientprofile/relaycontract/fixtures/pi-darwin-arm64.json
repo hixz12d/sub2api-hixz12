@@ -1,0 +1,53 @@
+{
+  "body": {
+    "include": [
+      "reasoning.encrypted_content"
+    ],
+    "input": [
+      {
+        "content": [
+          {
+            "text": "synthetic-contract-input",
+            "type": "input_text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "instructions": "You are a helpful assistant.",
+    "model": "synthetic-model",
+    "parallel_tool_calls": true,
+    "store": false,
+    "stream": true,
+    "text": {
+      "verbosity": "low"
+    },
+    "tool_choice": "auto"
+  },
+  "contract": "relay-profile-contract/1",
+  "headers": {
+    "accept": "text/event-stream",
+    "content-type": "application/json",
+    "openai-beta": "responses=experimental",
+    "originator": "pi",
+    "session-id": "ed40b533-298e-5737-9cc3-7c5c33732b02",
+    "user-agent": "pi (darwin 24.3.0; arm64)",
+    "x-client-request-id": "ed40b533-298e-5737-9cc3-7c5c33732b02"
+  },
+  "method": "POST",
+  "prewarm_body": null,
+  "profile_pin": {
+    "artifact_digest": "d23d270bd01212155ca3b0ed5ab87616e49c069039f5186f61d33833171e5a24",
+    "device": {
+      "arch": "arm64",
+      "platform": "darwin",
+      "release": "24.3.0"
+    },
+    "profile_id": "pi-0.57.1-managed-sse-r1"
+  },
+  "selector": "pi",
+  "sender_scope": "decoded-http-or-ws-content-not-tls-h2",
+  "synthetic": true,
+  "transport": "http"
+}

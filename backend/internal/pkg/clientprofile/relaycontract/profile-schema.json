@@ -1,0 +1,254 @@
+{
+  "$defs": {
+    "DeviceTuple": {
+      "additionalProperties": false,
+      "properties": {
+        "arch": {
+          "enum": [
+            "x64",
+            "arm64"
+          ],
+          "title": "Arch",
+          "type": "string"
+        },
+        "platform": {
+          "enum": [
+            "win32",
+            "darwin",
+            "linux"
+          ],
+          "title": "Platform",
+          "type": "string"
+        },
+        "release": {
+          "pattern": "^[0-9][A-Za-z0-9._+-]{0,63}$",
+          "title": "Release",
+          "type": "string"
+        }
+      },
+      "required": [
+        "platform",
+        "release",
+        "arch"
+      ],
+      "title": "DeviceTuple",
+      "type": "object"
+    },
+    "ValidationLevels": {
+      "additionalProperties": false,
+      "properties": {
+        "application_contract": {
+          "default": "untested",
+          "enum": [
+            "passed",
+            "failed",
+            "untested"
+          ],
+          "title": "Application Contract",
+          "type": "string"
+        },
+        "authorized_upstream": {
+          "default": "untested",
+          "enum": [
+            "passed_at_specific_scope",
+            "failed",
+            "untested"
+          ],
+          "title": "Authorized Upstream",
+          "type": "string"
+        },
+        "cross_implementation_http": {
+          "default": "untested",
+          "enum": [
+            "passed",
+            "failed",
+            "untested"
+          ],
+          "title": "Cross Implementation Http",
+          "type": "string"
+        },
+        "native_tls_h2": {
+          "default": "untested",
+          "enum": [
+            "measured_match",
+            "measured_different",
+            "untested"
+          ],
+          "title": "Native Tls H2",
+          "type": "string"
+        }
+      },
+      "title": "ValidationLevels",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "adapter_implementation_revision": {
+      "const": "relay-adapter-1",
+      "default": "relay-adapter-1",
+      "title": "Adapter Implementation Revision",
+      "type": "string"
+    },
+    "agent_name": {
+      "default": "",
+      "enum": [
+        "",
+        "/root"
+      ],
+      "title": "Agent Name",
+      "type": "string"
+    },
+    "app_identity_revision": {
+      "minimum": 1,
+      "title": "App Identity Revision",
+      "type": "integer"
+    },
+    "bundle_digest": {
+      "default": "",
+      "pattern": "^(?:[0-9a-f]{64})?$",
+      "title": "Bundle Digest",
+      "type": "string"
+    },
+    "distribution": {
+      "title": "Distribution",
+      "type": "string"
+    },
+    "family": {
+      "enum": [
+        "codex",
+        "pi",
+        "opencode"
+      ],
+      "title": "Family",
+      "type": "string"
+    },
+    "operations": {
+      "items": {
+        "enum": [
+          "http-responses",
+          "ws-responses"
+        ],
+        "type": "string"
+      },
+      "title": "Operations",
+      "type": "array"
+    },
+    "profile_id": {
+      "pattern": "^[a-z0-9][a-z0-9.-]{0,100}$",
+      "title": "Profile Id",
+      "type": "string"
+    },
+    "runtime": {
+      "title": "Runtime",
+      "type": "string"
+    },
+    "runtime_version": {
+      "default": "unverified",
+      "title": "Runtime Version",
+      "type": "string"
+    },
+    "sandbox": {
+      "default": "",
+      "enum": [
+        "",
+        "windows_elevated"
+      ],
+      "title": "Sandbox",
+      "type": "string"
+    },
+    "sandbox_mode": {
+      "default": "",
+      "enum": [
+        "",
+        "read-only",
+        "workspace-write"
+      ],
+      "title": "Sandbox Mode",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "selector": {
+      "enum": [
+        "cli",
+        "pi",
+        "opencode",
+        "pi-0.57.1-oauth-sse-r1",
+        "opencode-1.2.4-oauth-sse-r1"
+      ],
+      "title": "Selector",
+      "type": "string"
+    },
+    "source_commit": {
+      "default": "",
+      "pattern": "^(?:[0-9a-f]{40})?$",
+      "title": "Source Commit",
+      "type": "string"
+    },
+    "source_repository": {
+      "enum": [
+        "openai/codex",
+        "earendil-works/pi",
+        "anomalyco/opencode"
+      ],
+      "title": "Source Repository",
+      "type": "string"
+    },
+    "supported_tuples": {
+      "items": {
+        "$ref": "#/$defs/DeviceTuple"
+      },
+      "title": "Supported Tuples",
+      "type": "array"
+    },
+    "upstream_release": {
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "title": "Upstream Release",
+      "type": "string"
+    },
+    "validation": {
+      "$ref": "#/$defs/ValidationLevels",
+      "default": {
+        "application_contract": "untested",
+        "authorized_upstream": "untested",
+        "cross_implementation_http": "untested",
+        "native_tls_h2": "untested"
+      }
+    },
+    "variant": {
+      "enum": [
+        "exec-f0",
+        "managed-sse",
+        "shared-r1"
+      ],
+      "title": "Variant",
+      "type": "string"
+    },
+    "wire_recipe_revision": {
+      "pattern": "^[a-z0-9.-]+$",
+      "title": "Wire Recipe Revision",
+      "type": "string"
+    }
+  },
+  "required": [
+    "profile_id",
+    "selector",
+    "family",
+    "variant",
+    "upstream_release",
+    "source_repository",
+    "distribution",
+    "runtime",
+    "app_identity_revision",
+    "wire_recipe_revision",
+    "supported_tuples",
+    "operations"
+  ],
+  "title": "ProfileDescriptor",
+  "type": "object"
+}

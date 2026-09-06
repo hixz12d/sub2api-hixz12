@@ -19,7 +19,7 @@ describe('shared client bundles', () => {
       serializeCodexRelayToBulkExtra(state, bulk)
       expect(single.codex_client_profile).toBe(id)
       expect(bulk.codex_client_profile).toBe(id)
-      expect(CODEX_CLIENT_PROFILES.find((profile) => profile.id === id)).toMatchObject({ http: true, ws: false, compact: false, fidelity: 'degraded' })
+      expect(CODEX_CLIENT_PROFILES.find((profile) => profile.id === id)).toEqual({ id })
       state.codex_relay_mode = 'legacy'
       expect(validateCodexRelayState(state, (key) => key).errors.codex_client_profile).toBeTruthy()
     })

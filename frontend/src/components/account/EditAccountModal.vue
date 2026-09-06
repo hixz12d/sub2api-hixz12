@@ -2168,6 +2168,9 @@
           !isSparkShadow
         "
         v-model="codexRelaySettings"
+        :tls-enabled="tlsFingerprintEnabled"
+        :account-id="account?.id"
+        :account-type="account?.type"
       />
       <!-- OpenAI OAuth TLS：默认 Chrome/Electron -->
       <div
@@ -3020,6 +3023,7 @@ import {
   createDefaultCodexRelaySettings,
   extractCodexRelaySettingsFromExtra,
   serializeCodexRelaySettingsToExtra,
+  validateCodexRelayState,
   mapCodexRelayApiError,
 } from '@/components/account/codexRelaySchema'
 import OllamaCloudUsageSettings from '@/components/account/OllamaCloudUsageSettings.vue'
@@ -5536,6 +5540,8 @@ const handleSubmit = async () => {
         (props.account.type === 'oauth' || props.account.type === 'setup-token') &&
         !isSparkShadow.value
       ) {
+        const relayValidation = validateCodexRelayState(codexRelaySettings.value, t, { tlsEnabled: tlsFingerprintEnabled.value })
+        if (!relayValidation.valid) throw new Error(Object.values(relayValidation.errors).join('; '))
         serializeCodexRelaySettingsToExtra(codexRelaySettings.value, newExtra)
       } else {
         delete newExtra.codex_fingerprint_mode

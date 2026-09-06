@@ -1,0 +1,103 @@
+{
+  "body": {
+    "client_metadata": {
+      "root_turn_id": "2af208f5-326a-5f45-bc53-2c075e02b050",
+      "session_id": "ed40b533-298e-5737-9cc3-7c5c33732b02",
+      "thread_id": "ed40b533-298e-5737-9cc3-7c5c33732b02",
+      "turn_id": "2af208f5-326a-5f45-bc53-2c075e02b050",
+      "ws_request_header_x_openai_internal_codex_responses_lite": "true",
+      "x-codex-installation-id": "7af598e5-f07a-51f2-90a8-af0bf3713ccf",
+      "x-codex-turn-metadata": "{\"agent_name\":\"/root\",\"auto_review_enabled\":false,\"context_window_id\":\"cc335291-c045-5d43-a484-993a0b65fcfd\",\"installation_id\":\"7af598e5-f07a-51f2-90a8-af0bf3713ccf\",\"node_repl_auto_review_required\":false,\"node_repl_disabled\":false,\"request_kind\":\"turn\",\"sandbox\":\"windows_elevated\",\"sandbox_mode\":\"read-only\",\"session_id\":\"ed40b533-298e-5737-9cc3-7c5c33732b02\",\"thread_id\":\"ed40b533-298e-5737-9cc3-7c5c33732b02\",\"thread_source\":\"user\",\"turn_id\":\"2af208f5-326a-5f45-bc53-2c075e02b050\",\"window_id\":\"cc335291-c045-5d43-a484-993a0b65fcfd:0\",\"window_number\":0,\"root_turn_id\":\"2af208f5-326a-5f45-bc53-2c075e02b050\",\"turn_started_at_unix_ms\":1700000000000}",
+      "x-codex-window-id": "cc335291-c045-5d43-a484-993a0b65fcfd:0",
+      "x-codex-ws-stream-request-start-ms": "1700000000000"
+    },
+    "include": [
+      "reasoning.encrypted_content"
+    ],
+    "input": [
+      {
+        "content": [
+          {
+            "text": "synthetic-contract-input",
+            "type": "input_text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "model": "synthetic-model",
+    "parallel_tool_calls": false,
+    "prompt_cache_key": "ed40b533-298e-5737-9cc3-7c5c33732b02",
+    "reasoning": {
+      "context": "all_turns",
+      "effort": "none"
+    },
+    "store": false,
+    "stream": true,
+    "text": {
+      "verbosity": "low"
+    },
+    "tool_choice": "auto",
+    "type": "response.create"
+  },
+  "contract": "relay-profile-contract/1",
+  "headers": {
+    "openai-beta": "responses_websockets=2026-02-06",
+    "originator": "codex_exec",
+    "session-id": "ed40b533-298e-5737-9cc3-7c5c33732b02",
+    "thread-id": "ed40b533-298e-5737-9cc3-7c5c33732b02",
+    "user-agent": "codex_exec/0.153.4 (Windows 10.0.26200; x86_64) WindowsTerminal (codex_exec; 0.153.4)",
+    "version": "0.153.4",
+    "x-client-request-id": "ed40b533-298e-5737-9cc3-7c5c33732b02",
+    "x-codex-beta-features": "remote_compaction_v2",
+    "x-codex-routing-hint": "model=synthetic-model",
+    "x-codex-turn-metadata": "{\"agent_name\":\"/root\",\"auto_review_enabled\":false,\"context_window_id\":\"cc335291-c045-5d43-a484-993a0b65fcfd\",\"installation_id\":\"7af598e5-f07a-51f2-90a8-af0bf3713ccf\",\"node_repl_auto_review_required\":false,\"node_repl_disabled\":false,\"request_kind\":\"prewarm\",\"sandbox\":\"windows_elevated\",\"sandbox_mode\":\"read-only\",\"session_id\":\"ed40b533-298e-5737-9cc3-7c5c33732b02\",\"thread_id\":\"ed40b533-298e-5737-9cc3-7c5c33732b02\",\"thread_source\":\"user\",\"turn_id\":\"\",\"window_id\":\"cc335291-c045-5d43-a484-993a0b65fcfd:0\",\"window_number\":0}",
+    "x-codex-window-id": "cc335291-c045-5d43-a484-993a0b65fcfd:0"
+  },
+  "method": "GET",
+  "prewarm_body": {
+    "client_metadata": {
+      "session_id": "ed40b533-298e-5737-9cc3-7c5c33732b02",
+      "thread_id": "ed40b533-298e-5737-9cc3-7c5c33732b02",
+      "turn_id": "",
+      "ws_request_header_x_openai_internal_codex_responses_lite": "true",
+      "x-codex-installation-id": "7af598e5-f07a-51f2-90a8-af0bf3713ccf",
+      "x-codex-turn-metadata": "{\"agent_name\":\"/root\",\"auto_review_enabled\":false,\"context_window_id\":\"cc335291-c045-5d43-a484-993a0b65fcfd\",\"installation_id\":\"7af598e5-f07a-51f2-90a8-af0bf3713ccf\",\"node_repl_auto_review_required\":false,\"node_repl_disabled\":false,\"request_kind\":\"prewarm\",\"sandbox\":\"windows_elevated\",\"sandbox_mode\":\"read-only\",\"session_id\":\"ed40b533-298e-5737-9cc3-7c5c33732b02\",\"thread_id\":\"ed40b533-298e-5737-9cc3-7c5c33732b02\",\"thread_source\":\"user\",\"turn_id\":\"\",\"window_id\":\"cc335291-c045-5d43-a484-993a0b65fcfd:0\",\"window_number\":0}",
+      "x-codex-window-id": "cc335291-c045-5d43-a484-993a0b65fcfd:0",
+      "x-codex-ws-stream-request-start-ms": "1700000000000"
+    },
+    "generate": false,
+    "include": [
+      "reasoning.encrypted_content"
+    ],
+    "input": [],
+    "model": "synthetic-model",
+    "parallel_tool_calls": false,
+    "prompt_cache_key": "ed40b533-298e-5737-9cc3-7c5c33732b02",
+    "reasoning": {
+      "context": "all_turns",
+      "effort": "none"
+    },
+    "store": false,
+    "stream": true,
+    "text": {
+      "verbosity": "low"
+    },
+    "tool_choice": "auto",
+    "type": "response.create"
+  },
+  "profile_pin": {
+    "artifact_digest": "7d7903b7fbefd84837dfc3204dac2801c09a0dfadca2138a4874cc55383b7a57",
+    "device": {
+      "arch": "x64",
+      "platform": "win32",
+      "release": "10.0.26200"
+    },
+    "profile_id": "codex-0.153.4-exec-f0-r1"
+  },
+  "selector": "cli",
+  "sender_scope": "decoded-http-or-ws-content-not-tls-h2",
+  "synthetic": true,
+  "transport": "websocket"
+}

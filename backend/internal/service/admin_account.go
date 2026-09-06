@@ -978,12 +978,15 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 	}
 
 	needMixedChannelCheck := input.GroupIDs != nil && !input.SkipMixedChannelCheck
-	_, hasLongContextBillingUpdate := input.Extra[openAILongContextBillingEnabledKey]
+	openAISettings, err := normalizeBulkOpenAISettings(input)
+	if err != nil {
+		return nil, err
+	}
 	hasCodexRelayUpdate := hasCodexRelayAccountExtraUpdate(input.Extra)
 
 	// 预取所有目标账号，供凭据守卫/代理守卫/混合渠道检查共用，避免多次 DB 查询。
 	var cachedTargets []*Account
-	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || hasLongContextBillingUpdate || hasCodexRelayUpdate || input.ProbeEnabled != nil || input.RateMultiplier != nil {
+	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || openAISettings.any() || hasCodexRelayUpdate || input.ProbeEnabled != nil || input.RateMultiplier != nil {
 		loaded, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
 		if err != nil {
 			return nil, err
@@ -1007,16 +1010,18 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 			}
 		}
 	}
-	if hasLongContextBillingUpdate {
+	if openAISettings.any() {
+		targetsByID := make(map[int64]*Account, len(cachedTargets))
 		for _, account := range cachedTargets {
-			if account == nil || account.Platform != PlatformOpenAI {
-				continue
+			if account != nil {
+				targetsByID[account.ID] = account
 			}
-			if err := ValidateOpenAILongContextBillingExtra(account.Platform, input.Extra); err != nil {
-				return nil, err
-			}
-			break
 		}
+		inheritedCount, err := validateBulkOpenAISettingsTargets(input, openAISettings, targetsByID)
+		if err != nil {
+			return nil, err
+		}
+		result.LongContextInheritedCount = inheritedCount
 	}
 	if hasCodexRelayUpdate {
 		for _, account := range cachedTargets {

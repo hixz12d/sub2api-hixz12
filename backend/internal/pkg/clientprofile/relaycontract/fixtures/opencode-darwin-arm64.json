@@ -1,0 +1,42 @@
+{
+  "body": {
+    "input": [
+      {
+        "content": [
+          {
+            "text": "synthetic-contract-input",
+            "type": "input_text"
+          }
+        ],
+        "role": "user",
+        "type": "message"
+      }
+    ],
+    "model": "synthetic-model",
+    "store": false,
+    "stream": true
+  },
+  "contract": "relay-profile-contract/1",
+  "headers": {
+    "accept": "text/event-stream",
+    "content-type": "application/json",
+    "originator": "opencode",
+    "session-id": "ed40b533-298e-5737-9cc3-7c5c33732b02",
+    "user-agent": "opencode/1.2.4 (darwin 24.3.0; arm64)"
+  },
+  "method": "POST",
+  "prewarm_body": null,
+  "profile_pin": {
+    "artifact_digest": "de3a50bd60fd103d4432325738966a7d9a39971e1e1df2470e2ba809581a37d5",
+    "device": {
+      "arch": "arm64",
+      "platform": "darwin",
+      "release": "24.3.0"
+    },
+    "profile_id": "opencode-1.2.4-managed-sse-r1"
+  },
+  "selector": "opencode",
+  "sender_scope": "decoded-http-or-ws-content-not-tls-h2",
+  "synthetic": true,
+  "transport": "http"
+}

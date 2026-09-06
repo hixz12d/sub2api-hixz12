@@ -1,62 +1,71 @@
 import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import CodexRelaySettings from '../CodexRelaySettings.vue'
-import {
-  CODEX_CLIENT_PROFILES,
-  createDefaultCodexRelaySettings,
-  extractCodexRelayState,
-  type CodexClientProfile
-} from '../codexRelaySchema'
+import { createDefaultCodexRelaySettings, extractCodexRelayState, type CodexClientProfile } from '../codexRelaySchema'
+import { getClientProfiles } from '@/api/admin/clientProfiles'
 
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
+vi.mock('@/api/admin/clientProfiles', async () => {
+  const { clientProfileCatalogFixture } = await import('./clientProfileFixture')
+  return { getClientProfiles: vi.fn().mockResolvedValue(clientProfileCatalogFixture), previewClientProfile: vi.fn().mockResolvedValue({ valid: true, conflicts: [], plugin_status: 'unknown' }) }
+})
 
-function renderProfile(profile: CodexClientProfile) {
-  return mount(CodexRelaySettings, {
-    props: {
-      modelValue: { ...createDefaultCodexRelaySettings(), codex_client_profile: profile }
-    }
-  })
+async function renderProfile(profile: CodexClientProfile) {
+  const wrapper = mount(CodexRelaySettings, { props: { modelValue: { ...createDefaultCodexRelaySettings(), codex_client_profile: profile } } })
+  await flushPromises()
+  return wrapper
 }
 
 describe('Codex profile capability contract', () => {
-  it.each(['pi', 'opencode'] as const)('%s does not advertise WS or Compact', (profile) => {
-    const wrapper = renderProfile(profile)
+  it.each(['pi', 'opencode'] as const)('%s does not advertise WS or Compact', async (profile) => {
+    const wrapper = await renderProfile(profile)
     for (const capability of ['ws', 'compact']) {
       const row = wrapper.get(`[data-testid="codex-profile-capability-${capability}"]`)
       expect(row.get('dd').attributes('data-supported')).toBe('false')
       expect(row.text()).toContain('codexProfileUnsupported')
     }
-    expect(wrapper.text()).not.toContain('WS Degraded')
+    wrapper.unmount()
   })
 
-  it('does not advertise unresolved auto capabilities', () => {
-    const wrapper = renderProfile('auto')
-    for (const capability of ['ws', 'compact']) {
+  it('does not advertise unresolved auto capabilities', async () => {
+    const wrapper = await renderProfile('auto')
+    for (const capability of ['http', 'ws', 'compact']) {
       expect(wrapper.get(`[data-testid="codex-profile-capability-${capability}"] dd`).attributes('data-supported')).toBe('pending')
     }
     expect(wrapper.get('[data-testid="codex-profile-version"]').text()).toContain('codexProfilePending')
+    wrapper.unmount()
   })
 
-  it('retains the current backend catalog version instead of substituting a live capture', () => {
-    const wrapper = renderProfile('codex_exec')
-    expect(wrapper.get('[data-testid="codex-profile-version"]').text()).toBe('0.148.0')
+  it('displays the server catalog version without a frontend version table', async () => {
+    const wrapper = await renderProfile('codex_exec')
+    expect(wrapper.get('[data-testid="codex-profile-version"]').text()).toBe('remote-test-version')
     expect(wrapper.get('[data-testid="codex-profile-capability-ws"] dd').attributes('data-supported')).toBe('true')
+    wrapper.unmount()
   })
 
-  it('labels Pi as unverified without inventing its installed version', () => {
-    const wrapper = renderProfile('pi')
+  it('labels legacy Pi as unverified without inventing its installed version', async () => {
+    const wrapper = await renderProfile('pi')
     expect(wrapper.get('[data-testid="codex-profile-version"]').text()).toContain('codexProfileUnverified')
     expect(wrapper.get('[data-testid="codex-profile-fidelity"]').text()).toContain('codexProfileUnverified')
-    expect(CODEX_CLIENT_PROFILES.find((profile) => profile.id === 'pi')?.fidelity).toBe('unsupported strict parity')
+    wrapper.unmount()
   })
 
   it('updates the summary without mutating account state or activating a bundle', async () => {
-    const wrapper = renderProfile('codex_cli')
+    const wrapper = await renderProfile('codex_cli')
     const next = { ...createDefaultCodexRelaySettings(), codex_client_profile: 'opencode' as const }
     await wrapper.setProps({ modelValue: next })
     expect(wrapper.get('[data-testid="codex-profile-capability-ws"] dd').attributes('data-supported')).toBe('false')
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
     expect(next).not.toHaveProperty('codex_profile_bundle_id')
+    wrapper.unmount()
+  })
+
+  it('fails visibly with unknown capabilities when the server catalog is unavailable', async () => {
+    vi.mocked(getClientProfiles).mockRejectedValueOnce(new Error('offline'))
+    const wrapper = await renderProfile('codex_cli')
+    expect(wrapper.text()).toContain('codexCatalogUnavailable')
+    expect(wrapper.get('[data-testid="codex-profile-capability-ws"] dd').attributes('data-supported')).toBe('pending')
+    wrapper.unmount()
   })
 
   it.each(['false', 'true', 1, {}, null])('does not enable shadow for malformed value %j', (value) => {

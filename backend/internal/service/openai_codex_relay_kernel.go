@@ -177,6 +177,7 @@ type CodexRequestPlanInput struct {
 
 type CodexRequestPlan struct {
 	requireExistingConversation bool
+	rebuildFromLocalHistory     bool
 	logicalRequestID            string
 	conversationDigest          string
 	clientRequestID             string
@@ -306,6 +307,7 @@ func (p *CodexRequestPlan) InboundHeaders() http.Header {
 }
 
 type CodexAttemptInput struct {
+	TLSFingerprintEnabled  *bool
 	ProfileSnapshot        *CodexClientProfile
 	InstallationPolicy     string
 	AccountID              int64
@@ -325,21 +327,22 @@ type CodexOrderedHeader struct {
 }
 
 type CodexAttemptState struct {
-	policyVersion       string
-	attemptNumber       int
-	accountID           int64
-	poolSlot            int
-	clientRequestID     string
-	internalAttemptID   string
-	transportKey        string
-	profile             CodexClientProfile
-	identity            *CodexIdentitySnapshot
-	finalHeaders        []CodexOrderedHeader
-	finalHTTPBody       []byte
-	finalWSPayload      []byte
-	installationPolicy  string
-	deriver             *CodexIdentityDeriver
-	conversationBinding *CodexConversationState
+	tlsFingerprintEnabled *bool
+	policyVersion         string
+	attemptNumber         int
+	accountID             int64
+	poolSlot              int
+	clientRequestID       string
+	internalAttemptID     string
+	transportKey          string
+	profile               CodexClientProfile
+	identity              *CodexIdentitySnapshot
+	finalHeaders          []CodexOrderedHeader
+	finalHTTPBody         []byte
+	finalWSPayload        []byte
+	installationPolicy    string
+	deriver               *CodexIdentityDeriver
+	conversationBinding   *CodexConversationState
 }
 
 func FinalizeCodexAttempt(plan *CodexRequestPlan, input CodexAttemptInput, derivationSecret string) (*CodexAttemptState, error) {
@@ -412,24 +415,31 @@ func finalizeCodexAttemptWithDeriver(plan *CodexRequestPlan, input CodexAttemptI
 		return nil, err
 	}
 	transportKey = deriver.DigestHex("codex/transport/profile-snapshot/v1", transportKey, profileDigest, installationPolicy)
+	var tlsEnabled *bool
+	if input.TLSFingerprintEnabled != nil {
+		captured := *input.TLSFingerprintEnabled
+		tlsEnabled = &captured
+		transportKey = deriver.DigestHex("codex/transport/tls-policy/v1", transportKey, strconv.FormatBool(captured))
+	}
 	finalBody, err := applyCodexFingerprintToRawBody(plan.body, identity)
 	if err != nil {
 		return nil, err
 	}
 	return &CodexAttemptState{
-		policyVersion:      CodexIdentityPolicyV2,
-		installationPolicy: installationPolicy,
-		deriver:            deriver,
-		attemptNumber:      input.AttemptNumber,
-		accountID:          input.AccountID,
-		poolSlot:           poolSlot,
-		clientRequestID:    clientRequestID,
-		internalAttemptID:  internalAttemptID,
-		transportKey:       transportKey,
-		profile:            profile,
-		identity:           cloneCodexIdentitySnapshot(identity),
-		finalHeaders:       buildCodexAttemptIdentityHeaders(profile, identity, plan.inboundHeaders),
-		finalHTTPBody:      append([]byte(nil), finalBody...),
+		policyVersion:         CodexIdentityPolicyV2,
+		tlsFingerprintEnabled: tlsEnabled,
+		installationPolicy:    installationPolicy,
+		deriver:               deriver,
+		attemptNumber:         input.AttemptNumber,
+		accountID:             input.AccountID,
+		poolSlot:              poolSlot,
+		clientRequestID:       clientRequestID,
+		internalAttemptID:     internalAttemptID,
+		transportKey:          transportKey,
+		profile:               profile,
+		identity:              cloneCodexIdentitySnapshot(identity),
+		finalHeaders:          buildCodexAttemptIdentityHeaders(profile, identity, plan.inboundHeaders),
+		finalHTTPBody:         append([]byte(nil), finalBody...),
 	}, nil
 }
 

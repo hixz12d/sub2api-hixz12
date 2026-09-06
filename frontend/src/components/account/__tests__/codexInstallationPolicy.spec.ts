@@ -11,6 +11,10 @@ import {
 } from '../codexRelaySchema'
 
 vi.mock('vue-i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }))
+vi.mock('@/api/admin/clientProfiles', async () => {
+  const { clientProfileCatalogFixture } = await import('./clientProfileFixture')
+  return { getClientProfiles: vi.fn().mockResolvedValue(clientProfileCatalogFixture), previewClientProfile: vi.fn().mockResolvedValue({ valid: true, conflicts: [], plugin_status: 'unknown' }) }
+})
 
 describe('Codex installation migration policy', () => {
   it('defaults old accounts to legacy without opting them into migration', () => {
@@ -51,5 +55,6 @@ describe('Codex installation migration policy', () => {
     const relay = wrapper.findAllComponents(Select).find((select) => select.attributes('data-testid') === 'codex-relay-mode-select')!
     relay.vm.$emit('update:modelValue', 'legacy')
     expect(wrapper.emitted('update:modelValue')?.at(-1)?.[0]).toMatchObject({ codex_relay_mode: 'legacy', codex_installation_policy: 'legacy_v2' })
+    wrapper.unmount()
   })
 })

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   CODEX_CLIENT_PROFILES,
+  patchCodexRelayState,
   createDefaultCodexRelaySettings,
   extractCodexRelaySettingsFromExtra,
   serializeCodexRelaySettingsToExtra,
@@ -12,6 +13,28 @@ import {
 
 describe('codexRelaySchema', () => {
   const dummyT = (key: string) => key
+
+  it.each([{}, { codex_client_profile: 'codex_exec', codex_fingerprint_mode: 'window40' }, { codex_client_profile: 'future-client', codex_relay_shadow_enabled: 'false' }])('round-trips persisted public values without activating defaults: %j', (original) => {
+    const state = extractCodexRelaySettingsFromExtra(original)
+    const extra = { ...original, unrelated: 'preserved' }
+    serializeCodexRelaySettingsToExtra(state, extra)
+    expect(extra).toEqual({ ...original, unrelated: 'preserved' })
+    expect(extra).not.toHaveProperty('_persisted')
+  })
+
+  it('persists an explicit choice while leaving other missing legacy fields untouched', () => {
+    const state = patchCodexRelayState(extractCodexRelaySettingsFromExtra({}), { codex_client_profile: 'auto' })
+    const extra = {}
+    serializeCodexRelaySettingsToExtra(state, extra)
+    expect(extra).toEqual({ codex_client_profile: 'auto' })
+  })
+
+  it('requires an explicit native TLS choice for shared bundles, including bulk edits', () => {
+    const state: CodexRelayFormState = { ...createDefaultCodexRelaySettings(), codex_client_profile: 'pi-0.57.1-oauth-sse-r1', codex_relay_mode: 'relay_kernel', codex_identity_policy_version: 'v2', codex_fingerprint_mode: 'device' }
+    expect(validateCodexRelayState(state, dummyT, { tlsEnabled: true }).valid).toBe(false)
+    expect(validateCodexRelayState(state, dummyT, { tlsEnabled: null, bulk: true }).valid).toBe(false)
+    expect(validateCodexRelayState(state, dummyT, { tlsEnabled: false, bulk: true }).valid).toBe(true)
+  })
 
   it('creates default settings with expected defaults', () => {
     const defaults = createDefaultCodexRelaySettings()
@@ -46,8 +69,8 @@ describe('codexRelaySchema', () => {
     const emptyExtra = {}
     const fromEmpty = extractCodexRelaySettingsFromExtra(emptyExtra)
     expect(fromEmpty.codex_relay_mode).toBe('legacy')
-    expect(fromEmpty.codex_client_profile).toBe('auto')
-    expect(fromEmpty.codex_fingerprint_mode).toBe('off')
+    expect(fromEmpty.codex_client_profile).toBe('codex_cli')
+    expect(fromEmpty.codex_fingerprint_mode).toBe('device')
 
     const customExtra = {
       codex_relay_mode: 'relay_kernel',
@@ -81,7 +104,7 @@ describe('codexRelaySchema', () => {
     expect(extra.codex_client_profile).toBe('auto')
     expect(extra.codex_identity_policy_version).toBeUndefined()
     expect(extra.codex_relay_shadow_enabled).toBeUndefined()
-    expect(extra.codex_fingerprint_mode).toBeUndefined()
+    expect(extra.codex_fingerprint_mode).toBe('off')
 
     const customState: CodexRelayFormState = {
       codex_relay_mode: 'relay_kernel',

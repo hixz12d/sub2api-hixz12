@@ -439,19 +439,30 @@ func TestBuildCodexModelsManifestAdvertisesPriorityServiceTierForFastGPTModels(t
 		"gpt-5.4-mini",
 		"gpt-5.5",
 		"gpt-5.6-sol",
+		"gpt-5.6-terra",
+		"gpt-5.6-luna",
+		"gpt-6-astra",
 	})
 	require.NoError(t, err)
 	models := decodeCodexManifestModels(t, body)
-	require.Len(t, models, 3)
+	require.Len(t, models, 6)
 
 	for _, model := range models {
-		require.Equal(t, []any{
+		expectedTiers := []any{
 			map[string]any{
 				"id":          "priority",
 				"name":        "Fast",
 				"description": "Priority processing for lower latency.",
 			},
-		}, model["service_tiers"])
+		}
+		if model["slug"] == "gpt-5.6-sol" {
+			expectedTiers = append(expectedTiers, map[string]any{
+				"id":          "ultrafast",
+				"name":        "Ultrafast",
+				"description": "Ultra-low latency processing.",
+			})
+		}
+		require.Equal(t, expectedTiers, model["service_tiers"], model["slug"])
 		require.Nil(t, model["default_service_tier"])
 	}
 }

@@ -218,7 +218,7 @@ func PrepareOpenAIRetryBudget(c *gin.Context, body []byte) *OpenAIRetryBudget {
 		return existing
 	}
 	stateful := OpenAIRetryRequestIsStateful(c, body)
-	fullContext := codexBodyHasLocalRebuildableContext(body)
+	fullContext := codexBodyHasLocalRebuildableContext(body) && (c.Request == nil || strings.TrimSpace(c.GetHeader(openAIWSTurnStateHeader)) == "")
 	budget := newOpenAIRetryBudget(stateful, fullContext)
 	c.Set(openAIRetryBudgetContextKey, budget)
 	c.Set(openAIRetryBudgetActiveKey, false)

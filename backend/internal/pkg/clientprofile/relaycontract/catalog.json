@@ -1,0 +1,339 @@
+{
+  "compact": "unsupported",
+  "contract": "relay-profile-contract/1",
+  "cross_implementation_v2": "not_adapted",
+  "defaults": {
+    "cli": "codex-0.153.4-exec-f0-r1",
+    "opencode": "opencode-1.2.4-managed-sse-r1",
+    "opencode-1.2.4-oauth-sse-r1": "opencode-1.2.4-oauth-sse-r1",
+    "pi": "pi-0.57.1-managed-sse-r1",
+    "pi-0.57.1-oauth-sse-r1": "pi-0.57.1-oauth-sse-r1"
+  },
+  "persona_reader_versions": [
+    1,
+    2
+  ],
+  "persona_writer_version": 2,
+  "profiles": [
+    {
+      "artifact_digest": "7d7903b7fbefd84837dfc3204dac2801c09a0dfadca2138a4874cc55383b7a57",
+      "descriptor": {
+        "adapter_implementation_revision": "relay-adapter-1",
+        "agent_name": "/root",
+        "app_identity_revision": 1,
+        "bundle_digest": "",
+        "distribution": "rust-cli",
+        "family": "codex",
+        "operations": [
+          "ws-responses"
+        ],
+        "profile_id": "codex-0.153.4-exec-f0-r1",
+        "runtime": "rust-target-unverified",
+        "runtime_version": "unverified",
+        "sandbox": "windows_elevated",
+        "sandbox_mode": "read-only",
+        "schema_version": 1,
+        "selector": "cli",
+        "source_commit": "",
+        "source_repository": "openai/codex",
+        "supported_tuples": [
+          {
+            "arch": "x64",
+            "platform": "win32",
+            "release": "10.0.26200"
+          }
+        ],
+        "upstream_release": "0.153.4",
+        "validation": {
+          "application_contract": "untested",
+          "authorized_upstream": "untested",
+          "cross_implementation_http": "untested",
+          "native_tls_h2": "untested"
+        },
+        "variant": "exec-f0",
+        "wire_recipe_revision": "python-ws-1"
+      }
+    },
+    {
+      "artifact_digest": "de3a50bd60fd103d4432325738966a7d9a39971e1e1df2470e2ba809581a37d5",
+      "descriptor": {
+        "adapter_implementation_revision": "relay-adapter-1",
+        "agent_name": "",
+        "app_identity_revision": 1,
+        "bundle_digest": "",
+        "distribution": "source-format-reference",
+        "family": "opencode",
+        "operations": [
+          "http-responses"
+        ],
+        "profile_id": "opencode-1.2.4-managed-sse-r1",
+        "runtime": "node-or-bun-unverified",
+        "runtime_version": "unverified",
+        "sandbox": "",
+        "sandbox_mode": "",
+        "schema_version": 1,
+        "selector": "opencode",
+        "source_commit": "",
+        "source_repository": "anomalyco/opencode",
+        "supported_tuples": [
+          {
+            "arch": "x64",
+            "platform": "win32",
+            "release": "10.0.26200"
+          },
+          {
+            "arch": "x64",
+            "platform": "win32",
+            "release": "10.0.26100"
+          },
+          {
+            "arch": "x64",
+            "platform": "win32",
+            "release": "10.0.22631"
+          },
+          {
+            "arch": "x64",
+            "platform": "win32",
+            "release": "10.0.19045"
+          },
+          {
+            "arch": "arm64",
+            "platform": "win32",
+            "release": "10.0.26100"
+          },
+          {
+            "arch": "arm64",
+            "platform": "darwin",
+            "release": "24.5.0"
+          },
+          {
+            "arch": "arm64",
+            "platform": "darwin",
+            "release": "24.3.0"
+          },
+          {
+            "arch": "arm64",
+            "platform": "darwin",
+            "release": "23.6.0"
+          },
+          {
+            "arch": "x64",
+            "platform": "darwin",
+            "release": "24.3.0"
+          },
+          {
+            "arch": "x64",
+            "platform": "linux",
+            "release": "6.8.0-47-generic"
+          },
+          {
+            "arch": "x64",
+            "platform": "linux",
+            "release": "6.8.0-40-generic"
+          },
+          {
+            "arch": "x64",
+            "platform": "linux",
+            "release": "6.5.0-21-generic"
+          },
+          {
+            "arch": "arm64",
+            "platform": "linux",
+            "release": "6.8.0-47-generic"
+          }
+        ],
+        "upstream_release": "1.2.4",
+        "validation": {
+          "application_contract": "untested",
+          "authorized_upstream": "untested",
+          "cross_implementation_http": "untested",
+          "native_tls_h2": "untested"
+        },
+        "variant": "managed-sse",
+        "wire_recipe_revision": "python-http-1"
+      }
+    },
+    {
+      "artifact_digest": "08e9dc5a34c3c824f85a53a4aadbbe68aed9dfcbe1e7712a8cc8e9add305cec0",
+      "descriptor": {
+        "adapter_implementation_revision": "relay-adapter-1",
+        "agent_name": "",
+        "app_identity_revision": 1,
+        "bundle_digest": "7f7a5876e3d0dc859b2eb05ceffaf4b2e0e7225be5a8095e66f123f976f7b989",
+        "distribution": "shared-application-artifact",
+        "family": "opencode",
+        "operations": [
+          "http-responses"
+        ],
+        "profile_id": "opencode-1.2.4-oauth-sse-r1",
+        "runtime": "native-unverified",
+        "runtime_version": "unverified",
+        "sandbox": "",
+        "sandbox_mode": "",
+        "schema_version": 1,
+        "selector": "opencode-1.2.4-oauth-sse-r1",
+        "source_commit": "",
+        "source_repository": "anomalyco/opencode",
+        "supported_tuples": [
+          {
+            "arch": "x64",
+            "platform": "win32",
+            "release": "10.0.26200"
+          }
+        ],
+        "upstream_release": "1.2.4",
+        "validation": {
+          "application_contract": "untested",
+          "authorized_upstream": "untested",
+          "cross_implementation_http": "untested",
+          "native_tls_h2": "untested"
+        },
+        "variant": "shared-r1",
+        "wire_recipe_revision": "python-http-1"
+      }
+    },
+    {
+      "artifact_digest": "d23d270bd01212155ca3b0ed5ab87616e49c069039f5186f61d33833171e5a24",
+      "descriptor": {
+        "adapter_implementation_revision": "relay-adapter-1",
+        "agent_name": "",
+        "app_identity_revision": 1,
+        "bundle_digest": "",
+        "distribution": "source-format-reference",
+        "family": "pi",
+        "operations": [
+          "http-responses"
+        ],
+        "profile_id": "pi-0.57.1-managed-sse-r1",
+        "runtime": "node-or-bun-unverified",
+        "runtime_version": "unverified",
+        "sandbox": "",
+        "sandbox_mode": "",
+        "schema_version": 1,
+        "selector": "pi",
+        "source_commit": "",
+        "source_repository": "earendil-works/pi",
+        "supported_tuples": [
+          {
+            "arch": "x64",
+            "platform": "win32",
+            "release": "10.0.26200"
+          },
+          {
+            "arch": "x64",
+            "platform": "win32",
+            "release": "10.0.26100"
+          },
+          {
+            "arch": "x64",
+            "platform": "win32",
+            "release": "10.0.22631"
+          },
+          {
+            "arch": "x64",
+            "platform": "win32",
+            "release": "10.0.19045"
+          },
+          {
+            "arch": "arm64",
+            "platform": "win32",
+            "release": "10.0.26100"
+          },
+          {
+            "arch": "arm64",
+            "platform": "darwin",
+            "release": "24.5.0"
+          },
+          {
+            "arch": "arm64",
+            "platform": "darwin",
+            "release": "24.3.0"
+          },
+          {
+            "arch": "arm64",
+            "platform": "darwin",
+            "release": "23.6.0"
+          },
+          {
+            "arch": "x64",
+            "platform": "darwin",
+            "release": "24.3.0"
+          },
+          {
+            "arch": "x64",
+            "platform": "linux",
+            "release": "6.8.0-47-generic"
+          },
+          {
+            "arch": "x64",
+            "platform": "linux",
+            "release": "6.8.0-40-generic"
+          },
+          {
+            "arch": "x64",
+            "platform": "linux",
+            "release": "6.5.0-21-generic"
+          },
+          {
+            "arch": "arm64",
+            "platform": "linux",
+            "release": "6.8.0-47-generic"
+          }
+        ],
+        "upstream_release": "0.57.1",
+        "validation": {
+          "application_contract": "untested",
+          "authorized_upstream": "untested",
+          "cross_implementation_http": "untested",
+          "native_tls_h2": "untested"
+        },
+        "variant": "managed-sse",
+        "wire_recipe_revision": "python-http-1"
+      }
+    },
+    {
+      "artifact_digest": "5c33743b71343c3c1ce37b9b29fde9c99278a3e59dacc593d01036fb13f9b1d1",
+      "descriptor": {
+        "adapter_implementation_revision": "relay-adapter-1",
+        "agent_name": "",
+        "app_identity_revision": 1,
+        "bundle_digest": "5029d50328d6cfbfc5d53065e5253979e8e739b2d84bb1e17bcd9121b250afb2",
+        "distribution": "shared-application-artifact",
+        "family": "pi",
+        "operations": [
+          "http-responses"
+        ],
+        "profile_id": "pi-0.57.1-oauth-sse-r1",
+        "runtime": "native-unverified",
+        "runtime_version": "unverified",
+        "sandbox": "",
+        "sandbox_mode": "",
+        "schema_version": 1,
+        "selector": "pi-0.57.1-oauth-sse-r1",
+        "source_commit": "",
+        "source_repository": "earendil-works/pi",
+        "supported_tuples": [
+          {
+            "arch": "x64",
+            "platform": "win32",
+            "release": "10.0.26200"
+          }
+        ],
+        "upstream_release": "0.57.1",
+        "validation": {
+          "application_contract": "untested",
+          "authorized_upstream": "untested",
+          "cross_implementation_http": "untested",
+          "native_tls_h2": "untested"
+        },
+        "variant": "shared-r1",
+        "wire_recipe_revision": "python-http-1"
+      }
+    }
+  ],
+  "release_channel": "build-time-pinned",
+  "remote_manifest_loading": "disabled",
+  "schema_reader_versions": [
+    1
+  ]
+}

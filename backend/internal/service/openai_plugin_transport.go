@@ -14,10 +14,17 @@ func (s *OpenAIGatewayService) SetPluginManager(manager *PluginManager) {
 // doOpenAIUpstream 只在 OpenAI OAuth 能力绑定已启用时把真实请求交给插件。
 // 插件返回标准 http.Response，响应解析、错误映射、SSE 和计费仍由现有核心链处理。
 func (s *OpenAIGatewayService) doOpenAIUpstream(request *http.Request, proxyURL string, account *Account) (*http.Response, error) {
+	if request == nil || account == nil {
+		return nil, errors.New("upstream request and account are required")
+	}
 	state, hasState := CodexAttemptStateFromContext(request.Context())
+	tlsEnabled := account.IsTLSFingerprintEnabled()
+	if hasState && state.tlsFingerprintEnabled != nil {
+		tlsEnabled = *state.tlsFingerprintEnabled
+	}
 	bundleRequest := hasState && state.Profile().BundleID != ""
 	if bundleRequest {
-		if account == nil || account.IsTLSFingerprintEnabled() {
+		if tlsEnabled {
 			return nil, errors.New("shared client bundles require native transport; disable enable_tls_fingerprint")
 		}
 		if s.pluginManager != nil && s.pluginManager.ShouldRouteOpenAIOAuth(account) {
@@ -33,16 +40,15 @@ func (s *OpenAIGatewayService) doOpenAIUpstream(request *http.Request, proxyURL 
 			return response, err
 		}
 	}
-	if state, ok := CodexAttemptStateFromContext(request.Context()); ok && state.PolicyVersion() == CodexIdentityPolicyV2 {
-		// Relay Kernel 的 Chrome/uTLS 只在账号显式允许 TLS 伪装时生效。
-		// 关闭 enable_tls_fingerprint 后必须走普通握手，否则账号开关形同虚设。
-		if account.IsTLSFingerprintEnabled() {
-			profile := state.Profile()
-			if profile.Transport.TLSProfileID == tlsfingerprint.HelloPresetChromeAuto {
-				tlsProfile := tlsfingerprint.BuiltinChromeAutoProfile()
-				tlsProfile.CacheScopeKey = state.TransportKey()
-				return s.httpUpstream.DoWithTLS(request, proxyURL, account.ID, account.Concurrency, tlsProfile)
-			}
+	if hasState && state.PolicyVersion() == CodexIdentityPolicyV2 {
+		policy, err := ResolveCodexEffectiveTransport(state.Profile(), tlsEnabled, false, CodexTransportHTTP)
+		if err != nil {
+			return nil, err
+		}
+		if policy.Sender == "go-utls" {
+			tlsProfile := tlsfingerprint.BuiltinChromeAutoProfile()
+			tlsProfile.CacheScopeKey = state.TransportKey()
+			return s.httpUpstream.DoWithTLS(request, proxyURL, account.ID, account.Concurrency, tlsProfile)
 		}
 	}
 	return s.httpUpstream.Do(request, proxyURL, account.ID, account.Concurrency)

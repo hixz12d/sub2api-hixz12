@@ -202,6 +202,7 @@ func (s *OpenAIGatewayService) resolveCodexConversationAttempt(
 		return nil, err
 	}
 	recoveringCommitted := resolved.Committed
+	recoveryAccountID := resolved.AccountID
 	didRecover := false
 	for retries := 0; !created; retries++ {
 		if resolved.AccountID == candidate.AccountID {
@@ -224,6 +225,9 @@ func (s *OpenAIGatewayService) resolveCodexConversationAttempt(
 		}
 		// A CAS loser must not replace a healthy winner still preparing output.
 		recoveringCommitted = recoveringCommitted || resolved.Committed
+		if retries > 0 && resolved.AccountID != recoveryAccountID && resolved.AccountID != candidate.AccountID {
+			return nil, codexRecoveryFailure(codexRecoveryAccountMismatch)
+		}
 		refreshTransport := codexConversationTransportRefreshAllowed(resolved, candidate)
 		if recoveringCommitted && !refreshTransport && !s.canRecoverUnavailableCodexConversation(ctx, plan, resolved, candidate, replaySafe) {
 			if resolved.AccountID == candidate.AccountID {
@@ -333,6 +337,9 @@ func codexPlanHasRecoverableFullContext(plan *CodexRequestPlan) bool {
 	if len(body) == 0 || !gjson.ValidBytes(body) || !gjson.ParseBytes(body).IsObject() {
 		return false
 	}
+	if plan.previousResponseID != "" {
+		return CanRebuildOpenAIContinuation(body, plan.inboundHeaders)
+	}
 	return codexBodyHasLocalRebuildableContext(body)
 }
 
@@ -340,6 +347,9 @@ func codexPlanHasRecoverableFullContext(plan *CodexRequestPlan) bool {
 // non-empty local transcript (string or message-like input items). Pure chain
 // continuations with only previous_response_id / item_reference stay false.
 func codexBodyHasLocalRebuildableContext(body []byte) bool {
+	if strings.TrimSpace(gjson.GetBytes(body, "previous_response_id").String()) != "" {
+		return CanRebuildOpenAIContinuation(body, nil)
+	}
 	input := gjson.GetBytes(body, "input")
 	if !input.Exists() {
 		return false

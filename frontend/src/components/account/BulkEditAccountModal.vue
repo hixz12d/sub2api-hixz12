@@ -1000,6 +1000,8 @@
         >
           <CodexRelaySettings
             v-model="codexRelaySettings"
+            :bulk="true"
+            :tls-enabled="enableTLSFingerprint ? tlsFingerprintEnabled : null"
             :disabled="!enableCodexRelaySettings"
             :errors="codexRelayErrors"
           />
@@ -1787,7 +1789,7 @@ const codexRelayErrors = computed(() => {
   if (!enableCodexRelaySettings.value) {
     return {}
   }
-  return validateCodexRelayState(codexRelaySettings.value, t).errors
+  return validateCodexRelayState(codexRelaySettings.value, t, { tlsEnabled: enableTLSFingerprint.value ? tlsFingerprintEnabled.value : null, bulk: true }).errors
 })
 const openAICompactMode = ref<OpenAICompactMode>('auto')
 const openAICompactModelMappings = ref<ModelMapping[]>([])
@@ -2308,7 +2310,7 @@ const handleSubmit = async () => {
   }
 
   if (enableCodexRelaySettings.value && allOpenAIOAuth.value) {
-    const validation = validateCodexRelayState(codexRelaySettings.value, t)
+    const validation = validateCodexRelayState(codexRelaySettings.value, t, { tlsEnabled: enableTLSFingerprint.value ? tlsFingerprintEnabled.value : null, bulk: true })
     if (!validation.valid) {
       const firstError = Object.values(validation.errors)[0]
       if (firstError) {

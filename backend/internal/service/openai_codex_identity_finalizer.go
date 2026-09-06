@@ -198,7 +198,9 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthIdentity(
 	if account.ProxyID != nil {
 		proxyIdentity = fmt.Sprintf("proxy:%d", *account.ProxyID)
 	}
+	tlsEnabled := account.IsTLSFingerprintEnabled()
 	attemptInput := CodexAttemptInput{
+		TLSFingerprintEnabled:  &tlsEnabled,
 		InstallationPolicy:     settings.InstallationPolicy,
 		AccountID:              account.ID,
 		AccountVersion:         account.UpdatedAt.UTC().Format("20060102T150405.000000000Z"),
@@ -208,7 +210,7 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthIdentity(
 		FingerprintMode:        string(mode),
 		AttemptNumber:          attemptNumber,
 		EgressRoute:            routeKey,
-		TransportConfigVersion: fmt.Sprintf("tls:%d", account.GetTLSFingerprintProfileID()),
+		TransportConfigVersion: fmt.Sprintf("tls:%d;enabled:%t", account.GetTLSFingerprintProfileID(), tlsEnabled),
 	}
 	attemptInput, err = s.pinCodexAttemptInput(c.Request.Context(), plan, attemptInput)
 	if err != nil {
@@ -344,6 +346,11 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthBody(
 	snapshot *CodexIdentitySnapshot,
 	accountIdentitySessionID string,
 ) ([]byte, error) {
+	if c != nil && c.Request != nil {
+		if plan, ok := CodexRequestPlanFromContext(c.Request.Context()); ok && plan.rebuildFromLocalHistory {
+			body = SanitizeCodexBodyForCrossAccountRecovery(body)
+		}
+	}
 	updated, err := applyCodexFingerprintToRawBody(body, snapshot)
 	if err != nil {
 		return nil, err

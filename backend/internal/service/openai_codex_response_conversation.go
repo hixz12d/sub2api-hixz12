@@ -76,6 +76,14 @@ func (s *OpenAIGatewayService) resolveCodexResponseConversationPlan(c *gin.Conte
 	if errors.Is(err, ErrCodexConversationNotFound) {
 		if policy == CodexInstallationStableV1 {
 			if err := s.validateCodexLegacyContinuation(c, plan.previousResponseID, account); err != nil {
+				var failure *UpstreamFailoverError
+				if errors.As(err, &failure) && (failure.ClientMessage == codexRecoveryAccountMismatch || failure.ClientMessage == codexRecoverySnapshotMissing) {
+					if _, rebuildErr := PrepareCodexFullContextRecovery(c, account.ID, plan.body); rebuildErr == nil {
+						if rebuilt, ok := CodexRequestPlanFromContext(c.Request.Context()); ok && rebuilt != plan {
+							return rebuilt, false, nil
+						}
+					}
+				}
 				return nil, false, err
 			}
 			clone := *plan

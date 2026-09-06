@@ -443,6 +443,7 @@ func (s *PricingService) parsePricingData(body []byte) (map[string]*LiteLLMModel
 	if err := json.Unmarshal(body, &rawData); err != nil {
 		return nil, fmt.Errorf("parse raw JSON: %w", err)
 	}
+	applyAstraCatalogPricing(rawData)
 	rawData = s.applyPricingOverrides(rawData)
 
 	result := make(map[string]*LiteLLMModelPricing)

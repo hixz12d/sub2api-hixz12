@@ -396,6 +396,15 @@ func hasCodexRelayAccountExtraUpdate(extra map[string]any) bool {
 // ValidateCodexRelayAccountExtra validates the persisted admin configuration.
 // Runtime-owned identity values are intentionally absent from this contract.
 func ValidateCodexRelayAccountExtra(platform, accountType string, extra map[string]any, derivationSecret string) error {
+	return validateCodexRelayAccountExtra(platform, accountType, extra, derivationSecret, true)
+}
+
+func validateCodexRelayAccountExtra(platform, accountType string, extra map[string]any, derivationSecret string, checkSecret bool) error {
+	if raw, present := extra["enable_tls_fingerprint"]; present && platform == PlatformOpenAI {
+		if _, valid := raw.(bool); !valid {
+			return infraerrors.BadRequest("CODEX_RELAY_SETTINGS_INVALID", "enable_tls_fingerprint must be a boolean")
+		}
+	}
 	configured := false
 	for _, key := range codexRelayAccountExtraKeys {
 		if _, ok := extra[key]; ok {
@@ -441,7 +450,7 @@ func ValidateCodexRelayAccountExtra(platform, accountType string, extra map[stri
 	if settings.Mode == CodexRelayModeKernel && codexFingerprintModeFromExtra(extra) == codexFingerprintOff {
 		return infraerrors.BadRequest("CODEX_RELAY_IDENTITY_REQUIRED", "relay_kernel requires a managed codex_fingerprint_mode")
 	}
-	if settings.Mode == CodexRelayModeKernel || settings.ShadowEnabled {
+	if checkSecret && (settings.Mode == CodexRelayModeKernel || settings.ShadowEnabled) {
 		if _, err := NewCodexIdentityDeriver(derivationSecret); err != nil {
 			return infraerrors.BadRequest("CODEX_RELAY_SECRET_INVALID", "gateway.openai_affinity.secret or jwt.secret must contain at least 32 bytes")
 		}

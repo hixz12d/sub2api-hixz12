@@ -300,7 +300,9 @@ func allowOpenAICompatibleMessagesDispatch(c *gin.Context, apiKey *service.APIKe
 }
 
 func openAICompatibleTextTargetAllowed(c *gin.Context, apiKey *service.APIKey, model string) bool {
-	return compositeTargetPlatformAllowed(c, apiKey, model, service.PlatformOpenAI, service.PlatformGrok)
+	return compositeTargetPlatformAllowed(c, apiKey, model,
+		service.PlatformOpenAI, service.PlatformGrok,
+		service.PlatformKimi, service.PlatformZhipu, service.PlatformDeepseek)
 }
 
 // isResponsesWebSocketCompositePlatform 限定 composite 分组在 Responses WebSocket
@@ -616,6 +618,9 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	service.SetOpenAIAttemptRouting(c, sessionHash, previousResponseID, "")
 	httpToolCoverage := service.AnalyzeToolCallOutputContextCoverageBytes(body)
 	previousResponseCanMove := !httpToolCoverage.HasFunctionCallOutput || httpToolCoverage.ContextCoversAllCallIDs
+	if previousResponseID != "" {
+		previousResponseCanMove = previousResponseCanMove && service.CanRebuildOpenAIContinuation(body, c.Request.Header)
+	}
 	maxAccountSwitches := h.maxAccountSwitches
 	if service.OpenAIRetryRequestIsStateful(c, body) && !previousResponseCanMove {
 		maxAccountSwitches = 0
@@ -833,8 +838,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		// 从不可变的 canonical forwardBody 派生本次尝试 body 并整块剔除上游私有的加密
 		// reasoning item（含耦合的 id/summary），避免非透传上游 400 拒绝 Kiro reasoning 形态。
 		attemptBody := h.deriveOpenAIForwardAttemptBody(reqLog, forwardBody, account, &passthroughFailoverState)
-		if previousResponseID != "" && previousResponseCanMove &&
-			(!scheduleDecision.StickyPreviousHit || !account.IsOpenAIApiKey()) {
+		rebuildContinuation := previousResponseID != "" && previousResponseCanMove && !scheduleDecision.StickyPreviousHit
+		if rebuildContinuation {
 			attemptBody = service.SanitizeCodexBodyForCrossAccountRecovery(attemptBody)
 			reqLog.Debug("openai.http_cross_account_body_sanitized",
 				zap.Int64("account_id", account.ID),
@@ -849,6 +854,13 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 					accountReleaseFunc()
 				}
 			}()
+			if rebuildContinuation {
+				restorePlan, recoveryErr := service.PrepareCodexFullContextRecovery(c, account.ID, attemptBody)
+				if recoveryErr != nil {
+					return nil, recoveryErr
+				}
+				defer restorePlan()
+			}
 			return h.gatewayService.Forward(c.Request.Context(), c, account, attemptBody)
 		}()
 		var cyberBlockBodyHTTP []byte
@@ -2571,6 +2583,9 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	}
 	firstMessageToolCoverage := service.AnalyzeToolCallOutputContextCoverageBytes(firstMessage)
 	previousResponseCanMove := !firstMessageToolCoverage.HasFunctionCallOutput || firstMessageToolCoverage.ContextCoversAllCallIDs
+	if previousResponseID != "" {
+		previousResponseCanMove = previousResponseCanMove && service.CanRebuildOpenAIContinuation(firstMessage, c.Request.Header)
+	}
 	reqLog = reqLog.With(
 		zap.Bool("ws_ingress", true),
 		zap.String("session_initial_model", reqModel),

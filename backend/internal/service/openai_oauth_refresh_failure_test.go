@@ -138,7 +138,7 @@ func TestOpenAIRefreshFailurePreservesRetryAndOutputBoundaries(t *testing.T) {
 			prevID := ""
 			op := CodexOperationResponses
 			if tc.stateful && tc.fullContext {
-				body = []byte(`{"previous_response_id":"resp_old","input":"hello"}`)
+				body = []byte(rebuildTranscript)
 				prevID = "resp_old"
 				op = CodexOperationResume
 			} else if tc.stateful {

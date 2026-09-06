@@ -1,0 +1,3 @@
+*.json -text
+*.sha256 -text
+fixtures/*.json -text
