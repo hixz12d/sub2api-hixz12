@@ -171,7 +171,7 @@ func TestOpenAIRefreshFailurePreservesRetryAndOutputBoundaries(t *testing.T) {
 			if tc.provider {
 				refreshErr = errors.New("invalid_client secret-token")
 			}
-			err := (&OpenAIGatewayService{}).handleOpenAIRefreshFailure(ctx, c, account, refreshErr, false)
+			err = (&OpenAIGatewayService{}).handleOpenAIRefreshFailure(ctx, c, account, refreshErr, false)
 			if tc.canceled {
 				require.ErrorIs(t, err, context.Canceled)
 				return
@@ -182,8 +182,11 @@ func TestOpenAIRefreshFailurePreservesRetryAndOutputBoundaries(t *testing.T) {
 			require.False(t, failure.RetryableOnSameAccount)
 			require.NotContains(t, failure.ClientMessage, "secret-token")
 			require.Empty(t, failure.ResponseBody)
-			if tc.stateful {
+			if tc.stateful && !tc.retry {
 				require.Equal(t, OpenAIConversationRecoveryRequiredReason, failure.Reason)
+			}
+			if tc.retry {
+				require.Equal(t, OpenAIOAuthRefreshFailedReason, failure.Reason)
 			}
 			if tc.provider {
 				require.Equal(t, GatewayFailureScopeProvider, failure.Scope)

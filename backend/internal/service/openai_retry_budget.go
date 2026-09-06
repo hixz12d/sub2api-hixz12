@@ -134,8 +134,14 @@ type OpenAIRetryBudget struct {
 }
 
 func NewOpenAIRetryBudget(stateful bool) *OpenAIRetryBudget {
+	return newOpenAIRetryBudget(stateful, false)
+}
+
+func newOpenAIRetryBudget(stateful, fullContextRecoverable bool) *OpenAIRetryBudget {
 	maxDistinct := 2
-	if stateful {
+	// previous_response_id alone is sticky; a rebuildable local transcript may still
+	// move once after OAuth death or intentional account/group switch.
+	if stateful && !fullContextRecoverable {
 		maxDistinct = 1
 	}
 	return &OpenAIRetryBudget{
@@ -211,7 +217,9 @@ func PrepareOpenAIRetryBudget(c *gin.Context, body []byte) *OpenAIRetryBudget {
 	if existing := openAIRetryBudgetFromContextRaw(c); existing != nil {
 		return existing
 	}
-	budget := NewOpenAIRetryBudget(OpenAIRetryRequestIsStateful(c, body))
+	stateful := OpenAIRetryRequestIsStateful(c, body)
+	fullContext := codexBodyHasLocalRebuildableContext(body)
+	budget := newOpenAIRetryBudget(stateful, fullContext)
 	c.Set(openAIRetryBudgetContextKey, budget)
 	c.Set(openAIRetryBudgetActiveKey, false)
 	return budget

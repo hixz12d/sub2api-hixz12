@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 var ErrCodexConversationNotFound = errors.New("codex conversation not found")
@@ -274,13 +275,11 @@ func (s *OpenAIGatewayService) resolveCodexConversationAttempt(
 	resolvedAttempt := applyCodexConversationState(attempt, resolved)
 	resolvedAttempt.finalHeaders = buildCodexAttemptIdentityHeaders(resolvedAttempt.profile, resolvedAttempt.identity, plan.inboundHeaders)
 	body := plan.body
-	if didRecover && plan.previousResponseID != "" {
-		// Full-context recovery rewrote the conversation onto a different account; drop the
-		// stale previous_response_id so the new upstream is not asked for a foreign chain.
-		stripped := RemovePreviousResponseIDFromBody(body)
-		if string(stripped) != string(body) {
-			body = stripped
-		}
+	if didRecover {
+		// Full-context recovery rewrote the conversation onto a different account; drop
+		// foreign chain crumbs (previous_response_id / item_reference / encrypted blobs)
+		// so the new upstream only sees the local rebuildable transcript.
+		body = SanitizeCodexBodyForCrossAccountRecovery(body)
 	}
 	resolvedAttempt.finalHTTPBody, err = applyCodexFingerprintToRawBody(body, resolvedAttempt.identity)
 	if err != nil {
@@ -319,6 +318,10 @@ func (s *OpenAIGatewayService) canRecoverUnavailableCodexConversation(ctx contex
 
 // codexPlanHasRecoverableFullContext reports whether the inbound body can rebuild
 // the turn without the original account's upstream conversation state.
+//
+// Pi/OpenCode often resend a large local transcript that still contains foreign
+// previous_response_id / item_reference crumbs from the old account. Those crumbs
+// are sanitized on recovery; they must not block the rebind itself.
 func codexPlanHasRecoverableFullContext(plan *CodexRequestPlan) bool {
 	if plan == nil {
 		return false
@@ -330,67 +333,182 @@ func codexPlanHasRecoverableFullContext(plan *CodexRequestPlan) bool {
 	if len(body) == 0 || !gjson.ValidBytes(body) || !gjson.ParseBytes(body).IsObject() {
 		return false
 	}
+	return codexBodyHasLocalRebuildableContext(body)
+}
+
+// codexBodyHasLocalRebuildableContext is true when the client already shipped a
+// non-empty local transcript (string or message-like input items). Pure chain
+// continuations with only previous_response_id / item_reference stay false.
+func codexBodyHasLocalRebuildableContext(body []byte) bool {
 	input := gjson.GetBytes(body, "input")
 	if !input.Exists() {
 		return false
 	}
 	switch {
-	case input.IsArray():
-		if len(input.Array()) == 0 {
-			return false
-		}
 	case input.Type == gjson.String:
-		if strings.TrimSpace(input.String()) == "" {
-			return false
-		}
+		return strings.TrimSpace(input.String()) != ""
 	case input.IsObject():
-		if len(input.Map()) == 0 {
-			return false
-		}
+		return codexInputItemIsLocalContext(input)
+	case input.IsArray():
+		found := false
+		input.ForEach(func(_, item gjson.Result) bool {
+			if codexInputItemIsLocalContext(item) {
+				found = true
+				return false
+			}
+			return true
+		})
+		return found
 	default:
 		return false
 	}
-	lower := strings.ToLower(string(body))
-	if strings.Contains(lower, "encrypted_content") || strings.Contains(lower, "encrypted_reasoning") {
-		return false
-	}
-	coverage := AnalyzeToolCallOutputContextCoverageBytes(body)
-	if coverage.HasFunctionCallOutput && !coverage.ContextCoversAllCallIDs {
-		return false
-	}
-	if codexBodyHasNonRecoverableHardState(body, coverage) {
-		return false
-	}
-	return true
 }
 
-func codexBodyHasNonRecoverableHardState(body []byte, coverage ToolCallOutputContextCoverage) bool {
-	var hit bool
-	var walk func(gjson.Result)
-	walk = func(value gjson.Result) {
-		value.ForEach(func(key, child gjson.Result) bool {
-			switch key.String() {
-			case "encrypted_content", "encrypted_reasoning":
-				hit = true
-			case "type":
-				switch child.String() {
-				case "tool_search_output", "item_reference", "mcp_approval_response":
-					hit = true
-				default:
-					if strings.HasSuffix(child.String(), "_call_output") && !(coverage.HasFunctionCallOutput && coverage.ContextCoversAllCallIDs) {
-						hit = true
-					}
+func codexInputItemIsLocalContext(item gjson.Result) bool {
+	if !item.Exists() {
+		return false
+	}
+	if item.Type == gjson.String {
+		return strings.TrimSpace(item.String()) != ""
+	}
+	if !item.IsObject() {
+		return false
+	}
+	// Encrypted blobs are account-bound and never count as local rebuild context.
+	if item.Get("encrypted_content").Exists() || item.Get("encrypted_reasoning").Exists() {
+		return false
+	}
+	switch item.Get("type").String() {
+	case "message", "input_text", "input_image", "input_file", "text", "reasoning":
+		return true
+	case "":
+		// Untyped objects only count when they carry visible local content.
+		return item.Get("content").Exists() || item.Get("text").Exists() || item.Get("role").Exists() || item.Get("output").Exists()
+	case "function_call", "custom_tool_call", "computer_call", "web_search_call", "file_search_call", "code_interpreter_call", "image_generation_call", "local_shell_call", "shell_call", "apply_patch_call":
+		return true
+	case "function_call_output", "custom_tool_call_output", "computer_call_output", "local_shell_call_output", "shell_call_output", "apply_patch_call_output":
+		return strings.TrimSpace(item.Get("call_id").String()) != ""
+	default:
+		// Unknown typed items may still carry local text content.
+		if item.Get("content").Exists() || item.Get("text").Exists() || item.Get("output").Exists() {
+			return true
+		}
+		return false
+	}
+}
+
+// SanitizeCodexBodyForCrossAccountRecovery drops foreign-chain state so a full
+// local transcript can be sent to a different upstream account.
+
+func codexCoveredToolCallIDs(body []byte) map[string]struct{} {
+	covered := make(map[string]struct{})
+	input := gjson.GetBytes(body, "input")
+	if !input.IsArray() && !input.IsObject() {
+		return covered
+	}
+	contextIDs := make(map[string]struct{})
+	outputIDs := make(map[string]struct{})
+	collect := func(item gjson.Result) {
+		if !item.IsObject() {
+			return
+		}
+		itemType := item.Get("type").String()
+		callID := strings.TrimSpace(item.Get("call_id").String())
+		if callID == "" {
+			return
+		}
+		if strings.HasSuffix(itemType, "_call_output") {
+			outputIDs[callID] = struct{}{}
+			return
+		}
+		switch itemType {
+		case "function_call", "custom_tool_call", "computer_call", "local_shell_call", "shell_call",
+			"apply_patch_call", "web_search_call", "file_search_call", "code_interpreter_call", "image_generation_call":
+			contextIDs[callID] = struct{}{}
+		}
+	}
+	if input.IsArray() {
+		input.ForEach(func(_, item gjson.Result) bool { collect(item); return true })
+	} else {
+		collect(input)
+	}
+	for callID := range outputIDs {
+		if _, ok := contextIDs[callID]; ok {
+			covered[callID] = struct{}{}
+		}
+	}
+	return covered
+}
+
+func SanitizeCodexBodyForCrossAccountRecovery(body []byte) []byte {
+	if len(body) == 0 || !gjson.ValidBytes(body) || !gjson.ParseBytes(body).IsObject() {
+		return body
+	}
+	out := RemovePreviousResponseIDFromBody(body)
+	// Build call_id coverage once so mixed covered/uncovered tool outputs can keep
+	// the rebuildable subset instead of dropping every _call_output.
+	coveredCallIDs := codexCoveredToolCallIDs(out)
+
+	// Drop top-level foreign chain fields when present.
+	for _, key := range []string{"conversation", "conversation_id", "prompt_cache_key"} {
+		if gjson.GetBytes(out, key).Exists() {
+			if next, err := sjson.DeleteBytes(out, key); err == nil {
+				out = next
+			}
+		}
+	}
+
+	input := gjson.GetBytes(out, "input")
+	if !input.IsArray() {
+		// Single-object input: if it is only a foreign reference, clear it.
+		if input.IsObject() && !codexInputItemIsLocalContext(input) {
+			if next, err := sjson.SetBytes(out, "input", []any{}); err == nil {
+				out = next
+			}
+		}
+		return out
+	}
+
+	kept := make([]any, 0, len(input.Array()))
+	input.ForEach(func(_, item gjson.Result) bool {
+		if !item.IsObject() {
+			if item.Type == gjson.String && strings.TrimSpace(item.String()) != "" {
+				kept = append(kept, item.Value())
+			}
+			return true
+		}
+		itemType := item.Get("type").String()
+		switch itemType {
+		case "item_reference", "tool_search_output", "mcp_approval_response":
+			return true
+		default:
+			if strings.HasSuffix(itemType, "_call_output") {
+				callID := strings.TrimSpace(item.Get("call_id").String())
+				if callID == "" {
+					return true
 				}
-			default:
-				if child.IsObject() || child.IsArray() {
-					walk(child)
+				if _, ok := coveredCallIDs[callID]; !ok {
+					return true
 				}
 			}
-			return !hit
-		})
+		}
+		// Drop encrypted reasoning blobs that cannot move across accounts.
+		if item.Get("encrypted_content").Exists() || item.Get("encrypted_reasoning").Exists() {
+			return true
+		}
+		clean := item.Value()
+		if m, ok := clean.(map[string]any); ok {
+			delete(m, "encrypted_content")
+			delete(m, "encrypted_reasoning")
+			clean = m
+		}
+		kept = append(kept, clean)
+		return true
+	})
+	if next, err := sjson.SetBytes(out, "input", kept); err == nil {
+		out = next
 	}
-	walk(gjson.ParseBytes(body))
-	return hit
+	return out
 }
 
 func (s *OpenAIGatewayService) CommitCodexConversation(ctx context.Context) error {

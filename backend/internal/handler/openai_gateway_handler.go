@@ -835,8 +835,8 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		attemptBody := h.deriveOpenAIForwardAttemptBody(reqLog, forwardBody, account, &passthroughFailoverState)
 		if previousResponseID != "" && previousResponseCanMove &&
 			(!scheduleDecision.StickyPreviousHit || !account.IsOpenAIApiKey()) {
-			attemptBody = service.RemovePreviousResponseIDFromBody(attemptBody)
-			reqLog.Debug("openai.http_previous_response_id_stripped_full_context",
+			attemptBody = service.SanitizeCodexBodyForCrossAccountRecovery(attemptBody)
+			reqLog.Debug("openai.http_cross_account_body_sanitized",
 				zap.Int64("account_id", account.ID),
 				zap.String("schedule_layer", scheduleDecision.Layer),
 				zap.Bool("sticky_previous_hit", scheduleDecision.StickyPreviousHit),
@@ -3196,14 +3196,14 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		// 故剥离首包里的 previous_response_id，改用首包内 input 重建上下文；带 function_call_output 的
 		// 工具续链无法重建，保持原样。仅作用于首轮首包，后续 turn 的续链由 WS 转发层既有逻辑处理。
 		if previousResponseID != "" && !scheduleDecision.StickyPreviousHit && previousResponseCanMove {
-			wsFirstMessage = service.RemovePreviousResponseIDFromBody(wsFirstMessage)
+			wsFirstMessage = service.SanitizeCodexBodyForCrossAccountRecovery(wsFirstMessage)
 			if requestPlan != nil {
 				if cleared, err := h.prepareCodexRequestPlan(c, wsFirstMessage, sessionHash, "", reqModel, service.CodexTransportWS); err == nil {
 					requestPlan = cleared
 					ctx = service.ContextWithCodexRequestPlan(ctx, requestPlan)
 				}
 			}
-			reqLog.Debug("openai.websocket_previous_response_id_stripped_cross_group",
+			reqLog.Debug("openai.websocket_cross_account_body_sanitized",
 				zap.Int64("account_id", account.ID),
 				zap.String("schedule_layer", scheduleDecision.Layer),
 			)
