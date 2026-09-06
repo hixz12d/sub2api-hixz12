@@ -295,10 +295,16 @@ func (s *OpenAIGatewayService) resolveCodexConversationAttempt(
 // previous_response_id alone no longer blocks recovery when the body can rebuild
 // context without upstream state (full input / covered tool outputs).
 func (s *OpenAIGatewayService) canRecoverUnavailableCodexConversation(ctx context.Context, plan *CodexRequestPlan, current, candidate CodexConversationState, replaySafe bool) bool {
-	if !replaySafe || plan == nil || current.AccountID == candidate.AccountID || s.accountRepo == nil {
+	if !replaySafe || plan == nil || current.AccountID == candidate.AccountID {
 		return false
 	}
-	if !codexPlanHasRecoverableFullContext(plan) {
+	// Client already rebuilt the turn (full input / covered tool outputs). Allow the
+	// selected account to adopt the conversation pin — including after OAuth refresh
+	// failure where the original row may still look Active until quarantine lands.
+	if codexPlanHasRecoverableFullContext(plan) {
+		return true
+	}
+	if s.accountRepo == nil {
 		return false
 	}
 	account, err := s.accountRepo.GetByID(ctx, current.AccountID)

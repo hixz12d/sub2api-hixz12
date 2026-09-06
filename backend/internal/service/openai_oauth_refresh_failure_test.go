@@ -118,10 +118,12 @@ func TestOpenAIRefreshFailurePreservesRetryAndOutputBoundaries(t *testing.T) {
 	for _, tc := range []struct {
 		name                                            string
 		stateful, output, exhausted, provider, canceled bool
+		fullContext                                     bool
 		retry                                           bool
 	}{
 		{name: "replayable", retry: true},
 		{name: "stateful", stateful: true},
+		{name: "stateful_full_context", stateful: true, fullContext: true, retry: true},
 		{name: "output", output: true},
 		{name: "budget_exhausted", exhausted: true},
 		{name: "provider_config", provider: true},
@@ -133,9 +135,23 @@ func TestOpenAIRefreshFailurePreservesRetryAndOutputBoundaries(t *testing.T) {
 			defer cancel()
 			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil).WithContext(ctx)
 			body := []byte(`{"input":"hello"}`)
-			if tc.stateful {
+			prevID := ""
+			op := CodexOperationResponses
+			if tc.stateful && tc.fullContext {
+				body = []byte(`{"previous_response_id":"resp_old","input":"hello"}`)
+				prevID = "resp_old"
+				op = CodexOperationResume
+			} else if tc.stateful {
 				body = []byte(`{"previous_response_id":"resp_old"}`)
+				prevID = "resp_old"
+				op = CodexOperationResume
 			}
+			plan, err := NewCodexRequestPlan(CodexRequestPlanInput{
+				LogicalRequestID: "req", SessionHash: "sess", Body: body,
+				PreviousResponseID: prevID, Operation: op,
+			})
+			require.NoError(t, err)
+			c.Request = c.Request.WithContext(ContextWithCodexRequestPlan(c.Request.Context(), plan))
 			account := &Account{ID: 11, Platform: PlatformOpenAI, Type: AccountTypeOAuth}
 			budget := EnsureOpenAIRetryBudget(c, account, body)
 			require.NoError(t, budget.Reserve(11))

@@ -48,14 +48,14 @@ func TestCodexCommittedConversationRecoversOnlyUnavailableReplayableAccount(t *t
 	}{
 		{name: "disabled", status: StatusError, body: `{"input":"hello"}`, recover: true},
 		{name: "unschedulable", status: StatusActive, body: `{"input":"hello"}`, recover: true},
-		{name: "healthy", status: StatusActive, schedulable: true, body: `{"input":"hello"}`},
+		{name: "healthy_full_context_rebind", status: StatusActive, schedulable: true, body: `{"input":"hello"}`, recover: true},
 		{name: "previous_response_only", status: StatusError, body: `{"previous_response_id":"resp_old"}`},
 		{name: "previous_response_with_full_input", status: StatusError, body: `{"previous_response_id":"resp_old","input":"hello"}`, recover: true},
 		{name: "tool_result", status: StatusError, body: "{\"input\":[{\"type\" :\n \"function_call_output\"}]}"},
 		{name: "encrypted", status: StatusError, body: `{"input":[{"encrypted_content":"secret"}]}`},
 		{name: "turn_state", status: StatusError, body: `{"input":"hello"}`, header: true},
 		{name: "output_started", status: StatusError, body: `{"input":"hello"}`, output: true},
-		{name: "database_failure", status: StatusError, body: `{"input":"hello"}`, repoErr: errors.New("database unavailable")},
+		{name: "database_failure_full_context", status: StatusError, body: `{"input":"hello"}`, repoErr: errors.New("database unavailable"), recover: true},
 		{name: "deleted", body: `{"input":"hello"}`, repoErr: ErrAccountNotFound, recover: true},
 		{name: "same_account_transport_changed", status: StatusError, body: `{"input":"hello"}`, sameAccount: true, recover: true},
 	} {

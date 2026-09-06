@@ -112,7 +112,16 @@ func (s *OpenAIGatewayService) handleOpenAIRefreshFailure(ctx context.Context, c
 		return refreshErr
 	}
 	guard := NewCodexCommitGuard(c).Snapshot()
-	canSwitch := !guard.Stateful && guard.ReplaySafe && !guard.SemanticOutputStarted && !guard.ResponseOwnershipBound
+	// previous_response_id alone is stateful, but Pi/OpenCode often resend the full
+	// conversation input. Those turns can move to another account after OAuth death.
+	fullContextRecoverable := false
+	if c != nil && c.Request != nil {
+		if plan, ok := CodexRequestPlanFromContext(c.Request.Context()); ok {
+			fullContextRecoverable = codexPlanHasRecoverableFullContext(plan)
+		}
+	}
+	canSwitch := !guard.SemanticOutputStarted && !guard.ResponseOwnershipBound &&
+		(fullContextRecoverable || (guard.ReplaySafe && !guard.Stateful))
 	sharedFailure := isSharedProviderRefreshError(refreshErr)
 	canSwitch = canSwitch && !sharedFailure
 	if budget := OpenAIRetryBudgetFromContext(c); budget != nil {
@@ -135,10 +144,11 @@ func (s *OpenAIGatewayService) handleOpenAIRefreshFailure(ctx context.Context, c
 	}
 	if sharedFailure {
 		failure.Scope = GatewayFailureScopeProvider
-	} else if guard.Stateful {
-		failure = codexRecoveryFailure(codexRecoveryRefreshFailed)
 	} else if canSwitch {
 		failure.NextAccountAction = NextAccountRetry
+	} else if guard.Stateful || fullContextRecoverable {
+		// Sticky/stateful turn without a rebuildable body must stay on the original pin.
+		failure = codexRecoveryFailure(codexRecoveryRefreshFailed)
 	}
 	setOpsUpstreamError(c, http.StatusUnauthorized, failure.ClientMessage, "")
 	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
