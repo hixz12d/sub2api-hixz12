@@ -141,10 +141,17 @@ func TestPiDefaultAndCandidateRejections(t *testing.T) {
 	if err != nil || !bytes.Contains(body, []byte(`"verbosity":"medium"`)) {
 		t.Fatalf("missing version-specific default: %s %v", body, err)
 	}
-	for _, input := range []string{`null`, `[]`, `{`, `{"text":null}`, `{"text":"low"}`, `{"client_metadata":{}}`, `{"conversation_id":"foreign"}`, `{"input":[],"input":[1]}`} {
+	for _, input := range []string{`null`, `[]`, `{`, `{"text":null}`, `{"text":"low"}`, `{"input":[],"input":[1]}`} {
 		if _, _, err := b.AdaptResponses(nil, []byte(input), "session"); err == nil {
 			t.Fatalf("accepted %s", input)
 		}
+	}
+	_, stripped, err := b.AdaptResponses(nil, []byte(`{"input":[],"client_metadata":{"keep":"no"},"conversation_id":"foreign"}`), "session")
+	if err != nil {
+		t.Fatalf("codex metadata must be dropped, not rejected: %v", err)
+	}
+	if bytes.Contains(stripped, []byte(`client_metadata`)) || bytes.Contains(stripped, []byte(`conversation_id`)) {
+		t.Fatalf("codex metadata leaked into candidate body: %s", stripped)
 	}
 	for _, session := range []string{"", " ", "a\r\nb", "a\x00b"} {
 		if _, _, err := b.AdaptResponses(nil, []byte(`{}`), session); err == nil {

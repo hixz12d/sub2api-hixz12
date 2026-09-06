@@ -951,6 +951,46 @@ func TestBuildOpenAIWSReplayInputSequence(t *testing.T) {
 		require.Equal(t, "hello", gjson.GetBytes(items[0], "text").String())
 		require.Equal(t, "world", gjson.GetBytes(items[1], "text").String())
 	})
+
+	// HTTP 桥会剥掉 previous_response_id，再把 collector 历史与客户端 store=false 全文拼在一起。
+	// 若客户端已从同一起点重发 [hello, assistant, world]，不得再前置 [hello, assistant]。
+	t.Run("previous_response_id_does_not_double_store_false_full_replay", func(t *testing.T) {
+		previousFull := []json.RawMessage{
+			json.RawMessage(`{"type":"input_text","text":"hello"}`),
+			json.RawMessage(`{"type":"message","role":"assistant","content":"ok"}`),
+		}
+		items, exists, err := buildOpenAIWSReplayInputSequence(
+			previousFull,
+			true,
+			[]byte(`{"previous_response_id":"resp_1","input":[{"type":"input_text","text":"hello"},{"type":"message","role":"assistant","content":"ok"},{"type":"input_text","text":"world"}]}`),
+			true,
+		)
+		require.NoError(t, err)
+		require.True(t, exists)
+		require.Len(t, items, 3)
+		require.Equal(t, "hello", gjson.GetBytes(items[0], "text").String())
+		require.Equal(t, "assistant", gjson.GetBytes(items[1], "role").String())
+		require.Equal(t, "world", gjson.GetBytes(items[2], "text").String())
+	})
+
+	t.Run("previous_response_id_keeps_collector_assistant_when_client_sends_next_user", func(t *testing.T) {
+		previousFull := []json.RawMessage{
+			json.RawMessage(`{"type":"input_text","text":"hello"}`),
+			json.RawMessage(`{"type":"message","role":"assistant","content":"ok"}`),
+		}
+		items, exists, err := buildOpenAIWSReplayInputSequence(
+			previousFull,
+			true,
+			[]byte(`{"previous_response_id":"resp_1","input":[{"type":"input_text","text":"hello"},{"type":"input_text","text":"world"}]}`),
+			true,
+		)
+		require.NoError(t, err)
+		require.True(t, exists)
+		require.Len(t, items, 3)
+		require.Equal(t, "hello", gjson.GetBytes(items[0], "text").String())
+		require.Equal(t, "assistant", gjson.GetBytes(items[1], "role").String())
+		require.Equal(t, "world", gjson.GetBytes(items[2], "text").String())
+	})
 }
 
 func TestOpenAIWSRawPayloadHasToolCallOutput(t *testing.T) {

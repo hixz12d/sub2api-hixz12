@@ -10,7 +10,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -149,12 +148,10 @@ func (b Bundle) AdaptResponses(headers http.Header, body []byte, session string)
 	if err := json.Unmarshal(body, &object); err != nil || object == nil {
 		return nil, nil, errors.New("request body must be an object")
 	}
-	// Refuse Codex-only metadata instead of deleting user data silently.
-	for _, key := range []string{"client_metadata", "conversation_id"} {
-		if _, exists := object[key]; exists {
-			return nil, nil, fmt.Errorf("unsupported candidate body field: %s", key)
-		}
-	}
+	// Pi/OpenCode 线路没有 Codex client_metadata / conversation_id。
+	// Codex 与网关会注入这些字段；在候选体边界丢掉，而不是把整单打成传输错误并轮空账号。
+	delete(object, "client_metadata")
+	delete(object, "conversation_id")
 	if b.Family == "pi" {
 		object["prompt_cache_key"], _ = json.Marshal(session)
 	}

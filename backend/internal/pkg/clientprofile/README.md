@@ -53,8 +53,9 @@ conversation by the integrating caller. It cannot validate that ownership itself
   reasoning, explicit verbosity and continuation IDs.
 - Pi scopes `prompt_cache_key` to the provided session, an explicit gateway
   isolation policy. OpenCode preserves the caller cache key.
-- Rejects `client_metadata` and `conversation_id` instead of silently discarding
-  caller body data. This candidate restriction requires review before activation.
+- Drops `client_metadata` and `conversation_id` at the candidate boundary. Pi/OpenCode
+  do not send those Codex fields; rejecting them treated every Codex request as a
+  transport error and rotated accounts.
 - Does not assert WS/Compact support or impose store/stream policy. Versioned
   runtime profiles currently use native Go HTTP transport; Python uses httpx /
   OpenSSL in the verified path. These are NOT equivalent native TLS fingerprints.

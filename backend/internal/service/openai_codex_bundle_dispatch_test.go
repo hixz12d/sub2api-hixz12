@@ -111,11 +111,11 @@ func TestCodexSharedBundleFinalSender(t *testing.T) {
 			require.True(t, hasCodexRelayAccountExtraUpdate(map[string]any{"enable_tls_fingerprint": true}))
 			require.Error(t, ValidateCodexRelayAccountExtra(account.Platform, account.Type, account.Extra, testCodexRelaySecret))
 			account.Extra["enable_tls_fingerprint"] = false
-			badPlan := *plan
-			badPlan.body = []byte(`{"input":[],"client_metadata":{"keep":"caller-owned"}}`)
-			badReq := req.Clone(ContextWithCodexRequestPlan(req.Context(), &badPlan))
-			_, err = svc.doOpenAIUpstream(badReq, "", account)
-			require.ErrorContains(t, err, "client_metadata")
+			metaPlan := *plan
+			metaPlan.body = []byte(`{"input":[],"client_metadata":{"keep":"caller-owned"}}`)
+			metaReq := req.Clone(ContextWithCodexRequestPlan(req.Context(), &metaPlan))
+			_, err = svc.doOpenAIUpstream(metaReq, "", account)
+			require.NoError(t, err, "Codex client_metadata must be stripped, not treated as a transport failure")
 		})
 	}
 	if output := os.Getenv("HIXZ12_BUNDLE_CAPTURE_OUT"); output != "" {

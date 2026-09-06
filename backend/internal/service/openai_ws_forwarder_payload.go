@@ -712,10 +712,106 @@ func buildOpenAIWSReplayInputSequenceFromItems(
 	if openAIWSRawItemsHasPrefix(currentItems, previousFullInput) {
 		return currentItems, true
 	}
+	if openAIWSRawItemsHasPrefix(previousFullInput, currentItems) {
+		return previousFullInput, true
+	}
+	// HTTP 桥会剥掉 previous_response_id。store=false 客户端常从同一 user 起点重发：
+	// previous=[hello, assistant] + current=[hello, world] 直接 concat 会双份 hello。
+	// 公共前缀之后，若 collector 停在 assistant、客户端续上 user，则保留 assistant；
+	// 若客户端已经带了自己的 assistant/全文，则从分叉点起采用客户端。
+	if shared := openAIWSRawItemsSharedPrefixLen(previousFullInput, currentItems); shared > 0 {
+		prevRest := previousFullInput[shared:]
+		currRest := currentItems[shared:]
+		if len(currRest) == 0 {
+			return previousFullInput, true
+		}
+		if len(prevRest) > 0 && openAIWSReplayItemIsAssistantProduced(prevRest[0]) && openAIWSReplayItemIsClientTurn(currRest[0]) {
+			merged := make([]json.RawMessage, 0, len(previousFullInput)+len(currRest))
+			merged = append(merged, previousFullInput...)
+			merged = append(merged, currRest...)
+			return merged, true
+		}
+		merged := make([]json.RawMessage, 0, shared+len(currRest))
+		merged = append(merged, previousFullInput[:shared]...)
+		merged = append(merged, currRest...)
+		return merged, true
+	}
+	if overlap := openAIWSRawItemsOverlapLen(previousFullInput, currentItems); overlap > 0 {
+		merged := make([]json.RawMessage, 0, len(previousFullInput)+len(currentItems)-overlap)
+		merged = append(merged, previousFullInput...)
+		merged = append(merged, currentItems[overlap:]...)
+		return merged, true
+	}
 	merged := make([]json.RawMessage, 0, len(previousFullInput)+len(currentItems))
 	merged = append(merged, previousFullInput...)
 	merged = append(merged, currentItems...)
 	return merged, true
+}
+
+func openAIWSRawItemEqual(left, right json.RawMessage) bool {
+	if bytes.Equal(bytes.TrimSpace(left), bytes.TrimSpace(right)) {
+		return true
+	}
+	return bytes.Equal(normalizeOpenAIWSJSONForCompareOrRaw(left), normalizeOpenAIWSJSONForCompareOrRaw(right))
+}
+
+func openAIWSReplayItemType(item json.RawMessage) string {
+	return strings.TrimSpace(gjson.GetBytes(item, "type").String())
+}
+
+func openAIWSReplayItemIsAssistantProduced(item json.RawMessage) bool {
+	switch openAIWSReplayItemType(item) {
+	case "message":
+		return strings.EqualFold(strings.TrimSpace(gjson.GetBytes(item, "role").String()), "assistant")
+	case "function_call", "custom_tool_call", "mcp_tool_call", "reasoning", "compaction", "compaction_summary":
+		return true
+	default:
+		return false
+	}
+}
+
+func openAIWSReplayItemIsClientTurn(item json.RawMessage) bool {
+	switch openAIWSReplayItemType(item) {
+	case "input_text", "input_image", "input_file":
+		return true
+	case "message":
+		role := strings.ToLower(strings.TrimSpace(gjson.GetBytes(item, "role").String()))
+		return role == "user" || role == "system" || role == "developer"
+	default:
+		return isCodexToolCallOutputItemType(openAIWSReplayItemType(item))
+	}
+}
+
+func openAIWSRawItemsSharedPrefixLen(previous, current []json.RawMessage) int {
+	n := len(previous)
+	if len(current) < n {
+		n = len(current)
+	}
+	shared := 0
+	for shared < n && openAIWSRawItemEqual(previous[shared], current[shared]) {
+		shared++
+	}
+	return shared
+}
+
+func openAIWSRawItemsOverlapLen(previous, current []json.RawMessage) int {
+	max := len(previous)
+	if len(current) < max {
+		max = len(current)
+	}
+	for k := max; k > 0; k-- {
+		match := true
+		for i := 0; i < k; i++ {
+			if !openAIWSRawItemEqual(previous[len(previous)-k+i], current[i]) {
+				match = false
+				break
+			}
+		}
+		if match {
+			return k
+		}
+	}
+	return 0
 }
 
 func buildOpenAIWSReplayInputSequence(
