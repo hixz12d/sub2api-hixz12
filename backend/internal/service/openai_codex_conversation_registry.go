@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/tidwall/gjson"
 )
 
 var ErrCodexConversationNotFound = errors.New("codex conversation not found")
@@ -199,6 +201,7 @@ func (s *OpenAIGatewayService) resolveCodexConversationAttempt(
 		return nil, err
 	}
 	recoveringCommitted := resolved.Committed
+	didRecover := false
 	for retries := 0; !created; retries++ {
 		if resolved.AccountID == candidate.AccountID {
 			pinnedInput, pinErr := pinCodexInputToConversation(input, resolved)
@@ -226,6 +229,9 @@ func (s *OpenAIGatewayService) resolveCodexConversationAttempt(
 				return nil, codexRecoveryFailure(codexRecoveryRouteChanged)
 			}
 			return nil, codexRecoveryFailure(codexRecoveryAccountMismatch)
+		}
+		if recoveringCommitted && !refreshTransport && resolved.AccountID != candidate.AccountID {
+			didRecover = true
 		}
 		if refreshTransport {
 			proxyIdentity := candidate.ProxyIdentity
@@ -267,7 +273,16 @@ func (s *OpenAIGatewayService) resolveCodexConversationAttempt(
 	}
 	resolvedAttempt := applyCodexConversationState(attempt, resolved)
 	resolvedAttempt.finalHeaders = buildCodexAttemptIdentityHeaders(resolvedAttempt.profile, resolvedAttempt.identity, plan.inboundHeaders)
-	resolvedAttempt.finalHTTPBody, err = applyCodexFingerprintToRawBody(plan.body, resolvedAttempt.identity)
+	body := plan.body
+	if didRecover && plan.previousResponseID != "" {
+		// Full-context recovery rewrote the conversation onto a different account; drop the
+		// stale previous_response_id so the new upstream is not asked for a foreign chain.
+		stripped := RemovePreviousResponseIDFromBody(body)
+		if string(stripped) != string(body) {
+			body = stripped
+		}
+	}
+	resolvedAttempt.finalHTTPBody, err = applyCodexFingerprintToRawBody(body, resolvedAttempt.identity)
 	if err != nil {
 		return nil, err
 	}
@@ -277,12 +292,13 @@ func (s *OpenAIGatewayService) resolveCodexConversationAttempt(
 // Recover only replayable requests whose old account is durably unavailable.
 // The caller CASes the observed revision and account; a concurrent new binding
 // must be revalidated instead of being deleted or overwritten unconditionally.
+// previous_response_id alone no longer blocks recovery when the body can rebuild
+// context without upstream state (full input / covered tool outputs).
 func (s *OpenAIGatewayService) canRecoverUnavailableCodexConversation(ctx context.Context, plan *CodexRequestPlan, current, candidate CodexConversationState, replaySafe bool) bool {
 	if !replaySafe || plan == nil || current.AccountID == candidate.AccountID || s.accountRepo == nil {
 		return false
 	}
-	if plan.previousResponseID != "" || plan.operation == CodexOperationResume ||
-		strings.TrimSpace(plan.inboundHeaders.Get(openAIWSTurnStateHeader)) != "" || openAIRetryRequestIsStateful(plan.body) {
+	if !codexPlanHasRecoverableFullContext(plan) {
 		return false
 	}
 	account, err := s.accountRepo.GetByID(ctx, current.AccountID)
@@ -293,6 +309,82 @@ func (s *OpenAIGatewayService) canRecoverUnavailableCodexConversation(ctx contex
 		return false
 	}
 	return account.Status != StatusActive || !account.Schedulable
+}
+
+// codexPlanHasRecoverableFullContext reports whether the inbound body can rebuild
+// the turn without the original account's upstream conversation state.
+func codexPlanHasRecoverableFullContext(plan *CodexRequestPlan) bool {
+	if plan == nil {
+		return false
+	}
+	if strings.TrimSpace(plan.inboundHeaders.Get(openAIWSTurnStateHeader)) != "" {
+		return false
+	}
+	body := plan.body
+	if len(body) == 0 || !gjson.ValidBytes(body) || !gjson.ParseBytes(body).IsObject() {
+		return false
+	}
+	input := gjson.GetBytes(body, "input")
+	if !input.Exists() {
+		return false
+	}
+	switch {
+	case input.IsArray():
+		if len(input.Array()) == 0 {
+			return false
+		}
+	case input.Type == gjson.String:
+		if strings.TrimSpace(input.String()) == "" {
+			return false
+		}
+	case input.IsObject():
+		if len(input.Map()) == 0 {
+			return false
+		}
+	default:
+		return false
+	}
+	lower := strings.ToLower(string(body))
+	if strings.Contains(lower, "encrypted_content") || strings.Contains(lower, "encrypted_reasoning") {
+		return false
+	}
+	coverage := AnalyzeToolCallOutputContextCoverageBytes(body)
+	if coverage.HasFunctionCallOutput && !coverage.ContextCoversAllCallIDs {
+		return false
+	}
+	if codexBodyHasNonRecoverableHardState(body, coverage) {
+		return false
+	}
+	return true
+}
+
+func codexBodyHasNonRecoverableHardState(body []byte, coverage ToolCallOutputContextCoverage) bool {
+	var hit bool
+	var walk func(gjson.Result)
+	walk = func(value gjson.Result) {
+		value.ForEach(func(key, child gjson.Result) bool {
+			switch key.String() {
+			case "encrypted_content", "encrypted_reasoning":
+				hit = true
+			case "type":
+				switch child.String() {
+				case "tool_search_output", "item_reference", "mcp_approval_response":
+					hit = true
+				default:
+					if strings.HasSuffix(child.String(), "_call_output") && !(coverage.HasFunctionCallOutput && coverage.ContextCoversAllCallIDs) {
+						hit = true
+					}
+				}
+			default:
+				if child.IsObject() || child.IsArray() {
+					walk(child)
+				}
+			}
+			return !hit
+		})
+	}
+	walk(gjson.ParseBytes(body))
+	return hit
 }
 
 func (s *OpenAIGatewayService) CommitCodexConversation(ctx context.Context) error {

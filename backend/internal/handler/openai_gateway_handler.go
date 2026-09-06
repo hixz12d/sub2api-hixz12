@@ -614,8 +614,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 
 	service.PrepareOpenAIRetryBudget(c, body)
 	service.SetOpenAIAttemptRouting(c, sessionHash, previousResponseID, "")
+	httpToolCoverage := service.AnalyzeToolCallOutputContextCoverageBytes(body)
+	previousResponseCanMove := !httpToolCoverage.HasFunctionCallOutput || httpToolCoverage.ContextCoversAllCallIDs
 	maxAccountSwitches := h.maxAccountSwitches
-	if service.OpenAIRetryRequestIsStateful(c, body) {
+	if service.OpenAIRetryRequestIsStateful(c, body) && !previousResponseCanMove {
 		maxAccountSwitches = 0
 	}
 	accountSwitchLimit := maxAccountSwitches
@@ -669,7 +671,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			service.OpenAIUpstreamTransportAny,
 			requiredCapability,
 			requireCompact,
-			false,
+			previousResponseCanMove,
 			!imageIntent,
 			requestPlatform,
 		)
@@ -745,10 +747,10 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 			h.openAISecurityAuditError(c, decision)
 			return
 		}
-		if previousResponseID != "" && requestPlatform == service.PlatformOpenAI && !account.IsOpenAIApiKey() {
-			// The public Responses HTTP API supports previous_response_id on API-key
-			// accounts. OAuth/SetupToken upstreams do not, so keep searching instead
-			// of silently deleting continuation state from a mixed account pool.
+		// OAuth/SetupToken HTTP upstreams do not accept previous_response_id. When the
+		// client already sent recoverable full context, keep the bound OAuth account and
+		// strip previous_response_id below instead of skipping away into a 409 mismatch.
+		if previousResponseID != "" && requestPlatform == service.PlatformOpenAI && !account.IsOpenAIApiKey() && !previousResponseCanMove {
 			failedAccountIDs[account.ID] = struct{}{}
 			if selection.ReleaseFunc != nil {
 				selection.ReleaseFunc()
@@ -831,6 +833,15 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 		// 从不可变的 canonical forwardBody 派生本次尝试 body 并整块剔除上游私有的加密
 		// reasoning item（含耦合的 id/summary），避免非透传上游 400 拒绝 Kiro reasoning 形态。
 		attemptBody := h.deriveOpenAIForwardAttemptBody(reqLog, forwardBody, account, &passthroughFailoverState)
+		if previousResponseID != "" && previousResponseCanMove &&
+			(!scheduleDecision.StickyPreviousHit || !account.IsOpenAIApiKey()) {
+			attemptBody = service.RemovePreviousResponseIDFromBody(attemptBody)
+			reqLog.Debug("openai.http_previous_response_id_stripped_full_context",
+				zap.Int64("account_id", account.ID),
+				zap.String("schedule_layer", scheduleDecision.Layer),
+				zap.Bool("sticky_previous_hit", scheduleDecision.StickyPreviousHit),
+			)
+		}
 		service.ResetOpenAIAttemptWireState(c)
 		result, err := func() (*service.OpenAIForwardResult, error) {
 			defer func() {
@@ -2418,6 +2429,11 @@ func (h *OpenAIGatewayHandler) prepareCodexRequestPlan(
 		return nil, err
 	}
 	c.Request = c.Request.WithContext(service.ContextWithCodexRequestPlan(requestCtx, plan))
+	// Remap onto the response-chain conversation pin before account selection so
+	// continuations stick to the original upstream account after sticky TTL expiry.
+	if attached := h.gatewayService.AttachCodexResponseConversationBinding(c, plan); attached != nil {
+		plan = attached
+	}
 	return plan, nil
 }
 
@@ -3181,6 +3197,12 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		// 工具续链无法重建，保持原样。仅作用于首轮首包，后续 turn 的续链由 WS 转发层既有逻辑处理。
 		if previousResponseID != "" && !scheduleDecision.StickyPreviousHit && previousResponseCanMove {
 			wsFirstMessage = service.RemovePreviousResponseIDFromBody(wsFirstMessage)
+			if requestPlan != nil {
+				if cleared, err := h.prepareCodexRequestPlan(c, wsFirstMessage, sessionHash, "", reqModel, service.CodexTransportWS); err == nil {
+					requestPlan = cleared
+					ctx = service.ContextWithCodexRequestPlan(ctx, requestPlan)
+				}
+			}
 			reqLog.Debug("openai.websocket_previous_response_id_stripped_cross_group",
 				zap.Int64("account_id", account.ID),
 				zap.String("schedule_layer", scheduleDecision.Layer),

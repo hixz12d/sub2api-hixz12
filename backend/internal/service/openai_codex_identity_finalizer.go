@@ -219,7 +219,10 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthIdentity(
 		return nil, err
 	}
 	guard := NewCodexCommitGuard(c).Snapshot()
-	replaySafe := guard.ReplaySafe && !guard.Stateful && !guard.SemanticOutputStarted && !guard.ResponseOwnershipBound
+	// previous_response_id makes the retry budget stateful, but a full-context body can
+	// still recover onto another account when the original pin is unavailable.
+	replaySafe := !guard.SemanticOutputStarted && !guard.ResponseOwnershipBound &&
+		(guard.ReplaySafe && !guard.Stateful || codexPlanHasRecoverableFullContext(plan))
 	state, err = s.resolveCodexConversationAttempt(c.Request.Context(), plan, state, attemptInput, replaySafe)
 	if err != nil {
 		return nil, err

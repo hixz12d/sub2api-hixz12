@@ -519,7 +519,10 @@ func (s *defaultOpenAIAccountScheduler) Select(
 			return nil, decision, affinityErr
 		}
 	}
-	if previousResponseID == "" && normalizeOpenAICompatiblePlatform(req.Platform) == PlatformOpenAI {
+	// Prefer the Codex conversation registry pin even for previous_response_id
+	// continuations. Response-chain bindings are attached before selection; without
+	// this pin sticky TTL expiry falls through to load-balance and later 409s.
+	if normalizeOpenAICompatiblePlatform(req.Platform) == PlatformOpenAI {
 		if conversationAccountID := s.service.boundCodexConversationAccountID(ctx); conversationAccountID > 0 {
 			selection, err := s.selectPinnedCodexConversationAccount(ctx, req, conversationAccountID)
 			if err != nil {
@@ -528,6 +531,9 @@ func (s *defaultOpenAIAccountScheduler) Select(
 			if selection != nil && selection.Account != nil {
 				decision.Layer = openAIAccountScheduleLayerSessionSticky
 				decision.StickySessionHit = true
+				if previousResponseID != "" {
+					decision.StickyPreviousHit = true
+				}
 				decision.SelectedAccountID = selection.Account.ID
 				decision.SelectedAccountType = selection.Account.Type
 				populateOpenAIAccountPriorityDecision(&decision, req, selection.Account)

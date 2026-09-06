@@ -22,6 +22,41 @@ func codexResponseConversationDigest(c *gin.Context, responseID string, deriver 
 	return deriver.DigestHex("codex/conversation-response/v1", scope, strings.TrimSpace(responseID)), nil
 }
 
+// AttachCodexResponseConversationBinding remaps the request plan onto the
+// response-chain conversation digest before account selection. Continuations
+// commit under codex/conversation-response/v1; without this remap the scheduler
+// only sees the session digest and cannot pin the original account.
+func (s *OpenAIGatewayService) AttachCodexResponseConversationBinding(c *gin.Context, plan *CodexRequestPlan) *CodexRequestPlan {
+	if s == nil || c == nil || c.Request == nil || plan == nil || strings.TrimSpace(plan.previousResponseID) == "" {
+		return plan
+	}
+	secret := ResolveCodexIdentityDerivationSecret(s.cfg)
+	if strings.TrimSpace(secret) == "" {
+		return plan
+	}
+	deriver, err := NewCodexIdentityDeriver(secret)
+	if err != nil {
+		return plan
+	}
+	digest, err := codexResponseConversationDigest(c, plan.previousResponseID, deriver)
+	if err != nil {
+		return plan
+	}
+	registry, ok := s.codexConversationRegistry()
+	if !ok {
+		return plan
+	}
+	state, err := registry.GetCodexConversation(c.Request.Context(), digest)
+	if err != nil || state.AccountID <= 0 {
+		return plan
+	}
+	clone := *plan
+	clone.conversationDigest = digest
+	clone.requireExistingConversation = true
+	c.Request = c.Request.WithContext(ContextWithCodexRequestPlan(c.Request.Context(), &clone))
+	return &clone
+}
+
 func (s *OpenAIGatewayService) resolveCodexResponseConversationPlan(c *gin.Context, plan *CodexRequestPlan, policy string, deriver *CodexIdentityDeriver, account *Account) (*CodexRequestPlan, bool, error) {
 	if plan == nil || plan.previousResponseID == "" {
 		return plan, false, nil
