@@ -37,12 +37,13 @@ type ChannelMonitorV2PlatformConfig struct {
 }
 
 type ChannelMonitorV2Config struct {
-	Version                int                              `json:"version"`
-	Enabled                bool                             `json:"enabled"`
-	RefreshIntervalSeconds int                              `json:"refresh_interval_seconds"`
-	Platforms              []ChannelMonitorV2PlatformConfig `json:"platforms"`
-	GroupIDs               []int64                          `json:"group_ids"`
-	HealthThresholds       ChannelMonitorV2HealthThresholds `json:"health_thresholds"`
+	StatusCardSettings     ChannelMonitorV2StatusCardSettings `json:"status_card_settings"`
+	Version                int                                `json:"version"`
+	Enabled                bool                               `json:"enabled"`
+	RefreshIntervalSeconds int                                `json:"refresh_interval_seconds"`
+	Platforms              []ChannelMonitorV2PlatformConfig   `json:"platforms"`
+	GroupIDs               []int64                            `json:"group_ids"`
+	HealthThresholds       ChannelMonitorV2HealthThresholds   `json:"health_thresholds"`
 	// IgnoredErrorCategories are excluded from error_rate / health scoring.
 	// They still appear in the error breakdown with ignored=true (greyed in UI).
 	// Unknown categories always roll into "other" via the taxonomy classifier.
@@ -88,26 +89,49 @@ type ChannelMonitorV2Filter struct {
 	Bucket          time.Duration
 }
 
+type ChannelMonitorV2Measurement struct {
+	State               string `json:"state"`
+	HasRequests         bool   `json:"has_requests"`
+	HasTTFT             bool   `json:"has_ttft"`
+	HasDuration         bool   `json:"has_duration"`
+	HasCacheMeasurement bool   `json:"has_cache_measurement"`
+}
+
+func ChannelMonitorV2MetricEvidence(m ChannelMonitorV2Metric, minimumSample int64) ChannelMonitorV2Measurement {
+	if minimumSample <= 0 {
+		minimumSample = DefaultChannelMonitorV2HealthThresholds().MinimumSample
+	}
+	e := ChannelMonitorV2Measurement{State: "no_data", HasRequests: m.RequestCount > 0, HasTTFT: m.TTFT.SampleCount > 0, HasDuration: m.Duration.SampleCount > 0, HasCacheMeasurement: m.CacheRateDenominator > 0}
+	if e.HasRequests {
+		e.State = "valid"
+		if m.RequestCount < minimumSample {
+			e.State = "low_sample"
+		}
+	}
+	return e
+}
+
 type ChannelMonitorV2Metric struct {
-	SuccessRequests          int64                   `json:"success_requests"`
-	ErrorRequests            int64                   `json:"error_requests"`
-	RequestCount             int64                   `json:"request_count"`
-	InputTokens              int64                   `json:"input_tokens"`
-	OutputTokens             int64                   `json:"output_tokens"`
-	CacheCreationTokens      int64                   `json:"cache_creation_tokens"`
-	CacheReadTokens          int64                   `json:"cache_read_tokens"`
-	TokenCount               int64                   `json:"token_count"`
-	RPM                      float64                 `json:"rpm"`
-	TPM                      float64                 `json:"tpm"`
-	ErrorRate                float64                 `json:"error_rate"`
-	SuccessRate              float64                 `json:"success_rate"`
-	CacheRate                float64                 `json:"cache_rate"`
-	CacheRateNumerator       int64                   `json:"cache_rate_numerator"`
-	CacheRateDenominator     int64                   `json:"cache_rate_denominator"`
-	TTFT                     ChannelMonitorV2Latency `json:"ttft"`
-	Duration                 ChannelMonitorV2Latency `json:"duration"`
-	UpstreamAffectedRequests *int64                  `json:"upstream_affected_requests,omitempty"`
-	UpstreamAttemptCount     *int64                  `json:"upstream_attempt_count,omitempty"`
+	Measurement              ChannelMonitorV2Measurement `json:"measurement"`
+	SuccessRequests          int64                       `json:"success_requests"`
+	ErrorRequests            int64                       `json:"error_requests"`
+	RequestCount             int64                       `json:"request_count"`
+	InputTokens              int64                       `json:"input_tokens"`
+	OutputTokens             int64                       `json:"output_tokens"`
+	CacheCreationTokens      int64                       `json:"cache_creation_tokens"`
+	CacheReadTokens          int64                       `json:"cache_read_tokens"`
+	TokenCount               int64                       `json:"token_count"`
+	RPM                      float64                     `json:"rpm"`
+	TPM                      float64                     `json:"tpm"`
+	ErrorRate                float64                     `json:"error_rate"`
+	SuccessRate              float64                     `json:"success_rate"`
+	CacheRate                float64                     `json:"cache_rate"`
+	CacheRateNumerator       int64                       `json:"cache_rate_numerator"`
+	CacheRateDenominator     int64                       `json:"cache_rate_denominator"`
+	TTFT                     ChannelMonitorV2Latency     `json:"ttft"`
+	Duration                 ChannelMonitorV2Latency     `json:"duration"`
+	UpstreamAffectedRequests *int64                      `json:"upstream_affected_requests,omitempty"`
+	UpstreamAttemptCount     *int64                      `json:"upstream_attempt_count,omitempty"`
 }
 
 type ChannelMonitorV2Latency struct {
@@ -481,6 +505,13 @@ func (s *ChannelMonitorV2Service) Snapshot(ctx context.Context, filter ChannelMo
 	if err != nil {
 		return nil, err
 	}
+	if snap != nil {
+		snap.Metrics.Measurement = ChannelMonitorV2MetricEvidence(snap.Metrics, cfg.HealthThresholds.MinimumSample)
+		for i := range snap.Trend {
+			m := &snap.Trend[i].Metrics
+			m.Measurement = ChannelMonitorV2MetricEvidence(*m, cfg.HealthThresholds.MinimumSample)
+		}
+	}
 	if !admin && snap != nil {
 		redactChannelMonitorV2Snapshot(snap, s.hideThroughputForViewer(ctx, admin))
 	}
@@ -495,6 +526,12 @@ func (s *ChannelMonitorV2Service) Models(ctx context.Context, filter ChannelMoni
 	list, err := s.repo.GetModels(ctx, filter, *cfg, admin)
 	if err != nil {
 		return nil, err
+	}
+	if list != nil {
+		for i := range list.Items {
+			m := &list.Items[i].Metrics
+			m.Measurement = ChannelMonitorV2MetricEvidence(*m, cfg.HealthThresholds.MinimumSample)
+		}
 	}
 	if !admin && list != nil {
 		hideTP := s.hideThroughputForViewer(ctx, admin)
@@ -516,6 +553,16 @@ func (s *ChannelMonitorV2Service) Matrix(ctx context.Context, filter ChannelMoni
 	matrix, err := s.repo.GetMatrix(ctx, filter, *cfg, groupBy, admin)
 	if err != nil {
 		return nil, err
+	}
+	if matrix != nil {
+		for i := range matrix.Items {
+			row := &matrix.Items[i]
+			row.Metrics.Measurement = ChannelMonitorV2MetricEvidence(row.Metrics, cfg.HealthThresholds.MinimumSample)
+			for j := range row.Buckets {
+				m := &row.Buckets[j].Metrics
+				m.Measurement = ChannelMonitorV2MetricEvidence(*m, cfg.HealthThresholds.MinimumSample)
+			}
+		}
 	}
 	if !admin && matrix != nil {
 		hideTP := s.hideThroughputForViewer(ctx, admin)
@@ -683,6 +730,10 @@ func (s *ChannelMonitorV2Service) Users(ctx context.Context, filter ChannelMonit
 		selfIndex = len(result.Items) - 1
 	}
 	result.Items = channelMonitorV2TopUsersWithSelf(result.Items, selfIndex, 10)
+	for i := range result.Items {
+		m := &result.Items[i].Metrics
+		m.Measurement = ChannelMonitorV2MetricEvidence(*m, cfg.HealthThresholds.MinimumSample)
+	}
 	hideTP := s.hideThroughputForViewer(ctx, admin)
 	if admin {
 		// Keep identity for admin; still mark self for UI highlight.
@@ -733,6 +784,9 @@ func channelMonitorV2TopUsersWithSelf(items []ChannelMonitorV2UserRow, selfIndex
 }
 
 func normalizeChannelMonitorV2Config(cfg *ChannelMonitorV2Config) error {
+	if err := cfg.StatusCardSettings.Validate(); err != nil {
+		return err
+	}
 	if cfg.RefreshIntervalSeconds == 0 {
 		cfg.RefreshIntervalSeconds = 300
 	}

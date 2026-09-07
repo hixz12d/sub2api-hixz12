@@ -23,7 +23,7 @@ const (
 	channelMonitorV2RetentionMetrics1m   = 7 * 24 * time.Hour
 	channelMonitorV2RetentionError1m     = 7 * 24 * time.Hour
 	channelMonitorV2RetentionHistogram1m = 7 * 24 * time.Hour
-	channelMonitorV2RetentionRollup5m    = 7 * 24 * time.Hour  // bucket_seconds=300
+	channelMonitorV2RetentionRollup5m    = 8 * 24 * time.Hour  // bucket_seconds=300
 	channelMonitorV2RetentionRollup1h    = 30 * 24 * time.Hour // 3600
 	channelMonitorV2RetentionRollup12h   = 45 * 24 * time.Hour // 43200
 	channelMonitorV2RetentionRollup1d    = 90 * 24 * time.Hour // 86400

@@ -33,7 +33,18 @@ export interface LatencyMetric {
   avg_ms: number | null
 }
 
+export interface MetricEvidence {
+  state: 'valid' | 'low_sample' | 'no_data'
+  has_requests: boolean
+  has_ttft: boolean
+  has_duration: boolean
+  has_cache_measurement: boolean
+}
+
 export interface MonitorMetric {
+  success_rate: number
+  /** Optional during rolling upgrades; absent evidence must not imply success. */
+  measurement?: MetricEvidence
   success_requests: number
   error_requests: number
   request_count: number
@@ -98,7 +109,13 @@ export interface MonitorCoverage {
   bootstrap?: MonitorBootstrap | null
 }
 
+export interface MonitorStatusCardSettings {
+  ttft_p90_warning_ms: number | null
+  ttft_p90_critical_ms: number | null
+}
+
 export interface MonitorConfig {
+  status_card_settings?: MonitorStatusCardSettings
   version: number
   enabled: boolean
   refresh_interval_seconds: 60 | 300
@@ -206,6 +223,65 @@ export interface MonitorUserRow {
   is_self: boolean
   can_drilldown: boolean
   metrics: MonitorMetric
+}
+
+export type MonitorRequestState = 'normal' | 'partial_failure' | 'many_failures' | 'low_sample' | 'no_data'
+
+export interface MonitorCardWindow {
+  success_rate: number | null
+  ttft_p50_ms: number | null
+  ttft_p90_ms: number | null
+  duration_p50_ms: number | null
+  cache_read_ratio: number | null
+  evidence: MetricEvidence
+  covered_start: string | null
+  covered_end: string | null
+  coverage_complete: boolean
+}
+
+export interface MonitorStatusCard {
+  identity: { platform: string; group_id: number; model: string }
+  display: { platform_label: string; group_label: string; model_label: string }
+  source: 'real_traffic'
+  current: {
+    request_state: MonitorRequestState
+    performance_state: 'normal' | 'slow' | 'very_slow' | 'not_configured' | 'unknown'
+    window_seconds: number
+  }
+  windows: { h24: MonitorCardWindow; d7: MonitorCardWindow }
+  timeline: Array<{ start: string; end: string; success_rate: number | null; ttft_p90_ms: number | null; state: MonitorRequestState }>
+  capability: null
+}
+
+export interface MonitorCardsResponse {
+  items: MonitorStatusCard[]
+  page: number
+  page_size: number
+  has_more: boolean
+  server_now: string
+  as_of: string | null
+  computed_at: string | null
+  coverage_start: string | null
+  aggregation_lag_seconds: number | null
+  coverage_complete: boolean
+  stale: boolean
+}
+
+export interface MonitorCardsPage {
+  page?: number
+  page_size?: number
+  as_of?: string
+}
+
+export async function getCards(filter: MonitorFilter, page: MonitorCardsPage = {}, admin = false, signal?: AbortSignal) {
+  const { data } = await apiClient.get<MonitorCardsResponse>(`${base(admin)}/cards`, requestConfig(filter, signal, { ...page }))
+  return data
+}
+
+export async function getCardDetail(identity: MonitorStatusCard['identity'], asOf?: string, admin = false, signal?: AbortSignal) {
+  const filter: MonitorFilter = { range: '24h', platforms: [identity.platform], groupIds: [identity.group_id], models: [identity.model] }
+  const { data } = await apiClient.get<MonitorCardsResponse>(`${base(admin)}/cards/detail`, requestConfig(filter, signal, { as_of: asOf }))
+  return data
 }
 
 function params(filter: MonitorFilter) {

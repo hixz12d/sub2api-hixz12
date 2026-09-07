@@ -1,10 +1,23 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { apiClient } from '../client'
-import { getMatrix, repeatedArrayParamsSerializer } from '../channelMonitorV2'
+import { getCards, getCardDetail, getMatrix, repeatedArrayParamsSerializer } from '../channelMonitorV2'
 
 afterEach(() => vi.restoreAllMocks())
 
 describe('channel monitor V2 query serialization', () => {
+  it('keeps cards pagination, as_of and cancellation on the correct route', async () => {
+    const get = vi.spyOn(apiClient, 'get').mockResolvedValue({ data: { items: [] } })
+    const controller = new AbortController()
+    const asOf = '2026-08-08T12:05:00Z'
+    await getCards({ range: '7d', platforms: ['openai'], groupIds: [7], models: ['model'] }, { page: 2, page_size: 20, as_of: asOf }, false, controller.signal)
+    expect(get).toHaveBeenLastCalledWith('/channel-monitor-v2/cards', expect.objectContaining({
+      signal: controller.signal,
+      params: expect.objectContaining({ platform: ['openai'], group_id: [7], model: ['model'], page: 2, page_size: 20, as_of: asOf }),
+    }))
+    await getCardDetail({ platform: 'openai', group_id: 7, model: 'model' }, asOf, true, controller.signal)
+    expect(get).toHaveBeenLastCalledWith('/admin/channel-monitor-v2/cards/detail', expect.objectContaining({ signal: controller.signal, params: expect.objectContaining({ as_of: asOf }) }))
+  })
+
   it('uses repeated keys without bracket suffixes for array filters', () => {
     const query = repeatedArrayParamsSerializer({
       range: '90m',

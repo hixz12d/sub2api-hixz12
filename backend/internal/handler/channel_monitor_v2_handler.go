@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
@@ -43,8 +44,8 @@ func (h *ChannelMonitorV2Handler) GetConfig(c *gin.Context) {
 }
 
 func (h *ChannelMonitorV2Handler) UpdateConfig(c *gin.Context) {
-	var input service.ChannelMonitorV2Config
-	if err := c.ShouldBindJSON(&input); err != nil {
+	var payload map[string]json.RawMessage
+	if err := c.ShouldBindJSON(&payload); err != nil {
 		response.BadRequest(c, "invalid channel monitor v2 config")
 		return
 	}
@@ -52,6 +53,25 @@ func (h *ChannelMonitorV2Handler) UpdateConfig(c *gin.Context) {
 	if !ok || subject.UserID <= 0 {
 		response.Unauthorized(c, "user not found in context")
 		return
+	}
+	var input service.ChannelMonitorV2Config
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		response.BadRequest(c, "invalid channel monitor v2 config")
+		return
+	}
+	if err := json.Unmarshal(raw, &input); err != nil {
+		response.BadRequest(c, "invalid channel monitor v2 config")
+		return
+	}
+	// An older client cannot express new settings; omission must preserve them.
+	if _, present := payload["status_card_settings"]; !present {
+		current, err := h.service.GetConfig(c.Request.Context())
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		input.StatusCardSettings = current.StatusCardSettings
 	}
 	updated, err := h.service.UpdateConfig(c.Request.Context(), input, input.Version, subject.UserID)
 	if err != nil {

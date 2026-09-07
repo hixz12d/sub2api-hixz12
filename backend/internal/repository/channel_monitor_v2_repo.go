@@ -21,17 +21,17 @@ func NewChannelMonitorV2Repository(db *sql.DB) service.ChannelMonitorV2Repositor
 
 func (r *channelMonitorV2Repository) GetConfig(ctx context.Context) (*service.ChannelMonitorV2Config, error) {
 	var cfg service.ChannelMonitorV2Config
-	var platforms, thresholds []byte
+	var platforms, thresholds, cards []byte
 	err := r.db.QueryRowContext(ctx, `
 		SELECT version, enabled, refresh_interval_seconds, platforms, group_ids,
 		       COALESCE(ignored_error_categories, '{}'),
 		       COALESCE(health_thresholds, '{}'::jsonb),
-		       updated_at, updated_by
+		       updated_at, updated_by, status_card_settings
 		FROM channel_monitor_v2_config WHERE id = 1`).Scan(
 		&cfg.Version, &cfg.Enabled, &cfg.RefreshIntervalSeconds, &platforms,
 		pq.Array(&cfg.GroupIDs), pq.Array(&cfg.IgnoredErrorCategories),
 		&thresholds,
-		&cfg.UpdatedAt, &cfg.UpdatedBy,
+		&cfg.UpdatedAt, &cfg.UpdatedBy, &cards,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("get channel monitor v2 config: %w", err)
@@ -47,6 +47,12 @@ func (r *channelMonitorV2Repository) GetConfig(ctx context.Context) (*service.Ch
 		_ = json.Unmarshal(thresholds, &cfg.HealthThresholds)
 	}
 	cfg.HealthThresholds = service.NormalizeChannelMonitorV2HealthThresholds(cfg.HealthThresholds)
+	if err := json.Unmarshal(cards, &cfg.StatusCardSettings); err != nil {
+		return nil, fmt.Errorf("decode status card settings: %w", err)
+	}
+	if err := cfg.StatusCardSettings.Validate(); err != nil {
+		return nil, err
+	}
 	return &cfg, nil
 }
 
@@ -63,24 +69,28 @@ func (r *channelMonitorV2Repository) UpdateConfig(ctx context.Context, cfg servi
 	if err != nil {
 		return nil, err
 	}
+	cards, err := json.Marshal(cfg.StatusCardSettings)
+	if err != nil {
+		return nil, err
+	}
 	var updated service.ChannelMonitorV2Config
-	var raw, rawThresholds []byte
+	var raw, rawThresholds, rawCards []byte
 	err = r.db.QueryRowContext(ctx, `
 		UPDATE channel_monitor_v2_config
 		SET version = version + 1, enabled = $1, refresh_interval_seconds = $2,
 		    platforms = $3, group_ids = $4, ignored_error_categories = $5,
-		    health_thresholds = $6, updated_by = $7, updated_at = NOW()
+		    health_thresholds = $6, updated_by = $7, updated_at = NOW(), status_card_settings = $9
 		WHERE id = 1 AND version = $8
 		RETURNING version, enabled, refresh_interval_seconds, platforms, group_ids,
 		          COALESCE(ignored_error_categories, '{}'),
 		          COALESCE(health_thresholds, '{}'::jsonb),
-		          updated_at, updated_by`,
+		          updated_at, updated_by, status_card_settings`,
 		cfg.Enabled, cfg.RefreshIntervalSeconds, platforms, pq.Array(cfg.GroupIDs),
-		pq.Array(cfg.IgnoredErrorCategories), thresholds, cfg.UpdatedBy, expectedVersion,
+		pq.Array(cfg.IgnoredErrorCategories), thresholds, cfg.UpdatedBy, expectedVersion, cards,
 	).Scan(&updated.Version, &updated.Enabled, &updated.RefreshIntervalSeconds, &raw,
 		pq.Array(&updated.GroupIDs), pq.Array(&updated.IgnoredErrorCategories),
 		&rawThresholds,
-		&updated.UpdatedAt, &updated.UpdatedBy)
+		&updated.UpdatedAt, &updated.UpdatedBy, &rawCards)
 	if err == sql.ErrNoRows {
 		return nil, service.ErrChannelMonitorV2ConfigConflict
 	}
@@ -96,6 +106,9 @@ func (r *channelMonitorV2Repository) UpdateConfig(ctx context.Context, cfg servi
 	updated.HealthThresholds = service.DefaultChannelMonitorV2HealthThresholds()
 	_ = json.Unmarshal(rawThresholds, &updated.HealthThresholds)
 	updated.HealthThresholds = service.NormalizeChannelMonitorV2HealthThresholds(updated.HealthThresholds)
+	if err := json.Unmarshal(rawCards, &updated.StatusCardSettings); err != nil {
+		return nil, err
+	}
 	return &updated, nil
 }
 

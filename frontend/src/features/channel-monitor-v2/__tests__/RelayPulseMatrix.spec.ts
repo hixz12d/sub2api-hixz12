@@ -65,6 +65,7 @@ const health: MonitorHealth = {
 function metrics(requestCount: number): MonitorMetric {
   return {
     success_requests: requestCount ? requestCount - 1 : 0,
+    success_rate: requestCount ? (requestCount - 1) / requestCount : 0,
     error_requests: requestCount ? 1 : 0,
     request_count: requestCount,
     token_count: 100,
@@ -82,6 +83,21 @@ function metrics(requestCount: number): MonitorMetric {
 }
 
 describe('RelayPulseMatrix', () => {
+  it('shows observed success with redacted volume and ignored errors', () => {
+    const metric = {
+      ...metrics(0), rpm: 0, tpm: 0, success_rate: .9, error_rate: .05,
+      measurement: { state: 'valid' as const, has_requests: true, has_ttft: true, has_duration: true, has_cache_measurement: false },
+    }
+    const wrapper = mount(RelayPulseMatrix, { props: {
+      rows: [{ platform: 'openai', model: 'model', metrics: metric, health, buckets: [{ bucket_start: '2026-08-01T00:00:00Z', metrics: metric, health }] }],
+      coverage: { requested_start: '2026-08-01T00:00:00Z', data_through: '2026-08-01T00:05:00Z', coverage_start: '2026-08-01T00:00:00Z', computed_at: '2026-08-01T00:05:00Z', aggregation_lag_seconds: 0, coverage_complete: true, bucket_seconds: 300 },
+      healthMode: 'overall', showThroughput: false,
+    } })
+    expect(wrapper.text()).toContain('90.0%')
+    expect(wrapper.text()).not.toContain('95.0%')
+    expect(wrapper.find('.pulse-cell').text()).toContain('缓存率 -')
+  })
+
   it('shows privacy-safe hover tooltips and multi-band colors without click modal', async () => {
     const wrapper = mount(RelayPulseMatrix, {
       props: {

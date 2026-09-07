@@ -237,6 +237,20 @@
         </div>
       </div>
 
+      <section class="border-t border-gray-200 px-5 py-4 dark:border-dark-700">
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">{{ t('channelMonitorV2.settings.cardThresholds') }}</h3>
+        <div class="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <label class="block">
+            <span class="input-label">{{ t('channelMonitorV2.settings.cardWarning') }}</span>
+            <input class="input" type="number" min="1" step="100" :value="draft.status_card_settings?.ttft_p90_warning_ms" :placeholder="t('channelMonitorV2.settings.notConfigured')" @input="setCardThreshold('ttft_p90_warning_ms', $event)" />
+          </label>
+          <label class="block">
+            <span class="input-label">{{ t('channelMonitorV2.settings.cardCritical') }}</span>
+            <input class="input" type="number" min="1" step="100" :value="draft.status_card_settings?.ttft_p90_critical_ms" :placeholder="t('channelMonitorV2.settings.notConfigured')" @input="setCardThreshold('ttft_p90_critical_ms', $event)" />
+          </label>
+        </div>
+      </section>
+
       <div class="space-y-2">
         <div class="rounded-2xl border border-primary-200 bg-primary-50/80 px-4 py-3 text-sm text-primary-900 dark:border-primary-800/50 dark:bg-primary-900/20 dark:text-primary-100">
           <template v-if="namedModelCount === 0">
@@ -392,10 +406,18 @@ function platformLabel(value: string) {
   )[value] || value
 }
 
+function setCardThreshold(key: 'ttft_p90_warning_ms' | 'ttft_p90_critical_ms', event: Event) {
+  if (!draft.value) return
+  draft.value.status_card_settings ??= { ttft_p90_warning_ms: null, ttft_p90_critical_ms: null }
+  const input = event.target as HTMLInputElement
+  draft.value.status_card_settings[key] = input.value === '' ? null : input.valueAsNumber
+}
+
 function normalizeConfig(value: MonitorConfig): MonitorConfig {
   const ignored = value.ignored_error_categories
   return {
     ...value,
+    status_card_settings: value.status_card_settings ?? { ttft_p90_warning_ms: null, ttft_p90_critical_ms: null },
     health_thresholds: { ...defaultThresholds, ...(value.health_thresholds || {}) },
     // Preserve explicit empty arrays from the server (operator cleared all).
     ignored_error_categories: [
@@ -421,6 +443,13 @@ async function load() {
 
 async function save() {
   if (!draft.value) return
+  const settings = draft.value.status_card_settings
+  const warning = settings?.ttft_p90_warning_ms ?? null
+  const critical = settings?.ttft_p90_critical_ms ?? null
+  if ((warning !== null || critical !== null) && (warning === null || critical === null || !Number.isSafeInteger(warning) || !Number.isSafeInteger(critical) || warning <= 0 || warning >= critical)) {
+    appStore.showError(t('channelMonitorV2.settings.cardThresholdsInvalid'))
+    return
+  }
   saving.value = true
   try {
     const payload = normalizeConfig(draft.value)

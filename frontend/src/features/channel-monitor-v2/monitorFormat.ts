@@ -6,7 +6,7 @@
  * request/error/token counts in user-facing surfaces.
  */
 
-import type { HealthScoreBand, MonitorHealth } from '@/api/channelMonitorV2'
+import type { HealthScoreBand, MonitorHealth, MonitorMetric } from '@/api/channelMonitorV2'
 import { formatCompactNumber } from '@/utils/format'
 
 export function monitorIntlLocale(): string {
@@ -73,8 +73,19 @@ export function formatMonitorSuccessRate(successRequests: number, requestCount: 
   return formatMonitorPercent(successRequests / requestCount)
 }
 
-export function formatMonitorSuccessRateFromError(errorRate: number): string {
-  return formatMonitorPercent(1 - (errorRate || 0))
+function formatMeasuredRatio(value: number | null | undefined, measured: boolean): string {
+  if (!measured || value == null || !Number.isFinite(value) || value < 0 || value > 1) return '-'
+  return formatMonitorPercent(value)
+}
+
+export function formatMonitorObservedSuccessRate(metrics: Partial<MonitorMetric>): string {
+  const measured = metrics.measurement?.has_requests ?? ((metrics.request_count ?? 0) > 0)
+  return formatMeasuredRatio(metrics.success_rate, measured)
+}
+
+export function formatMonitorCacheReadRatio(metrics: Partial<MonitorMetric>): string {
+  const measured = metrics.measurement?.has_cache_measurement ?? ((metrics.cache_rate_denominator ?? 0) > 0)
+  return formatMeasuredRatio(metrics.cache_rate, measured)
 }
 
 /**
