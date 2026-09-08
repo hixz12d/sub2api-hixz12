@@ -661,6 +661,7 @@ func (s *OpenAIGatewayService) handleAnthropicBufferedStreamingResponse(
 	}
 	if strings.TrimSpace(finalResponse.Status) == "completed" {
 		logOpenAISuccessMissingUsage(c.Request.Context(), c, account, resp, &usage, "response.completed", false)
+		s.recordOpenAIHTTP2StreamSuccess(resp, "response.completed")
 	}
 
 	// When the terminal event has an empty output array, reconstruct from
@@ -1139,13 +1140,13 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			if errText := strings.TrimSpace(scanErr.Error()); errText != "" {
 				msg += ": " + errText
 			}
-			s.recordOpenAIHTTP2StreamFailure(ctx, scanErr)
+			s.recordOpenAIHTTP2StreamFailure(ctx, resp, scanErr)
 			return resultWithUsage(), newPreOutputFailoverError(nil, msg, classifyOpenAIStreamScanCause(scanErr))
 		}
 		if clientDisconnected {
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete after disconnect: %w", scanErr)
 		}
-		s.recordOpenAIHTTP2StreamFailure(ctx, scanErr)
+		s.recordOpenAIHTTP2StreamFailure(ctx, resp, scanErr)
 		return resultWithUsage(), fmt.Errorf("stream usage incomplete: %w", scanErr)
 	}
 
@@ -1346,6 +1347,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			}
 		}
 		logOpenAISuccessMissingUsage(c.Request.Context(), c, account, resp, &usage, terminalEventType, clientDisconnected)
+		s.recordOpenAIHTTP2StreamSuccess(resp, terminalEventType)
 		return resultWithUsage(), nil
 	}
 
@@ -1358,10 +1360,10 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		message := "OpenAI messages stream ended before a terminal event"
 		streamErr := errors.New("stream ended before terminal event")
 		if !openAIStreamClientOutputStarted(c, clientOutputStarted, attemptWriterSizeBefore, downstreamKeepaliveBytes) {
-			s.recordOpenAIHTTP2StreamFailure(ctx, streamErr)
+			s.recordOpenAIHTTP2StreamFailure(ctx, resp, streamErr)
 			return result, newPreOutputFailoverError(nil, message, OpenAIFailureCauseMissingTerminal)
 		}
-		s.recordOpenAIHTTP2StreamFailure(ctx, streamErr)
+		s.recordOpenAIHTTP2StreamFailure(ctx, resp, streamErr)
 		s.recordOpenAIMessagesStreamUpstreamError(c, account, requestID, "stream_missing_terminal", message)
 		return result, fmt.Errorf("stream usage incomplete: missing terminal event")
 	}
@@ -1519,10 +1521,10 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			)
 			streamErr := fmt.Errorf("stream data interval timeout")
 			if !openAIStreamClientOutputStarted(c, clientOutputStarted, attemptWriterSizeBefore, downstreamKeepaliveBytes) {
-				s.recordOpenAIHTTP2StreamFailure(ctx, streamErr)
+				s.recordOpenAIHTTP2StreamFailure(ctx, resp, streamErr)
 				return resultWithUsage(), newPreOutputFailoverError(nil, streamErr.Error(), OpenAIFailureCauseIntervalTimeout)
 			}
-			s.recordOpenAIHTTP2StreamFailure(ctx, streamErr)
+			s.recordOpenAIHTTP2StreamFailure(ctx, resp, streamErr)
 			return resultWithUsage(), streamErr
 
 		case <-keepaliveCh:

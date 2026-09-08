@@ -443,6 +443,34 @@ func (c *stdTLSConn) ConnectionState() tls.ConnectionState {
 func newUTLSClient(conn net.Conn, host string, profile *Profile) (*utls.UConn, error) {
 	cfg := &utls.Config{ServerName: host}
 	if profile.UsesChromeAuto() {
+		if len(profile.ALPNProtocols) > 0 {
+			spec, err := utls.UTLSIdToSpec(utls.HelloChrome_Auto)
+			if err != nil {
+				return nil, fmt.Errorf("build Chrome TLS preset: %w", err)
+			}
+			offersH2 := false
+			for _, protocol := range profile.ALPNProtocols {
+				offersH2 = offersH2 || protocol == "h2"
+			}
+			extensions := spec.Extensions[:0]
+			for _, extension := range spec.Extensions {
+				switch ext := extension.(type) {
+				case *utls.ALPNExtension:
+					ext.AlpnProtocols = append([]string(nil), profile.ALPNProtocols...)
+				case *utls.ApplicationSettingsExtension, *utls.ApplicationSettingsExtensionNew:
+					if !offersH2 {
+						continue
+					}
+				}
+				extensions = append(extensions, extension)
+			}
+			spec.Extensions = extensions
+			tlsConn := utls.UClient(conn, cfg, utls.HelloCustom)
+			if err := tlsConn.ApplyPreset(&spec); err != nil {
+				return nil, fmt.Errorf("apply Chrome ALPN override: %w", err)
+			}
+			return tlsConn, nil
+		}
 		return utls.UClient(conn, cfg, utls.HelloChrome_Auto), nil
 	}
 	tlsConn := utls.UClient(conn, cfg, utls.HelloCustom)

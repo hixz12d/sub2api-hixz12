@@ -375,17 +375,18 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		}
 		if sawTerminalEvent && !sawFailedEvent {
 			s.clearOpenAIProxyStreamDisconnect(account)
+			s.recordOpenAIHTTP2StreamSuccess(resp, terminalEventType)
 		}
 		if !sawTerminalEvent && !openAIStreamClientOutputStarted(c, clientOutputStarted, attemptWriterSizeBefore, downstreamKeepaliveBytes) && !eventShouldFlush {
 			streamErr := errors.New("stream ended before terminal event")
-			s.recordOpenAIHTTP2StreamFailure(ctx, streamErr)
+			s.recordOpenAIHTTP2StreamFailure(ctx, resp, streamErr)
 			return resultWithUsage(), newPreOutputFailoverError(nil, streamErr.Error())
 		}
 		flushPending("Client disconnected during final flush, returning collected usage")
 		if !sawTerminalEvent {
 			if openAIStreamClientOutputStarted(c, clientOutputStarted, attemptWriterSizeBefore, downstreamKeepaliveBytes) && !clientDisconnected {
 				streamErr := errors.New("stream ended before terminal event")
-				s.recordOpenAIHTTP2StreamFailure(ctx, streamErr)
+				s.recordOpenAIHTTP2StreamFailure(ctx, resp, streamErr)
 				s.recordOpenAIProxyStreamDisconnect(account, streamErr, upstreamRequestID)
 			}
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete: missing terminal event")
@@ -421,6 +422,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		if sawTerminalEvent {
 			if !sawFailedEvent {
 				s.clearOpenAIProxyStreamDisconnect(account)
+				s.recordOpenAIHTTP2StreamSuccess(resp, terminalEventType)
 				logger.LegacyPrintf("service.openai_gateway", "Upstream scan ended after terminal event: %v", scanErr)
 			}
 			result, err := finalizeStream()
@@ -445,14 +447,14 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			if errText := strings.TrimSpace(scanErr.Error()); errText != "" {
 				msg += ": " + errText
 			}
-			s.recordOpenAIHTTP2StreamFailure(ctx, scanErr)
+			s.recordOpenAIHTTP2StreamFailure(ctx, resp, scanErr)
 			return resultWithUsage(), newPreOutputFailoverError(nil, msg), true
 		}
 		// 客户端已断开时，上游出错仅影响体验，不影响计费；返回已收集 usage
 		if clientDisconnected {
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete after disconnect: %w", scanErr), true
 		}
-		s.recordOpenAIHTTP2StreamFailure(ctx, scanErr)
+		s.recordOpenAIHTTP2StreamFailure(ctx, resp, scanErr)
 		s.recordOpenAIProxyStreamDisconnect(account, scanErr, upstreamRequestID)
 		flushPending("Client disconnected while flushing output before stream-read failure")
 		return resultWithUsage(), NewOpenAIUpstreamStreamReadError(scanErr), true

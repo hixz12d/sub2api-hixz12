@@ -2338,6 +2338,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	if err := documentScanner.Err(); err != nil {
 		if (sawDone || sawTerminalEvent) && !sawFailedEvent {
 			s.clearOpenAIProxyStreamDisconnect(account)
+			s.recordOpenAIHTTP2StreamSuccess(resp, terminalEventType)
 			return resultWithUsage(), nil
 		}
 		if sawFailedEvent {
@@ -2355,13 +2356,13 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			if errText := strings.TrimSpace(err.Error()); errText != "" {
 				msg += ": " + errText
 			}
-			s.recordOpenAIHTTP2StreamFailure(ctx, err)
+			s.recordOpenAIHTTP2StreamFailure(ctx, resp, err)
 			return resultWithUsage(), newPreOutputFailoverError(nil, msg)
 		}
 		if clientDisconnected {
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete after disconnect: %w", err)
 		}
-		s.recordOpenAIHTTP2StreamFailure(ctx, err)
+		s.recordOpenAIHTTP2StreamFailure(ctx, resp, err)
 		s.recordOpenAIProxyStreamDisconnect(account, err, upstreamRequestID)
 		logger.LegacyPrintf("service.openai_gateway",
 			"[OpenAI passthrough] 流读取异常中断: account=%d request_id=%s err=%v",
@@ -2382,16 +2383,17 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		).Info("OpenAI passthrough 上游流在未收到 [DONE] 时结束，疑似断流")
 		if !openAIStreamClientOutputStarted(c, clientOutputStarted, attemptWriterSizeBefore, 0) {
 			streamErr := errors.New("stream ended before terminal event")
-			s.recordOpenAIHTTP2StreamFailure(ctx, streamErr)
+			s.recordOpenAIHTTP2StreamFailure(ctx, resp, streamErr)
 			return resultWithUsage(), newPreOutputFailoverError(nil, streamErr.Error())
 		}
 		streamErr := errors.New("stream ended before terminal event")
-		s.recordOpenAIHTTP2StreamFailure(ctx, streamErr)
+		s.recordOpenAIHTTP2StreamFailure(ctx, resp, streamErr)
 		s.recordOpenAIProxyStreamDisconnect(account, streamErr, upstreamRequestID)
 		return resultWithUsage(), errors.New("stream usage incomplete: missing terminal event")
 	}
 	if (sawDone || sawTerminalEvent) && !sawFailedEvent {
 		s.clearOpenAIProxyStreamDisconnect(account)
+		s.recordOpenAIHTTP2StreamSuccess(resp, terminalEventType)
 	}
 	logOpenAISuccessMissingUsage(ctx, c, account, resp, usage, terminalEventType, clientDisconnected)
 

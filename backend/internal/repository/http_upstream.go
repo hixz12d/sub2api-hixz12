@@ -138,6 +138,7 @@ type openAIHTTP2FallbackState struct {
 	windowStart   time.Time
 	errorCount    int
 	fallbackUntil time.Time
+	generation    uint64
 }
 
 // httpUpstreamService 通用 HTTP 上游服务
@@ -216,19 +217,20 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 	// 执行请求
 	client := s.httpClientForUpstreamRequest(entry.client, req)
 	client = httpClientWithGrokAccessDeniedFallback(client)
+	outcome := s.newOpenAIHTTP2Outcome(req, entry, profile)
 	resp, err := servertiming.Do(client, req)
 	if err != nil {
-		s.recordOpenAIHTTP2Failure(profile, entry.protocolMode, entry.proxyKey, err)
+		if outcome != nil && isOpenAIHTTP2CompatibilityError(err) {
+			// With no response, only an explicit H2 compatibility error is evidence.
+			outcome.protoMajor = 2
+			outcome.report(err)
+		}
 		// 请求失败，立即减少计数
 		atomic.AddInt64(&entry.inFlight, -1)
 		atomic.StoreInt64(&entry.lastUsed, time.Now().UnixNano())
 		return nil, err
 	}
-		// Headers-only success must not clear the stream-failure window for SSE.
-	// A 200 + early body disconnect is still a stream failure (F01).
-	if !isOpenAIStreamingHTTPResponse(req, resp) {
-		s.recordOpenAIHTTP2Success(profile, entry.protocolMode, entry.proxyKey)
-	}
+	outcome.bindResponse(req, resp)
 
 	// 如果上游返回了压缩内容，解压后再交给业务层
 	decompressResponseBody(resp)
@@ -289,14 +291,20 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 
 	client := s.httpClientForUpstreamRequest(entry.client, req)
 	client = httpClientWithGrokAccessDeniedFallback(client)
+	outcome := s.newOpenAIHTTP2Outcome(req, entry, upstreamProfile)
 	resp, err := servertiming.Do(client, req)
 	if err != nil {
+		if outcome != nil && isOpenAIHTTP2CompatibilityError(err) {
+			outcome.protoMajor = 2
+			outcome.report(err)
+		}
 		atomic.AddInt64(&entry.inFlight, -1)
 		atomic.StoreInt64(&entry.lastUsed, time.Now().UnixNano())
 		slog.Debug("tls_fingerprint_request_failed", "account_id", accountID, "error", err)
 		return nil, err
 	}
 
+	outcome.bindResponse(req, resp)
 	decompressResponseBody(resp)
 
 	resp.Body = wrapTrackedBody(resp.Body, func() {
@@ -1051,8 +1059,7 @@ func (s *httpUpstreamService) resolveProtocolMode(profile service.HTTPUpstreamPr
 	if parsedProxy == nil {
 		return upstreamProtocolModeOpenAIH2
 	}
-	scheme := strings.ToLower(parsedProxy.Scheme)
-	if scheme != "http" && scheme != "https" {
+	if !isOpenAIHTTP2FallbackProxyKey(proxyKey) {
 		return upstreamProtocolModeOpenAIH2
 	}
 	if settings.allowProxyFallbackToHTTP1 && s.isOpenAIHTTP2FallbackActive(proxyKey) {
@@ -1114,7 +1121,6 @@ func isOpenAIHTTP2CompatibilityError(err error) bool {
 	}
 	return false
 }
-
 
 func isOpenAIStreamingHTTPResponse(req *http.Request, resp *http.Response) bool {
 	if resp != nil {
@@ -1255,6 +1261,7 @@ func (s *openAIHTTP2FallbackState) isFallbackActive(now time.Time) bool {
 		return true
 	}
 	s.fallbackUntil = time.Time{}
+	s.generation++
 	return false
 }
 
@@ -1266,6 +1273,12 @@ func (s *openAIHTTP2FallbackState) resetErrorWindow() {
 }
 
 func (s *openAIHTTP2FallbackState) recordFailure(now time.Time, threshold int, window, ttl time.Duration) (bool, time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.recordFailureLocked(now, threshold, window, ttl)
+}
+
+func (s *openAIHTTP2FallbackState) recordFailureLocked(now time.Time, threshold int, window, ttl time.Duration) (bool, time.Time) {
 	if threshold <= 0 {
 		threshold = defaultOpenAIHTTP2FallbackErrorThreshold
 	}
@@ -1276,14 +1289,12 @@ func (s *openAIHTTP2FallbackState) recordFailure(now time.Time, threshold int, w
 		ttl = defaultOpenAIHTTP2FallbackTTL
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
 	if !s.fallbackUntil.IsZero() && now.Before(s.fallbackUntil) {
 		return false, s.fallbackUntil
 	}
 	if !s.fallbackUntil.IsZero() && !now.Before(s.fallbackUntil) {
 		s.fallbackUntil = time.Time{}
+		s.generation++
 	}
 
 	if s.windowStart.IsZero() || now.Sub(s.windowStart) > window {
@@ -1296,6 +1307,7 @@ func (s *openAIHTTP2FallbackState) recordFailure(now time.Time, threshold int, w
 	}
 
 	s.fallbackUntil = now.Add(ttl)
+	s.generation++
 	s.windowStart = time.Time{}
 	s.errorCount = 0
 	return true, s.fallbackUntil
@@ -1528,6 +1540,11 @@ func tlsFingerprintProtocolMode(upstreamProfile service.HTTPUpstreamProfile, pro
 }
 
 func buildUpstreamRoundTripperWithTLSFingerprint(settings poolSettings, proxyURL *url.URL, profile *tlsfingerprint.Profile, protocolMode string) (http.RoundTripper, error) {
+	if profile.UsesChromeAuto() && (protocolMode == upstreamProtocolModeOpenAIH1 || protocolMode == upstreamProtocolModeOpenAIH1Fallback) {
+		h1Profile := *profile
+		h1Profile.ALPNProtocols = []string{"http/1.1"}
+		profile = &h1Profile
+	}
 	transport, err := buildUpstreamTransportWithTLSFingerprint(settings, proxyURL, profile)
 	if err != nil {
 		return nil, err
