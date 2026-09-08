@@ -3,11 +3,14 @@ package repository
 import (
 	"context"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/stretchr/testify/require"
 )
@@ -104,16 +108,16 @@ func TestHTTP2OutcomeTerminalSuccessResetsOnlyItsWindow(t *testing.T) {
 // Exercise the real Do -> CONNECT -> TLS/ALPN -> SSE read-error path. The proxy
 // accepts only this test server, and every hijacked connection is closed/joined.
 func TestHTTP2OutcomeRealDoFallsBackAfterTwoBrokenStreams(t *testing.T) {
-	testHTTP2OutcomeRealDo(t, "http")
+	testHTTP2OutcomeRealDo(t, "http", false)
 }
 
 func TestHTTP2OutcomeRealDoSOCKSFallbackPreservesProxy(t *testing.T) {
 	for _, scheme := range []string{"socks5", "socks5h"} {
-		t.Run(scheme, func(t *testing.T) { testHTTP2OutcomeRealDo(t, scheme) })
+		t.Run(scheme, func(t *testing.T) { testHTTP2OutcomeRealDo(t, scheme, false) })
 	}
 }
 
-func testHTTP2OutcomeRealDo(t *testing.T, scheme string) {
+func testHTTP2OutcomeRealDo(t *testing.T, scheme string, useTLSFingerprint bool) {
 	var h2Calls atomic.Int32
 	target := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -180,26 +184,44 @@ func testHTTP2OutcomeRealDo(t *testing.T, scheme string) {
 	}
 	roots := x509.NewCertPool()
 	roots.AddCert(target.Certificate())
+	var profile *tlsfingerprint.Profile
+	if useTLSFingerprint {
+		profile = tlsfingerprint.BuiltinChromeAutoProfile()
+		certFile := filepath.Join(t.TempDir(), "upstream-ca.pem")
+		certificate := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: target.Certificate().Raw})
+		require.NoError(t, os.WriteFile(certFile, certificate, 0600))
+		t.Setenv("SSL_CERT_FILE", certFile)
+		t.Setenv("SSL_CERT_DIR", t.TempDir())
+	}
 	proxyKey, _, err := normalizeProxyURL(proxyURL)
 	require.NoError(t, err)
 	for i := 0; i < 3; i++ {
-		entry, err := svc.getClientEntry(proxyURL, 1, 1, service.HTTPUpstreamProfileOpenAI, false, false)
+		var entry *upstreamClientEntry
+		if profile == nil {
+			entry, err = svc.getClientEntry(proxyURL, 1, 1, service.HTTPUpstreamProfileOpenAI, false, false)
+		} else {
+			entry, err = svc.getClientEntryWithTLS(proxyURL, 1, 1, profile, service.HTTPUpstreamProfileOpenAI, false, false)
+		}
 		require.NoError(t, err)
-		tr := entry.client.Transport.(*http.Transport)
-		// Configure trust before the first request on each cached transport.
-		if i != 1 {
+		// uTLS uses the isolated process's temporary trust store; native TLS can
+		// receive a pool directly, before first use of each cached transport.
+		if profile == nil && i != 1 {
+			tr := entry.client.Transport.(*http.Transport)
 			if tr.TLSClientConfig == nil {
 				tr.TLSClientConfig = target.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
 				tr.TLSClientConfig.InsecureSkipVerify = false
 			}
 			tr.TLSClientConfig.RootCAs = roots
 		}
-		defer tr.CloseIdleConnections()
+		if tr, ok := entry.client.Transport.(interface{ CloseIdleConnections() }); ok {
+			defer tr.CloseIdleConnections()
+		}
 		ctx, cancel := context.WithTimeout(service.WithHTTPUpstreamProfile(t.Context(), service.HTTPUpstreamProfileOpenAI), 10*time.Second)
+		t.Cleanup(cancel)
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, target.URL, nil)
 		require.NoError(t, err)
 		req.Header.Set("Accept", "text/event-stream")
-		resp, err := svc.Do(req, proxyURL, 1, 1)
+		resp, err := svc.DoWithTLS(req, proxyURL, 1, 1, profile)
 		require.NoError(t, err)
 		_, readErr := io.ReadAll(resp.Body)
 		if i < 2 {
