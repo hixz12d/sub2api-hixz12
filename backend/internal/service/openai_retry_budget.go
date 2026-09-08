@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
@@ -17,6 +18,7 @@ const (
 	openAIRetryBudgetV2ExtraKey = "openai_retry_budget_v2"
 	openAIRetryBudgetContextKey = "openai_retry_budget_v2_state"
 	openAIRetryBudgetActiveKey  = "openai_retry_budget_v2_active"
+	openAIRetryBudgetConfigKey  = "openai_retry_budget_v2_config"
 )
 
 var ErrOpenAIRetryBudgetExhausted = errors.New("openai retry budget exhausted")
@@ -107,6 +109,7 @@ type OpenAIRetryBudgetSnapshot struct {
 	LastFailureClass     OpenAIRetryFailureClass
 	LastFailureScope     OpenAIRetryFailureScope
 	StartedAt            time.Time
+	MaxElapsed           time.Duration
 }
 
 // OpenAIRetryBudget is one race-safe budget for a logical HTTP request or WS
@@ -133,16 +136,47 @@ type OpenAIRetryBudget struct {
 	maxElapsed            time.Duration
 }
 
-func NewOpenAIRetryBudget(stateful bool) *OpenAIRetryBudget {
-	return newOpenAIRetryBudget(stateful, false)
+
+func openAIRetryBudgetMaxElapsed(cfg *config.Config) time.Duration {
+	defaultElapsed := 110 * time.Second
+	if cfg == nil {
+		return defaultElapsed
+	}
+	mode := strings.ToLower(strings.TrimSpace(cfg.Gateway.OpenAIPreoutputRecoveryMode))
+	if override := cfg.Gateway.OpenAIPreoutputRecoveryMaxElapsedSeconds; override > 0 {
+		return time.Duration(override) * time.Second
+	}
+	if mode == "bounded_preoutput" {
+		first := cfg.Gateway.OpenAIFirstOutputTimeoutSeconds
+		if first <= 0 {
+			first = 30
+		}
+		high := cfg.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds
+		if high > first {
+			first = high
+		}
+		bounded := time.Duration(first*2+50) * time.Second
+		if bounded < defaultElapsed {
+			return defaultElapsed
+		}
+		return bounded
+	}
+	return defaultElapsed
 }
 
-func newOpenAIRetryBudget(stateful, fullContextRecoverable bool) *OpenAIRetryBudget {
+func NewOpenAIRetryBudget(stateful bool) *OpenAIRetryBudget {
+	return newOpenAIRetryBudget(stateful, false, openAIRetryBudgetMaxElapsed(nil))
+}
+
+func newOpenAIRetryBudget(stateful, fullContextRecoverable bool, maxElapsed time.Duration) *OpenAIRetryBudget {
 	maxDistinct := 2
 	// previous_response_id alone is sticky; a rebuildable local transcript may still
 	// move once after OAuth death or intentional account/group switch.
 	if stateful && !fullContextRecoverable {
 		maxDistinct = 1
+	}
+	if maxElapsed <= 0 {
+		maxElapsed = openAIRetryBudgetMaxElapsed(nil)
 	}
 	return &OpenAIRetryBudget{
 		maxAttempts:         2,
@@ -151,7 +185,7 @@ func newOpenAIRetryBudget(stateful, fullContextRecoverable bool) *OpenAIRetryBud
 		stateful:            stateful,
 		replaySafe:          true,
 		startedAt:           time.Now(),
-		maxElapsed:          20 * time.Second,
+		maxElapsed:          maxElapsed,
 	}
 }
 
@@ -210,6 +244,10 @@ func OpenAIRetryRequestIsStateful(c *gin.Context, body []byte) bool {
 }
 
 func PrepareOpenAIRetryBudget(c *gin.Context, body []byte) *OpenAIRetryBudget {
+	return PrepareOpenAIRetryBudgetWithConfig(c, body, nil)
+}
+
+func PrepareOpenAIRetryBudgetWithConfig(c *gin.Context, body []byte, cfg *config.Config) *OpenAIRetryBudget {
 	if c == nil {
 		return nil
 	}
@@ -219,7 +257,22 @@ func PrepareOpenAIRetryBudget(c *gin.Context, body []byte) *OpenAIRetryBudget {
 	}
 	stateful := OpenAIRetryRequestIsStateful(c, body)
 	fullContext := codexBodyHasLocalRebuildableContext(body) && (c.Request == nil || strings.TrimSpace(c.GetHeader(openAIWSTurnStateHeader)) == "")
-	budget := newOpenAIRetryBudget(stateful, fullContext)
+	// Strong affinity / sticky stateful sessions must stay single-account even when
+	// the body carries a rebuildable local transcript.
+	if value, ok := openAIAffinityFromGin(c); ok {
+		if value.Identity.Strength == AffinityStrong || (value.Identity.Stateful && !value.Identity.ReplaySafe) {
+			fullContext = false
+		}
+	}
+	if cfg == nil {
+		if raw, ok := c.Get(openAIRetryBudgetConfigKey); ok {
+			cfg, _ = raw.(*config.Config)
+		}
+	}
+	if cfg != nil {
+		c.Set(openAIRetryBudgetConfigKey, cfg)
+	}
+	budget := newOpenAIRetryBudget(stateful, fullContext, openAIRetryBudgetMaxElapsed(cfg))
 	c.Set(openAIRetryBudgetContextKey, budget)
 	c.Set(openAIRetryBudgetActiveKey, false)
 	return budget
@@ -252,7 +305,11 @@ func StartOpenAIRetryBudgetTurn(c *gin.Context, account *Account, body []byte) *
 		c.Set(openAIRetryBudgetActiveKey, false)
 		return nil
 	}
-	budget := NewOpenAIRetryBudget(OpenAIRetryRequestIsStateful(c, body))
+	var cfg *config.Config
+	if raw, ok := c.Get(openAIRetryBudgetConfigKey); ok {
+		cfg, _ = raw.(*config.Config)
+	}
+	budget := newOpenAIRetryBudget(OpenAIRetryRequestIsStateful(c, body), false, openAIRetryBudgetMaxElapsed(cfg))
 	c.Set(openAIRetryBudgetContextKey, budget)
 	c.Set(openAIRetryBudgetActiveKey, true)
 	return budget
@@ -421,6 +478,6 @@ func (b *OpenAIRetryBudget) Snapshot() OpenAIRetryBudgetSnapshot {
 		Stateful: b.stateful, ReplaySafe: b.replaySafe,
 		RefreshUsed: b.refreshUsed, PreviousRecoveryUsed: b.previousRecoveryUsed,
 		LastFailureClass: b.lastFailureClass, LastFailureScope: b.lastFailureScope,
-		StartedAt: b.startedAt,
+		StartedAt: b.startedAt, MaxElapsed: b.maxElapsed,
 	}
 }

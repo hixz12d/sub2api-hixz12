@@ -702,6 +702,10 @@ type UpstreamFailoverError struct {
 	NextAccountAction        NextAccountAction
 	ClientStatusCode         int
 	ClientMessage            string
+	// C2 structured recovery attribution (optional).
+	Cause               string
+	FailurePhase        string
+	RetryDecisionReason string
 }
 
 func (e *UpstreamFailoverError) Error() string {

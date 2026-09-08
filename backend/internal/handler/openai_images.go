@@ -148,7 +148,7 @@ func (h *OpenAIGatewayHandler) Images(c *gin.Context) {
 
 	// Image generation may already incur upstream cost before a transport failure;
 	// never replay one logical image request on a different account.
-	service.PrepareOpenAIRetryBudget(c, body)
+	service.PrepareOpenAIRetryBudgetWithConfig(c, body, h.cfg)
 	service.SetOpenAIAttemptRouting(c, sessionHash, "", "")
 	maxAccountSwitches := 0
 	switchCount := 0

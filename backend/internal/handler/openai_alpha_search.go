@@ -111,7 +111,7 @@ func (h *OpenAIGatewayHandler) AlphaSearch(c *gin.Context) {
 
 	searchID := strings.TrimSpace(gjson.GetBytes(body, "id").String())
 	sessionHash := h.gatewayService.GenerateSessionHashWithFallback(c, nil, searchID)
-	service.PrepareOpenAIRetryBudget(c, body)
+	service.PrepareOpenAIRetryBudgetWithConfig(c, body, h.cfg)
 	service.SetOpenAIAttemptRouting(c, sessionHash, "", "")
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})

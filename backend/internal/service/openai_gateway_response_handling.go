@@ -50,6 +50,7 @@ func (s *OpenAIGatewayService) handleStreamingResponse(ctx context.Context, resp
 }
 
 func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.Context, resp *http.Response, c *gin.Context, account *Account, startTime time.Time, originalModel, mappedModel, reasoningEffort string) (*openaiStreamingResult, error) {
+	noteOpenAIAttemptProtoFromResponse(c, resp)
 	observer := upstreamResponseModelObserverFromContext(c)
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
@@ -306,6 +307,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		if completedProgressEvent && !firstOutputProgressObserved {
 			firstOutputScanGuard.Store(false)
 			firstOutputProgressObserved = true
+			MarkOpenAIAttemptTTFTPhase(c, "frame", int(time.Since(startTime).Milliseconds()))
 			stopFirstOutputTimer()
 		}
 		if completedTTFTEvent && firstTokenMs == nil {
@@ -667,6 +669,10 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			startsVisibleOutput := openAIStreamDataStartsVisibleOutput(data, eventType)
 			if startsClientOutput && !openAIStreamEventTypeIsTerminal(eventType) {
 				MarkOpenAISemanticOutputStarted(c)
+				MarkOpenAIAttemptTTFTPhase(c, "semantic", int(time.Since(startTime).Milliseconds()))
+			}
+			if startsVisibleOutput {
+				MarkOpenAIAttemptTTFTPhase(c, "visible", int(time.Since(startTime).Milliseconds()))
 			}
 			startsTTFTOutput := openAIStreamDataStartsTTFT(data, eventType, forceFlushFailedEvent, ttftMode)
 			if stageFirstOutput {

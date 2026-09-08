@@ -44,6 +44,18 @@ type OpenAIAttemptWireState struct {
 	HeartbeatOnly         bool
 	SemanticOutputStarted bool
 	TerminalEvent         string
+	// ActualProtoMajor is the negotiated HTTP major from the upstream response
+	// that produced this attempt's body (F06). Zero means unknown/unset.
+	ActualProtoMajor int
+	// Multi-phase TTFT markers in milliseconds from attempt start (C7).
+	// Zero means unset; negative is never used.
+	FirstFrameMs    int
+	FirstSemanticMs int
+	FirstVisibleMs  int
+	// Last structured failure attribution for this attempt (C2).
+	FailurePhase         string
+	FailureCause         string
+	RetryDecisionReason  string
 }
 
 const (
@@ -293,6 +305,64 @@ func MarkOpenAIAttemptTransportCommitted(c *gin.Context) {
 		state.TransportCommitted = true
 		if budget := OpenAIRetryBudgetFromContext(c); budget != nil {
 			budget.MarkBytesEmitted()
+		}
+	})
+}
+
+// MarkOpenAIAttemptProtoMajor records the upstream response protocol major version.
+func MarkOpenAIAttemptProtoMajor(c *gin.Context, protoMajor int) {
+	if protoMajor <= 0 {
+		return
+	}
+	updateOpenAIAttemptWireState(c, func(state *OpenAIAttemptWireState) {
+		if state.ActualProtoMajor == 0 {
+			state.ActualProtoMajor = protoMajor
+		}
+	})
+}
+
+// MarkOpenAIAttemptTTFTPhase records multi-phase TTFT markers once each.
+// phase is one of: frame | semantic | visible.
+func MarkOpenAIAttemptTTFTPhase(c *gin.Context, phase string, ms int) {
+	if c == nil || ms < 0 {
+		return
+	}
+	// Zero means "unset" on the snapshot; clamp same-millisecond observations to 1
+	// so a real T0 sample is distinguishable from never observed.
+	if ms == 0 {
+		ms = 1
+	}
+	phase = strings.TrimSpace(strings.ToLower(phase))
+	updateOpenAIAttemptWireState(c, func(state *OpenAIAttemptWireState) {
+		switch phase {
+		case "frame":
+			if state.FirstFrameMs == 0 {
+				state.FirstFrameMs = ms
+			}
+		case "semantic":
+			if state.FirstSemanticMs == 0 {
+				state.FirstSemanticMs = ms
+			}
+		case "visible":
+			if state.FirstVisibleMs == 0 {
+				state.FirstVisibleMs = ms
+			}
+		}
+	})
+}
+
+// MarkOpenAIAttemptFailureAttribution stores structured recovery metadata on the
+// current attempt wire snapshot without deciding failover eligibility.
+func MarkOpenAIAttemptFailureAttribution(c *gin.Context, phase, cause, decisionReason string) {
+	updateOpenAIAttemptWireState(c, func(state *OpenAIAttemptWireState) {
+		if v := strings.TrimSpace(phase); v != "" {
+			state.FailurePhase = v
+		}
+		if v := strings.TrimSpace(cause); v != "" {
+			state.FailureCause = v
+		}
+		if v := strings.TrimSpace(decisionReason); v != "" {
+			state.RetryDecisionReason = v
 		}
 	})
 }

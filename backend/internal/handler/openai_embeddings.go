@@ -108,7 +108,7 @@ func (h *OpenAIGatewayHandler) Embeddings(c *gin.Context) {
 	}
 
 	sessionHash := h.gatewayService.GenerateSessionHash(c, body)
-	service.PrepareOpenAIRetryBudget(c, body)
+	service.PrepareOpenAIRetryBudgetWithConfig(c, body, h.cfg)
 	service.SetOpenAIAttemptRouting(c, sessionHash, "", "")
 	profitVetoCount := 0
 	failedAccountIDs := make(map[int64]struct{})

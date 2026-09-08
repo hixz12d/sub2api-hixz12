@@ -224,7 +224,11 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 		atomic.StoreInt64(&entry.lastUsed, time.Now().UnixNano())
 		return nil, err
 	}
-	s.recordOpenAIHTTP2Success(profile, entry.protocolMode, entry.proxyKey)
+		// Headers-only success must not clear the stream-failure window for SSE.
+	// A 200 + early body disconnect is still a stream failure (F01).
+	if !isOpenAIStreamingHTTPResponse(req, resp) {
+		s.recordOpenAIHTTP2Success(profile, entry.protocolMode, entry.proxyKey)
+	}
 
 	// 如果上游返回了压缩内容，解压后再交给业务层
 	decompressResponseBody(resp)
@@ -1105,6 +1109,23 @@ func isOpenAIHTTP2CompatibilityError(err error) bool {
 	}
 	for _, marker := range markers {
 		if strings.Contains(msg, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+
+func isOpenAIStreamingHTTPResponse(req *http.Request, resp *http.Response) bool {
+	if resp != nil {
+		ct := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type")))
+		if strings.Contains(ct, "text/event-stream") {
+			return true
+		}
+	}
+	if req != nil {
+		accept := strings.ToLower(req.Header.Get("Accept"))
+		if strings.Contains(accept, "text/event-stream") {
 			return true
 		}
 	}

@@ -985,6 +985,13 @@ type GatewayConfig struct {
 	// OpenAIHighEffortFirstOutputTimeoutSeconds: high/xhigh/max 推理的首个语义输出超时（秒）。
 	// 0 表示回退到 OpenAIFirstOutputTimeoutSeconds。
 	OpenAIHighEffortFirstOutputTimeoutSeconds int `mapstructure:"openai_high_effort_first_output_timeout_seconds"`
+	// OpenAIPreoutputRecoveryMode selects pre-output recovery budget policy.
+	// empty/legacy: historical defaults; bounded_preoutput: wall-clock total budget
+	// scaled from first-output timeout so a second attempt remains admissible (C6).
+	OpenAIPreoutputRecoveryMode string `mapstructure:"openai_preoutput_recovery_mode"`
+	// OpenAIPreoutputRecoveryMaxElapsedSeconds caps total pre-output recovery wall time.
+	// 0 uses the mode default (legacy 110s floor after F02, or 2*first_output+50s when bounded).
+	OpenAIPreoutputRecoveryMaxElapsedSeconds int `mapstructure:"openai_preoutput_recovery_max_elapsed_seconds"`
 	// 请求体最大字节数，用于网关请求体大小限制
 	MaxBodySize int64 `mapstructure:"max_body_size"`
 	// TextMaxBodySize limits endpoints that cannot carry inline image/video payloads.
@@ -3380,6 +3387,19 @@ func (c *Config) Validate() error {
 		(c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds > 0 && c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds < 30) {
 		return fmt.Errorf("gateway.openai_high_effort_first_output_timeout_seconds must be 0 or between 30-1800 seconds")
 	}
+	switch strings.ToLower(strings.TrimSpace(c.Gateway.OpenAIPreoutputRecoveryMode)) {
+	case "", "legacy", "bounded_preoutput":
+		// ok
+	default:
+		return fmt.Errorf("gateway.openai_preoutput_recovery_mode must be empty, legacy, or bounded_preoutput")
+	}
+	if c.Gateway.OpenAIPreoutputRecoveryMaxElapsedSeconds < 0 || c.Gateway.OpenAIPreoutputRecoveryMaxElapsedSeconds > 3600 {
+		return fmt.Errorf("gateway.openai_preoutput_recovery_max_elapsed_seconds must be between 0 and 3600")
+	}
+	if c.Gateway.OpenAIPreoutputRecoveryMaxElapsedSeconds > 0 && c.Gateway.OpenAIPreoutputRecoveryMaxElapsedSeconds < 30 {
+		return fmt.Errorf("gateway.openai_preoutput_recovery_max_elapsed_seconds must be 0 or >= 30")
+	}
+
 	if c.Gateway.Live.MaxSessionDurationSeconds <= 0 {
 		c.Gateway.Live.MaxSessionDurationSeconds = 3600
 	}

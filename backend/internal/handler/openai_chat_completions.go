@@ -153,7 +153,7 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		return
 	}
 
-	service.PrepareOpenAIRetryBudget(c, body)
+	service.PrepareOpenAIRetryBudgetWithConfig(c, body, h.cfg)
 	service.SetOpenAIAttemptRouting(c, sessionHash, "", promptCacheKey)
 	maxAccountSwitches := h.maxAccountSwitches
 	if service.OpenAIRetryRequestIsStateful(c, body) {

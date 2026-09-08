@@ -614,7 +614,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	))
 	requireCompact := isOpenAIRemoteCompactPath(c)
 
-	service.PrepareOpenAIRetryBudget(c, body)
+	service.PrepareOpenAIRetryBudgetWithConfig(c, body, h.cfg)
 	service.SetOpenAIAttemptRouting(c, sessionHash, previousResponseID, "")
 	httpToolCoverage := service.AnalyzeToolCallOutputContextCoverageBytes(body)
 	previousResponseCanMove := !httpToolCoverage.HasFunctionCallOutput || httpToolCoverage.ContextCoversAllCallIDs
@@ -1406,7 +1406,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 		return
 	}
 
-	service.PrepareOpenAIRetryBudget(c, body)
+	service.PrepareOpenAIRetryBudgetWithConfig(c, body, h.cfg)
 	service.SetOpenAIAttemptRouting(c, sessionHash, "", promptCacheKey)
 	maxAccountSwitches := h.maxAccountSwitches
 	if service.OpenAIRetryRequestIsStateful(c, body) {
@@ -2714,7 +2714,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 	ctx = service.ContextWithCodexRequestPlan(ctx, requestPlan)
 	ctx = service.WithOpenAIWSRequestOwner(ctx, c, sessionHash)
 	ctx = service.WithOpenAIGuardianParentAffinity(ctx, c, firstMessage, reqModel)
-	service.PrepareOpenAIRetryBudget(c, firstMessage)
+	service.PrepareOpenAIRetryBudgetWithConfig(c, firstMessage, h.cfg)
 	service.SetOpenAIAttemptRouting(c, sessionHash, previousResponseID, "")
 	maxAccountSwitches := h.maxAccountSwitches
 	if service.OpenAIRetryRequestIsStateful(c, firstMessage) {

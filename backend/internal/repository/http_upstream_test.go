@@ -1049,3 +1049,42 @@ func TestHTTPUpstreamPublicHostsOnlyValidatesEveryRedirectHop(t *testing.T) {
 	require.NoError(t, client.CheckRedirect(publicHop, via))
 	require.Error(t, client.CheckRedirect(publicHop, make([]*http.Request, 10)), "redirect chain stays capped")
 }
+
+func (s *HTTPUpstreamSuite) TestOpenAIHTTP2HeaderSuccessDoesNotResetStreamFailureWindow() {
+	s.cfg.Gateway = config.GatewayConfig{
+		OpenAIHTTP2: config.GatewayOpenAIHTTP2Config{
+			Enabled:                   true,
+			AllowProxyFallbackToHTTP1: true,
+			FallbackErrorThreshold:    2,
+			FallbackWindowSeconds:     60,
+			FallbackTTLSeconds:        600,
+		},
+	}
+	svc := s.newService()
+	proxyURL := "http://proxy.local:8080"
+	// Streaming Do() no longer records header success. Two body EOFs must accumulate.
+	for i := 0; i < 2; i++ {
+		svc.RecordOpenAIHTTP2StreamFailure(proxyURL, io.ErrUnexpectedEOF)
+	}
+	require.True(s.T(), svc.isOpenAIHTTP2FallbackActive(proxyURL),
+		"two serial stream EOFs without header-success resets must activate H2 fallback")
+
+	// Non-stream header success may still clear the window (unchanged contract).
+	svc2 := s.newService()
+	svc2.RecordOpenAIHTTP2StreamFailure(proxyURL, io.ErrUnexpectedEOF)
+	svc2.recordOpenAIHTTP2Success(service.HTTPUpstreamProfileOpenAI, upstreamProtocolModeOpenAIH2, proxyURL)
+	svc2.RecordOpenAIHTTP2StreamFailure(proxyURL, io.ErrUnexpectedEOF)
+	require.False(s.T(), svc2.isOpenAIHTTP2FallbackActive(proxyURL),
+		"explicit non-stream success still resets the window; threshold needs two failures after reset")
+}
+
+func (s *HTTPUpstreamSuite) TestOpenAIHTTP2StreamingResponseSkipsHeaderSuccessReset() {
+	require.True(s.T(), isOpenAIStreamingHTTPResponse(
+		&http.Request{Header: http.Header{"Accept": []string{"text/event-stream"}}},
+		&http.Response{Header: http.Header{"Content-Type": []string{"text/event-stream"}}},
+	))
+	require.False(s.T(), isOpenAIStreamingHTTPResponse(
+		&http.Request{Header: http.Header{"Accept": []string{"application/json"}}},
+		&http.Response{Header: http.Header{"Content-Type": []string{"application/json"}}},
+	))
+}

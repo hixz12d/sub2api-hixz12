@@ -6,7 +6,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type CodexCommitSnapshot struct {
+// OutputCommitSnapshot is the unified pre-output commit ledger (C4).
+// CodexCommitSnapshot remains an alias for call-site compatibility.
+type OutputCommitSnapshot struct {
 	TransportCommitted     bool
 	HeartbeatOnly          bool
 	SemanticOutputStarted  bool
@@ -14,7 +16,17 @@ type CodexCommitSnapshot struct {
 	Stateful               bool
 	ReplaySafe             bool
 	CurrentAccountID       int64
+	ActualProtoMajor       int
+	FirstFrameMs           int
+	FirstSemanticMs        int
+	FirstVisibleMs         int
+	FailurePhase           string
+	FailureCause           string
+	RetryDecisionReason    string
 }
+
+// CodexCommitSnapshot is retained as the historical name for OutputCommitSnapshot.
+type CodexCommitSnapshot = OutputCommitSnapshot
 
 type CodexCommitGuard struct {
 	c *gin.Context
@@ -24,10 +36,10 @@ func NewCodexCommitGuard(c *gin.Context) CodexCommitGuard {
 	return CodexCommitGuard{c: c}
 }
 
-func (g CodexCommitGuard) Snapshot() CodexCommitSnapshot {
+func (g CodexCommitGuard) Snapshot() OutputCommitSnapshot {
 	wire := OpenAIAttemptWireStateSnapshot(g.c)
 	attempt := OpenAIAttemptStateSnapshot(g.c)
-	snapshot := CodexCommitSnapshot{
+	snapshot := OutputCommitSnapshot{
 		TransportCommitted:     wire.TransportCommitted,
 		HeartbeatOnly:          wire.HeartbeatOnly,
 		SemanticOutputStarted:  wire.SemanticOutputStarted,
@@ -35,6 +47,13 @@ func (g CodexCommitGuard) Snapshot() CodexCommitSnapshot {
 		Stateful:               attempt.Stateful,
 		ReplaySafe:             attempt.ReplaySafe,
 		CurrentAccountID:       attempt.CurrentAccountID,
+		ActualProtoMajor:       wire.ActualProtoMajor,
+		FirstFrameMs:           wire.FirstFrameMs,
+		FirstSemanticMs:        wire.FirstSemanticMs,
+		FirstVisibleMs:         wire.FirstVisibleMs,
+		FailurePhase:           wire.FailurePhase,
+		FailureCause:           wire.FailureCause,
+		RetryDecisionReason:    wire.RetryDecisionReason,
 	}
 	if budget := OpenAIRetryBudgetFromContext(g.c); budget != nil {
 		budgetSnapshot := budget.Snapshot()
@@ -74,4 +93,10 @@ func (g CodexCommitGuard) MarkSemanticOutput() {
 
 func (g CodexCommitGuard) MarkTerminal(event string) {
 	MarkOpenAIAttemptTerminal(g.c, event)
+}
+
+// OutputCommitSnapshotFromContext returns the unified commit ledger for the
+// current request attempt.
+func OutputCommitSnapshotFromContext(c *gin.Context) OutputCommitSnapshot {
+	return NewCodexCommitGuard(c).Snapshot()
 }
