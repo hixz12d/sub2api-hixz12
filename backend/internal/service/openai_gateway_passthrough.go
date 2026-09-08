@@ -383,7 +383,7 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 							RetryOtherAccount: true,
 						})
 					}
-					RecordOpenAIRetryFailure(c, resp.StatusCode, nil)
+					// Keep the terminal credential decision; generic 401 handling would reopen refresh.
 					upstreamMsg := sanitizeUpstreamErrorMessage(strings.TrimSpace(extractUpstreamErrorMessage(probeBody)))
 					return nil, s.newOpenAIPermanentOAuthUnauthorizedFailover(account, resp, probeBody, upstreamMsg, shouldDisable)
 				}
@@ -2357,7 +2357,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				msg += ": " + errText
 			}
 			s.recordOpenAIHTTP2StreamFailure(ctx, resp, err)
-			return resultWithUsage(), newPreOutputFailoverError(nil, msg)
+			return resultWithUsage(), withOpenAIUnderlyingError(newPreOutputFailoverError(nil, msg), err)
 		}
 		if clientDisconnected {
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete after disconnect: %w", err)
@@ -2382,11 +2382,11 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			zap.String("upstream_request_id", upstreamRequestID),
 		).Info("OpenAI passthrough 上游流在未收到 [DONE] 时结束，疑似断流")
 		if !openAIStreamClientOutputStarted(c, clientOutputStarted, attemptWriterSizeBefore, 0) {
-			streamErr := errors.New("stream ended before terminal event")
+			streamErr := ErrOpenAIStreamMissingTerminal
 			s.recordOpenAIHTTP2StreamFailure(ctx, resp, streamErr)
-			return resultWithUsage(), newPreOutputFailoverError(nil, streamErr.Error())
+			return resultWithUsage(), withOpenAIUnderlyingError(newPreOutputFailoverError(nil, streamErr.Error()), streamErr)
 		}
-		streamErr := errors.New("stream ended before terminal event")
+		streamErr := ErrOpenAIStreamMissingTerminal
 		s.recordOpenAIHTTP2StreamFailure(ctx, resp, streamErr)
 		s.recordOpenAIProxyStreamDisconnect(account, streamErr, upstreamRequestID)
 		return resultWithUsage(), errors.New("stream usage incomplete: missing terminal event")

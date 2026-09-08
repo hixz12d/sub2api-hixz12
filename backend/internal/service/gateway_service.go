@@ -704,6 +704,7 @@ type UpstreamFailoverError struct {
 	ClientMessage            string
 	// C2 structured recovery attribution (optional).
 	Cause               string
+	Err                 error `json:"-"` // Preserve typed causes without exposing them in client envelopes.
 	FailurePhase        string
 	RetryDecisionReason string
 }
@@ -717,6 +718,13 @@ func (e *UpstreamFailoverError) Error() string {
 
 func (e *UpstreamFailoverError) ShouldRetryNextAccount() bool {
 	return e != nil && e.NextAccountAction != NextAccountStop
+}
+
+func (e *UpstreamFailoverError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
 }
 
 func (e *UpstreamFailoverError) IsCredentialFailure() bool {

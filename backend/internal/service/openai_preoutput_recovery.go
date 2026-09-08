@@ -9,6 +9,22 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+var (
+	ErrOpenAIFirstOutputTimeout    = errors.New("openai first output timeout")
+	ErrOpenAIStreamIntervalTimeout = errors.New("stream data interval timeout")
+	ErrOpenAIStreamMissingTerminal = errors.New("stream ended before terminal event")
+)
+
+func withOpenAIUnderlyingError(failover *UpstreamFailoverError, err error) *UpstreamFailoverError {
+	if failover != nil && err != nil {
+		failover.Err = err
+		if failover.Cause == "" {
+			failover.Cause = classifyOpenAIStreamScanCause(err)
+		}
+	}
+	return failover
+}
+
 const (
 	OpenAIFailurePhasePreOutput  = "pre_output"
 	OpenAIFailurePhasePostOutput = "post_output"
@@ -45,7 +61,9 @@ func annotateOpenAIPreOutputFailover(c *gin.Context, err *UpstreamFailoverError,
 	}
 	if strings.TrimSpace(err.RetryDecisionReason) == "" {
 		err.RetryDecisionReason = strings.TrimSpace(decision)
-		if err.RetryDecisionReason == "" {
+		if !err.ShouldRetryNextAccount() {
+			err.RetryDecisionReason = OpenAIRetryDecisionFailClosed
+		} else if err.RetryDecisionReason == "" {
 			err.RetryDecisionReason = OpenAIRetryDecisionFailoverOtherAccount
 		}
 	}
@@ -57,6 +75,14 @@ func classifyOpenAIStreamScanCause(err error) string {
 	if err == nil {
 		return OpenAIFailureCauseUnknown
 	}
+	switch {
+	case errors.Is(err, ErrOpenAIFirstOutputTimeout):
+		return OpenAIFailureCauseFirstOutputTimeout
+	case errors.Is(err, ErrOpenAIStreamIntervalTimeout):
+		return OpenAIFailureCauseIntervalTimeout
+	case errors.Is(err, ErrOpenAIStreamMissingTerminal):
+		return OpenAIFailureCauseMissingTerminal
+	}
 	if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) {
 		return OpenAIFailureCauseStreamEOF
 	}
@@ -66,8 +92,6 @@ func classifyOpenAIStreamScanCause(err error) string {
 		return OpenAIFailureCauseStreamEOF
 	case strings.Contains(lower, "interval timeout"):
 		return OpenAIFailureCauseIntervalTimeout
-	case strings.Contains(lower, "timeout"):
-		return OpenAIFailureCauseFirstOutputTimeout
 	default:
 		return OpenAIFailureCauseStreamRead
 	}

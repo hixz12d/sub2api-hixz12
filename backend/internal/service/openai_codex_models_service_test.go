@@ -3283,7 +3283,7 @@ func TestFetchCodexModelsManifestAPIKeyUsesOfficialOpenAIModelsEndpoint(t *testi
 			require.NoError(t, parseErr)
 			require.Equal(t, "api.openai.com", strings.ToLower(parsedURL.Hostname()))
 			require.Equal(t, "/v1/models", parsedURL.Path)
-			require.Equal(t, "0.144.0", parsedURL.Query().Get("client_version"))
+			require.Equal(t, codexDefaultVersion, parsedURL.Query().Get("client_version"), "official manifests use the enforced outbound identity")
 			models := decodeCodexManifestModels(t, manifest.Body)
 			require.Len(t, models, 1)
 			requireCompleteConfiguredCodexModel(t, models[0], "gpt-5.6-sol")

@@ -59,7 +59,8 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	if account != nil && account.Platform == PlatformOpenAI {
 		firstOutputTimeout = s.openAIFirstOutputTimeout(reasoningEffort)
 	}
-	guardFirstOutput := firstOutputTimeout > 0
+	phaseGuard := openAIPhaseWatchdogFromContext(ctx)
+	guardFirstOutput := firstOutputTimeout > 0 || phaseGuard != nil
 	attemptWriterSizeBefore := OpenAICompactKeepaliveAdjustedWrittenSize(c)
 	stageFirstOutput := account != nil && account.Platform == PlatformOpenAI
 	var attemptResponseHeaders http.Header
@@ -149,6 +150,12 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	}
 	flushBuffered := func() error {
 		if firstOutputStage != nil && !firstOutputStage.closed {
+			if phaseGuard != nil {
+				if err := phaseGuard.tryCommit(); err != nil {
+					return openAIOutputPhaseFailure(c, err, resp.Header)
+				}
+			}
+			MarkOpenAISemanticOutputStarted(c)
 			if err := firstOutputStage.CommitTo(w); err != nil {
 				return err
 			}
@@ -216,7 +223,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 
 	var firstOutputTimer *time.Timer
 	var firstOutputCh <-chan time.Time
-	if firstOutputTimeout > 0 {
+	if phaseGuard != nil {
+		firstOutputCh = phaseGuard.done
+	} else if firstOutputTimeout > 0 {
 		remaining := time.Until(startTime.Add(firstOutputTimeout))
 		if remaining <= 0 {
 			remaining = time.Nanosecond
@@ -296,6 +305,10 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			}
 			if shouldFlush {
 				if err := flushBuffered(); err != nil {
+					if phaseGuard != nil && phaseGuard.failure() != nil {
+						streamEarlyErr = err
+						return
+					}
 					clientDisconnected = true
 					logger.LegacyPrintf("service.openai_gateway", "Client disconnected during streaming flush, continuing to drain upstream for billing")
 				} else {
@@ -357,6 +370,12 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		lastDownstreamWriteAt = time.Now()
 	}
 	finalizeStream := func() (*openaiStreamingResult, error) {
+		if phaseGuard != nil && phaseGuard.timeoutFailure() != nil {
+			return resultWithUsage(), openAIOutputPhaseFailure(c, phaseGuard.timeoutFailure(), resp.Header)
+		}
+		if streamEarlyErr != nil {
+			return resultWithUsage(), streamEarlyErr
+		}
 		if stageFirstOutput && eventInProgress {
 			// EOF dispatches the final SSE event even without a trailing blank line.
 			completeGuardedEvent(true)
@@ -378,14 +397,14 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			s.recordOpenAIHTTP2StreamSuccess(resp, terminalEventType)
 		}
 		if !sawTerminalEvent && !openAIStreamClientOutputStarted(c, clientOutputStarted, attemptWriterSizeBefore, downstreamKeepaliveBytes) && !eventShouldFlush {
-			streamErr := errors.New("stream ended before terminal event")
+			streamErr := ErrOpenAIStreamMissingTerminal
 			s.recordOpenAIHTTP2StreamFailure(ctx, resp, streamErr)
-			return resultWithUsage(), newPreOutputFailoverError(nil, streamErr.Error())
+			return resultWithUsage(), withOpenAIUnderlyingError(newPreOutputFailoverError(nil, streamErr.Error()), streamErr)
 		}
 		flushPending("Client disconnected during final flush, returning collected usage")
 		if !sawTerminalEvent {
 			if openAIStreamClientOutputStarted(c, clientOutputStarted, attemptWriterSizeBefore, downstreamKeepaliveBytes) && !clientDisconnected {
-				streamErr := errors.New("stream ended before terminal event")
+				streamErr := ErrOpenAIStreamMissingTerminal
 				s.recordOpenAIHTTP2StreamFailure(ctx, resp, streamErr)
 				s.recordOpenAIProxyStreamDisconnect(account, streamErr, upstreamRequestID)
 			}
@@ -398,6 +417,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		return resultWithUsage(), nil
 	}
 	handleScanErr := func(scanErr error) (*openaiStreamingResult, error, bool) {
+		if phaseGuard != nil && phaseGuard.timeoutFailure() != nil {
+			return resultWithUsage(), openAIOutputPhaseFailure(c, phaseGuard.timeoutFailure(), resp.Header), true
+		}
 		if scanErr == nil {
 			return nil, nil, false
 		}
@@ -408,7 +430,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				"OpenAI SSE line exceeds guarded first-output limit",
 			)
 			failoverErr.SafeToFailoverAfterWrite = true
-			return resultWithUsage(), failoverErr, true
+			return resultWithUsage(), withOpenAIUnderlyingError(failoverErr, scanErr), true
 		}
 		if errors.Is(scanErr, bufio.ErrTooLong) && stageFirstOutput && !firstOutputProgressObserved {
 			logger.LegacyPrintf("service.openai_gateway", "SSE line too long before first output: account=%d max_size=%d error=%v", account.ID, maxLineSize, scanErr)
@@ -417,7 +439,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				"OpenAI SSE line exceeds guarded first-output limit",
 			)
 			failoverErr.SafeToFailoverAfterWrite = true
-			return resultWithUsage(), failoverErr, true
+			return resultWithUsage(), withOpenAIUnderlyingError(failoverErr, scanErr), true
 		}
 		if sawTerminalEvent {
 			if !sawFailedEvent {
@@ -448,7 +470,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				msg += ": " + errText
 			}
 			s.recordOpenAIHTTP2StreamFailure(ctx, resp, scanErr)
-			return resultWithUsage(), newPreOutputFailoverError(nil, msg), true
+			return resultWithUsage(), withOpenAIUnderlyingError(newPreOutputFailoverError(nil, msg), scanErr), true
 		}
 		// 客户端已断开时，上游出错仅影响体验，不影响计费；返回已收集 usage
 		if clientDisconnected {
@@ -930,6 +952,10 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			return resultWithUsage(), fmt.Errorf("stream data interval timeout")
 
 		case <-firstOutputCh:
+			if phaseGuard != nil {
+				_ = resp.Body.Close()
+				return resultWithUsage(), openAIOutputPhaseFailure(c, phaseGuard.timeoutFailure(), resp.Header)
+			}
 			if firstOutputProgressObserved {
 				stopFirstOutputTimer()
 				continue

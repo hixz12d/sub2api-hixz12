@@ -123,8 +123,8 @@ func TestMessagesStage_KeepalivePingDoesNotCommitAccountHeaders(t *testing.T) {
 		StatusCode: http.StatusOK,
 		ProtoMajor: 2,
 		Header: http.Header{
-			"Content-Type":  []string{"text/event-stream"},
-			"X-Request-Id":  []string{"rid_ping_stage"},
+			"Content-Type":          []string{"text/event-stream"},
+			"X-Request-Id":          []string{"rid_ping_stage"},
 			"x-openai-proxy-wallet": []string{"should-not-leak-early"},
 		},
 		Body: reader,
@@ -243,6 +243,57 @@ func TestMessagesStage_FirstOutputTimeoutCarriesStructuredCause(t *testing.T) {
 	require.NotContains(t, rec.Body.String(), "text_delta")
 }
 
+func TestBlueprintV2MessagesEffectiveEffortTimeout(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, tc := range []struct {
+		name, requested, effective, cause string
+	}{
+		{"effective_high", "low", "high", OpenAIFailureCauseStreamEOF},
+		{"policy_capped_low", "high", "low", OpenAIFailureCauseFirstOutputTimeout},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+			reader, writer := io.Pipe()
+			stop, done := make(chan struct{}), make(chan struct{})
+			t.Cleanup(func() {
+				close(stop)
+				_ = reader.Close()
+				_ = writer.Close()
+				select {
+				case <-done:
+				case <-time.After(5 * time.Second):
+					t.Error("upstream writer did not exit")
+				}
+			})
+			go func() {
+				defer close(done)
+				timer := time.NewTimer(1500 * time.Millisecond)
+				defer timer.Stop()
+				select {
+				case <-stop:
+					return
+				case <-timer.C:
+				}
+				_, _ = writer.Write([]byte("event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"effort_test\"}}\n\n"))
+				_ = writer.CloseWithError(io.ErrUnexpectedEOF)
+			}()
+			resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: reader}
+			cfg := messagesStageTestConfig()
+			cfg.Gateway.OpenAIFirstOutputTimeoutSeconds = 1
+			cfg.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds = 5
+			svc := &OpenAIGatewayService{cfg: cfg}
+			ctx := WithRequestedReasoningEffort(context.Background(), tc.requested)
+			_, err := svc.handleAnthropicStreamingResponseWithReasoning(ctx, resp, c, messagesStageTestAccount(), "gpt-5.4", "gpt-5.4", "gpt-5.4", time.Now(), tc.effective)
+			var failoverErr *UpstreamFailoverError
+			require.ErrorAs(t, err, &failoverErr)
+			require.Equal(t, tc.cause, failoverErr.Cause)
+			require.NotContains(t, rec.Body.String(), "message_start")
+		})
+	}
+}
+
 func TestMessagesStage_PreambleOnlyThenEOF_StillFailsOver(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -250,13 +301,13 @@ func TestMessagesStage_PreambleOnlyThenEOF_StillFailsOver(t *testing.T) {
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
 
-	// response.created maps to message_start (semantic for Anthropic client),
-	// so use only upstream idle + EOF without any SSE frames.
+	// Send a valid upstream preamble, then fail before any semantic output.
+	preamble := strings.NewReader("event: response.created\ndata: {\"type\":\"response.created\",\"response\":{\"id\":\"resp_preamble\",\"model\":\"gpt-5.4\"}}\n\n")
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		ProtoMajor: 1,
 		Header:     http.Header{"Content-Type": []string{"text/event-stream"}, "X-Request-Id": []string{"rid_empty_eof"}},
-		Body:       io.NopCloser(&passthroughErrReadCloser{err: io.ErrUnexpectedEOF}),
+		Body:       io.NopCloser(io.MultiReader(preamble, &passthroughErrReadCloser{err: io.ErrUnexpectedEOF})),
 	}
 	svc := &OpenAIGatewayService{cfg: messagesStageTestConfig(), httpUpstream: &messagesStageH2Reporter{}}
 	account := messagesStageTestAccount()
@@ -268,6 +319,8 @@ func TestMessagesStage_PreambleOnlyThenEOF_StillFailsOver(t *testing.T) {
 	require.Error(t, err)
 	var failoverErr *UpstreamFailoverError
 	require.True(t, errors.As(err, &failoverErr))
+	require.NotContains(t, rec.Body.String(), "message_start")
+	require.NotContains(t, rec.Body.String(), "resp_preamble")
 	require.Equal(t, 1, OpenAIAttemptWireStateSnapshot(c).ActualProtoMajor)
 	require.Equal(t, OpenAIFailureCauseStreamEOF, failoverErr.Cause)
 }

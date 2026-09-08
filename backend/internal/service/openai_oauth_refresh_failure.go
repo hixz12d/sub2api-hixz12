@@ -25,7 +25,6 @@ type OpenAIOAuthConditionalErrorRepository interface {
 	SetOpenAIOAuthErrorIfCredentialsUnchanged(context.Context, int64, map[string]any, string) (bool, error)
 }
 
-
 // isOpenAIPermanentOAuthUnauthorized reports provider evidence that the OAuth
 // credential is dead. Refresh cannot heal these codes; mark the account and
 // switch immediately instead of burning the only refresh slot.
@@ -210,6 +209,7 @@ func (s *OpenAIGatewayService) handleOpenAIRefreshFailure(ctx context.Context, c
 		// Sticky/stateful turn without a rebuildable body must stay on the original pin.
 		failure = codexRecoveryFailure(codexRecoveryRefreshFailed)
 	}
+	failure.Err = refreshErr
 	setOpsUpstreamError(c, http.StatusUnauthorized, failure.ClientMessage, "")
 	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
 		Platform: account.Platform, AccountID: account.ID, AccountName: account.Name,
@@ -218,7 +218,6 @@ func (s *OpenAIGatewayService) handleOpenAIRefreshFailure(ctx context.Context, c
 	})
 	return failure
 }
-
 
 func (s *OpenAIGatewayService) newOpenAIPermanentOAuthUnauthorizedFailover(
 	account *Account,

@@ -188,9 +188,13 @@ func (s *openAIFirstOutputStage) CommitTo(dst io.Writer) error {
 		}
 	} else {
 		if _, err := s.tempFile.Seek(0, io.SeekStart); err != nil {
-			return fmt.Errorf("seek first-output spool: %w", err)
+			return localOpenAIOutputFailure(fmt.Errorf("seek first-output spool: %w", err))
 		}
 		if _, err := io.CopyN(dst, s.tempFile, s.size); err != nil {
+			var fileErr *os.PathError
+			if errors.Is(err, io.EOF) || errors.As(err, &fileErr) && fileErr.Op == "read" && fileErr.Path == s.tempFile.Name() {
+				return localOpenAIOutputFailure(err)
+			}
 			return err
 		}
 	}
@@ -230,7 +234,7 @@ func (s *openAIFirstOutputStage) Close() error {
 }
 
 func (s *OpenAIGatewayService) openAIFirstOutputTimeout(reasoningEffort string) time.Duration {
-	if s == nil || s.cfg == nil || s.cfg.Gateway.OpenAIFirstOutputTimeoutSeconds <= 0 {
+	if s == nil || s.cfg == nil {
 		return 0
 	}
 	seconds := s.cfg.Gateway.OpenAIFirstOutputTimeoutSeconds
@@ -239,6 +243,9 @@ func (s *OpenAIGatewayService) openAIFirstOutputTimeout(reasoningEffort string) 
 		if override := s.cfg.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds; override > 0 {
 			seconds = override
 		}
+	}
+	if seconds <= 0 {
+		return 0
 	}
 	return time.Duration(seconds) * time.Second
 }
@@ -272,6 +279,7 @@ func (s *OpenAIGatewayService) newOpenAIFirstOutputTimeoutError(
 	}
 	err := &UpstreamFailoverError{
 		StatusCode:      http.StatusGatewayTimeout,
+		Err:             ErrOpenAIFirstOutputTimeout,
 		ResponseBody:    []byte(`{"error":{"type":"first_output_timeout","message":"Upstream produced no output before the deadline"}}`),
 		ResponseHeaders: responseHeaders.Clone(), SafeToFailoverAfterWrite: true,
 	}
@@ -279,11 +287,17 @@ func (s *OpenAIGatewayService) newOpenAIFirstOutputTimeoutError(
 }
 
 type openAIFirstOutputHeaderGuard struct {
-	cancel  context.CancelFunc
-	release context.CancelFunc
-	timer   *time.Timer
-	fired   chan struct{}
-	once    sync.Once
+	mu           sync.Mutex
+	cancel       context.CancelCauseFunc
+	ctx          context.Context
+	deadline     time.Time
+	timeoutCause error
+	done         chan time.Time
+	release      context.CancelFunc
+	timer        *time.Timer
+	stopped      bool
+	expired      bool
+	once         sync.Once
 }
 
 func newOpenAIFirstOutputHeaderGuard(
@@ -291,32 +305,46 @@ func newOpenAIFirstOutputHeaderGuard(
 	release context.CancelFunc,
 	deadline time.Time,
 ) (context.Context, *openAIFirstOutputHeaderGuard) {
-	guardedCtx, cancel := context.WithCancel(ctx)
-	guard := &openAIFirstOutputHeaderGuard{cancel: cancel, release: release, fired: make(chan struct{})}
+	return newOpenAIPhaseWatchdog(ctx, release, deadline, ErrOpenAIFirstOutputTimeout)
+}
+
+func newOpenAIPhaseWatchdog(ctx context.Context, release context.CancelFunc, deadline time.Time, cause error) (context.Context, *openAIFirstOutputHeaderGuard) {
+	guardedCtx, cancel := context.WithCancelCause(ctx)
+	guard := &openAIFirstOutputHeaderGuard{cancel: cancel, ctx: guardedCtx, deadline: deadline, timeoutCause: cause, done: make(chan time.Time, 1), release: release}
 	remaining := time.Until(deadline)
 	if remaining <= 0 {
 		remaining = time.Nanosecond
 	}
 	guard.timer = time.AfterFunc(remaining, func() {
-		close(guard.fired)
-		cancel()
+		guard.mu.Lock()
+		defer guard.mu.Unlock()
+		if guard.stopped {
+			return
+		}
+		guard.stopped, guard.expired = true, true
+		guard.done <- time.Now()
+		cancel(cause)
 	})
 	return guardedCtx, guard
 }
 
 func (g *openAIFirstOutputHeaderGuard) stopHeaderWait() bool {
-	if g.timer.Stop() {
-		return false
-	}
-	<-g.fired
-	return true
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	// A queued callback must observe the same state as successful header receipt.
+	// Repeated stop/close calls cannot wait on a timer that will never fire.
+	g.stopped = true
+	g.timer.Stop()
+	return g.expired
 }
 
 func (g *openAIFirstOutputHeaderGuard) close() {
 	g.once.Do(func() {
-		g.timer.Stop()
-		g.cancel()
-		g.release()
+		g.stopHeaderWait()
+		g.cancel(context.Canceled)
+		if g.release != nil {
+			g.release()
+		}
 	})
 }
 

@@ -96,6 +96,9 @@ type AdminService interface {
 	DeleteAccount(ctx context.Context, id int64) error
 	RefreshAccountCredentials(ctx context.Context, id int64) (*Account, error)
 	ClearAccountError(ctx context.Context, id int64) (*Account, error)
+	// SyncOpenAIOAuthCredentials is the narrow credential sync contract used by Team48.
+	SyncOpenAIOAuthCredentials(ctx context.Context, id int64, req *SyncOAuthCredentialsRequest) (*SyncOAuthCredentialsResult, *Account, error)
+	RecoverAuthErrorOnly(ctx context.Context, id int64, expectedStatus, expectedErrorMessage string) (string, error)
 	SetAccountError(ctx context.Context, id int64, errorMsg string) error
 	// EnsureOpenAIPrivacy 检查 OpenAI OAuth 账号 privacy_mode，未设置则尝试关闭训练数据共享并持久化。
 	EnsureOpenAIPrivacy(ctx context.Context, account *Account) string

@@ -91,6 +91,7 @@ func TestAdaptiveProtocolRoutesChatCompletionsToNativeChat(t *testing.T) {
 
 	_, err := svc.ForwardAsChatCompletions(context.Background(), adaptiveProtocolTestContext("/v1/chat/completions", body), account, body, "", "")
 	require.Error(t, err)
+	require.NotNil(t, upstream.lastReq, "request did not reach upstream: %v", err)
 	require.Equal(t, "http://chat.example/v1/chat/completions", upstream.lastReq.URL.String())
 	require.True(t, gjson.GetBytes(upstream.lastBody, "messages").IsArray())
 	require.False(t, gjson.GetBytes(upstream.lastBody, "input").Exists())

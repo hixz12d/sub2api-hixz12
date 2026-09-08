@@ -79,7 +79,7 @@ func ClassifyOpenAIRetryFailure(ctx context.Context, status int, err error, stat
 		decision.Scope = OpenAIRetryScopeAccount
 		decision.RetrySameAccount = true
 		decision.RetryOtherAccount = !stateful
-	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout, 520:
 		decision.Class = OpenAIRetryFailureTransient
 		decision.Scope = OpenAIRetryScopeAccount
 		decision.RetrySameAccount = true
@@ -134,34 +134,28 @@ type OpenAIRetryBudget struct {
 	lastRetryOtherAccount bool
 	startedAt             time.Time
 	maxElapsed            time.Duration
+	boundedHTTP           bool
+	streamingHTTP         bool
+	deadlineFrozen        bool
+	highElapsed           time.Duration
+	firstOutputLimit      time.Duration
+	highFirstOutputLimit  time.Duration
 }
 
-
 func openAIRetryBudgetMaxElapsed(cfg *config.Config) time.Duration {
-	defaultElapsed := 110 * time.Second
+	legacyElapsed := 20 * time.Second
+	boundedDefaultElapsed := 110 * time.Second
 	if cfg == nil {
-		return defaultElapsed
+		return legacyElapsed
 	}
 	mode := strings.ToLower(strings.TrimSpace(cfg.Gateway.OpenAIPreoutputRecoveryMode))
 	if override := cfg.Gateway.OpenAIPreoutputRecoveryMaxElapsedSeconds; override > 0 {
 		return time.Duration(override) * time.Second
 	}
 	if mode == "bounded_preoutput" {
-		first := cfg.Gateway.OpenAIFirstOutputTimeoutSeconds
-		if first <= 0 {
-			first = 30
-		}
-		high := cfg.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds
-		if high > first {
-			first = high
-		}
-		bounded := time.Duration(first*2+50) * time.Second
-		if bounded < defaultElapsed {
-			return defaultElapsed
-		}
-		return bounded
+		return boundedDefaultElapsed
 	}
-	return defaultElapsed
+	return legacyElapsed
 }
 
 func NewOpenAIRetryBudget(stateful bool) *OpenAIRetryBudget {
@@ -273,6 +267,19 @@ func PrepareOpenAIRetryBudgetWithConfig(c *gin.Context, body []byte, cfg *config
 		c.Set(openAIRetryBudgetConfigKey, cfg)
 	}
 	budget := newOpenAIRetryBudget(stateful, fullContext, openAIRetryBudgetMaxElapsed(cfg))
+	if cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.Gateway.OpenAIPreoutputRecoveryMode), "bounded_preoutput") && c.Request != nil {
+		path := strings.TrimSuffix(c.Request.URL.Path, "/")
+		budget.boundedHTTP = strings.HasSuffix(path, "/responses") || strings.HasSuffix(path, "/messages")
+		budget.streamingHTTP = c.Request.Method == http.MethodPost && gjson.GetBytes(body, "stream").Bool()
+		budget.highElapsed = time.Duration(cfg.Gateway.OpenAIPreoutputRecoveryHighEffortMaxElapsedSeconds) * time.Second
+		budget.firstOutputLimit = time.Duration(cfg.Gateway.OpenAIFirstOutputTimeoutSeconds) * time.Second
+		budget.highFirstOutputLimit = time.Duration(cfg.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds) * time.Second
+	}
+	if raw, ok := c.Get(openAILogicalStartKey); ok {
+		if started, ok := raw.(time.Time); ok && !started.IsZero() {
+			budget.startedAt = started
+		}
+	}
 	c.Set(openAIRetryBudgetContextKey, budget)
 	c.Set(openAIRetryBudgetActiveKey, false)
 	return budget
@@ -287,7 +294,10 @@ func EnsureOpenAIRetryBudget(c *gin.Context, account *Account, body []byte) *Ope
 		BeginOpenAIAttempt(c, account.ID, body)
 	}
 	if account == nil || !account.IsOpenAIOAuth() || !openAIRetryBudgetV2Enabled(account) {
-		c.Set(openAIRetryBudgetActiveKey, false)
+		// Once activated, a mixed-pool candidate cannot remove this request's cap.
+		if active := OpenAIRetryBudgetFromContext(c); active != nil {
+			return active
+		}
 		return nil
 	}
 	budget := openAIRetryBudgetFromContextRaw(c)
@@ -305,11 +315,27 @@ func StartOpenAIRetryBudgetTurn(c *gin.Context, account *Account, body []byte) *
 		c.Set(openAIRetryBudgetActiveKey, false)
 		return nil
 	}
+	// A WS response.create is a new logical turn, not permission to replay
+	// the previous turn. Replace its ledger together with its fresh budget.
+	sessionHash, promptCacheKey, routeKey := "", "", ""
+	if previous := OpenAIAttemptStateFromContext(c); previous != nil {
+		sessionHash, promptCacheKey, routeKey = previous.SessionHash, previous.PromptCacheKey, previous.RouteKey
+	}
+	if key := strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String()); key != "" {
+		promptCacheKey = key
+	}
+	state := newOpenAIAttemptState(c, body, sessionHash,
+		gjson.GetBytes(body, "previous_response_id").String(), promptCacheKey)
+	state.CurrentAccountID, state.Attempt, state.attemptActive = account.ID, 1, true
+	state.RouteKey = routeKey
+	c.Set(openAIAttemptStateKey, state)
+	attachOpenAIAttemptStateToRequest(c, state)
+	ResetOpenAIAttemptWireState(c)
 	var cfg *config.Config
 	if raw, ok := c.Get(openAIRetryBudgetConfigKey); ok {
 		cfg, _ = raw.(*config.Config)
 	}
-	budget := newOpenAIRetryBudget(OpenAIRetryRequestIsStateful(c, body), false, openAIRetryBudgetMaxElapsed(cfg))
+	budget := newOpenAIRetryBudget(state.Stateful, false, openAIRetryBudgetMaxElapsed(cfg))
 	c.Set(openAIRetryBudgetContextKey, budget)
 	c.Set(openAIRetryBudgetActiveKey, true)
 	return budget
@@ -353,19 +379,26 @@ func ReserveOpenAIUpstreamAttempt(c *gin.Context, accountID int64) error {
 	if err := NewCodexCommitGuard(c).CanStartAttempt(accountID); err != nil {
 		return err
 	}
-	return budget.Reserve(accountID)
+	return budget.reserve(accountID, NewCodexCommitGuard(c).Snapshot().ReplaySafe)
 }
 
 func (b *OpenAIRetryBudget) Reserve(accountID int64) error {
+	return b.reserve(accountID, true)
+}
+
+func (b *OpenAIRetryBudget) reserve(accountID int64, replaySafe bool) error {
 	if b == nil {
 		return nil
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if !replaySafe && b.attempts > 0 {
+		return fmt.Errorf("%w: request replay is not permitted", ErrOpenAIRetryBudgetExhausted)
+	}
 	if !b.replaySafe || b.streamStarted || b.bytesEmitted {
 		return fmt.Errorf("%w: replay is closed after downstream output", ErrOpenAIRetryBudgetExhausted)
 	}
-	if b.maxElapsed > 0 && time.Since(b.startedAt) > b.maxElapsed {
+	if b.maxElapsed > 0 && time.Since(b.startedAt) >= b.maxElapsed {
 		return fmt.Errorf("%w: elapsed limit exceeded", ErrOpenAIRetryBudgetExhausted)
 	}
 	if b.attempts >= b.maxAttempts {

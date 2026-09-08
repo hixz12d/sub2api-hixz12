@@ -364,6 +364,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	setOpenAIClientTransportHTTP(c)
 
 	requestStart := time.Now()
+	service.RecordOpenAILogicalStart(c, requestStart)
 
 	// Get apiKey and user from context (set by ApiKeyAuth middleware)
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
@@ -1289,6 +1290,7 @@ func (h *OpenAIGatewayHandler) Messages(c *gin.Context) {
 	defer h.recoverAnthropicMessagesPanic(c, &streamStarted)
 
 	requestStart := time.Now()
+	service.RecordOpenAILogicalStart(c, requestStart)
 
 	apiKey, ok := middleware2.GetAPIKeyFromContext(c)
 	if !ok {
@@ -2275,8 +2277,28 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 
 	// 终检与准入后绑定使用选号结果携带的门：composite 等跨分组调度解析出的
 	// 门只存在于调度栈的局部 ctx，必须经选号结果重放到本函数的 ctx 上。
-	ctx := service.ContextWithSelectionProfitGate(c.Request.Context(), selection)
+	lifetimeCtx := service.ContextWithSelectionProfitGate(c.Request.Context(), selection)
 	account := selection.Account
+	ctx, releasePreparation := service.OpenAIRecoveryPreparationContext(c, lifetimeCtx, account)
+	defer releasePreparation()
+	originalRequest := c.Request
+	c.Request = originalRequest.WithContext(ctx)
+	defer func() { c.Request = originalRequest }()
+	writeSlotError := writeError
+	writeError = func(status int, errType, message string) {
+		if errors.Is(context.Cause(ctx), service.ErrOpenAIRecoveryDeadline) {
+			status, errType, message = http.StatusGatewayTimeout, "recovery_deadline", "Pre-output recovery deadline exceeded"
+		}
+		writeSlotError(status, errType, message)
+	}
+	if err := ctx.Err(); err != nil {
+		if selection.Acquired && selection.ReleaseFunc != nil {
+			selection.ReleaseFunc()
+		}
+		status, errType, message := concurrencyErrorResponse(err, "account")
+		writeError(status, errType, message)
+		return nil, openAISlotAcquireFailed
+	}
 	if selection.Acquired {
 		latest, vetoed, reason := h.gatewayService.ProfitControlVetoLatest(ctx, account)
 		if vetoed {
@@ -2295,7 +2317,7 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 				reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 			}
 		}
-		return wrapReleaseOnDone(ctx, selection.ReleaseFunc), openAISlotAcquireOK
+		return wrapReleaseOnDone(lifetimeCtx, selection.ReleaseFunc), openAISlotAcquireOK
 	}
 	if selection.WaitPlan == nil {
 		markOpsRoutingCapacityLimited(c)
@@ -2332,7 +2354,7 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 				reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 			}
 		}
-		return wrapReleaseOnDone(ctx, fastReleaseFunc), openAISlotAcquireOK
+		return wrapReleaseOnDone(lifetimeCtx, fastReleaseFunc), openAISlotAcquireOK
 	}
 
 	canWait, waitErr := h.concurrencyHelper.IncrementAccountWaitCount(ctx, account.ID, selection.WaitPlan.MaxWaiting)
@@ -2350,7 +2372,9 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 	accountWaitCounted := waitErr == nil && canWait
 	releaseWait := func() {
 		if accountWaitCounted {
-			h.concurrencyHelper.DecrementAccountWaitCount(ctx, account.ID)
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(lifetimeCtx), 3*time.Second)
+			h.concurrencyHelper.DecrementAccountWaitCount(cleanupCtx, account.ID)
+			cancel()
 			accountWaitCounted = false
 		}
 	}
@@ -2390,7 +2414,7 @@ func (h *OpenAIGatewayHandler) acquireOpenAIAccountSlot(
 			reqLog.Warn("openai.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 		}
 	}
-	return wrapReleaseOnDone(ctx, accountReleaseFunc), openAISlotAcquireOK
+	return wrapReleaseOnDone(lifetimeCtx, accountReleaseFunc), openAISlotAcquireOK
 }
 
 func (h *OpenAIGatewayHandler) prepareCodexRequestPlan(
@@ -3896,10 +3920,15 @@ func waitOpenAIPreOutputAutoRetry(
 			zap.Bool("safe_after_nonsemantic_write", failoverErr.SafeToFailoverAfterWrite),
 		)
 	}
+	waitCtx, releaseWait := service.OpenAIRecoveryPreparationContext(c, c.Request.Context(), nil)
+	defer releaseWait()
+	if waitCtx.Err() != nil {
+		return false
+	}
 	timer := time.NewTimer(openAIPreOutputAutoRetryDelay)
 	defer timer.Stop()
 	select {
-	case <-c.Request.Context().Done():
+	case <-waitCtx.Done():
 		return false
 	case <-timer.C:
 		return true

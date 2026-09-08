@@ -270,6 +270,11 @@ FROM gateway_response_bindings WHERE owner_scope_hash=$1 AND provider=$2 AND res
 	if err != nil {
 		return nil, err
 	}
+	// A concurrent insert can win after the initial ownership check. The
+	// conditional upsert then affects no row; never accept the winner as ours.
+	if binding.AccountID != accountID {
+		return nil, fmt.Errorf("%w: concurrent response owner changed", service.ErrOpenAIAffinityConflict)
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}

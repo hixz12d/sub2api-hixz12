@@ -101,12 +101,12 @@ func TestFilterCodexInput_StripsFcIDFromToolSearchCall_WhenPreservingReferences(
 	require.Equal(t, "tool_search_call", bad["type"])
 	_, hasID := bad["id"]
 	require.False(t, hasID, "fc_* id should be stripped from tool_search_call")
-	require.Equal(t, "fc_search", bad["call_id"], "call_id must be preserved")
+	require.Equal(t, "tsc_search", bad["call_id"], "call_id must use the canonical tool-search prefix")
 
 	good, ok := filtered[1].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "tsc_validID123", good["id"], "valid tsc* id must be preserved")
-	require.Equal(t, "fc_search2", good["call_id"])
+	require.Equal(t, "tsc_search2", good["call_id"])
 }
 
 // TestFilterCodexInput_StripsFcIDFromCustomToolCall_WhenPreservingReferences
@@ -142,14 +142,14 @@ func TestFilterCodexInput_StripsFcIDFromCustomToolCall_WhenPreservingReferences(
 	require.Equal(t, "custom_tool_call", bad["type"])
 	_, hasID := bad["id"]
 	require.False(t, hasID, "fc_* id should be stripped from custom_tool_call")
-	require.Equal(t, "fc_custom", bad["call_id"], "call_id must be preserved")
+	require.Equal(t, "ctc_custom", bad["call_id"], "call_id must use the canonical custom-tool prefix")
 	require.Equal(t, "exec", bad["name"])
 	require.Equal(t, "dir", bad["input"])
 
 	good, ok := filtered[1].(map[string]any)
 	require.True(t, ok)
 	require.Equal(t, "ctc_validID123", good["id"], "valid ctc* id must be preserved")
-	require.Equal(t, "fc_custom2", good["call_id"])
+	require.Equal(t, "ctc_custom2", good["call_id"])
 }
 
 func TestFilterCodexInput_PreservesNativeCustomAndToolSearchIDs(t *testing.T) {

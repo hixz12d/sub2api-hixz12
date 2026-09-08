@@ -537,6 +537,14 @@ func (s *stubAdminService) ClearAccountError(ctx context.Context, id int64) (*se
 	return &account, nil
 }
 
+func (s *stubAdminService) SyncOpenAIOAuthCredentials(ctx context.Context, id int64, req *service.SyncOAuthCredentialsRequest) (*service.SyncOAuthCredentialsResult, *service.Account, error) {
+	panic("unexpected SyncOpenAIOAuthCredentials call: use a credential-sync fixture")
+}
+
+func (s *stubAdminService) RecoverAuthErrorOnly(ctx context.Context, id int64, expectedStatus, expectedErrorMessage string) (string, error) {
+	panic("unexpected RecoverAuthErrorOnly call: use a credential-sync fixture")
+}
+
 func (s *stubAdminService) SetAccountError(ctx context.Context, id int64, errorMsg string) error {
 	return nil
 }

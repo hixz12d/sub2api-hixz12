@@ -49,7 +49,7 @@ func (u *openAIResponsesFailoverCancelUpstream) calls() []int64 {
 	return append([]int64(nil), u.accountIDs...)
 }
 
-func newOpenAIResponsesFailoverTestHandler(t *testing.T, upstream service.HTTPUpstream) *OpenAIGatewayHandler {
+func newOpenAIResponsesFailoverTestHandler(t *testing.T, upstream service.HTTPUpstream, usageRepos ...service.UsageLogRepository) *OpenAIGatewayHandler {
 	t.Helper()
 	accounts := []service.Account{
 		{
@@ -77,9 +77,17 @@ func newOpenAIResponsesFailoverTestHandler(t *testing.T, upstream service.HTTPUp
 	}
 	accountRepo := openAIImagesFailoverAccountRepo{accounts: accounts}
 	cfg := &config.Config{RunMode: config.RunModeSimple}
+	var usageRepo service.UsageLogRepository
+	if len(usageRepos) > 0 {
+		usageRepo = usageRepos[0]
+	}
+	var pricing *service.BillingService
+	if usageRepo != nil {
+		pricing = service.NewBillingService(cfg, nil)
+	}
 	gatewayService := service.NewOpenAIGatewayService(
 		accountRepo,
-		nil,
+		usageRepo,
 		nil,
 		nil,
 		nil,
@@ -88,11 +96,11 @@ func newOpenAIResponsesFailoverTestHandler(t *testing.T, upstream service.HTTPUp
 		cfg,
 		nil,
 		nil,
-		nil,
+		pricing,
 		nil,
 		nil,
 		upstream,
-		nil,
+		&service.DeferredService{},
 		nil,
 		nil,
 		nil,

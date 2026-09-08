@@ -47,18 +47,31 @@ func (e *oauthRefreshHandlerExecutor) Refresh(context.Context, *service.Account)
 type oauthRefreshHandlerUpstream struct {
 	service.HTTPUpstream
 	accountIDs []int64
+	permanent  bool
 }
 
 func (u *oauthRefreshHandlerUpstream) Do(_ *http.Request, _ string, id int64, _ int) (*http.Response, error) {
 	u.accountIDs = append(u.accountIDs, id)
 	if id == 1 {
-		return &http.Response{StatusCode: http.StatusUnauthorized, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"error":{"code":"token_revoked"}}`))}, nil
+		body := `{"error":{"code":"access_token_expired"}}`
+		if u.permanent {
+			body = `{"error":{"code":"token_revoked"}}`
+		}
+		return &http.Response{StatusCode: http.StatusUnauthorized, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
 	}
 	return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}},
 		Body: io.NopCloser(strings.NewReader("data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_healthy\",\"status\":\"completed\",\"output\":[],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n"))}, nil
 }
 
 func TestResponsesHandlerRefreshRejectionSwitchesAccounts(t *testing.T) {
+	testResponsesHandlerCredentialFailover(t, false)
+}
+
+func TestResponsesHandlerTokenRevokedSkipsRefresh(t *testing.T) {
+	testResponsesHandlerCredentialFailover(t, true)
+}
+
+func testResponsesHandlerCredentialFailover(t *testing.T, permanent bool) {
 	gin.SetMode(gin.TestMode)
 	for _, passthrough := range []bool{false, true} {
 		name := "normal"
@@ -77,8 +90,9 @@ func TestResponsesHandlerRefreshRejectionSwitchesAccounts(t *testing.T) {
 			provider := service.NewOpenAITokenProvider(repo, nil, nil)
 			provider.SetRefreshAPI(service.NewOAuthRefreshAPI(repo, nil), executor)
 			cfg := &config.Config{RunMode: config.RunModeSimple}
-			upstream := &oauthRefreshHandlerUpstream{}
-			gateway := service.NewOpenAIGatewayService(repo, nil, nil, nil, nil, nil, nil, cfg, nil, nil, nil, nil, nil,
+			upstream := &oauthRefreshHandlerUpstream{permanent: permanent}
+			rateLimit := service.NewRateLimitService(repo, nil, cfg, nil, nil)
+			gateway := service.NewOpenAIGatewayService(repo, nil, nil, nil, nil, nil, nil, cfg, nil, nil, nil, rateLimit, nil,
 				upstream, nil, provider, nil, nil, nil, nil, nil, nil)
 			billing := service.NewBillingCacheService(nil, nil, nil, nil, nil, nil, cfg, nil)
 			t.Cleanup(billing.Stop)
@@ -89,7 +103,11 @@ func TestResponsesHandlerRefreshRejectionSwitchesAccounts(t *testing.T) {
 			h.Responses(c)
 			require.Equal(t, []int64{1, 2}, upstream.accountIDs)
 			require.Equal(t, []int64{1}, repo.setErrorIDs)
-			require.Equal(t, 1, executor.calls)
+			if permanent {
+				require.Zero(t, executor.calls, "revoked tokens must never be refreshed")
+			} else {
+				require.Equal(t, 1, executor.calls)
+			}
 			require.Equal(t, http.StatusOK, rec.Code)
 			require.Contains(t, rec.Body.String(), "resp_healthy")
 			require.NotContains(t, rec.Body.String(), "secret-must-not-leak")

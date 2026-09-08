@@ -56,18 +56,18 @@ func TestAnnotateOpenAIPreOutputFailoverFillsStructuredFields(t *testing.T) {
 }
 
 func TestOpenAIRetryBudgetMaxElapsedBoundedPreoutput(t *testing.T) {
-	require.Equal(t, 110*time.Second, openAIRetryBudgetMaxElapsed(nil))
+	require.Equal(t, 20*time.Second, openAIRetryBudgetMaxElapsed(nil))
 
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIPreoutputRecoveryMode = "legacy"
-	require.Equal(t, 110*time.Second, openAIRetryBudgetMaxElapsed(cfg))
+	require.Equal(t, 20*time.Second, openAIRetryBudgetMaxElapsed(cfg))
 
 	cfg.Gateway.OpenAIPreoutputRecoveryMode = "bounded_preoutput"
 	cfg.Gateway.OpenAIFirstOutputTimeoutSeconds = 30
-	require.Equal(t, 110*time.Second, openAIRetryBudgetMaxElapsed(cfg)) // floor
+	require.Equal(t, 110*time.Second, openAIRetryBudgetMaxElapsed(cfg)) // bounded floor
 
 	cfg.Gateway.OpenAIFirstOutputTimeoutSeconds = 90
-	require.Equal(t, 230*time.Second, openAIRetryBudgetMaxElapsed(cfg)) // 2*90+50
+	require.Equal(t, 110*time.Second, openAIRetryBudgetMaxElapsed(cfg)) // independent of attempt timeout
 
 	cfg.Gateway.OpenAIPreoutputRecoveryMaxElapsedSeconds = 180
 	require.Equal(t, 180*time.Second, openAIRetryBudgetMaxElapsed(cfg))
@@ -84,5 +84,5 @@ func TestPrepareOpenAIRetryBudgetUsesBoundedConfig(t *testing.T) {
 	cfg.Gateway.OpenAIFirstOutputTimeoutSeconds = 60
 	budget := PrepareOpenAIRetryBudgetWithConfig(c, []byte(`{"model":"gpt-5"}`), cfg)
 	require.NotNil(t, budget)
-	require.Equal(t, 170*time.Second, budget.Snapshot().MaxElapsed)
+	require.Equal(t, 110*time.Second, budget.Snapshot().MaxElapsed)
 }

@@ -32,13 +32,26 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	body []byte,
 	promptCacheKey string,
 	defaultMappedModel string,
-) (*OpenAIForwardResult, error) {
+) (out *OpenAIForwardResult, retErr error) {
 	ctx = s.snapshotOpenAIOutboundIdentity(ctx, account, c.GetHeader("User-Agent"))
 	beginUpstreamResponseModelObservation(c)
 	if s.cfg != nil {
 		c.Set(openAIRetryBudgetConfigKey, s.cfg)
 	}
 	EnsureOpenAIRetryBudget(c, account, body)
+	requestCtx := ctx
+	preparationCtx, releasePreparation := OpenAIRecoveryPreparationContext(c, requestCtx, account)
+	ctx = preparationCtx
+	preparing := true
+	defer func() {
+		if preparing && errors.Is(context.Cause(preparationCtx), ErrOpenAIRecoveryDeadline) {
+			out, retErr = nil, openAIOutputPhaseFailure(c, ErrOpenAIRecoveryDeadline, nil)
+		}
+		releasePreparation()
+	}()
+	if err := ctx.Err(); err != nil && ctx.Value(openAIRecoveryPreparationKey{}) == true {
+		return nil, err
+	}
 	ClearActualOpenAIUpstreamEndpoint(c)
 	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
 		SetActualOpenAIUpstreamEndpoint(c, "/v1/chat/completions")
@@ -355,6 +368,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		setOpenAICompatMessagesBridgeContext(c, true)
 	}
 	upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
+	if ctx.Value(openAIRecoveryPreparationKey{}) == true {
+		upstreamCtx = ctx
+	}
 	var upstreamReq *http.Request
 	if account.Platform == PlatformGrok {
 		upstreamReq, err = buildGrokResponsesRequest(upstreamCtx, c, account, responsesBody, token, grokCacheIdentity, s.cfg, s.settingService)
@@ -403,6 +419,8 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	// account/cache identity. Match forwardGrokResponses: one strip+retry before
 	// treating the 400 as a hard failure / failover trigger.
 	var resp *http.Response
+	phaseCtx := requestCtx
+	var phaseGuard *openAIFirstOutputHeaderGuard
 	for attempt := 0; ; attempt++ {
 		if attempt > 0 {
 			if account.Platform != PlatformGrok {
@@ -415,10 +433,37 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 				return nil, fmt.Errorf("build grok retry request: %w", err)
 			}
 		}
+		if preparing {
+			if err := preparationCtx.Err(); err != nil && preparationCtx.Value(openAIRecoveryPreparationKey{}) == true {
+				return nil, err
+			}
+			releasePreparation()
+			ctx, preparing = requestCtx, false
+		}
+		if clientStream && account.Platform == PlatformOpenAI {
+			effort := ""
+			if effective := extractOpenAIReasoningEffortFromBody(responsesBody, upstreamModel, billingModel, originalModel); effective != nil {
+				effort = *effective
+			}
+			phaseCtx, phaseGuard, err = s.beginOpenAIHTTPOutputPhase(openAIPhaseParent(ctx, upstreamReq.Context()), c, account, effort)
+			if err != nil {
+				return nil, openAIOutputPhaseFailure(c, err, nil)
+			}
+			if phaseGuard != nil {
+				defer phaseGuard.close()
+				upstreamReq = upstreamReq.WithContext(phaseCtx)
+			}
+		}
 		if reserveErr := ReserveOpenAIUpstreamAttempt(c, account.ID); reserveErr != nil {
 			return nil, reserveErr
 		}
 		resp, err = s.doOpenAIUpstream(upstreamReq, proxyURL, account)
+		if phaseGuard != nil && phaseGuard.failure() != nil {
+			if resp != nil && resp.Body != nil {
+				_ = resp.Body.Close()
+			}
+			return nil, openAIOutputPhaseFailure(c, phaseGuard.failure(), nil)
+		}
 		if err != nil {
 			transportErr := s.handleOpenAIUpstreamTransportError(ctx, c, account, err, false)
 			RecordOpenAIRetryFailure(c, 0, transportErr)
@@ -460,6 +505,10 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	// 8. Handle error response with failover
 	if resp.StatusCode >= 400 {
 		respBody, upstreamMsg := s.readOpenAIUpstreamError(resp)
+		_ = resp.Body.Close()
+		if phaseGuard != nil {
+			phaseGuard.close()
+		}
 		if !agentIdentityTaskRecoveryWasTried(ctx) && s.isAgentIdentityAccount(ctx, account) && isAgentIdentityTaskInvalidHTTPResponse(resp.StatusCode, respBody) {
 			expectedTaskID := account.GetCredential("task_id")
 			if err := s.recoverAgentIdentityTask(ctx, account, expectedTaskID); err != nil {
@@ -515,11 +564,19 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	var result *OpenAIForwardResult
 	var handleErr error
 	if clientStream {
-		streamCtx := withOpenAIStreamProxyURL(ctx, proxyURL)
-			result, handleErr = s.handleAnthropicStreamingResponse(streamCtx, resp, c, account, originalModel, billingModel, upstreamModel, startTime)
+		streamCtx := withOpenAIStreamProxyURL(phaseCtx, proxyURL)
+		effort := ""
+		if effective := extractOpenAIReasoningEffortFromBody(responsesBody, upstreamModel, billingModel, originalModel); effective != nil {
+			effort = *effective
+		}
+		result, handleErr = s.handleAnthropicStreamingResponseWithReasoning(streamCtx, resp, c, account, originalModel, billingModel, upstreamModel, startTime, effort)
 	} else {
 		// Client wants JSON: buffer the streaming response and assemble a JSON reply.
 		result, handleErr = s.handleAnthropicBufferedStreamingResponse(resp, c, account, originalModel, billingModel, upstreamModel, startTime)
+	}
+
+	if phaseGuard != nil && phaseGuard.timeoutFailure() != nil {
+		return result, openAIOutputPhaseFailure(c, phaseGuard.timeoutFailure(), resp.Header)
 	}
 
 	// cyber_policy：标记已设、error 已按 Anthropic 格式发给客户端。丢弃 result、返回哨兵，
@@ -922,7 +979,7 @@ func (s *OpenAIGatewayService) readOpenAICompatBufferedTerminal(
 				zap.String("request_id", requestID),
 				zap.Duration("interval", streamInterval),
 			)
-			return nil, usage, acc, fmt.Errorf("stream data interval timeout")
+			return nil, usage, acc, ErrOpenAIStreamIntervalTimeout
 		}
 	}
 }
@@ -941,6 +998,18 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	billingModel string,
 	upstreamModel string,
 	startTime time.Time,
+) (*OpenAIForwardResult, error) {
+	return s.handleAnthropicStreamingResponseWithReasoning(ctx, resp, c, account, originalModel, billingModel, upstreamModel, startTime, "")
+}
+
+func (s *OpenAIGatewayService) handleAnthropicStreamingResponseWithReasoning(
+	ctx context.Context,
+	resp *http.Response,
+	c *gin.Context,
+	account *Account,
+	originalModel, billingModel, upstreamModel string,
+	startTime time.Time,
+	reasoningEffort string,
 ) (*OpenAIForwardResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -1024,9 +1093,10 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			}
 		}()
 	}
+	phaseGuard := openAIPhaseWatchdogFromContext(ctx)
 	firstOutputTimeout := time.Duration(0)
 	if stageFirstOutput {
-		firstOutputTimeout = s.openAIFirstOutputTimeout("")
+		firstOutputTimeout = s.openAIFirstOutputTimeout(reasoningEffort)
 	}
 	ttftMode := s.openAITTFTMode(ctx)
 	stopFirstOutputTimer := func() {}
@@ -1103,6 +1173,22 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		if firstOutputStage == nil || firstOutputStage.closed || firstOutputStage.Buffered() == 0 {
 			return nil
 		}
+		if responseID != "" {
+			if err := s.bindPersistentOpenAIResponse(ctx, c, account, responseID); err != nil {
+				denyOpenAIMessagesReplay(c)
+				return localOpenAIOutputFailure(fmt.Errorf("persist Messages response ownership: %w", err))
+			}
+			if affinity, enabled := openAIAffinityFromGin(c); enabled && affinity.Writable && s.openAIAffinityEnabled() && account.IsOpenAIOAuth() {
+				// A persisted ownership decision must survive a later write failure.
+				denyOpenAIMessagesReplay(c)
+			}
+		}
+		if phaseGuard != nil {
+			if err := phaseGuard.tryCommit(); err != nil {
+				return openAIOutputPhaseFailure(c, err, resp.Header)
+			}
+		}
+		MarkOpenAISemanticOutputStarted(c)
 		applyAttemptResponseHeaders()
 		writeStreamHeaders()
 		if err := firstOutputStage.CommitTo(c.Writer); err != nil {
@@ -1111,8 +1197,10 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		c.Writer.Flush()
 		return nil
 	}
-	writeClientSSE := func(sse string, semantic bool) error {
-		if semantic && firstOutputStage != nil && !firstOutputStage.closed && !clientOutputStarted {
+	writeClientSSE := func(sse string) error {
+		// Keep every converted event in the stage until an upstream event with
+		// confirmed semantic output makes the whole staged preamble publishable.
+		if firstOutputStage != nil && !firstOutputStage.closed && !clientOutputStarted {
 			if _, err := firstOutputStage.WriteString(sse); err != nil {
 				return err
 			}
@@ -1123,6 +1211,9 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		return err
 	}
 	finishScanErr := func(scanErr error) (*OpenAIForwardResult, error) {
+		if phaseGuard != nil && phaseGuard.timeoutFailure() != nil {
+			return resultWithUsage(), openAIOutputPhaseFailure(c, phaseGuard.timeoutFailure(), resp.Header)
+		}
 		if scanErr == nil {
 			return resultWithUsage(), nil
 		}
@@ -1141,7 +1232,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				msg += ": " + errText
 			}
 			s.recordOpenAIHTTP2StreamFailure(ctx, resp, scanErr)
-			return resultWithUsage(), newPreOutputFailoverError(nil, msg, classifyOpenAIStreamScanCause(scanErr))
+			return resultWithUsage(), withOpenAIUnderlyingError(newPreOutputFailoverError(nil, msg, classifyOpenAIStreamScanCause(scanErr)), scanErr)
 		}
 		if clientDisconnected {
 			return resultWithUsage(), fmt.Errorf("stream usage incomplete after disconnect: %w", scanErr)
@@ -1162,6 +1253,9 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 
 		var event apicompat.ResponsesStreamEvent
 		if err := json.Unmarshal([]byte(payload), &event); err != nil {
+			if stageFirstOutput {
+				denyOpenAIMessagesReplay(c)
+			}
 			logger.L().Warn("openai messages stream: failed to parse event",
 				zap.Error(err),
 				zap.String("request_id", requestID),
@@ -1169,7 +1263,14 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			return false
 		}
 		eventTypeEarly := strings.TrimSpace(event.Type)
-		if !firstSemanticSeen && eventTypeEarly != "" && !openAIStreamEventIsPreamble(eventTypeEarly) && eventTypeEarly != "ping" {
+		if stageFirstOutput && !openAIMessagesEventAllowsUncommittedReplay(payload, eventTypeEarly) {
+			denyOpenAIMessagesReplay(c)
+		}
+		eventHasSemanticOutput := openAIStreamDataStartsVisibleOutput(payload, eventTypeEarly)
+		if eventTypeEarly == "response.output_item.added" || eventTypeEarly == "response.content_part.added" || eventTypeEarly == "response.reasoning_summary_part.added" {
+			eventHasSemanticOutput = openAIStreamAddedEventStartsClientOutput([]byte(payload), eventTypeEarly)
+		}
+		if !firstSemanticSeen && eventHasSemanticOutput {
 			firstSemanticSeen = true
 			MarkOpenAIAttemptTTFTPhase(c, "semantic", int(time.Since(startTime).Milliseconds()))
 		}
@@ -1180,10 +1281,6 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 		if responseID == "" && event.Response != nil {
 			if id := strings.TrimSpace(event.Response.ID); id != "" {
 				responseID = id
-				if bindErr := s.bindPersistentOpenAIResponse(c.Request.Context(), c, account, responseID); bindErr != nil {
-					streamFailoverErr = fmt.Errorf("persist Messages response ownership before output: %w", bindErr)
-					return true
-				}
 			}
 		}
 		isBareErrorEvent := eventType == "error"
@@ -1250,7 +1347,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 					MarkResponseCommitted(c)
 				}
 				if !clientDisconnected {
-					if !clientOutputStarted {
+					if !headersWritten && !c.Writer.Written() {
 						writeAnthropicError(c, errStatus, errType, errMsg)
 						clientOutputStarted = true
 					} else {
@@ -1265,7 +1362,11 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			}
 		}
 
-		// Convert to Anthropic events
+		// Convert to Anthropic events. Structural events may be emitted by the
+		// converter for a semantic upstream event, so commit only after the
+		// complete converted batch has been staged.
+		// eventHasSemanticOutput was classified before conversion so structural
+		// Anthropic events cannot commit the stage by themselves.
 		events := apicompat.ResponsesEventToAnthropicEvents(&event, state)
 		if !clientDisconnected {
 			for _, evt := range events {
@@ -1277,9 +1378,10 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 					)
 					continue
 				}
-				if err := writeClientSSE(sse, true); err != nil {
+				if err := writeClientSSE(sse); err != nil {
 					if firstOutputStage != nil && !firstOutputStage.closed && (errors.Is(err, errOpenAIFirstOutputStageLimit) || strings.Contains(err.Error(), "first-output")) {
-						streamFailoverErr = newPreOutputFailoverError(nil, "OpenAI first-output staging failed", OpenAIFailureCauseStreamRead)
+						denyOpenAIMessagesReplay(c)
+						streamNonFailoverErr = localOpenAIOutputFailure(err)
 						return true
 					}
 					clientDisconnected = true
@@ -1288,6 +1390,27 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 					)
 					break
 				}
+			}
+		}
+		if eventHasSemanticOutput && len(events) > 0 && !clientDisconnected {
+			if !clientOutputStarted {
+				if err := commitFirstOutputStage(); err != nil {
+					if errors.Is(err, errOpenAILocalOutputFailure) {
+						streamNonFailoverErr = err
+						return true
+					}
+					var phaseFailure *UpstreamFailoverError
+					if errors.As(err, &phaseFailure) {
+						streamFailoverErr = err
+						return true
+					}
+					clientDisconnected = true
+				} else {
+					clientOutputStarted = true
+					stopFirstOutputTimer()
+				}
+			}
+			if !clientDisconnected {
 				MarkOpenAISemanticOutputStarted(c)
 				MarkOpenAIAttemptTTFTPhase(c, "visible", int(time.Since(startTime).Milliseconds()))
 				if firstTokenMs == nil {
@@ -1295,17 +1418,6 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 					if openAIStreamDataStartsTTFT(payload, eventType, false, ttftMode) || ttftMode == OpenAITTFTModeVisible || firstSemanticSeen {
 						firstTokenMs = &ms
 					}
-				}
-				if !clientOutputStarted {
-					if err := commitFirstOutputStage(); err != nil {
-						clientDisconnected = true
-						logger.L().Info("openai messages stream: client disconnected during first-output commit",
-							zap.String("request_id", requestID),
-						)
-						break
-					}
-					clientOutputStarted = true
-					stopFirstOutputTimer()
 				}
 			}
 		}
@@ -1329,21 +1441,31 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				if err != nil {
 					continue
 				}
-				if err := writeClientSSE(sse, true); err != nil {
+				if err := writeClientSSE(sse); err != nil {
 					clientDisconnected = true
 					logger.L().Info("openai messages stream: client disconnected during final flush",
 						zap.String("request_id", requestID),
 					)
 					break
 				}
-				if !clientOutputStarted {
-					_ = commitFirstOutputStage()
-					clientOutputStarted = true
-					stopFirstOutputTimer()
-				}
 			}
 			if !clientDisconnected {
 				c.Writer.Flush()
+			}
+		}
+		if !clientOutputStarted && !clientDisconnected && terminalEventType == "response.completed" {
+			if err := commitFirstOutputStage(); err != nil {
+				if errors.Is(err, errOpenAILocalOutputFailure) {
+					return resultWithUsage(), err
+				}
+				var phaseFailure *UpstreamFailoverError
+				if errors.As(err, &phaseFailure) {
+					return resultWithUsage(), err
+				}
+				clientDisconnected = true
+			} else {
+				clientOutputStarted = true
+				stopFirstOutputTimer()
 			}
 		}
 		logOpenAISuccessMissingUsage(c.Request.Context(), c, account, resp, &usage, terminalEventType, clientDisconnected)
@@ -1358,10 +1480,10 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			return result, fmt.Errorf("stream usage incomplete: missing terminal event")
 		}
 		message := "OpenAI messages stream ended before a terminal event"
-		streamErr := errors.New("stream ended before terminal event")
+		streamErr := ErrOpenAIStreamMissingTerminal
 		if !openAIStreamClientOutputStarted(c, clientOutputStarted, attemptWriterSizeBefore, downstreamKeepaliveBytes) {
 			s.recordOpenAIHTTP2StreamFailure(ctx, resp, streamErr)
-			return result, newPreOutputFailoverError(nil, message, OpenAIFailureCauseMissingTerminal)
+			return result, withOpenAIUnderlyingError(newPreOutputFailoverError(nil, message, OpenAIFailureCauseMissingTerminal), streamErr)
 		}
 		s.recordOpenAIHTTP2StreamFailure(ctx, resp, streamErr)
 		s.recordOpenAIMessagesStreamUpstreamError(c, account, requestID, "stream_missing_terminal", message)
@@ -1379,7 +1501,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	}
 
 	// ── No keepalive: fast synchronous path (no goroutine overhead) ──
-	if streamInterval <= 0 && keepaliveInterval <= 0 && firstOutputTimeout <= 0 {
+	if streamInterval <= 0 && keepaliveInterval <= 0 && firstOutputTimeout <= 0 && phaseGuard == nil {
 		var parser openAICompatSSEFrameParser
 		for scanner.Scan() {
 			line := scanner.Text()
@@ -1450,7 +1572,9 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 	}
 	var firstOutputTimer *time.Timer
 	var firstOutputCh <-chan time.Time
-	if firstOutputTimeout > 0 {
+	if phaseGuard != nil {
+		firstOutputCh = phaseGuard.done
+	} else if firstOutputTimeout > 0 {
 		remaining := time.Until(startTime.Add(firstOutputTimeout))
 		if remaining <= 0 {
 			remaining = time.Nanosecond
@@ -1519,10 +1643,10 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 				zap.String("model", originalModel),
 				zap.Duration("interval", streamInterval),
 			)
-			streamErr := fmt.Errorf("stream data interval timeout")
+			streamErr := ErrOpenAIStreamIntervalTimeout
 			if !openAIStreamClientOutputStarted(c, clientOutputStarted, attemptWriterSizeBefore, downstreamKeepaliveBytes) {
 				s.recordOpenAIHTTP2StreamFailure(ctx, resp, streamErr)
-				return resultWithUsage(), newPreOutputFailoverError(nil, streamErr.Error(), OpenAIFailureCauseIntervalTimeout)
+				return resultWithUsage(), withOpenAIUnderlyingError(newPreOutputFailoverError(nil, streamErr.Error(), OpenAIFailureCauseIntervalTimeout), streamErr)
 			}
 			s.recordOpenAIHTTP2StreamFailure(ctx, resp, streamErr)
 			return resultWithUsage(), streamErr
@@ -1551,6 +1675,10 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			c.Writer.Flush()
 
 		case <-firstOutputCh:
+			if phaseGuard != nil {
+				_ = resp.Body.Close()
+				return resultWithUsage(), openAIOutputPhaseFailure(c, phaseGuard.timeoutFailure(), resp.Header)
+			}
 			if clientOutputStarted || clientDisconnected {
 				continue
 			}
@@ -1558,7 +1686,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponse(
 			if firstOutputStage != nil {
 				_ = firstOutputStage.Close()
 			}
-			err := s.newOpenAIFirstOutputTimeoutError(ctx, c, account, startTime, originalModel, "", firstOutputTimeout, "semantic_output", resp.Header)
+			err := s.newOpenAIFirstOutputTimeoutError(ctx, c, account, startTime, originalModel, reasoningEffort, firstOutputTimeout, "semantic_output", resp.Header)
 			return resultWithUsage(), annotateOpenAIPreOutputFailover(c, err, OpenAIFailureCauseFirstOutputTimeout, OpenAIRetryDecisionFailoverOtherAccount)
 		}
 	}

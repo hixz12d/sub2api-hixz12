@@ -1764,6 +1764,32 @@ func (r *accountRepository) ClearError(ctx context.Context, id int64) error {
 	return nil
 }
 
+// ClearAuthErrorOnly clears only status/error_message for a recognized auth error.
+// It never touches rate limits, temp unschedulable, or runtime blockers.
+// expectedStatus/expectedErrorMessage act as a simple CAS guard.
+func (r *accountRepository) ClearAuthErrorOnly(ctx context.Context, id int64, expectedStatus, expectedErrorMessage string) (bool, error) {
+	q := r.client.Account.Update().
+		Where(
+			dbaccount.IDEQ(id),
+			dbaccount.StatusEQ(expectedStatus),
+			dbaccount.ErrorMessageEQ(expectedErrorMessage),
+		).
+		SetStatus(service.StatusActive).
+		SetErrorMessage("")
+	n, err := q.Save(ctx)
+	if err != nil {
+		return false, err
+	}
+	if n == 0 {
+		return false, nil
+	}
+	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountChanged, &id, nil, nil); err != nil {
+		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue clear auth error failed: account=%d err=%v", id, err)
+	}
+	r.syncSchedulerAccountSnapshot(ctx, id)
+	return true, nil
+}
+
 func (r *accountRepository) AddToGroup(ctx context.Context, accountID, groupID int64, priority int) error {
 	_, err := r.client.AccountGroup.Create().
 		SetAccountID(accountID).

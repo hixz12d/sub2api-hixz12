@@ -106,7 +106,8 @@ func TestNewOpenAIStreamFailoverErrorPreservesCapacityReason(t *testing.T) {
 
 	require.Equal(t, OpenAIAttemptFailureReasonCapacity, failoverErr.Reason)
 	require.Equal(t, "capacity", ClassifyOpenAIAttemptFailure(failoverErr))
-	require.NotContains(t, string(failoverErr.ResponseBody), "server_is_overloaded")
+	require.JSONEq(t, string(payload), string(failoverErr.ResponseBody), "internal recovery evidence retains the original envelope")
+	require.Empty(t, recorder.Body.String(), "internal evidence must not be published before retry selection")
 }
 
 func TestNewOpenAIStreamFailoverErrorIgnoresOverloadTextOutsideErrorFields(t *testing.T) {

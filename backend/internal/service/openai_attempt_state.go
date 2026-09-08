@@ -53,9 +53,9 @@ type OpenAIAttemptWireState struct {
 	FirstSemanticMs int
 	FirstVisibleMs  int
 	// Last structured failure attribution for this attempt (C2).
-	FailurePhase         string
-	FailureCause         string
-	RetryDecisionReason  string
+	FailurePhase        string
+	FailureCause        string
+	RetryDecisionReason string
 }
 
 const (
@@ -110,9 +110,17 @@ func PrepareOpenAIAttemptState(c *gin.Context, body []byte, sessionHash, previou
 		return existing
 	}
 
+	state := newOpenAIAttemptState(c, body, sessionHash, previousResponseID, promptCacheKey)
+	c.Set(openAIAttemptStateKey, state)
+	attachOpenAIAttemptStateToRequest(c, state)
+	ResetOpenAIAttemptWireState(c)
+	return state
+}
+
+func newOpenAIAttemptState(c *gin.Context, body []byte, sessionHash, previousResponseID, promptCacheKey string) *OpenAIAttemptState {
 	digest := sha256.Sum256(body)
 	stateful := OpenAIRetryRequestIsStateful(c, body)
-	state := &OpenAIAttemptState{
+	return &OpenAIAttemptState{
 		CanonicalBodySHA256: hex.EncodeToString(digest[:]),
 		Stateful:            stateful,
 		ReplaySafe:          !stateful,
@@ -120,10 +128,6 @@ func PrepareOpenAIAttemptState(c *gin.Context, body []byte, sessionHash, previou
 		PreviousResponseID:  strings.TrimSpace(previousResponseID),
 		PromptCacheKey:      strings.TrimSpace(promptCacheKey),
 	}
-	c.Set(openAIAttemptStateKey, state)
-	attachOpenAIAttemptStateToRequest(c, state)
-	ResetOpenAIAttemptWireState(c)
-	return state
 }
 
 // OpenAIAttemptStateFromContext returns the mutable request-local state.

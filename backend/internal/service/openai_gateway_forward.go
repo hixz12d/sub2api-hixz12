@@ -18,8 +18,22 @@ import (
 )
 
 // Forward forwards request to OpenAI API
-func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (*OpenAIForwardResult, error) {
+func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (out *OpenAIForwardResult, retErr error) {
 	ctx = s.snapshotOpenAIOutboundIdentity(ctx, account, c.GetHeader("User-Agent"))
+	EnsureOpenAIRetryBudget(c, account, body)
+	requestCtx := ctx
+	preparationCtx, releasePreparation := OpenAIRecoveryPreparationContext(c, requestCtx, account)
+	ctx = preparationCtx
+	preparing := true
+	defer func() {
+		if preparing && errors.Is(context.Cause(preparationCtx), ErrOpenAIRecoveryDeadline) {
+			out, retErr = nil, openAIOutputPhaseFailure(c, ErrOpenAIRecoveryDeadline, nil)
+		}
+		releasePreparation()
+	}()
+	if err := ctx.Err(); err != nil && ctx.Value(openAIRecoveryPreparationKey{}) == true {
+		return nil, err
+	}
 	beginUpstreamResponseModelObservation(c)
 	ClearActualOpenAIUpstreamEndpoint(c)
 	if shouldForwardOpenAIResponsesViaRawChatCompletions(account) {
@@ -39,7 +53,6 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	startTime := time.Now()
 	// 固定渠道映射后的请求级 canonical body；账号 normalize/strip 不得改写跨 failover hint。
 	canonicalImageIntentBody := body
-	EnsureOpenAIRetryBudget(c, account, body)
 
 	restrictionResult := s.detectCodexClientRestriction(c, account, body)
 	apiKeyID := getAPIKeyIDFromContext(c)
@@ -1023,27 +1036,30 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	if reasoningEffort != nil {
 		reasoningEffortValue = *reasoningEffort
 	}
-	firstOutputTimeout := time.Duration(0)
-	if reqStream && account.Platform == PlatformOpenAI {
-		firstOutputTimeout = s.openAIFirstOutputTimeout(reasoningEffortValue)
-	}
 
 	httpInvalidEncryptedContentRetryTried := false
 	compactModelFallbackRetried := false
 	agentTaskRecoveryTried := false
 	rejectedFieldRetryState := openAIResponsesRejectedFieldRetryStateForRequest(c, body)
+	var previousBody io.Closer
 	for {
-		if reserveErr := ReserveOpenAIUpstreamAttempt(c, account.ID); reserveErr != nil {
-			return nil, reserveErr
+		if !preparing {
+			preparationCtx, releasePreparation = OpenAIRecoveryPreparationContext(c, requestCtx, account)
+			ctx, preparing = preparationCtx, true
+		}
+		if err := ctx.Err(); err != nil && ctx.Value(openAIRecoveryPreparationKey{}) == true {
+			return nil, err
+		}
+		if previousBody != nil {
+			_ = previousBody.Close()
+			previousBody = nil
 		}
 		// Build upstream request
 		upstreamCtx, releaseUpstreamCtx := detachUpstreamContext(ctx)
-		var headerGuard *openAIFirstOutputHeaderGuard
-		if firstOutputTimeout > 0 {
-			upstreamCtx, headerGuard = newOpenAIFirstOutputHeaderGuard(
-				upstreamCtx, releaseUpstreamCtx, startTime.Add(firstOutputTimeout),
-			)
+		if ctx.Value(openAIRecoveryPreparationKey{}) == true {
+			upstreamCtx = ctx
 		}
+		var headerGuard *openAIFirstOutputHeaderGuard
 		upstreamReq, err := s.buildUpstreamRequest(upstreamCtx, c, account, body, token, reqStream, promptCacheKey, isCodexCLI)
 		if headerGuard == nil {
 			releaseUpstreamCtx()
@@ -1057,23 +1073,51 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 		route, routeErr := s.resolveOpenAIEgress(ctx, account)
 		if routeErr != nil {
+			if headerGuard != nil {
+				headerGuard.close()
+			}
 			return nil, routeErr
 		}
 		proxyURL := route.ProxyURL
 
-		// Send request
+		// Preparation and body contexts have separate ownership; releasing the
+		// preparation deadline must never cancel a successfully committed stream.
+		if preparing {
+			if err := preparationCtx.Err(); err != nil && preparationCtx.Value(openAIRecoveryPreparationKey{}) == true {
+				return nil, err
+			}
+			releasePreparation()
+			ctx = requestCtx
+			preparing = false
+		}
+		// Start one phase watchdog at dispatch, and carry it through body parsing.
+		phaseCtx := ctx
+		if reqStream {
+			var phaseErr error
+			phaseCtx, headerGuard, phaseErr = s.beginOpenAIHTTPOutputPhase(openAIPhaseParent(ctx, upstreamReq.Context()), c, account, reasoningEffortValue)
+			if phaseErr != nil {
+				return nil, openAIOutputPhaseFailure(c, phaseErr, nil)
+			}
+			if headerGuard != nil {
+				upstreamReq = upstreamReq.WithContext(phaseCtx)
+			}
+		}
+		if reserveErr := ReserveOpenAIUpstreamAttempt(c, account.ID); reserveErr != nil {
+			if headerGuard != nil {
+				headerGuard.close()
+			}
+			return nil, reserveErr
+		}
 		upstreamStart := time.Now()
 		resp, err := s.doOpenAIUpstream(upstreamReq, proxyURL, account)
 		SetOpsLatencyMs(c, OpsUpstreamLatencyMsKey, time.Since(upstreamStart).Milliseconds())
-		if headerGuard != nil && headerGuard.stopHeaderWait() {
+		if headerGuard != nil && headerGuard.failure() != nil {
+			phaseErr := headerGuard.failure()
 			if resp != nil && resp.Body != nil {
 				_ = resp.Body.Close()
 			}
 			headerGuard.close()
-			return nil, s.newOpenAIFirstOutputTimeoutError(
-				ctx, c, account, startTime, originalModel, reasoningEffortValue,
-				firstOutputTimeout, "response_headers", nil,
-			)
+			return nil, openAIOutputPhaseFailure(c, phaseErr, nil)
 		}
 		if err != nil {
 			if resp != nil && resp.Body != nil {
@@ -1115,7 +1159,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 							RetryOtherAccount: true,
 						})
 					}
-					RecordOpenAIRetryFailure(c, resp.StatusCode, nil)
+					// Keep the terminal credential decision; generic 401 handling would reopen refresh.
 					return nil, s.newOpenAIPermanentOAuthUnauthorizedFailover(account, resp, respBody, upstreamMsg, shouldDisable)
 				}
 				decision := RecordOpenAIRetryFailure(c, resp.StatusCode, nil)
@@ -1234,6 +1278,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			resp.Body = newResponsesClientToolStreamBody(resp.Body, mapping, maxLineSize)
 		}
 
+		previousBody = resp.Body
 		serviceTier := extractOpenAIServiceTierFromBody(body)
 		// 上游接受后只保留计费需要的标量，避免响应处理期间继续保活完整 input/tools map。
 		reqBody = nil
@@ -1247,9 +1292,14 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		var imageOutputSizes []string
 		var streamErr error
 		if reqStream {
-			streamCtx := withOpenAIStreamProxyURL(ctx, proxyURL)
+			streamCtx := withOpenAIStreamProxyURL(phaseCtx, proxyURL)
 			streamResult, err := s.handleStreamingResponseWithReasoning(streamCtx, resp, c, account, startTime, originalModel, upstreamModel, reasoningEffortValue)
-			if err != nil {
+			if headerGuard != nil && headerGuard.timeoutFailure() != nil {
+				return nil, openAIOutputPhaseFailure(c, headerGuard.timeoutFailure(), resp.Header)
+			}
+			preservePartialImages := streamResult != nil && streamResult.imageCount > 0 &&
+				(errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded))
+			if err != nil && !preservePartialImages {
 				if signal, ok := asOpenAICompactFallbackSignal(err); ok {
 					if retryBody, fallbackModel, retry := s.prepareOpenAICompactFallbackRetry(
 						c, account, requestedModel, body, http.StatusBadRequest, signal.message, signal.payload, compactModelFallbackRetried,
@@ -1431,7 +1481,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 			if err != nil {
 				return nil, err
 			}
-			targetURL = buildOpenAIResponsesURL(validatedURL)
+			targetURL = buildOpenAIResponsesURLForPlatform(account.Platform, validatedURL)
 		}
 	default:
 		targetURL = openaiPlatformAPIURL

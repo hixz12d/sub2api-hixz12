@@ -987,11 +987,13 @@ type GatewayConfig struct {
 	OpenAIHighEffortFirstOutputTimeoutSeconds int `mapstructure:"openai_high_effort_first_output_timeout_seconds"`
 	// OpenAIPreoutputRecoveryMode selects pre-output recovery budget policy.
 	// empty/legacy: historical defaults; bounded_preoutput: wall-clock total budget
-	// scaled from first-output timeout so a second attempt remains admissible (C6).
+	// independent of the per-dispatch first-output timeout.
 	OpenAIPreoutputRecoveryMode string `mapstructure:"openai_preoutput_recovery_mode"`
 	// OpenAIPreoutputRecoveryMaxElapsedSeconds caps total pre-output recovery wall time.
-	// 0 uses the mode default (legacy 110s floor after F02, or 2*first_output+50s when bounded).
+	// 0 uses the mode default: legacy 20s admission window, bounded 110s total.
 	OpenAIPreoutputRecoveryMaxElapsedSeconds int `mapstructure:"openai_preoutput_recovery_max_elapsed_seconds"`
+	// 0 uses the ordinary total deadline; high/xhigh/max may select this before dispatch.
+	OpenAIPreoutputRecoveryHighEffortMaxElapsedSeconds int `mapstructure:"openai_preoutput_recovery_high_effort_max_elapsed_seconds"`
 	// 请求体最大字节数，用于网关请求体大小限制
 	MaxBodySize int64 `mapstructure:"max_body_size"`
 	// TextMaxBodySize limits endpoints that cannot carry inline image/video payloads.
@@ -2415,6 +2417,9 @@ func setDefaults() {
 	viper.SetDefault("gateway.grok_response_header_timeout", 120)
 	viper.SetDefault("gateway.openai_first_output_timeout_seconds", 0)
 	viper.SetDefault("gateway.openai_high_effort_first_output_timeout_seconds", 0)
+	viper.SetDefault("gateway.openai_preoutput_recovery_mode", "legacy")
+	viper.SetDefault("gateway.openai_preoutput_recovery_max_elapsed_seconds", 0)
+	viper.SetDefault("gateway.openai_preoutput_recovery_high_effort_max_elapsed_seconds", 0)
 	viper.SetDefault("gateway.log_upstream_error_body", true)
 	viper.SetDefault("gateway.log_upstream_error_body_max_bytes", 2048)
 	viper.SetDefault("gateway.inject_beta_for_apikey", false)
@@ -3398,6 +3403,13 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.OpenAIPreoutputRecoveryMaxElapsedSeconds > 0 && c.Gateway.OpenAIPreoutputRecoveryMaxElapsedSeconds < 30 {
 		return fmt.Errorf("gateway.openai_preoutput_recovery_max_elapsed_seconds must be 0 or >= 30")
+	}
+	highTotal := c.Gateway.OpenAIPreoutputRecoveryHighEffortMaxElapsedSeconds
+	if highTotal < 0 || highTotal > 3600 || (highTotal > 0 && highTotal < 30) {
+		return fmt.Errorf("gateway.openai_preoutput_recovery_high_effort_max_elapsed_seconds must be 0 or between 30-3600 seconds")
+	}
+	if !strings.EqualFold(strings.TrimSpace(c.Gateway.OpenAIPreoutputRecoveryMode), "bounded_preoutput") && (c.Gateway.OpenAIPreoutputRecoveryMaxElapsedSeconds != 0 || highTotal != 0) {
+		return fmt.Errorf("gateway.openai_preoutput_recovery_mode must be bounded_preoutput when recovery deadline overrides are set")
 	}
 
 	if c.Gateway.Live.MaxSessionDurationSeconds <= 0 {

@@ -91,7 +91,8 @@ func TestHandleAnthropicStreamingResponse_KeepalivePingDoesNotCloseRecovery(t *t
 }
 
 func TestOpenAIRetryBudgetAllowsSecondAttemptAfterFirstOutputWindow(t *testing.T) {
-	budget := NewOpenAIRetryBudget(false)
+	cfg := &config.Config{Gateway: config.GatewayConfig{OpenAIPreoutputRecoveryMode: "bounded_preoutput"}}
+	budget := newOpenAIRetryBudget(false, false, openAIRetryBudgetMaxElapsed(cfg))
 	require.NoError(t, budget.Reserve(11))
 	budget.mu.Lock()
 	budget.startedAt = time.Now().Add(-35 * time.Second)
