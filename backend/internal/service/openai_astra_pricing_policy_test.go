@@ -36,14 +36,14 @@ func TestAstraRemoteAndCachedCardsUseLocalRetailPrices(t *testing.T) {
 			billing := NewBillingService(&config.Config{}, service)
 			prices, err := billing.GetModelPricing(model)
 			require.NoError(t, err)
-			require.InDelta(t, 18e-6, prices.InputPricePerToken, 1e-12)
-			require.InDelta(t, 22.5e-6, prices.CacheCreationPricePerToken, 1e-12)
-			require.InDelta(t, 1.8e-6, prices.CacheReadPricePerToken, 1e-12)
-			require.InDelta(t, 90e-6, prices.OutputPricePerToken, 1e-12)
-			require.InDelta(t, 36e-6, prices.InputPricePerTokenPriority, 1e-12)
-			require.InDelta(t, 45e-6, prices.CacheCreationPricePerTokenPriority, 1e-12)
-			require.InDelta(t, 3.6e-6, prices.CacheReadPricePerTokenPriority, 1e-12)
-			require.InDelta(t, 180e-6, prices.OutputPricePerTokenPriority, 1e-12)
+			require.InDelta(t, 10e-6, prices.InputPricePerToken, 1e-12)
+			require.InDelta(t, 12.5e-6, prices.CacheCreationPricePerToken, 1e-12)
+			require.InDelta(t, 2e-6, prices.CacheReadPricePerToken, 1e-12)
+			require.InDelta(t, 50e-6, prices.OutputPricePerToken, 1e-12)
+			require.InDelta(t, 20e-6, prices.InputPricePerTokenPriority, 1e-12)
+			require.InDelta(t, 25e-6, prices.CacheCreationPricePerTokenPriority, 1e-12)
+			require.InDelta(t, 4e-6, prices.CacheReadPricePerTokenPriority, 1e-12)
+			require.InDelta(t, 100e-6, prices.OutputPricePerTokenPriority, 1e-12)
 			require.Equal(t, 272000, prices.LongContextInputThreshold)
 			require.Equal(t, 2.0, prices.LongContextInputMultiplier)
 			require.InDelta(t, 1.5, prices.LongContextOutputMultiplier, 1e-12)
@@ -56,7 +56,7 @@ func TestAstraRemoteAndCachedCardsUseLocalRetailPrices(t *testing.T) {
 	}
 }
 
-func TestAstraScreenshotUsageBillsAtOnePointEightWithoutAccountMarkup(t *testing.T) {
+func TestAstraScreenshotUsageBillsWithTwoDollarCacheRead(t *testing.T) {
 	service := &PricingService{}
 	data, err := service.parsePricingData(astraOldCatalogForTest(t, "gpt-6-astra"))
 	require.NoError(t, err)
@@ -69,7 +69,7 @@ func TestAstraScreenshotUsageBillsAtOnePointEightWithoutAccountMarkup(t *testing
 			RateMultiplier: 1, ServiceTier: tier, Resolver: resolver,
 		})
 		require.NoError(t, err)
-		expected := 0.164516 * 1.8
+		expected := 294*10e-6 + 372*50e-6 + 142976*2e-6
 		if tier == "fast" {
 			expected *= 2
 		}

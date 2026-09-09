@@ -431,18 +431,17 @@ func (s *BillingService) initFallbackPricing() {
 		SupportsCacheBreakdown:     false,
 	}
 
-	// OpenAI GPT-6 Astra billed at 1.8× official Standard/Fast prices (USD/token).
-	// Official card is $10/$12.5/$1/$50 per MTok; local card is $18/$22.5/$1.8/$90.
-	// Fast/priority remains 2× of the billed standard card. Long-context gates are unchanged.
+	// Operator-specified Astra card (USD/token): $10/$12.5/$2/$50 per MTok.
+	// Fast/priority remains 2x standard; existing long-context gates are unchanged.
 	s.fallbackPrices["gpt-6-astra"] = &ModelPricing{
-		InputPricePerToken:                 18e-6,
-		InputPricePerTokenPriority:         36e-6,
-		OutputPricePerToken:                90e-6,
-		OutputPricePerTokenPriority:        180e-6,
-		CacheCreationPricePerToken:         22.5e-6,
-		CacheCreationPricePerTokenPriority: 45e-6,
-		CacheReadPricePerToken:             1.8e-6,
-		CacheReadPricePerTokenPriority:     3.6e-6,
+		InputPricePerToken:                 10e-6,
+		InputPricePerTokenPriority:         20e-6,
+		OutputPricePerToken:                50e-6,
+		OutputPricePerTokenPriority:        100e-6,
+		CacheCreationPricePerToken:         12.5e-6,
+		CacheCreationPricePerTokenPriority: 25e-6,
+		CacheReadPricePerToken:             2e-6,
+		CacheReadPricePerTokenPriority:     4e-6,
 		LongContextInputThreshold:          272000,
 		LongContextInputMultiplier:         2,
 		LongContextOutputMultiplier:        1.5,
