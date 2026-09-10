@@ -197,6 +197,132 @@ func (_c *UsageLogCreate) SetNillableSubscriptionID(v *int64) *UsageLogCreate {
 	return _c
 }
 
+// SetRequestOrigin sets the "request_origin" field.
+func (_c *UsageLogCreate) SetRequestOrigin(v string) *UsageLogCreate {
+	_c.mutation.SetRequestOrigin(v)
+	return _c
+}
+
+// SetNillableRequestOrigin sets the "request_origin" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableRequestOrigin(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetRequestOrigin(*v)
+	}
+	return _c
+}
+
+// SetMonitorObservationVersion sets the "monitor_observation_version" field.
+func (_c *UsageLogCreate) SetMonitorObservationVersion(v int) *UsageLogCreate {
+	_c.mutation.SetMonitorObservationVersion(v)
+	return _c
+}
+
+// SetNillableMonitorObservationVersion sets the "monitor_observation_version" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableMonitorObservationVersion(v *int) *UsageLogCreate {
+	if v != nil {
+		_c.SetMonitorObservationVersion(*v)
+	}
+	return _c
+}
+
+// SetMonitorInputTokensTotal sets the "monitor_input_tokens_total" field.
+func (_c *UsageLogCreate) SetMonitorInputTokensTotal(v int64) *UsageLogCreate {
+	_c.mutation.SetMonitorInputTokensTotal(v)
+	return _c
+}
+
+// SetNillableMonitorInputTokensTotal sets the "monitor_input_tokens_total" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableMonitorInputTokensTotal(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetMonitorInputTokensTotal(*v)
+	}
+	return _c
+}
+
+// SetMonitorCacheReadTokens sets the "monitor_cache_read_tokens" field.
+func (_c *UsageLogCreate) SetMonitorCacheReadTokens(v int64) *UsageLogCreate {
+	_c.mutation.SetMonitorCacheReadTokens(v)
+	return _c
+}
+
+// SetNillableMonitorCacheReadTokens sets the "monitor_cache_read_tokens" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableMonitorCacheReadTokens(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetMonitorCacheReadTokens(*v)
+	}
+	return _c
+}
+
+// SetMonitorVisibleOutputTokens sets the "monitor_visible_output_tokens" field.
+func (_c *UsageLogCreate) SetMonitorVisibleOutputTokens(v int64) *UsageLogCreate {
+	_c.mutation.SetMonitorVisibleOutputTokens(v)
+	return _c
+}
+
+// SetNillableMonitorVisibleOutputTokens sets the "monitor_visible_output_tokens" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableMonitorVisibleOutputTokens(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetMonitorVisibleOutputTokens(*v)
+	}
+	return _c
+}
+
+// SetMonitorGenerationMs sets the "monitor_generation_ms" field.
+func (_c *UsageLogCreate) SetMonitorGenerationMs(v int64) *UsageLogCreate {
+	_c.mutation.SetMonitorGenerationMs(v)
+	return _c
+}
+
+// SetNillableMonitorGenerationMs sets the "monitor_generation_ms" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableMonitorGenerationMs(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetMonitorGenerationMs(*v)
+	}
+	return _c
+}
+
+// SetMonitorOutputTpsMilli sets the "monitor_output_tps_milli" field.
+func (_c *UsageLogCreate) SetMonitorOutputTpsMilli(v int64) *UsageLogCreate {
+	_c.mutation.SetMonitorOutputTpsMilli(v)
+	return _c
+}
+
+// SetNillableMonitorOutputTpsMilli sets the "monitor_output_tps_milli" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableMonitorOutputTpsMilli(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetMonitorOutputTpsMilli(*v)
+	}
+	return _c
+}
+
+// SetMonitorTpsMethod sets the "monitor_tps_method" field.
+func (_c *UsageLogCreate) SetMonitorTpsMethod(v string) *UsageLogCreate {
+	_c.mutation.SetMonitorTpsMethod(v)
+	return _c
+}
+
+// SetNillableMonitorTpsMethod sets the "monitor_tps_method" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableMonitorTpsMethod(v *string) *UsageLogCreate {
+	if v != nil {
+		_c.SetMonitorTpsMethod(*v)
+	}
+	return _c
+}
+
+// SetMonitorFirstVisibleMs sets the "monitor_first_visible_ms" field.
+func (_c *UsageLogCreate) SetMonitorFirstVisibleMs(v int64) *UsageLogCreate {
+	_c.mutation.SetMonitorFirstVisibleMs(v)
+	return _c
+}
+
+// SetNillableMonitorFirstVisibleMs sets the "monitor_first_visible_ms" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableMonitorFirstVisibleMs(v *int64) *UsageLogCreate {
+	if v != nil {
+		_c.SetMonitorFirstVisibleMs(*v)
+	}
+	return _c
+}
+
 // SetInputTokens sets the "input_tokens" field.
 func (_c *UsageLogCreate) SetInputTokens(v int) *UsageLogCreate {
 	_c.mutation.SetInputTokens(v)
@@ -836,6 +962,16 @@ func (_c *UsageLogCreate) check() error {
 			return &ValidationError{Name: "billing_mode", err: fmt.Errorf(`ent: validator failed for field "UsageLog.billing_mode": %w`, err)}
 		}
 	}
+	if v, ok := _c.mutation.RequestOrigin(); ok {
+		if err := usagelog.RequestOriginValidator(v); err != nil {
+			return &ValidationError{Name: "request_origin", err: fmt.Errorf(`ent: validator failed for field "UsageLog.request_origin": %w`, err)}
+		}
+	}
+	if v, ok := _c.mutation.MonitorTpsMethod(); ok {
+		if err := usagelog.MonitorTpsMethodValidator(v); err != nil {
+			return &ValidationError{Name: "monitor_tps_method", err: fmt.Errorf(`ent: validator failed for field "UsageLog.monitor_tps_method": %w`, err)}
+		}
+	}
 	if _, ok := _c.mutation.InputTokens(); !ok {
 		return &ValidationError{Name: "input_tokens", err: errors.New(`ent: missing required field "UsageLog.input_tokens"`)}
 	}
@@ -1006,6 +1142,42 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.BillingMode(); ok {
 		_spec.SetField(usagelog.FieldBillingMode, field.TypeString, value)
 		_node.BillingMode = &value
+	}
+	if value, ok := _c.mutation.RequestOrigin(); ok {
+		_spec.SetField(usagelog.FieldRequestOrigin, field.TypeString, value)
+		_node.RequestOrigin = &value
+	}
+	if value, ok := _c.mutation.MonitorObservationVersion(); ok {
+		_spec.SetField(usagelog.FieldMonitorObservationVersion, field.TypeInt, value)
+		_node.MonitorObservationVersion = &value
+	}
+	if value, ok := _c.mutation.MonitorInputTokensTotal(); ok {
+		_spec.SetField(usagelog.FieldMonitorInputTokensTotal, field.TypeInt64, value)
+		_node.MonitorInputTokensTotal = &value
+	}
+	if value, ok := _c.mutation.MonitorCacheReadTokens(); ok {
+		_spec.SetField(usagelog.FieldMonitorCacheReadTokens, field.TypeInt64, value)
+		_node.MonitorCacheReadTokens = &value
+	}
+	if value, ok := _c.mutation.MonitorVisibleOutputTokens(); ok {
+		_spec.SetField(usagelog.FieldMonitorVisibleOutputTokens, field.TypeInt64, value)
+		_node.MonitorVisibleOutputTokens = &value
+	}
+	if value, ok := _c.mutation.MonitorGenerationMs(); ok {
+		_spec.SetField(usagelog.FieldMonitorGenerationMs, field.TypeInt64, value)
+		_node.MonitorGenerationMs = &value
+	}
+	if value, ok := _c.mutation.MonitorOutputTpsMilli(); ok {
+		_spec.SetField(usagelog.FieldMonitorOutputTpsMilli, field.TypeInt64, value)
+		_node.MonitorOutputTpsMilli = &value
+	}
+	if value, ok := _c.mutation.MonitorTpsMethod(); ok {
+		_spec.SetField(usagelog.FieldMonitorTpsMethod, field.TypeString, value)
+		_node.MonitorTpsMethod = &value
+	}
+	if value, ok := _c.mutation.MonitorFirstVisibleMs(); ok {
+		_spec.SetField(usagelog.FieldMonitorFirstVisibleMs, field.TypeInt64, value)
+		_node.MonitorFirstVisibleMs = &value
 	}
 	if value, ok := _c.mutation.InputTokens(); ok {
 		_spec.SetField(usagelog.FieldInputTokens, field.TypeInt, value)
@@ -1515,6 +1687,210 @@ func (u *UsageLogUpsert) UpdateSubscriptionID() *UsageLogUpsert {
 // ClearSubscriptionID clears the value of the "subscription_id" field.
 func (u *UsageLogUpsert) ClearSubscriptionID() *UsageLogUpsert {
 	u.SetNull(usagelog.FieldSubscriptionID)
+	return u
+}
+
+// SetRequestOrigin sets the "request_origin" field.
+func (u *UsageLogUpsert) SetRequestOrigin(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldRequestOrigin, v)
+	return u
+}
+
+// UpdateRequestOrigin sets the "request_origin" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateRequestOrigin() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldRequestOrigin)
+	return u
+}
+
+// ClearRequestOrigin clears the value of the "request_origin" field.
+func (u *UsageLogUpsert) ClearRequestOrigin() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldRequestOrigin)
+	return u
+}
+
+// SetMonitorObservationVersion sets the "monitor_observation_version" field.
+func (u *UsageLogUpsert) SetMonitorObservationVersion(v int) *UsageLogUpsert {
+	u.Set(usagelog.FieldMonitorObservationVersion, v)
+	return u
+}
+
+// UpdateMonitorObservationVersion sets the "monitor_observation_version" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateMonitorObservationVersion() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldMonitorObservationVersion)
+	return u
+}
+
+// AddMonitorObservationVersion adds v to the "monitor_observation_version" field.
+func (u *UsageLogUpsert) AddMonitorObservationVersion(v int) *UsageLogUpsert {
+	u.Add(usagelog.FieldMonitorObservationVersion, v)
+	return u
+}
+
+// ClearMonitorObservationVersion clears the value of the "monitor_observation_version" field.
+func (u *UsageLogUpsert) ClearMonitorObservationVersion() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldMonitorObservationVersion)
+	return u
+}
+
+// SetMonitorInputTokensTotal sets the "monitor_input_tokens_total" field.
+func (u *UsageLogUpsert) SetMonitorInputTokensTotal(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldMonitorInputTokensTotal, v)
+	return u
+}
+
+// UpdateMonitorInputTokensTotal sets the "monitor_input_tokens_total" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateMonitorInputTokensTotal() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldMonitorInputTokensTotal)
+	return u
+}
+
+// AddMonitorInputTokensTotal adds v to the "monitor_input_tokens_total" field.
+func (u *UsageLogUpsert) AddMonitorInputTokensTotal(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldMonitorInputTokensTotal, v)
+	return u
+}
+
+// ClearMonitorInputTokensTotal clears the value of the "monitor_input_tokens_total" field.
+func (u *UsageLogUpsert) ClearMonitorInputTokensTotal() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldMonitorInputTokensTotal)
+	return u
+}
+
+// SetMonitorCacheReadTokens sets the "monitor_cache_read_tokens" field.
+func (u *UsageLogUpsert) SetMonitorCacheReadTokens(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldMonitorCacheReadTokens, v)
+	return u
+}
+
+// UpdateMonitorCacheReadTokens sets the "monitor_cache_read_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateMonitorCacheReadTokens() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldMonitorCacheReadTokens)
+	return u
+}
+
+// AddMonitorCacheReadTokens adds v to the "monitor_cache_read_tokens" field.
+func (u *UsageLogUpsert) AddMonitorCacheReadTokens(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldMonitorCacheReadTokens, v)
+	return u
+}
+
+// ClearMonitorCacheReadTokens clears the value of the "monitor_cache_read_tokens" field.
+func (u *UsageLogUpsert) ClearMonitorCacheReadTokens() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldMonitorCacheReadTokens)
+	return u
+}
+
+// SetMonitorVisibleOutputTokens sets the "monitor_visible_output_tokens" field.
+func (u *UsageLogUpsert) SetMonitorVisibleOutputTokens(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldMonitorVisibleOutputTokens, v)
+	return u
+}
+
+// UpdateMonitorVisibleOutputTokens sets the "monitor_visible_output_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateMonitorVisibleOutputTokens() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldMonitorVisibleOutputTokens)
+	return u
+}
+
+// AddMonitorVisibleOutputTokens adds v to the "monitor_visible_output_tokens" field.
+func (u *UsageLogUpsert) AddMonitorVisibleOutputTokens(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldMonitorVisibleOutputTokens, v)
+	return u
+}
+
+// ClearMonitorVisibleOutputTokens clears the value of the "monitor_visible_output_tokens" field.
+func (u *UsageLogUpsert) ClearMonitorVisibleOutputTokens() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldMonitorVisibleOutputTokens)
+	return u
+}
+
+// SetMonitorGenerationMs sets the "monitor_generation_ms" field.
+func (u *UsageLogUpsert) SetMonitorGenerationMs(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldMonitorGenerationMs, v)
+	return u
+}
+
+// UpdateMonitorGenerationMs sets the "monitor_generation_ms" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateMonitorGenerationMs() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldMonitorGenerationMs)
+	return u
+}
+
+// AddMonitorGenerationMs adds v to the "monitor_generation_ms" field.
+func (u *UsageLogUpsert) AddMonitorGenerationMs(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldMonitorGenerationMs, v)
+	return u
+}
+
+// ClearMonitorGenerationMs clears the value of the "monitor_generation_ms" field.
+func (u *UsageLogUpsert) ClearMonitorGenerationMs() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldMonitorGenerationMs)
+	return u
+}
+
+// SetMonitorOutputTpsMilli sets the "monitor_output_tps_milli" field.
+func (u *UsageLogUpsert) SetMonitorOutputTpsMilli(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldMonitorOutputTpsMilli, v)
+	return u
+}
+
+// UpdateMonitorOutputTpsMilli sets the "monitor_output_tps_milli" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateMonitorOutputTpsMilli() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldMonitorOutputTpsMilli)
+	return u
+}
+
+// AddMonitorOutputTpsMilli adds v to the "monitor_output_tps_milli" field.
+func (u *UsageLogUpsert) AddMonitorOutputTpsMilli(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldMonitorOutputTpsMilli, v)
+	return u
+}
+
+// ClearMonitorOutputTpsMilli clears the value of the "monitor_output_tps_milli" field.
+func (u *UsageLogUpsert) ClearMonitorOutputTpsMilli() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldMonitorOutputTpsMilli)
+	return u
+}
+
+// SetMonitorTpsMethod sets the "monitor_tps_method" field.
+func (u *UsageLogUpsert) SetMonitorTpsMethod(v string) *UsageLogUpsert {
+	u.Set(usagelog.FieldMonitorTpsMethod, v)
+	return u
+}
+
+// UpdateMonitorTpsMethod sets the "monitor_tps_method" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateMonitorTpsMethod() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldMonitorTpsMethod)
+	return u
+}
+
+// ClearMonitorTpsMethod clears the value of the "monitor_tps_method" field.
+func (u *UsageLogUpsert) ClearMonitorTpsMethod() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldMonitorTpsMethod)
+	return u
+}
+
+// SetMonitorFirstVisibleMs sets the "monitor_first_visible_ms" field.
+func (u *UsageLogUpsert) SetMonitorFirstVisibleMs(v int64) *UsageLogUpsert {
+	u.Set(usagelog.FieldMonitorFirstVisibleMs, v)
+	return u
+}
+
+// UpdateMonitorFirstVisibleMs sets the "monitor_first_visible_ms" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateMonitorFirstVisibleMs() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldMonitorFirstVisibleMs)
+	return u
+}
+
+// AddMonitorFirstVisibleMs adds v to the "monitor_first_visible_ms" field.
+func (u *UsageLogUpsert) AddMonitorFirstVisibleMs(v int64) *UsageLogUpsert {
+	u.Add(usagelog.FieldMonitorFirstVisibleMs, v)
+	return u
+}
+
+// ClearMonitorFirstVisibleMs clears the value of the "monitor_first_visible_ms" field.
+func (u *UsageLogUpsert) ClearMonitorFirstVisibleMs() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldMonitorFirstVisibleMs)
 	return u
 }
 
@@ -2411,6 +2787,244 @@ func (u *UsageLogUpsertOne) UpdateSubscriptionID() *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) ClearSubscriptionID() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearSubscriptionID()
+	})
+}
+
+// SetRequestOrigin sets the "request_origin" field.
+func (u *UsageLogUpsertOne) SetRequestOrigin(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetRequestOrigin(v)
+	})
+}
+
+// UpdateRequestOrigin sets the "request_origin" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateRequestOrigin() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateRequestOrigin()
+	})
+}
+
+// ClearRequestOrigin clears the value of the "request_origin" field.
+func (u *UsageLogUpsertOne) ClearRequestOrigin() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearRequestOrigin()
+	})
+}
+
+// SetMonitorObservationVersion sets the "monitor_observation_version" field.
+func (u *UsageLogUpsertOne) SetMonitorObservationVersion(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetMonitorObservationVersion(v)
+	})
+}
+
+// AddMonitorObservationVersion adds v to the "monitor_observation_version" field.
+func (u *UsageLogUpsertOne) AddMonitorObservationVersion(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddMonitorObservationVersion(v)
+	})
+}
+
+// UpdateMonitorObservationVersion sets the "monitor_observation_version" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateMonitorObservationVersion() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateMonitorObservationVersion()
+	})
+}
+
+// ClearMonitorObservationVersion clears the value of the "monitor_observation_version" field.
+func (u *UsageLogUpsertOne) ClearMonitorObservationVersion() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearMonitorObservationVersion()
+	})
+}
+
+// SetMonitorInputTokensTotal sets the "monitor_input_tokens_total" field.
+func (u *UsageLogUpsertOne) SetMonitorInputTokensTotal(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetMonitorInputTokensTotal(v)
+	})
+}
+
+// AddMonitorInputTokensTotal adds v to the "monitor_input_tokens_total" field.
+func (u *UsageLogUpsertOne) AddMonitorInputTokensTotal(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddMonitorInputTokensTotal(v)
+	})
+}
+
+// UpdateMonitorInputTokensTotal sets the "monitor_input_tokens_total" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateMonitorInputTokensTotal() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateMonitorInputTokensTotal()
+	})
+}
+
+// ClearMonitorInputTokensTotal clears the value of the "monitor_input_tokens_total" field.
+func (u *UsageLogUpsertOne) ClearMonitorInputTokensTotal() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearMonitorInputTokensTotal()
+	})
+}
+
+// SetMonitorCacheReadTokens sets the "monitor_cache_read_tokens" field.
+func (u *UsageLogUpsertOne) SetMonitorCacheReadTokens(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetMonitorCacheReadTokens(v)
+	})
+}
+
+// AddMonitorCacheReadTokens adds v to the "monitor_cache_read_tokens" field.
+func (u *UsageLogUpsertOne) AddMonitorCacheReadTokens(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddMonitorCacheReadTokens(v)
+	})
+}
+
+// UpdateMonitorCacheReadTokens sets the "monitor_cache_read_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateMonitorCacheReadTokens() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateMonitorCacheReadTokens()
+	})
+}
+
+// ClearMonitorCacheReadTokens clears the value of the "monitor_cache_read_tokens" field.
+func (u *UsageLogUpsertOne) ClearMonitorCacheReadTokens() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearMonitorCacheReadTokens()
+	})
+}
+
+// SetMonitorVisibleOutputTokens sets the "monitor_visible_output_tokens" field.
+func (u *UsageLogUpsertOne) SetMonitorVisibleOutputTokens(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetMonitorVisibleOutputTokens(v)
+	})
+}
+
+// AddMonitorVisibleOutputTokens adds v to the "monitor_visible_output_tokens" field.
+func (u *UsageLogUpsertOne) AddMonitorVisibleOutputTokens(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddMonitorVisibleOutputTokens(v)
+	})
+}
+
+// UpdateMonitorVisibleOutputTokens sets the "monitor_visible_output_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateMonitorVisibleOutputTokens() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateMonitorVisibleOutputTokens()
+	})
+}
+
+// ClearMonitorVisibleOutputTokens clears the value of the "monitor_visible_output_tokens" field.
+func (u *UsageLogUpsertOne) ClearMonitorVisibleOutputTokens() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearMonitorVisibleOutputTokens()
+	})
+}
+
+// SetMonitorGenerationMs sets the "monitor_generation_ms" field.
+func (u *UsageLogUpsertOne) SetMonitorGenerationMs(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetMonitorGenerationMs(v)
+	})
+}
+
+// AddMonitorGenerationMs adds v to the "monitor_generation_ms" field.
+func (u *UsageLogUpsertOne) AddMonitorGenerationMs(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddMonitorGenerationMs(v)
+	})
+}
+
+// UpdateMonitorGenerationMs sets the "monitor_generation_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateMonitorGenerationMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateMonitorGenerationMs()
+	})
+}
+
+// ClearMonitorGenerationMs clears the value of the "monitor_generation_ms" field.
+func (u *UsageLogUpsertOne) ClearMonitorGenerationMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearMonitorGenerationMs()
+	})
+}
+
+// SetMonitorOutputTpsMilli sets the "monitor_output_tps_milli" field.
+func (u *UsageLogUpsertOne) SetMonitorOutputTpsMilli(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetMonitorOutputTpsMilli(v)
+	})
+}
+
+// AddMonitorOutputTpsMilli adds v to the "monitor_output_tps_milli" field.
+func (u *UsageLogUpsertOne) AddMonitorOutputTpsMilli(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddMonitorOutputTpsMilli(v)
+	})
+}
+
+// UpdateMonitorOutputTpsMilli sets the "monitor_output_tps_milli" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateMonitorOutputTpsMilli() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateMonitorOutputTpsMilli()
+	})
+}
+
+// ClearMonitorOutputTpsMilli clears the value of the "monitor_output_tps_milli" field.
+func (u *UsageLogUpsertOne) ClearMonitorOutputTpsMilli() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearMonitorOutputTpsMilli()
+	})
+}
+
+// SetMonitorTpsMethod sets the "monitor_tps_method" field.
+func (u *UsageLogUpsertOne) SetMonitorTpsMethod(v string) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetMonitorTpsMethod(v)
+	})
+}
+
+// UpdateMonitorTpsMethod sets the "monitor_tps_method" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateMonitorTpsMethod() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateMonitorTpsMethod()
+	})
+}
+
+// ClearMonitorTpsMethod clears the value of the "monitor_tps_method" field.
+func (u *UsageLogUpsertOne) ClearMonitorTpsMethod() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearMonitorTpsMethod()
+	})
+}
+
+// SetMonitorFirstVisibleMs sets the "monitor_first_visible_ms" field.
+func (u *UsageLogUpsertOne) SetMonitorFirstVisibleMs(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetMonitorFirstVisibleMs(v)
+	})
+}
+
+// AddMonitorFirstVisibleMs adds v to the "monitor_first_visible_ms" field.
+func (u *UsageLogUpsertOne) AddMonitorFirstVisibleMs(v int64) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddMonitorFirstVisibleMs(v)
+	})
+}
+
+// UpdateMonitorFirstVisibleMs sets the "monitor_first_visible_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateMonitorFirstVisibleMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateMonitorFirstVisibleMs()
+	})
+}
+
+// ClearMonitorFirstVisibleMs clears the value of the "monitor_first_visible_ms" field.
+func (u *UsageLogUpsertOne) ClearMonitorFirstVisibleMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearMonitorFirstVisibleMs()
 	})
 }
 
@@ -3567,6 +4181,244 @@ func (u *UsageLogUpsertBulk) UpdateSubscriptionID() *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) ClearSubscriptionID() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearSubscriptionID()
+	})
+}
+
+// SetRequestOrigin sets the "request_origin" field.
+func (u *UsageLogUpsertBulk) SetRequestOrigin(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetRequestOrigin(v)
+	})
+}
+
+// UpdateRequestOrigin sets the "request_origin" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateRequestOrigin() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateRequestOrigin()
+	})
+}
+
+// ClearRequestOrigin clears the value of the "request_origin" field.
+func (u *UsageLogUpsertBulk) ClearRequestOrigin() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearRequestOrigin()
+	})
+}
+
+// SetMonitorObservationVersion sets the "monitor_observation_version" field.
+func (u *UsageLogUpsertBulk) SetMonitorObservationVersion(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetMonitorObservationVersion(v)
+	})
+}
+
+// AddMonitorObservationVersion adds v to the "monitor_observation_version" field.
+func (u *UsageLogUpsertBulk) AddMonitorObservationVersion(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddMonitorObservationVersion(v)
+	})
+}
+
+// UpdateMonitorObservationVersion sets the "monitor_observation_version" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateMonitorObservationVersion() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateMonitorObservationVersion()
+	})
+}
+
+// ClearMonitorObservationVersion clears the value of the "monitor_observation_version" field.
+func (u *UsageLogUpsertBulk) ClearMonitorObservationVersion() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearMonitorObservationVersion()
+	})
+}
+
+// SetMonitorInputTokensTotal sets the "monitor_input_tokens_total" field.
+func (u *UsageLogUpsertBulk) SetMonitorInputTokensTotal(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetMonitorInputTokensTotal(v)
+	})
+}
+
+// AddMonitorInputTokensTotal adds v to the "monitor_input_tokens_total" field.
+func (u *UsageLogUpsertBulk) AddMonitorInputTokensTotal(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddMonitorInputTokensTotal(v)
+	})
+}
+
+// UpdateMonitorInputTokensTotal sets the "monitor_input_tokens_total" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateMonitorInputTokensTotal() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateMonitorInputTokensTotal()
+	})
+}
+
+// ClearMonitorInputTokensTotal clears the value of the "monitor_input_tokens_total" field.
+func (u *UsageLogUpsertBulk) ClearMonitorInputTokensTotal() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearMonitorInputTokensTotal()
+	})
+}
+
+// SetMonitorCacheReadTokens sets the "monitor_cache_read_tokens" field.
+func (u *UsageLogUpsertBulk) SetMonitorCacheReadTokens(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetMonitorCacheReadTokens(v)
+	})
+}
+
+// AddMonitorCacheReadTokens adds v to the "monitor_cache_read_tokens" field.
+func (u *UsageLogUpsertBulk) AddMonitorCacheReadTokens(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddMonitorCacheReadTokens(v)
+	})
+}
+
+// UpdateMonitorCacheReadTokens sets the "monitor_cache_read_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateMonitorCacheReadTokens() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateMonitorCacheReadTokens()
+	})
+}
+
+// ClearMonitorCacheReadTokens clears the value of the "monitor_cache_read_tokens" field.
+func (u *UsageLogUpsertBulk) ClearMonitorCacheReadTokens() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearMonitorCacheReadTokens()
+	})
+}
+
+// SetMonitorVisibleOutputTokens sets the "monitor_visible_output_tokens" field.
+func (u *UsageLogUpsertBulk) SetMonitorVisibleOutputTokens(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetMonitorVisibleOutputTokens(v)
+	})
+}
+
+// AddMonitorVisibleOutputTokens adds v to the "monitor_visible_output_tokens" field.
+func (u *UsageLogUpsertBulk) AddMonitorVisibleOutputTokens(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddMonitorVisibleOutputTokens(v)
+	})
+}
+
+// UpdateMonitorVisibleOutputTokens sets the "monitor_visible_output_tokens" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateMonitorVisibleOutputTokens() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateMonitorVisibleOutputTokens()
+	})
+}
+
+// ClearMonitorVisibleOutputTokens clears the value of the "monitor_visible_output_tokens" field.
+func (u *UsageLogUpsertBulk) ClearMonitorVisibleOutputTokens() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearMonitorVisibleOutputTokens()
+	})
+}
+
+// SetMonitorGenerationMs sets the "monitor_generation_ms" field.
+func (u *UsageLogUpsertBulk) SetMonitorGenerationMs(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetMonitorGenerationMs(v)
+	})
+}
+
+// AddMonitorGenerationMs adds v to the "monitor_generation_ms" field.
+func (u *UsageLogUpsertBulk) AddMonitorGenerationMs(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddMonitorGenerationMs(v)
+	})
+}
+
+// UpdateMonitorGenerationMs sets the "monitor_generation_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateMonitorGenerationMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateMonitorGenerationMs()
+	})
+}
+
+// ClearMonitorGenerationMs clears the value of the "monitor_generation_ms" field.
+func (u *UsageLogUpsertBulk) ClearMonitorGenerationMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearMonitorGenerationMs()
+	})
+}
+
+// SetMonitorOutputTpsMilli sets the "monitor_output_tps_milli" field.
+func (u *UsageLogUpsertBulk) SetMonitorOutputTpsMilli(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetMonitorOutputTpsMilli(v)
+	})
+}
+
+// AddMonitorOutputTpsMilli adds v to the "monitor_output_tps_milli" field.
+func (u *UsageLogUpsertBulk) AddMonitorOutputTpsMilli(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddMonitorOutputTpsMilli(v)
+	})
+}
+
+// UpdateMonitorOutputTpsMilli sets the "monitor_output_tps_milli" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateMonitorOutputTpsMilli() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateMonitorOutputTpsMilli()
+	})
+}
+
+// ClearMonitorOutputTpsMilli clears the value of the "monitor_output_tps_milli" field.
+func (u *UsageLogUpsertBulk) ClearMonitorOutputTpsMilli() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearMonitorOutputTpsMilli()
+	})
+}
+
+// SetMonitorTpsMethod sets the "monitor_tps_method" field.
+func (u *UsageLogUpsertBulk) SetMonitorTpsMethod(v string) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetMonitorTpsMethod(v)
+	})
+}
+
+// UpdateMonitorTpsMethod sets the "monitor_tps_method" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateMonitorTpsMethod() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateMonitorTpsMethod()
+	})
+}
+
+// ClearMonitorTpsMethod clears the value of the "monitor_tps_method" field.
+func (u *UsageLogUpsertBulk) ClearMonitorTpsMethod() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearMonitorTpsMethod()
+	})
+}
+
+// SetMonitorFirstVisibleMs sets the "monitor_first_visible_ms" field.
+func (u *UsageLogUpsertBulk) SetMonitorFirstVisibleMs(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetMonitorFirstVisibleMs(v)
+	})
+}
+
+// AddMonitorFirstVisibleMs adds v to the "monitor_first_visible_ms" field.
+func (u *UsageLogUpsertBulk) AddMonitorFirstVisibleMs(v int64) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddMonitorFirstVisibleMs(v)
+	})
+}
+
+// UpdateMonitorFirstVisibleMs sets the "monitor_first_visible_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateMonitorFirstVisibleMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateMonitorFirstVisibleMs()
+	})
+}
+
+// ClearMonitorFirstVisibleMs clears the value of the "monitor_first_visible_ms" field.
+func (u *UsageLogUpsertBulk) ClearMonitorFirstVisibleMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearMonitorFirstVisibleMs()
 	})
 }
 

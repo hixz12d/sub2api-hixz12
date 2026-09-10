@@ -53,6 +53,24 @@ type UsageLog struct {
 	GroupID *int64 `json:"group_id,omitempty"`
 	// SubscriptionID holds the value of the "subscription_id" field.
 	SubscriptionID *int64 `json:"subscription_id,omitempty"`
+	// RequestOrigin holds the value of the "request_origin" field.
+	RequestOrigin *string `json:"request_origin,omitempty"`
+	// MonitorObservationVersion holds the value of the "monitor_observation_version" field.
+	MonitorObservationVersion *int `json:"monitor_observation_version,omitempty"`
+	// MonitorInputTokensTotal holds the value of the "monitor_input_tokens_total" field.
+	MonitorInputTokensTotal *int64 `json:"monitor_input_tokens_total,omitempty"`
+	// MonitorCacheReadTokens holds the value of the "monitor_cache_read_tokens" field.
+	MonitorCacheReadTokens *int64 `json:"monitor_cache_read_tokens,omitempty"`
+	// MonitorVisibleOutputTokens holds the value of the "monitor_visible_output_tokens" field.
+	MonitorVisibleOutputTokens *int64 `json:"monitor_visible_output_tokens,omitempty"`
+	// MonitorGenerationMs holds the value of the "monitor_generation_ms" field.
+	MonitorGenerationMs *int64 `json:"monitor_generation_ms,omitempty"`
+	// MonitorOutputTpsMilli holds the value of the "monitor_output_tps_milli" field.
+	MonitorOutputTpsMilli *int64 `json:"monitor_output_tps_milli,omitempty"`
+	// MonitorTpsMethod holds the value of the "monitor_tps_method" field.
+	MonitorTpsMethod *string `json:"monitor_tps_method,omitempty"`
+	// MonitorFirstVisibleMs holds the value of the "monitor_first_visible_ms" field.
+	MonitorFirstVisibleMs *int64 `json:"monitor_first_visible_ms,omitempty"`
 	// InputTokens holds the value of the "input_tokens" field.
 	InputTokens int `json:"input_tokens,omitempty"`
 	// OutputTokens holds the value of the "output_tokens" field.
@@ -206,9 +224,9 @@ func (*UsageLog) scanValues(columns []string) ([]any, error) {
 			values[i] = new(sql.NullBool)
 		case usagelog.FieldInputCost, usagelog.FieldOutputCost, usagelog.FieldCacheCreationCost, usagelog.FieldCacheReadCost, usagelog.FieldTotalCost, usagelog.FieldActualCost, usagelog.FieldRateMultiplier, usagelog.FieldAccountRateMultiplier:
 			values[i] = new(sql.NullFloat64)
-		case usagelog.FieldID, usagelog.FieldUserID, usagelog.FieldAPIKeyID, usagelog.FieldAccountID, usagelog.FieldChannelID, usagelog.FieldGroupID, usagelog.FieldSubscriptionID, usagelog.FieldInputTokens, usagelog.FieldOutputTokens, usagelog.FieldCacheCreationTokens, usagelog.FieldCacheReadTokens, usagelog.FieldCacheCreation5mTokens, usagelog.FieldCacheCreation1hTokens, usagelog.FieldBillingType, usagelog.FieldDurationMs, usagelog.FieldFirstTokenMs, usagelog.FieldImageCount, usagelog.FieldVideoCount, usagelog.FieldVideoDurationSeconds:
+		case usagelog.FieldID, usagelog.FieldUserID, usagelog.FieldAPIKeyID, usagelog.FieldAccountID, usagelog.FieldChannelID, usagelog.FieldGroupID, usagelog.FieldSubscriptionID, usagelog.FieldMonitorObservationVersion, usagelog.FieldMonitorInputTokensTotal, usagelog.FieldMonitorCacheReadTokens, usagelog.FieldMonitorVisibleOutputTokens, usagelog.FieldMonitorGenerationMs, usagelog.FieldMonitorOutputTpsMilli, usagelog.FieldMonitorFirstVisibleMs, usagelog.FieldInputTokens, usagelog.FieldOutputTokens, usagelog.FieldCacheCreationTokens, usagelog.FieldCacheReadTokens, usagelog.FieldCacheCreation5mTokens, usagelog.FieldCacheCreation1hTokens, usagelog.FieldBillingType, usagelog.FieldDurationMs, usagelog.FieldFirstTokenMs, usagelog.FieldImageCount, usagelog.FieldVideoCount, usagelog.FieldVideoDurationSeconds:
 			values[i] = new(sql.NullInt64)
-		case usagelog.FieldRequestID, usagelog.FieldModel, usagelog.FieldRequestedModel, usagelog.FieldUpstreamModel, usagelog.FieldUpstreamResponseModel, usagelog.FieldModelMappingChain, usagelog.FieldBillingTier, usagelog.FieldBillingMode, usagelog.FieldUserAgent, usagelog.FieldIPAddress, usagelog.FieldImageSize, usagelog.FieldImageInputSize, usagelog.FieldImageOutputSize, usagelog.FieldImageSizeSource, usagelog.FieldVideoResolution:
+		case usagelog.FieldRequestID, usagelog.FieldModel, usagelog.FieldRequestedModel, usagelog.FieldUpstreamModel, usagelog.FieldUpstreamResponseModel, usagelog.FieldModelMappingChain, usagelog.FieldBillingTier, usagelog.FieldBillingMode, usagelog.FieldRequestOrigin, usagelog.FieldMonitorTpsMethod, usagelog.FieldUserAgent, usagelog.FieldIPAddress, usagelog.FieldImageSize, usagelog.FieldImageInputSize, usagelog.FieldImageOutputSize, usagelog.FieldImageSizeSource, usagelog.FieldVideoResolution:
 			values[i] = new(sql.NullString)
 		case usagelog.FieldCreatedAt:
 			values[i] = new(sql.NullTime)
@@ -332,6 +350,69 @@ func (_m *UsageLog) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.SubscriptionID = new(int64)
 				*_m.SubscriptionID = value.Int64
+			}
+		case usagelog.FieldRequestOrigin:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field request_origin", values[i])
+			} else if value.Valid {
+				_m.RequestOrigin = new(string)
+				*_m.RequestOrigin = value.String
+			}
+		case usagelog.FieldMonitorObservationVersion:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field monitor_observation_version", values[i])
+			} else if value.Valid {
+				_m.MonitorObservationVersion = new(int)
+				*_m.MonitorObservationVersion = int(value.Int64)
+			}
+		case usagelog.FieldMonitorInputTokensTotal:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field monitor_input_tokens_total", values[i])
+			} else if value.Valid {
+				_m.MonitorInputTokensTotal = new(int64)
+				*_m.MonitorInputTokensTotal = value.Int64
+			}
+		case usagelog.FieldMonitorCacheReadTokens:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field monitor_cache_read_tokens", values[i])
+			} else if value.Valid {
+				_m.MonitorCacheReadTokens = new(int64)
+				*_m.MonitorCacheReadTokens = value.Int64
+			}
+		case usagelog.FieldMonitorVisibleOutputTokens:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field monitor_visible_output_tokens", values[i])
+			} else if value.Valid {
+				_m.MonitorVisibleOutputTokens = new(int64)
+				*_m.MonitorVisibleOutputTokens = value.Int64
+			}
+		case usagelog.FieldMonitorGenerationMs:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field monitor_generation_ms", values[i])
+			} else if value.Valid {
+				_m.MonitorGenerationMs = new(int64)
+				*_m.MonitorGenerationMs = value.Int64
+			}
+		case usagelog.FieldMonitorOutputTpsMilli:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field monitor_output_tps_milli", values[i])
+			} else if value.Valid {
+				_m.MonitorOutputTpsMilli = new(int64)
+				*_m.MonitorOutputTpsMilli = value.Int64
+			}
+		case usagelog.FieldMonitorTpsMethod:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field monitor_tps_method", values[i])
+			} else if value.Valid {
+				_m.MonitorTpsMethod = new(string)
+				*_m.MonitorTpsMethod = value.String
+			}
+		case usagelog.FieldMonitorFirstVisibleMs:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field monitor_first_visible_ms", values[i])
+			} else if value.Valid {
+				_m.MonitorFirstVisibleMs = new(int64)
+				*_m.MonitorFirstVisibleMs = value.Int64
 			}
 		case usagelog.FieldInputTokens:
 			if value, ok := values[i].(*sql.NullInt64); !ok {
@@ -661,6 +742,51 @@ func (_m *UsageLog) String() string {
 	builder.WriteString(", ")
 	if v := _m.SubscriptionID; v != nil {
 		builder.WriteString("subscription_id=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.RequestOrigin; v != nil {
+		builder.WriteString("request_origin=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.MonitorObservationVersion; v != nil {
+		builder.WriteString("monitor_observation_version=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.MonitorInputTokensTotal; v != nil {
+		builder.WriteString("monitor_input_tokens_total=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.MonitorCacheReadTokens; v != nil {
+		builder.WriteString("monitor_cache_read_tokens=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.MonitorVisibleOutputTokens; v != nil {
+		builder.WriteString("monitor_visible_output_tokens=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.MonitorGenerationMs; v != nil {
+		builder.WriteString("monitor_generation_ms=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.MonitorOutputTpsMilli; v != nil {
+		builder.WriteString("monitor_output_tps_milli=")
+		builder.WriteString(fmt.Sprintf("%v", *v))
+	}
+	builder.WriteString(", ")
+	if v := _m.MonitorTpsMethod; v != nil {
+		builder.WriteString("monitor_tps_method=")
+		builder.WriteString(*v)
+	}
+	builder.WriteString(", ")
+	if v := _m.MonitorFirstVisibleMs; v != nil {
+		builder.WriteString("monitor_first_visible_ms=")
 		builder.WriteString(fmt.Sprintf("%v", *v))
 	}
 	builder.WriteString(", ")

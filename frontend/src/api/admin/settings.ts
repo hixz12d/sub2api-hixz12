@@ -720,6 +720,13 @@ export interface SystemSettings {
   channel_monitor_default_interval_seconds: number;
   channel_monitor_hide_throughput?: boolean;
   channel_monitor_show_quota?: boolean;
+  channel_monitor_group_view_enabled?: boolean;
+  channel_monitor_group_probe_enabled?: boolean;
+  channel_monitor_show_output_tps?: boolean;
+  llm_detector_enabled?: boolean;
+  llm_detector_user_testing_enabled?: boolean;
+  llm_detector_scheduled_enabled?: boolean;
+  readonly llm_detector_engine_allowed?: boolean;
 
   // Available Channels feature switch
   available_channels_enabled: boolean;
@@ -1021,6 +1028,12 @@ export interface UpdateSettingsRequest {
   channel_monitor_default_interval_seconds?: number;
   channel_monitor_hide_throughput?: boolean;
   channel_monitor_show_quota?: boolean;
+  channel_monitor_group_view_enabled?: boolean;
+  channel_monitor_group_probe_enabled?: boolean;
+  channel_monitor_show_output_tps?: boolean;
+  llm_detector_enabled?: boolean;
+  llm_detector_user_testing_enabled?: boolean;
+  llm_detector_scheduled_enabled?: boolean;
 
   // Available Channels feature switch
   available_channels_enabled?: boolean;

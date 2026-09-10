@@ -133,6 +133,7 @@ deploy/docker-compose.override.yml
 .gocache/
 vite.config.js
 docs/*
+!docs/channel-monitor-implementation-progress.md
 !docs/audit/
 docs/audit/*
 !docs/audit/runtime-egress-map.md

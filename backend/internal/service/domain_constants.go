@@ -485,6 +485,14 @@ const (
 	// keep the full snapshots regardless of this flag.
 	SettingKeyChannelMonitorShowQuota = "channel_monitor_show_quota"
 
+	// Group monitoring and model consistency checks are explicitly opt-in.
+	SettingKeyChannelMonitorGroupViewEnabled  = "channel_monitor_group_view_enabled"
+	SettingKeyChannelMonitorGroupProbeEnabled = "channel_monitor_group_probe_enabled"
+	SettingKeyChannelMonitorShowOutputTPS     = "channel_monitor_show_output_tps"
+	SettingKeyLLMDetectorEnabled              = "llm_detector_enabled"
+	SettingKeyLLMDetectorUserTestingEnabled   = "llm_detector_user_testing_enabled"
+	SettingKeyLLMDetectorScheduledEnabled     = "llm_detector_scheduled_enabled"
+
 	// SettingKeyGrokDefaultTextModel is the fallback Grok text model for empty
 	// request models and built-in Grok aliases (e.g. "grok" → this id). Default grok-4.5.
 	SettingKeyGrokDefaultTextModel = "grok_default_text_model"

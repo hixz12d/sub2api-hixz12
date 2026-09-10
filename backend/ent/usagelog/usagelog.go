@@ -44,6 +44,24 @@ const (
 	FieldGroupID = "group_id"
 	// FieldSubscriptionID holds the string denoting the subscription_id field in the database.
 	FieldSubscriptionID = "subscription_id"
+	// FieldRequestOrigin holds the string denoting the request_origin field in the database.
+	FieldRequestOrigin = "request_origin"
+	// FieldMonitorObservationVersion holds the string denoting the monitor_observation_version field in the database.
+	FieldMonitorObservationVersion = "monitor_observation_version"
+	// FieldMonitorInputTokensTotal holds the string denoting the monitor_input_tokens_total field in the database.
+	FieldMonitorInputTokensTotal = "monitor_input_tokens_total"
+	// FieldMonitorCacheReadTokens holds the string denoting the monitor_cache_read_tokens field in the database.
+	FieldMonitorCacheReadTokens = "monitor_cache_read_tokens"
+	// FieldMonitorVisibleOutputTokens holds the string denoting the monitor_visible_output_tokens field in the database.
+	FieldMonitorVisibleOutputTokens = "monitor_visible_output_tokens"
+	// FieldMonitorGenerationMs holds the string denoting the monitor_generation_ms field in the database.
+	FieldMonitorGenerationMs = "monitor_generation_ms"
+	// FieldMonitorOutputTpsMilli holds the string denoting the monitor_output_tps_milli field in the database.
+	FieldMonitorOutputTpsMilli = "monitor_output_tps_milli"
+	// FieldMonitorTpsMethod holds the string denoting the monitor_tps_method field in the database.
+	FieldMonitorTpsMethod = "monitor_tps_method"
+	// FieldMonitorFirstVisibleMs holds the string denoting the monitor_first_visible_ms field in the database.
+	FieldMonitorFirstVisibleMs = "monitor_first_visible_ms"
 	// FieldInputTokens holds the string denoting the input_tokens field in the database.
 	FieldInputTokens = "input_tokens"
 	// FieldOutputTokens holds the string denoting the output_tokens field in the database.
@@ -175,6 +193,15 @@ var Columns = []string{
 	FieldBillingMode,
 	FieldGroupID,
 	FieldSubscriptionID,
+	FieldRequestOrigin,
+	FieldMonitorObservationVersion,
+	FieldMonitorInputTokensTotal,
+	FieldMonitorCacheReadTokens,
+	FieldMonitorVisibleOutputTokens,
+	FieldMonitorGenerationMs,
+	FieldMonitorOutputTpsMilli,
+	FieldMonitorTpsMethod,
+	FieldMonitorFirstVisibleMs,
 	FieldInputTokens,
 	FieldOutputTokens,
 	FieldCacheCreationTokens,
@@ -236,6 +263,10 @@ var (
 	BillingTierValidator func(string) error
 	// BillingModeValidator is a validator for the "billing_mode" field. It is called by the builders before save.
 	BillingModeValidator func(string) error
+	// RequestOriginValidator is a validator for the "request_origin" field. It is called by the builders before save.
+	RequestOriginValidator func(string) error
+	// MonitorTpsMethodValidator is a validator for the "monitor_tps_method" field. It is called by the builders before save.
+	MonitorTpsMethodValidator func(string) error
 	// DefaultInputTokens holds the default value on creation for the "input_tokens" field.
 	DefaultInputTokens int
 	// DefaultOutputTokens holds the default value on creation for the "output_tokens" field.
@@ -373,6 +404,51 @@ func ByGroupID(opts ...sql.OrderTermOption) OrderOption {
 // BySubscriptionID orders the results by the subscription_id field.
 func BySubscriptionID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldSubscriptionID, opts...).ToFunc()
+}
+
+// ByRequestOrigin orders the results by the request_origin field.
+func ByRequestOrigin(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRequestOrigin, opts...).ToFunc()
+}
+
+// ByMonitorObservationVersion orders the results by the monitor_observation_version field.
+func ByMonitorObservationVersion(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMonitorObservationVersion, opts...).ToFunc()
+}
+
+// ByMonitorInputTokensTotal orders the results by the monitor_input_tokens_total field.
+func ByMonitorInputTokensTotal(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMonitorInputTokensTotal, opts...).ToFunc()
+}
+
+// ByMonitorCacheReadTokens orders the results by the monitor_cache_read_tokens field.
+func ByMonitorCacheReadTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMonitorCacheReadTokens, opts...).ToFunc()
+}
+
+// ByMonitorVisibleOutputTokens orders the results by the monitor_visible_output_tokens field.
+func ByMonitorVisibleOutputTokens(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMonitorVisibleOutputTokens, opts...).ToFunc()
+}
+
+// ByMonitorGenerationMs orders the results by the monitor_generation_ms field.
+func ByMonitorGenerationMs(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMonitorGenerationMs, opts...).ToFunc()
+}
+
+// ByMonitorOutputTpsMilli orders the results by the monitor_output_tps_milli field.
+func ByMonitorOutputTpsMilli(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMonitorOutputTpsMilli, opts...).ToFunc()
+}
+
+// ByMonitorTpsMethod orders the results by the monitor_tps_method field.
+func ByMonitorTpsMethod(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMonitorTpsMethod, opts...).ToFunc()
+}
+
+// ByMonitorFirstVisibleMs orders the results by the monitor_first_visible_ms field.
+func ByMonitorFirstVisibleMs(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMonitorFirstVisibleMs, opts...).ToFunc()
 }
 
 // ByInputTokens orders the results by the input_tokens field.

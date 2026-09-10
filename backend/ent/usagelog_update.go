@@ -309,6 +309,235 @@ func (_u *UsageLogUpdate) ClearSubscriptionID() *UsageLogUpdate {
 	return _u
 }
 
+// SetRequestOrigin sets the "request_origin" field.
+func (_u *UsageLogUpdate) SetRequestOrigin(v string) *UsageLogUpdate {
+	_u.mutation.SetRequestOrigin(v)
+	return _u
+}
+
+// SetNillableRequestOrigin sets the "request_origin" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableRequestOrigin(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetRequestOrigin(*v)
+	}
+	return _u
+}
+
+// ClearRequestOrigin clears the value of the "request_origin" field.
+func (_u *UsageLogUpdate) ClearRequestOrigin() *UsageLogUpdate {
+	_u.mutation.ClearRequestOrigin()
+	return _u
+}
+
+// SetMonitorObservationVersion sets the "monitor_observation_version" field.
+func (_u *UsageLogUpdate) SetMonitorObservationVersion(v int) *UsageLogUpdate {
+	_u.mutation.ResetMonitorObservationVersion()
+	_u.mutation.SetMonitorObservationVersion(v)
+	return _u
+}
+
+// SetNillableMonitorObservationVersion sets the "monitor_observation_version" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableMonitorObservationVersion(v *int) *UsageLogUpdate {
+	if v != nil {
+		_u.SetMonitorObservationVersion(*v)
+	}
+	return _u
+}
+
+// AddMonitorObservationVersion adds value to the "monitor_observation_version" field.
+func (_u *UsageLogUpdate) AddMonitorObservationVersion(v int) *UsageLogUpdate {
+	_u.mutation.AddMonitorObservationVersion(v)
+	return _u
+}
+
+// ClearMonitorObservationVersion clears the value of the "monitor_observation_version" field.
+func (_u *UsageLogUpdate) ClearMonitorObservationVersion() *UsageLogUpdate {
+	_u.mutation.ClearMonitorObservationVersion()
+	return _u
+}
+
+// SetMonitorInputTokensTotal sets the "monitor_input_tokens_total" field.
+func (_u *UsageLogUpdate) SetMonitorInputTokensTotal(v int64) *UsageLogUpdate {
+	_u.mutation.ResetMonitorInputTokensTotal()
+	_u.mutation.SetMonitorInputTokensTotal(v)
+	return _u
+}
+
+// SetNillableMonitorInputTokensTotal sets the "monitor_input_tokens_total" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableMonitorInputTokensTotal(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetMonitorInputTokensTotal(*v)
+	}
+	return _u
+}
+
+// AddMonitorInputTokensTotal adds value to the "monitor_input_tokens_total" field.
+func (_u *UsageLogUpdate) AddMonitorInputTokensTotal(v int64) *UsageLogUpdate {
+	_u.mutation.AddMonitorInputTokensTotal(v)
+	return _u
+}
+
+// ClearMonitorInputTokensTotal clears the value of the "monitor_input_tokens_total" field.
+func (_u *UsageLogUpdate) ClearMonitorInputTokensTotal() *UsageLogUpdate {
+	_u.mutation.ClearMonitorInputTokensTotal()
+	return _u
+}
+
+// SetMonitorCacheReadTokens sets the "monitor_cache_read_tokens" field.
+func (_u *UsageLogUpdate) SetMonitorCacheReadTokens(v int64) *UsageLogUpdate {
+	_u.mutation.ResetMonitorCacheReadTokens()
+	_u.mutation.SetMonitorCacheReadTokens(v)
+	return _u
+}
+
+// SetNillableMonitorCacheReadTokens sets the "monitor_cache_read_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableMonitorCacheReadTokens(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetMonitorCacheReadTokens(*v)
+	}
+	return _u
+}
+
+// AddMonitorCacheReadTokens adds value to the "monitor_cache_read_tokens" field.
+func (_u *UsageLogUpdate) AddMonitorCacheReadTokens(v int64) *UsageLogUpdate {
+	_u.mutation.AddMonitorCacheReadTokens(v)
+	return _u
+}
+
+// ClearMonitorCacheReadTokens clears the value of the "monitor_cache_read_tokens" field.
+func (_u *UsageLogUpdate) ClearMonitorCacheReadTokens() *UsageLogUpdate {
+	_u.mutation.ClearMonitorCacheReadTokens()
+	return _u
+}
+
+// SetMonitorVisibleOutputTokens sets the "monitor_visible_output_tokens" field.
+func (_u *UsageLogUpdate) SetMonitorVisibleOutputTokens(v int64) *UsageLogUpdate {
+	_u.mutation.ResetMonitorVisibleOutputTokens()
+	_u.mutation.SetMonitorVisibleOutputTokens(v)
+	return _u
+}
+
+// SetNillableMonitorVisibleOutputTokens sets the "monitor_visible_output_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableMonitorVisibleOutputTokens(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetMonitorVisibleOutputTokens(*v)
+	}
+	return _u
+}
+
+// AddMonitorVisibleOutputTokens adds value to the "monitor_visible_output_tokens" field.
+func (_u *UsageLogUpdate) AddMonitorVisibleOutputTokens(v int64) *UsageLogUpdate {
+	_u.mutation.AddMonitorVisibleOutputTokens(v)
+	return _u
+}
+
+// ClearMonitorVisibleOutputTokens clears the value of the "monitor_visible_output_tokens" field.
+func (_u *UsageLogUpdate) ClearMonitorVisibleOutputTokens() *UsageLogUpdate {
+	_u.mutation.ClearMonitorVisibleOutputTokens()
+	return _u
+}
+
+// SetMonitorGenerationMs sets the "monitor_generation_ms" field.
+func (_u *UsageLogUpdate) SetMonitorGenerationMs(v int64) *UsageLogUpdate {
+	_u.mutation.ResetMonitorGenerationMs()
+	_u.mutation.SetMonitorGenerationMs(v)
+	return _u
+}
+
+// SetNillableMonitorGenerationMs sets the "monitor_generation_ms" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableMonitorGenerationMs(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetMonitorGenerationMs(*v)
+	}
+	return _u
+}
+
+// AddMonitorGenerationMs adds value to the "monitor_generation_ms" field.
+func (_u *UsageLogUpdate) AddMonitorGenerationMs(v int64) *UsageLogUpdate {
+	_u.mutation.AddMonitorGenerationMs(v)
+	return _u
+}
+
+// ClearMonitorGenerationMs clears the value of the "monitor_generation_ms" field.
+func (_u *UsageLogUpdate) ClearMonitorGenerationMs() *UsageLogUpdate {
+	_u.mutation.ClearMonitorGenerationMs()
+	return _u
+}
+
+// SetMonitorOutputTpsMilli sets the "monitor_output_tps_milli" field.
+func (_u *UsageLogUpdate) SetMonitorOutputTpsMilli(v int64) *UsageLogUpdate {
+	_u.mutation.ResetMonitorOutputTpsMilli()
+	_u.mutation.SetMonitorOutputTpsMilli(v)
+	return _u
+}
+
+// SetNillableMonitorOutputTpsMilli sets the "monitor_output_tps_milli" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableMonitorOutputTpsMilli(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetMonitorOutputTpsMilli(*v)
+	}
+	return _u
+}
+
+// AddMonitorOutputTpsMilli adds value to the "monitor_output_tps_milli" field.
+func (_u *UsageLogUpdate) AddMonitorOutputTpsMilli(v int64) *UsageLogUpdate {
+	_u.mutation.AddMonitorOutputTpsMilli(v)
+	return _u
+}
+
+// ClearMonitorOutputTpsMilli clears the value of the "monitor_output_tps_milli" field.
+func (_u *UsageLogUpdate) ClearMonitorOutputTpsMilli() *UsageLogUpdate {
+	_u.mutation.ClearMonitorOutputTpsMilli()
+	return _u
+}
+
+// SetMonitorTpsMethod sets the "monitor_tps_method" field.
+func (_u *UsageLogUpdate) SetMonitorTpsMethod(v string) *UsageLogUpdate {
+	_u.mutation.SetMonitorTpsMethod(v)
+	return _u
+}
+
+// SetNillableMonitorTpsMethod sets the "monitor_tps_method" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableMonitorTpsMethod(v *string) *UsageLogUpdate {
+	if v != nil {
+		_u.SetMonitorTpsMethod(*v)
+	}
+	return _u
+}
+
+// ClearMonitorTpsMethod clears the value of the "monitor_tps_method" field.
+func (_u *UsageLogUpdate) ClearMonitorTpsMethod() *UsageLogUpdate {
+	_u.mutation.ClearMonitorTpsMethod()
+	return _u
+}
+
+// SetMonitorFirstVisibleMs sets the "monitor_first_visible_ms" field.
+func (_u *UsageLogUpdate) SetMonitorFirstVisibleMs(v int64) *UsageLogUpdate {
+	_u.mutation.ResetMonitorFirstVisibleMs()
+	_u.mutation.SetMonitorFirstVisibleMs(v)
+	return _u
+}
+
+// SetNillableMonitorFirstVisibleMs sets the "monitor_first_visible_ms" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableMonitorFirstVisibleMs(v *int64) *UsageLogUpdate {
+	if v != nil {
+		_u.SetMonitorFirstVisibleMs(*v)
+	}
+	return _u
+}
+
+// AddMonitorFirstVisibleMs adds value to the "monitor_first_visible_ms" field.
+func (_u *UsageLogUpdate) AddMonitorFirstVisibleMs(v int64) *UsageLogUpdate {
+	_u.mutation.AddMonitorFirstVisibleMs(v)
+	return _u
+}
+
+// ClearMonitorFirstVisibleMs clears the value of the "monitor_first_visible_ms" field.
+func (_u *UsageLogUpdate) ClearMonitorFirstVisibleMs() *UsageLogUpdate {
+	_u.mutation.ClearMonitorFirstVisibleMs()
+	return _u
+}
+
 // SetInputTokens sets the "input_tokens" field.
 func (_u *UsageLogUpdate) SetInputTokens(v int) *UsageLogUpdate {
 	_u.mutation.ResetInputTokens()
@@ -1076,6 +1305,16 @@ func (_u *UsageLogUpdate) check() error {
 			return &ValidationError{Name: "billing_mode", err: fmt.Errorf(`ent: validator failed for field "UsageLog.billing_mode": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.RequestOrigin(); ok {
+		if err := usagelog.RequestOriginValidator(v); err != nil {
+			return &ValidationError{Name: "request_origin", err: fmt.Errorf(`ent: validator failed for field "UsageLog.request_origin": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.MonitorTpsMethod(); ok {
+		if err := usagelog.MonitorTpsMethodValidator(v); err != nil {
+			return &ValidationError{Name: "monitor_tps_method", err: fmt.Errorf(`ent: validator failed for field "UsageLog.monitor_tps_method": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.UserAgent(); ok {
 		if err := usagelog.UserAgentValidator(v); err != nil {
 			return &ValidationError{Name: "user_agent", err: fmt.Errorf(`ent: validator failed for field "UsageLog.user_agent": %w`, err)}
@@ -1191,6 +1430,81 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.BillingModeCleared() {
 		_spec.ClearField(usagelog.FieldBillingMode, field.TypeString)
+	}
+	if value, ok := _u.mutation.RequestOrigin(); ok {
+		_spec.SetField(usagelog.FieldRequestOrigin, field.TypeString, value)
+	}
+	if _u.mutation.RequestOriginCleared() {
+		_spec.ClearField(usagelog.FieldRequestOrigin, field.TypeString)
+	}
+	if value, ok := _u.mutation.MonitorObservationVersion(); ok {
+		_spec.SetField(usagelog.FieldMonitorObservationVersion, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedMonitorObservationVersion(); ok {
+		_spec.AddField(usagelog.FieldMonitorObservationVersion, field.TypeInt, value)
+	}
+	if _u.mutation.MonitorObservationVersionCleared() {
+		_spec.ClearField(usagelog.FieldMonitorObservationVersion, field.TypeInt)
+	}
+	if value, ok := _u.mutation.MonitorInputTokensTotal(); ok {
+		_spec.SetField(usagelog.FieldMonitorInputTokensTotal, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedMonitorInputTokensTotal(); ok {
+		_spec.AddField(usagelog.FieldMonitorInputTokensTotal, field.TypeInt64, value)
+	}
+	if _u.mutation.MonitorInputTokensTotalCleared() {
+		_spec.ClearField(usagelog.FieldMonitorInputTokensTotal, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.MonitorCacheReadTokens(); ok {
+		_spec.SetField(usagelog.FieldMonitorCacheReadTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedMonitorCacheReadTokens(); ok {
+		_spec.AddField(usagelog.FieldMonitorCacheReadTokens, field.TypeInt64, value)
+	}
+	if _u.mutation.MonitorCacheReadTokensCleared() {
+		_spec.ClearField(usagelog.FieldMonitorCacheReadTokens, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.MonitorVisibleOutputTokens(); ok {
+		_spec.SetField(usagelog.FieldMonitorVisibleOutputTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedMonitorVisibleOutputTokens(); ok {
+		_spec.AddField(usagelog.FieldMonitorVisibleOutputTokens, field.TypeInt64, value)
+	}
+	if _u.mutation.MonitorVisibleOutputTokensCleared() {
+		_spec.ClearField(usagelog.FieldMonitorVisibleOutputTokens, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.MonitorGenerationMs(); ok {
+		_spec.SetField(usagelog.FieldMonitorGenerationMs, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedMonitorGenerationMs(); ok {
+		_spec.AddField(usagelog.FieldMonitorGenerationMs, field.TypeInt64, value)
+	}
+	if _u.mutation.MonitorGenerationMsCleared() {
+		_spec.ClearField(usagelog.FieldMonitorGenerationMs, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.MonitorOutputTpsMilli(); ok {
+		_spec.SetField(usagelog.FieldMonitorOutputTpsMilli, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedMonitorOutputTpsMilli(); ok {
+		_spec.AddField(usagelog.FieldMonitorOutputTpsMilli, field.TypeInt64, value)
+	}
+	if _u.mutation.MonitorOutputTpsMilliCleared() {
+		_spec.ClearField(usagelog.FieldMonitorOutputTpsMilli, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.MonitorTpsMethod(); ok {
+		_spec.SetField(usagelog.FieldMonitorTpsMethod, field.TypeString, value)
+	}
+	if _u.mutation.MonitorTpsMethodCleared() {
+		_spec.ClearField(usagelog.FieldMonitorTpsMethod, field.TypeString)
+	}
+	if value, ok := _u.mutation.MonitorFirstVisibleMs(); ok {
+		_spec.SetField(usagelog.FieldMonitorFirstVisibleMs, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedMonitorFirstVisibleMs(); ok {
+		_spec.AddField(usagelog.FieldMonitorFirstVisibleMs, field.TypeInt64, value)
+	}
+	if _u.mutation.MonitorFirstVisibleMsCleared() {
+		_spec.ClearField(usagelog.FieldMonitorFirstVisibleMs, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.InputTokens(); ok {
 		_spec.SetField(usagelog.FieldInputTokens, field.TypeInt, value)
@@ -1820,6 +2134,235 @@ func (_u *UsageLogUpdateOne) SetNillableSubscriptionID(v *int64) *UsageLogUpdate
 // ClearSubscriptionID clears the value of the "subscription_id" field.
 func (_u *UsageLogUpdateOne) ClearSubscriptionID() *UsageLogUpdateOne {
 	_u.mutation.ClearSubscriptionID()
+	return _u
+}
+
+// SetRequestOrigin sets the "request_origin" field.
+func (_u *UsageLogUpdateOne) SetRequestOrigin(v string) *UsageLogUpdateOne {
+	_u.mutation.SetRequestOrigin(v)
+	return _u
+}
+
+// SetNillableRequestOrigin sets the "request_origin" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableRequestOrigin(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetRequestOrigin(*v)
+	}
+	return _u
+}
+
+// ClearRequestOrigin clears the value of the "request_origin" field.
+func (_u *UsageLogUpdateOne) ClearRequestOrigin() *UsageLogUpdateOne {
+	_u.mutation.ClearRequestOrigin()
+	return _u
+}
+
+// SetMonitorObservationVersion sets the "monitor_observation_version" field.
+func (_u *UsageLogUpdateOne) SetMonitorObservationVersion(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetMonitorObservationVersion()
+	_u.mutation.SetMonitorObservationVersion(v)
+	return _u
+}
+
+// SetNillableMonitorObservationVersion sets the "monitor_observation_version" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableMonitorObservationVersion(v *int) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetMonitorObservationVersion(*v)
+	}
+	return _u
+}
+
+// AddMonitorObservationVersion adds value to the "monitor_observation_version" field.
+func (_u *UsageLogUpdateOne) AddMonitorObservationVersion(v int) *UsageLogUpdateOne {
+	_u.mutation.AddMonitorObservationVersion(v)
+	return _u
+}
+
+// ClearMonitorObservationVersion clears the value of the "monitor_observation_version" field.
+func (_u *UsageLogUpdateOne) ClearMonitorObservationVersion() *UsageLogUpdateOne {
+	_u.mutation.ClearMonitorObservationVersion()
+	return _u
+}
+
+// SetMonitorInputTokensTotal sets the "monitor_input_tokens_total" field.
+func (_u *UsageLogUpdateOne) SetMonitorInputTokensTotal(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetMonitorInputTokensTotal()
+	_u.mutation.SetMonitorInputTokensTotal(v)
+	return _u
+}
+
+// SetNillableMonitorInputTokensTotal sets the "monitor_input_tokens_total" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableMonitorInputTokensTotal(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetMonitorInputTokensTotal(*v)
+	}
+	return _u
+}
+
+// AddMonitorInputTokensTotal adds value to the "monitor_input_tokens_total" field.
+func (_u *UsageLogUpdateOne) AddMonitorInputTokensTotal(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddMonitorInputTokensTotal(v)
+	return _u
+}
+
+// ClearMonitorInputTokensTotal clears the value of the "monitor_input_tokens_total" field.
+func (_u *UsageLogUpdateOne) ClearMonitorInputTokensTotal() *UsageLogUpdateOne {
+	_u.mutation.ClearMonitorInputTokensTotal()
+	return _u
+}
+
+// SetMonitorCacheReadTokens sets the "monitor_cache_read_tokens" field.
+func (_u *UsageLogUpdateOne) SetMonitorCacheReadTokens(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetMonitorCacheReadTokens()
+	_u.mutation.SetMonitorCacheReadTokens(v)
+	return _u
+}
+
+// SetNillableMonitorCacheReadTokens sets the "monitor_cache_read_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableMonitorCacheReadTokens(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetMonitorCacheReadTokens(*v)
+	}
+	return _u
+}
+
+// AddMonitorCacheReadTokens adds value to the "monitor_cache_read_tokens" field.
+func (_u *UsageLogUpdateOne) AddMonitorCacheReadTokens(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddMonitorCacheReadTokens(v)
+	return _u
+}
+
+// ClearMonitorCacheReadTokens clears the value of the "monitor_cache_read_tokens" field.
+func (_u *UsageLogUpdateOne) ClearMonitorCacheReadTokens() *UsageLogUpdateOne {
+	_u.mutation.ClearMonitorCacheReadTokens()
+	return _u
+}
+
+// SetMonitorVisibleOutputTokens sets the "monitor_visible_output_tokens" field.
+func (_u *UsageLogUpdateOne) SetMonitorVisibleOutputTokens(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetMonitorVisibleOutputTokens()
+	_u.mutation.SetMonitorVisibleOutputTokens(v)
+	return _u
+}
+
+// SetNillableMonitorVisibleOutputTokens sets the "monitor_visible_output_tokens" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableMonitorVisibleOutputTokens(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetMonitorVisibleOutputTokens(*v)
+	}
+	return _u
+}
+
+// AddMonitorVisibleOutputTokens adds value to the "monitor_visible_output_tokens" field.
+func (_u *UsageLogUpdateOne) AddMonitorVisibleOutputTokens(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddMonitorVisibleOutputTokens(v)
+	return _u
+}
+
+// ClearMonitorVisibleOutputTokens clears the value of the "monitor_visible_output_tokens" field.
+func (_u *UsageLogUpdateOne) ClearMonitorVisibleOutputTokens() *UsageLogUpdateOne {
+	_u.mutation.ClearMonitorVisibleOutputTokens()
+	return _u
+}
+
+// SetMonitorGenerationMs sets the "monitor_generation_ms" field.
+func (_u *UsageLogUpdateOne) SetMonitorGenerationMs(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetMonitorGenerationMs()
+	_u.mutation.SetMonitorGenerationMs(v)
+	return _u
+}
+
+// SetNillableMonitorGenerationMs sets the "monitor_generation_ms" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableMonitorGenerationMs(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetMonitorGenerationMs(*v)
+	}
+	return _u
+}
+
+// AddMonitorGenerationMs adds value to the "monitor_generation_ms" field.
+func (_u *UsageLogUpdateOne) AddMonitorGenerationMs(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddMonitorGenerationMs(v)
+	return _u
+}
+
+// ClearMonitorGenerationMs clears the value of the "monitor_generation_ms" field.
+func (_u *UsageLogUpdateOne) ClearMonitorGenerationMs() *UsageLogUpdateOne {
+	_u.mutation.ClearMonitorGenerationMs()
+	return _u
+}
+
+// SetMonitorOutputTpsMilli sets the "monitor_output_tps_milli" field.
+func (_u *UsageLogUpdateOne) SetMonitorOutputTpsMilli(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetMonitorOutputTpsMilli()
+	_u.mutation.SetMonitorOutputTpsMilli(v)
+	return _u
+}
+
+// SetNillableMonitorOutputTpsMilli sets the "monitor_output_tps_milli" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableMonitorOutputTpsMilli(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetMonitorOutputTpsMilli(*v)
+	}
+	return _u
+}
+
+// AddMonitorOutputTpsMilli adds value to the "monitor_output_tps_milli" field.
+func (_u *UsageLogUpdateOne) AddMonitorOutputTpsMilli(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddMonitorOutputTpsMilli(v)
+	return _u
+}
+
+// ClearMonitorOutputTpsMilli clears the value of the "monitor_output_tps_milli" field.
+func (_u *UsageLogUpdateOne) ClearMonitorOutputTpsMilli() *UsageLogUpdateOne {
+	_u.mutation.ClearMonitorOutputTpsMilli()
+	return _u
+}
+
+// SetMonitorTpsMethod sets the "monitor_tps_method" field.
+func (_u *UsageLogUpdateOne) SetMonitorTpsMethod(v string) *UsageLogUpdateOne {
+	_u.mutation.SetMonitorTpsMethod(v)
+	return _u
+}
+
+// SetNillableMonitorTpsMethod sets the "monitor_tps_method" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableMonitorTpsMethod(v *string) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetMonitorTpsMethod(*v)
+	}
+	return _u
+}
+
+// ClearMonitorTpsMethod clears the value of the "monitor_tps_method" field.
+func (_u *UsageLogUpdateOne) ClearMonitorTpsMethod() *UsageLogUpdateOne {
+	_u.mutation.ClearMonitorTpsMethod()
+	return _u
+}
+
+// SetMonitorFirstVisibleMs sets the "monitor_first_visible_ms" field.
+func (_u *UsageLogUpdateOne) SetMonitorFirstVisibleMs(v int64) *UsageLogUpdateOne {
+	_u.mutation.ResetMonitorFirstVisibleMs()
+	_u.mutation.SetMonitorFirstVisibleMs(v)
+	return _u
+}
+
+// SetNillableMonitorFirstVisibleMs sets the "monitor_first_visible_ms" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableMonitorFirstVisibleMs(v *int64) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetMonitorFirstVisibleMs(*v)
+	}
+	return _u
+}
+
+// AddMonitorFirstVisibleMs adds value to the "monitor_first_visible_ms" field.
+func (_u *UsageLogUpdateOne) AddMonitorFirstVisibleMs(v int64) *UsageLogUpdateOne {
+	_u.mutation.AddMonitorFirstVisibleMs(v)
+	return _u
+}
+
+// ClearMonitorFirstVisibleMs clears the value of the "monitor_first_visible_ms" field.
+func (_u *UsageLogUpdateOne) ClearMonitorFirstVisibleMs() *UsageLogUpdateOne {
+	_u.mutation.ClearMonitorFirstVisibleMs()
 	return _u
 }
 
@@ -2603,6 +3146,16 @@ func (_u *UsageLogUpdateOne) check() error {
 			return &ValidationError{Name: "billing_mode", err: fmt.Errorf(`ent: validator failed for field "UsageLog.billing_mode": %w`, err)}
 		}
 	}
+	if v, ok := _u.mutation.RequestOrigin(); ok {
+		if err := usagelog.RequestOriginValidator(v); err != nil {
+			return &ValidationError{Name: "request_origin", err: fmt.Errorf(`ent: validator failed for field "UsageLog.request_origin": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.MonitorTpsMethod(); ok {
+		if err := usagelog.MonitorTpsMethodValidator(v); err != nil {
+			return &ValidationError{Name: "monitor_tps_method", err: fmt.Errorf(`ent: validator failed for field "UsageLog.monitor_tps_method": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.UserAgent(); ok {
 		if err := usagelog.UserAgentValidator(v); err != nil {
 			return &ValidationError{Name: "user_agent", err: fmt.Errorf(`ent: validator failed for field "UsageLog.user_agent": %w`, err)}
@@ -2735,6 +3288,81 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if _u.mutation.BillingModeCleared() {
 		_spec.ClearField(usagelog.FieldBillingMode, field.TypeString)
+	}
+	if value, ok := _u.mutation.RequestOrigin(); ok {
+		_spec.SetField(usagelog.FieldRequestOrigin, field.TypeString, value)
+	}
+	if _u.mutation.RequestOriginCleared() {
+		_spec.ClearField(usagelog.FieldRequestOrigin, field.TypeString)
+	}
+	if value, ok := _u.mutation.MonitorObservationVersion(); ok {
+		_spec.SetField(usagelog.FieldMonitorObservationVersion, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedMonitorObservationVersion(); ok {
+		_spec.AddField(usagelog.FieldMonitorObservationVersion, field.TypeInt, value)
+	}
+	if _u.mutation.MonitorObservationVersionCleared() {
+		_spec.ClearField(usagelog.FieldMonitorObservationVersion, field.TypeInt)
+	}
+	if value, ok := _u.mutation.MonitorInputTokensTotal(); ok {
+		_spec.SetField(usagelog.FieldMonitorInputTokensTotal, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedMonitorInputTokensTotal(); ok {
+		_spec.AddField(usagelog.FieldMonitorInputTokensTotal, field.TypeInt64, value)
+	}
+	if _u.mutation.MonitorInputTokensTotalCleared() {
+		_spec.ClearField(usagelog.FieldMonitorInputTokensTotal, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.MonitorCacheReadTokens(); ok {
+		_spec.SetField(usagelog.FieldMonitorCacheReadTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedMonitorCacheReadTokens(); ok {
+		_spec.AddField(usagelog.FieldMonitorCacheReadTokens, field.TypeInt64, value)
+	}
+	if _u.mutation.MonitorCacheReadTokensCleared() {
+		_spec.ClearField(usagelog.FieldMonitorCacheReadTokens, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.MonitorVisibleOutputTokens(); ok {
+		_spec.SetField(usagelog.FieldMonitorVisibleOutputTokens, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedMonitorVisibleOutputTokens(); ok {
+		_spec.AddField(usagelog.FieldMonitorVisibleOutputTokens, field.TypeInt64, value)
+	}
+	if _u.mutation.MonitorVisibleOutputTokensCleared() {
+		_spec.ClearField(usagelog.FieldMonitorVisibleOutputTokens, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.MonitorGenerationMs(); ok {
+		_spec.SetField(usagelog.FieldMonitorGenerationMs, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedMonitorGenerationMs(); ok {
+		_spec.AddField(usagelog.FieldMonitorGenerationMs, field.TypeInt64, value)
+	}
+	if _u.mutation.MonitorGenerationMsCleared() {
+		_spec.ClearField(usagelog.FieldMonitorGenerationMs, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.MonitorOutputTpsMilli(); ok {
+		_spec.SetField(usagelog.FieldMonitorOutputTpsMilli, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedMonitorOutputTpsMilli(); ok {
+		_spec.AddField(usagelog.FieldMonitorOutputTpsMilli, field.TypeInt64, value)
+	}
+	if _u.mutation.MonitorOutputTpsMilliCleared() {
+		_spec.ClearField(usagelog.FieldMonitorOutputTpsMilli, field.TypeInt64)
+	}
+	if value, ok := _u.mutation.MonitorTpsMethod(); ok {
+		_spec.SetField(usagelog.FieldMonitorTpsMethod, field.TypeString, value)
+	}
+	if _u.mutation.MonitorTpsMethodCleared() {
+		_spec.ClearField(usagelog.FieldMonitorTpsMethod, field.TypeString)
+	}
+	if value, ok := _u.mutation.MonitorFirstVisibleMs(); ok {
+		_spec.SetField(usagelog.FieldMonitorFirstVisibleMs, field.TypeInt64, value)
+	}
+	if value, ok := _u.mutation.AddedMonitorFirstVisibleMs(); ok {
+		_spec.AddField(usagelog.FieldMonitorFirstVisibleMs, field.TypeInt64, value)
+	}
+	if _u.mutation.MonitorFirstVisibleMsCleared() {
+		_spec.ClearField(usagelog.FieldMonitorFirstVisibleMs, field.TypeInt64)
 	}
 	if value, ok := _u.mutation.InputTokens(); ok {
 		_spec.SetField(usagelog.FieldInputTokens, field.TypeInt, value)

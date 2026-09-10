@@ -105,7 +105,7 @@ func TestShouldClearStickySession(t *testing.T) {
 			want:           true,
 		},
 		{
-			name: "oauth quota exceeded not cleared",
+			name: "oauth quota exceeded clears binding",
 			account: &Account{
 				Status:      StatusActive,
 				Schedulable: true,
@@ -117,13 +117,29 @@ func TestShouldClearStickySession(t *testing.T) {
 				},
 			},
 			requestedModel: "",
+			want:           true,
+		},
+		{
+			name: "oauth quota exempt model keeps binding",
+			account: &Account{
+				Status:      StatusActive,
+				Schedulable: true,
+				Type:        AccountTypeOAuth,
+				Extra: map[string]any{
+					"quota_daily_limit":   10.0,
+					"quota_daily_used":    10.0,
+					"quota_daily_start":   now.Add(-1 * time.Hour).Format(time.RFC3339),
+					"quota_exempt_models": []string{"gpt-5.4"},
+				},
+			},
+			requestedModel: "gpt-5.4",
 			want:           false,
 		},
 		{
 			name: "overloaded account",
 			account: &Account{
-				Status:       StatusActive,
-				Schedulable:  true,
+				Status:        StatusActive,
+				Schedulable:   true,
 				OverloadUntil: &future,
 			},
 			requestedModel: "",

@@ -220,4 +220,85 @@ describe('AccountTestModal', () => {
       mode: 'compact'
     })
   })
+
+  it('sends a manual question to the selected account without assigning a verdict', async () => {
+    getAvailableModels.mockResolvedValue([{ id: 'gpt-5.4', display_name: 'GPT-5.4' }])
+    global.fetch = vi.fn().mockResolvedValue(createStreamResponse([
+      'data: {"type":"content","text":"fixture answer"}\n',
+      'data: {"type":"test_complete","success":true}\n'
+    ])) as any
+    const wrapper = mountModal({ id: 42, name: 'Question account', platform: 'openai', type: 'oauth', status: 'active' })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+    ;(wrapper.vm as any).testMode = 'question'
+    await flushPromises()
+    const input = wrapper.get('textarea.textarea-stub')
+    expect((input.element as HTMLTextAreaElement).value).toBe("don't search the internet, who is Thibault Sottiaux on X")
+    const question = '  custom question\n'
+    await input.setValue(question)
+    await (wrapper.vm as any).startTest()
+    await flushPromises()
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+    const [url, request] = (global.fetch as any).mock.calls[0]
+    expect(url).toContain('/admin/accounts/42/test')
+    expect(JSON.parse(request.body)).toEqual({ model_id: 'gpt-5.4', prompt: question, mode: 'question' })
+    expect(wrapper.text()).toContain('fixture answer')
+    expect(wrapper.text()).toContain('admin.accounts.openai.questionReceived')
+    expect(wrapper.text()).not.toContain('admin.accounts.testCompleted')
+    await wrapper.setProps({ show: false })
+    await wrapper.setProps({ show: true, account: { id: 43, name: 'Next account', platform: 'openai', type: 'oauth', status: 'active' } as any })
+    await flushPromises()
+    expect((wrapper.get('textarea.textarea-stub').element as HTMLTextAreaElement).value).toBe(question)
+    expect(wrapper.text()).not.toContain('fixture answer')
+    expect(global.fetch).toHaveBeenCalledTimes(1)
+    await (wrapper.vm as any).startTest()
+    await flushPromises()
+    expect(global.fetch).toHaveBeenCalledTimes(2)
+    expect((global.fetch as any).mock.calls[1][0]).toContain('/admin/accounts/43/test')
+    wrapper.unmount()
+  })
+
+  it('ignores late failures from the previous account test', async () => {
+    getAvailableModels.mockResolvedValue([{ id: 'gpt-5.4', display_name: 'GPT-5.4' }])
+    let rejectPrevious!: (reason: Error) => void
+    global.fetch = vi.fn()
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectPrevious = reject }))
+      .mockResolvedValueOnce(createStreamResponse([
+        'data: {"type":"content","text":"current account answer"}\n',
+        'data: {"type":"test_complete","success":true}\n'
+      ])) as any
+    const wrapper = mountModal({ id: 42, name: 'First', platform: 'openai', type: 'oauth', status: 'active' })
+    await wrapper.setProps({ show: true })
+    await flushPromises()
+    ;(wrapper.vm as any).testMode = 'question'
+    await flushPromises()
+    const previous = (wrapper.vm as any).startTest()
+    await wrapper.setProps({ show: false })
+    await wrapper.setProps({ show: true, account: { id: 43, name: 'Second', platform: 'openai', type: 'oauth', status: 'active' } as any })
+    await flushPromises()
+    await (wrapper.vm as any).startTest()
+    rejectPrevious(new Error('previous account failure'))
+    await previous
+    await flushPromises()
+    expect(wrapper.text()).toContain('current account answer')
+    expect(wrapper.text()).not.toContain('previous account failure')
+    expect((wrapper.vm as any).status).toBe('success')
+    expect((global.fetch as any).mock.calls[0][1].signal.aborted).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('does not send empty manual questions or image-model questions', async () => {
+    const wrapper = mountModal({ id: 42, name: 'Question account', platform: 'openai', type: 'apikey', status: 'active' })
+    ;(wrapper.vm as any).testMode = 'question'
+    ;(wrapper.vm as any).selectedModelId = 'gpt-5.4'
+    await flushPromises()
+    ;(wrapper.vm as any).testPrompt = '  '
+    await (wrapper.vm as any).startTest()
+    expect(global.fetch).not.toHaveBeenCalled()
+    ;(wrapper.vm as any).testPrompt = 'question'
+    ;(wrapper.vm as any).selectedModelId = 'gpt-image-1'
+    await (wrapper.vm as any).startTest()
+    expect(global.fetch).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
 })

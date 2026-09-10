@@ -44498,86 +44498,102 @@ func (m *UsageCleanupTaskMutation) ResetEdge(name string) error {
 // UsageLogMutation represents an operation that mutates the UsageLog nodes in the graph.
 type UsageLogMutation struct {
 	config
-	op                           Op
-	typ                          string
-	id                           *int64
-	request_id                   *string
-	model                        *string
-	requested_model              *string
-	upstream_model               *string
-	upstream_response_model      *string
-	upstream_model_mismatch      *bool
-	channel_id                   *int64
-	addchannel_id                *int64
-	model_mapping_chain          *string
-	billing_tier                 *string
-	billing_mode                 *string
-	input_tokens                 *int
-	addinput_tokens              *int
-	output_tokens                *int
-	addoutput_tokens             *int
-	cache_creation_tokens        *int
-	addcache_creation_tokens     *int
-	cache_read_tokens            *int
-	addcache_read_tokens         *int
-	cache_creation_5m_tokens     *int
-	addcache_creation_5m_tokens  *int
-	cache_creation_1h_tokens     *int
-	addcache_creation_1h_tokens  *int
-	input_cost                   *float64
-	addinput_cost                *float64
-	output_cost                  *float64
-	addoutput_cost               *float64
-	cache_creation_cost          *float64
-	addcache_creation_cost       *float64
-	cache_read_cost              *float64
-	addcache_read_cost           *float64
-	total_cost                   *float64
-	addtotal_cost                *float64
-	actual_cost                  *float64
-	addactual_cost               *float64
-	rate_multiplier              *float64
-	addrate_multiplier           *float64
-	long_context_billing_applied *bool
-	account_rate_multiplier      *float64
-	addaccount_rate_multiplier   *float64
-	billing_type                 *int8
-	addbilling_type              *int8
-	stream                       *bool
-	duration_ms                  *int
-	addduration_ms               *int
-	first_token_ms               *int
-	addfirst_token_ms            *int
-	user_agent                   *string
-	ip_address                   *string
-	image_count                  *int
-	addimage_count               *int
-	image_size                   *string
-	image_input_size             *string
-	image_output_size            *string
-	image_size_source            *string
-	image_size_breakdown         *map[string]int
-	video_count                  *int
-	addvideo_count               *int
-	video_resolution             *string
-	video_duration_seconds       *int
-	addvideo_duration_seconds    *int
-	cache_ttl_overridden         *bool
-	created_at                   *time.Time
-	clearedFields                map[string]struct{}
-	user                         *int64
-	cleareduser                  bool
-	api_key                      *int64
-	clearedapi_key               bool
-	account                      *int64
-	clearedaccount               bool
-	group                        *int64
-	clearedgroup                 bool
-	subscription                 *int64
-	clearedsubscription          bool
-	done                         bool
-	oldValue                     func(context.Context) (*UsageLog, error)
-	predicates                   []predicate.UsageLog
+	op                               Op
+	typ                              string
+	id                               *int64
+	request_id                       *string
+	model                            *string
+	requested_model                  *string
+	upstream_model                   *string
+	upstream_response_model          *string
+	upstream_model_mismatch          *bool
+	channel_id                       *int64
+	addchannel_id                    *int64
+	model_mapping_chain              *string
+	billing_tier                     *string
+	billing_mode                     *string
+	request_origin                   *string
+	monitor_observation_version      *int
+	addmonitor_observation_version   *int
+	monitor_input_tokens_total       *int64
+	addmonitor_input_tokens_total    *int64
+	monitor_cache_read_tokens        *int64
+	addmonitor_cache_read_tokens     *int64
+	monitor_visible_output_tokens    *int64
+	addmonitor_visible_output_tokens *int64
+	monitor_generation_ms            *int64
+	addmonitor_generation_ms         *int64
+	monitor_output_tps_milli         *int64
+	addmonitor_output_tps_milli      *int64
+	monitor_tps_method               *string
+	monitor_first_visible_ms         *int64
+	addmonitor_first_visible_ms      *int64
+	input_tokens                     *int
+	addinput_tokens                  *int
+	output_tokens                    *int
+	addoutput_tokens                 *int
+	cache_creation_tokens            *int
+	addcache_creation_tokens         *int
+	cache_read_tokens                *int
+	addcache_read_tokens             *int
+	cache_creation_5m_tokens         *int
+	addcache_creation_5m_tokens      *int
+	cache_creation_1h_tokens         *int
+	addcache_creation_1h_tokens      *int
+	input_cost                       *float64
+	addinput_cost                    *float64
+	output_cost                      *float64
+	addoutput_cost                   *float64
+	cache_creation_cost              *float64
+	addcache_creation_cost           *float64
+	cache_read_cost                  *float64
+	addcache_read_cost               *float64
+	total_cost                       *float64
+	addtotal_cost                    *float64
+	actual_cost                      *float64
+	addactual_cost                   *float64
+	rate_multiplier                  *float64
+	addrate_multiplier               *float64
+	long_context_billing_applied     *bool
+	account_rate_multiplier          *float64
+	addaccount_rate_multiplier       *float64
+	billing_type                     *int8
+	addbilling_type                  *int8
+	stream                           *bool
+	duration_ms                      *int
+	addduration_ms                   *int
+	first_token_ms                   *int
+	addfirst_token_ms                *int
+	user_agent                       *string
+	ip_address                       *string
+	image_count                      *int
+	addimage_count                   *int
+	image_size                       *string
+	image_input_size                 *string
+	image_output_size                *string
+	image_size_source                *string
+	image_size_breakdown             *map[string]int
+	video_count                      *int
+	addvideo_count                   *int
+	video_resolution                 *string
+	video_duration_seconds           *int
+	addvideo_duration_seconds        *int
+	cache_ttl_overridden             *bool
+	created_at                       *time.Time
+	clearedFields                    map[string]struct{}
+	user                             *int64
+	cleareduser                      bool
+	api_key                          *int64
+	clearedapi_key                   bool
+	account                          *int64
+	clearedaccount                   bool
+	group                            *int64
+	clearedgroup                     bool
+	subscription                     *int64
+	clearedsubscription              bool
+	done                             bool
+	oldValue                         func(context.Context) (*UsageLog, error)
+	predicates                       []predicate.UsageLog
 }
 
 var _ ent.Mutation = (*UsageLogMutation)(nil)
@@ -45367,6 +45383,594 @@ func (m *UsageLogMutation) SubscriptionIDCleared() bool {
 func (m *UsageLogMutation) ResetSubscriptionID() {
 	m.subscription = nil
 	delete(m.clearedFields, usagelog.FieldSubscriptionID)
+}
+
+// SetRequestOrigin sets the "request_origin" field.
+func (m *UsageLogMutation) SetRequestOrigin(s string) {
+	m.request_origin = &s
+}
+
+// RequestOrigin returns the value of the "request_origin" field in the mutation.
+func (m *UsageLogMutation) RequestOrigin() (r string, exists bool) {
+	v := m.request_origin
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRequestOrigin returns the old "request_origin" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldRequestOrigin(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRequestOrigin is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRequestOrigin requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRequestOrigin: %w", err)
+	}
+	return oldValue.RequestOrigin, nil
+}
+
+// ClearRequestOrigin clears the value of the "request_origin" field.
+func (m *UsageLogMutation) ClearRequestOrigin() {
+	m.request_origin = nil
+	m.clearedFields[usagelog.FieldRequestOrigin] = struct{}{}
+}
+
+// RequestOriginCleared returns if the "request_origin" field was cleared in this mutation.
+func (m *UsageLogMutation) RequestOriginCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldRequestOrigin]
+	return ok
+}
+
+// ResetRequestOrigin resets all changes to the "request_origin" field.
+func (m *UsageLogMutation) ResetRequestOrigin() {
+	m.request_origin = nil
+	delete(m.clearedFields, usagelog.FieldRequestOrigin)
+}
+
+// SetMonitorObservationVersion sets the "monitor_observation_version" field.
+func (m *UsageLogMutation) SetMonitorObservationVersion(i int) {
+	m.monitor_observation_version = &i
+	m.addmonitor_observation_version = nil
+}
+
+// MonitorObservationVersion returns the value of the "monitor_observation_version" field in the mutation.
+func (m *UsageLogMutation) MonitorObservationVersion() (r int, exists bool) {
+	v := m.monitor_observation_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMonitorObservationVersion returns the old "monitor_observation_version" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldMonitorObservationVersion(ctx context.Context) (v *int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMonitorObservationVersion is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMonitorObservationVersion requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMonitorObservationVersion: %w", err)
+	}
+	return oldValue.MonitorObservationVersion, nil
+}
+
+// AddMonitorObservationVersion adds i to the "monitor_observation_version" field.
+func (m *UsageLogMutation) AddMonitorObservationVersion(i int) {
+	if m.addmonitor_observation_version != nil {
+		*m.addmonitor_observation_version += i
+	} else {
+		m.addmonitor_observation_version = &i
+	}
+}
+
+// AddedMonitorObservationVersion returns the value that was added to the "monitor_observation_version" field in this mutation.
+func (m *UsageLogMutation) AddedMonitorObservationVersion() (r int, exists bool) {
+	v := m.addmonitor_observation_version
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearMonitorObservationVersion clears the value of the "monitor_observation_version" field.
+func (m *UsageLogMutation) ClearMonitorObservationVersion() {
+	m.monitor_observation_version = nil
+	m.addmonitor_observation_version = nil
+	m.clearedFields[usagelog.FieldMonitorObservationVersion] = struct{}{}
+}
+
+// MonitorObservationVersionCleared returns if the "monitor_observation_version" field was cleared in this mutation.
+func (m *UsageLogMutation) MonitorObservationVersionCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldMonitorObservationVersion]
+	return ok
+}
+
+// ResetMonitorObservationVersion resets all changes to the "monitor_observation_version" field.
+func (m *UsageLogMutation) ResetMonitorObservationVersion() {
+	m.monitor_observation_version = nil
+	m.addmonitor_observation_version = nil
+	delete(m.clearedFields, usagelog.FieldMonitorObservationVersion)
+}
+
+// SetMonitorInputTokensTotal sets the "monitor_input_tokens_total" field.
+func (m *UsageLogMutation) SetMonitorInputTokensTotal(i int64) {
+	m.monitor_input_tokens_total = &i
+	m.addmonitor_input_tokens_total = nil
+}
+
+// MonitorInputTokensTotal returns the value of the "monitor_input_tokens_total" field in the mutation.
+func (m *UsageLogMutation) MonitorInputTokensTotal() (r int64, exists bool) {
+	v := m.monitor_input_tokens_total
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMonitorInputTokensTotal returns the old "monitor_input_tokens_total" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldMonitorInputTokensTotal(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMonitorInputTokensTotal is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMonitorInputTokensTotal requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMonitorInputTokensTotal: %w", err)
+	}
+	return oldValue.MonitorInputTokensTotal, nil
+}
+
+// AddMonitorInputTokensTotal adds i to the "monitor_input_tokens_total" field.
+func (m *UsageLogMutation) AddMonitorInputTokensTotal(i int64) {
+	if m.addmonitor_input_tokens_total != nil {
+		*m.addmonitor_input_tokens_total += i
+	} else {
+		m.addmonitor_input_tokens_total = &i
+	}
+}
+
+// AddedMonitorInputTokensTotal returns the value that was added to the "monitor_input_tokens_total" field in this mutation.
+func (m *UsageLogMutation) AddedMonitorInputTokensTotal() (r int64, exists bool) {
+	v := m.addmonitor_input_tokens_total
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearMonitorInputTokensTotal clears the value of the "monitor_input_tokens_total" field.
+func (m *UsageLogMutation) ClearMonitorInputTokensTotal() {
+	m.monitor_input_tokens_total = nil
+	m.addmonitor_input_tokens_total = nil
+	m.clearedFields[usagelog.FieldMonitorInputTokensTotal] = struct{}{}
+}
+
+// MonitorInputTokensTotalCleared returns if the "monitor_input_tokens_total" field was cleared in this mutation.
+func (m *UsageLogMutation) MonitorInputTokensTotalCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldMonitorInputTokensTotal]
+	return ok
+}
+
+// ResetMonitorInputTokensTotal resets all changes to the "monitor_input_tokens_total" field.
+func (m *UsageLogMutation) ResetMonitorInputTokensTotal() {
+	m.monitor_input_tokens_total = nil
+	m.addmonitor_input_tokens_total = nil
+	delete(m.clearedFields, usagelog.FieldMonitorInputTokensTotal)
+}
+
+// SetMonitorCacheReadTokens sets the "monitor_cache_read_tokens" field.
+func (m *UsageLogMutation) SetMonitorCacheReadTokens(i int64) {
+	m.monitor_cache_read_tokens = &i
+	m.addmonitor_cache_read_tokens = nil
+}
+
+// MonitorCacheReadTokens returns the value of the "monitor_cache_read_tokens" field in the mutation.
+func (m *UsageLogMutation) MonitorCacheReadTokens() (r int64, exists bool) {
+	v := m.monitor_cache_read_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMonitorCacheReadTokens returns the old "monitor_cache_read_tokens" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldMonitorCacheReadTokens(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMonitorCacheReadTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMonitorCacheReadTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMonitorCacheReadTokens: %w", err)
+	}
+	return oldValue.MonitorCacheReadTokens, nil
+}
+
+// AddMonitorCacheReadTokens adds i to the "monitor_cache_read_tokens" field.
+func (m *UsageLogMutation) AddMonitorCacheReadTokens(i int64) {
+	if m.addmonitor_cache_read_tokens != nil {
+		*m.addmonitor_cache_read_tokens += i
+	} else {
+		m.addmonitor_cache_read_tokens = &i
+	}
+}
+
+// AddedMonitorCacheReadTokens returns the value that was added to the "monitor_cache_read_tokens" field in this mutation.
+func (m *UsageLogMutation) AddedMonitorCacheReadTokens() (r int64, exists bool) {
+	v := m.addmonitor_cache_read_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearMonitorCacheReadTokens clears the value of the "monitor_cache_read_tokens" field.
+func (m *UsageLogMutation) ClearMonitorCacheReadTokens() {
+	m.monitor_cache_read_tokens = nil
+	m.addmonitor_cache_read_tokens = nil
+	m.clearedFields[usagelog.FieldMonitorCacheReadTokens] = struct{}{}
+}
+
+// MonitorCacheReadTokensCleared returns if the "monitor_cache_read_tokens" field was cleared in this mutation.
+func (m *UsageLogMutation) MonitorCacheReadTokensCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldMonitorCacheReadTokens]
+	return ok
+}
+
+// ResetMonitorCacheReadTokens resets all changes to the "monitor_cache_read_tokens" field.
+func (m *UsageLogMutation) ResetMonitorCacheReadTokens() {
+	m.monitor_cache_read_tokens = nil
+	m.addmonitor_cache_read_tokens = nil
+	delete(m.clearedFields, usagelog.FieldMonitorCacheReadTokens)
+}
+
+// SetMonitorVisibleOutputTokens sets the "monitor_visible_output_tokens" field.
+func (m *UsageLogMutation) SetMonitorVisibleOutputTokens(i int64) {
+	m.monitor_visible_output_tokens = &i
+	m.addmonitor_visible_output_tokens = nil
+}
+
+// MonitorVisibleOutputTokens returns the value of the "monitor_visible_output_tokens" field in the mutation.
+func (m *UsageLogMutation) MonitorVisibleOutputTokens() (r int64, exists bool) {
+	v := m.monitor_visible_output_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMonitorVisibleOutputTokens returns the old "monitor_visible_output_tokens" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldMonitorVisibleOutputTokens(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMonitorVisibleOutputTokens is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMonitorVisibleOutputTokens requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMonitorVisibleOutputTokens: %w", err)
+	}
+	return oldValue.MonitorVisibleOutputTokens, nil
+}
+
+// AddMonitorVisibleOutputTokens adds i to the "monitor_visible_output_tokens" field.
+func (m *UsageLogMutation) AddMonitorVisibleOutputTokens(i int64) {
+	if m.addmonitor_visible_output_tokens != nil {
+		*m.addmonitor_visible_output_tokens += i
+	} else {
+		m.addmonitor_visible_output_tokens = &i
+	}
+}
+
+// AddedMonitorVisibleOutputTokens returns the value that was added to the "monitor_visible_output_tokens" field in this mutation.
+func (m *UsageLogMutation) AddedMonitorVisibleOutputTokens() (r int64, exists bool) {
+	v := m.addmonitor_visible_output_tokens
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearMonitorVisibleOutputTokens clears the value of the "monitor_visible_output_tokens" field.
+func (m *UsageLogMutation) ClearMonitorVisibleOutputTokens() {
+	m.monitor_visible_output_tokens = nil
+	m.addmonitor_visible_output_tokens = nil
+	m.clearedFields[usagelog.FieldMonitorVisibleOutputTokens] = struct{}{}
+}
+
+// MonitorVisibleOutputTokensCleared returns if the "monitor_visible_output_tokens" field was cleared in this mutation.
+func (m *UsageLogMutation) MonitorVisibleOutputTokensCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldMonitorVisibleOutputTokens]
+	return ok
+}
+
+// ResetMonitorVisibleOutputTokens resets all changes to the "monitor_visible_output_tokens" field.
+func (m *UsageLogMutation) ResetMonitorVisibleOutputTokens() {
+	m.monitor_visible_output_tokens = nil
+	m.addmonitor_visible_output_tokens = nil
+	delete(m.clearedFields, usagelog.FieldMonitorVisibleOutputTokens)
+}
+
+// SetMonitorGenerationMs sets the "monitor_generation_ms" field.
+func (m *UsageLogMutation) SetMonitorGenerationMs(i int64) {
+	m.monitor_generation_ms = &i
+	m.addmonitor_generation_ms = nil
+}
+
+// MonitorGenerationMs returns the value of the "monitor_generation_ms" field in the mutation.
+func (m *UsageLogMutation) MonitorGenerationMs() (r int64, exists bool) {
+	v := m.monitor_generation_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMonitorGenerationMs returns the old "monitor_generation_ms" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldMonitorGenerationMs(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMonitorGenerationMs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMonitorGenerationMs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMonitorGenerationMs: %w", err)
+	}
+	return oldValue.MonitorGenerationMs, nil
+}
+
+// AddMonitorGenerationMs adds i to the "monitor_generation_ms" field.
+func (m *UsageLogMutation) AddMonitorGenerationMs(i int64) {
+	if m.addmonitor_generation_ms != nil {
+		*m.addmonitor_generation_ms += i
+	} else {
+		m.addmonitor_generation_ms = &i
+	}
+}
+
+// AddedMonitorGenerationMs returns the value that was added to the "monitor_generation_ms" field in this mutation.
+func (m *UsageLogMutation) AddedMonitorGenerationMs() (r int64, exists bool) {
+	v := m.addmonitor_generation_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearMonitorGenerationMs clears the value of the "monitor_generation_ms" field.
+func (m *UsageLogMutation) ClearMonitorGenerationMs() {
+	m.monitor_generation_ms = nil
+	m.addmonitor_generation_ms = nil
+	m.clearedFields[usagelog.FieldMonitorGenerationMs] = struct{}{}
+}
+
+// MonitorGenerationMsCleared returns if the "monitor_generation_ms" field was cleared in this mutation.
+func (m *UsageLogMutation) MonitorGenerationMsCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldMonitorGenerationMs]
+	return ok
+}
+
+// ResetMonitorGenerationMs resets all changes to the "monitor_generation_ms" field.
+func (m *UsageLogMutation) ResetMonitorGenerationMs() {
+	m.monitor_generation_ms = nil
+	m.addmonitor_generation_ms = nil
+	delete(m.clearedFields, usagelog.FieldMonitorGenerationMs)
+}
+
+// SetMonitorOutputTpsMilli sets the "monitor_output_tps_milli" field.
+func (m *UsageLogMutation) SetMonitorOutputTpsMilli(i int64) {
+	m.monitor_output_tps_milli = &i
+	m.addmonitor_output_tps_milli = nil
+}
+
+// MonitorOutputTpsMilli returns the value of the "monitor_output_tps_milli" field in the mutation.
+func (m *UsageLogMutation) MonitorOutputTpsMilli() (r int64, exists bool) {
+	v := m.monitor_output_tps_milli
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMonitorOutputTpsMilli returns the old "monitor_output_tps_milli" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldMonitorOutputTpsMilli(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMonitorOutputTpsMilli is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMonitorOutputTpsMilli requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMonitorOutputTpsMilli: %w", err)
+	}
+	return oldValue.MonitorOutputTpsMilli, nil
+}
+
+// AddMonitorOutputTpsMilli adds i to the "monitor_output_tps_milli" field.
+func (m *UsageLogMutation) AddMonitorOutputTpsMilli(i int64) {
+	if m.addmonitor_output_tps_milli != nil {
+		*m.addmonitor_output_tps_milli += i
+	} else {
+		m.addmonitor_output_tps_milli = &i
+	}
+}
+
+// AddedMonitorOutputTpsMilli returns the value that was added to the "monitor_output_tps_milli" field in this mutation.
+func (m *UsageLogMutation) AddedMonitorOutputTpsMilli() (r int64, exists bool) {
+	v := m.addmonitor_output_tps_milli
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearMonitorOutputTpsMilli clears the value of the "monitor_output_tps_milli" field.
+func (m *UsageLogMutation) ClearMonitorOutputTpsMilli() {
+	m.monitor_output_tps_milli = nil
+	m.addmonitor_output_tps_milli = nil
+	m.clearedFields[usagelog.FieldMonitorOutputTpsMilli] = struct{}{}
+}
+
+// MonitorOutputTpsMilliCleared returns if the "monitor_output_tps_milli" field was cleared in this mutation.
+func (m *UsageLogMutation) MonitorOutputTpsMilliCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldMonitorOutputTpsMilli]
+	return ok
+}
+
+// ResetMonitorOutputTpsMilli resets all changes to the "monitor_output_tps_milli" field.
+func (m *UsageLogMutation) ResetMonitorOutputTpsMilli() {
+	m.monitor_output_tps_milli = nil
+	m.addmonitor_output_tps_milli = nil
+	delete(m.clearedFields, usagelog.FieldMonitorOutputTpsMilli)
+}
+
+// SetMonitorTpsMethod sets the "monitor_tps_method" field.
+func (m *UsageLogMutation) SetMonitorTpsMethod(s string) {
+	m.monitor_tps_method = &s
+}
+
+// MonitorTpsMethod returns the value of the "monitor_tps_method" field in the mutation.
+func (m *UsageLogMutation) MonitorTpsMethod() (r string, exists bool) {
+	v := m.monitor_tps_method
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMonitorTpsMethod returns the old "monitor_tps_method" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldMonitorTpsMethod(ctx context.Context) (v *string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMonitorTpsMethod is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMonitorTpsMethod requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMonitorTpsMethod: %w", err)
+	}
+	return oldValue.MonitorTpsMethod, nil
+}
+
+// ClearMonitorTpsMethod clears the value of the "monitor_tps_method" field.
+func (m *UsageLogMutation) ClearMonitorTpsMethod() {
+	m.monitor_tps_method = nil
+	m.clearedFields[usagelog.FieldMonitorTpsMethod] = struct{}{}
+}
+
+// MonitorTpsMethodCleared returns if the "monitor_tps_method" field was cleared in this mutation.
+func (m *UsageLogMutation) MonitorTpsMethodCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldMonitorTpsMethod]
+	return ok
+}
+
+// ResetMonitorTpsMethod resets all changes to the "monitor_tps_method" field.
+func (m *UsageLogMutation) ResetMonitorTpsMethod() {
+	m.monitor_tps_method = nil
+	delete(m.clearedFields, usagelog.FieldMonitorTpsMethod)
+}
+
+// SetMonitorFirstVisibleMs sets the "monitor_first_visible_ms" field.
+func (m *UsageLogMutation) SetMonitorFirstVisibleMs(i int64) {
+	m.monitor_first_visible_ms = &i
+	m.addmonitor_first_visible_ms = nil
+}
+
+// MonitorFirstVisibleMs returns the value of the "monitor_first_visible_ms" field in the mutation.
+func (m *UsageLogMutation) MonitorFirstVisibleMs() (r int64, exists bool) {
+	v := m.monitor_first_visible_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMonitorFirstVisibleMs returns the old "monitor_first_visible_ms" field's value of the UsageLog entity.
+// If the UsageLog object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *UsageLogMutation) OldMonitorFirstVisibleMs(ctx context.Context) (v *int64, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMonitorFirstVisibleMs is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMonitorFirstVisibleMs requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMonitorFirstVisibleMs: %w", err)
+	}
+	return oldValue.MonitorFirstVisibleMs, nil
+}
+
+// AddMonitorFirstVisibleMs adds i to the "monitor_first_visible_ms" field.
+func (m *UsageLogMutation) AddMonitorFirstVisibleMs(i int64) {
+	if m.addmonitor_first_visible_ms != nil {
+		*m.addmonitor_first_visible_ms += i
+	} else {
+		m.addmonitor_first_visible_ms = &i
+	}
+}
+
+// AddedMonitorFirstVisibleMs returns the value that was added to the "monitor_first_visible_ms" field in this mutation.
+func (m *UsageLogMutation) AddedMonitorFirstVisibleMs() (r int64, exists bool) {
+	v := m.addmonitor_first_visible_ms
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ClearMonitorFirstVisibleMs clears the value of the "monitor_first_visible_ms" field.
+func (m *UsageLogMutation) ClearMonitorFirstVisibleMs() {
+	m.monitor_first_visible_ms = nil
+	m.addmonitor_first_visible_ms = nil
+	m.clearedFields[usagelog.FieldMonitorFirstVisibleMs] = struct{}{}
+}
+
+// MonitorFirstVisibleMsCleared returns if the "monitor_first_visible_ms" field was cleared in this mutation.
+func (m *UsageLogMutation) MonitorFirstVisibleMsCleared() bool {
+	_, ok := m.clearedFields[usagelog.FieldMonitorFirstVisibleMs]
+	return ok
+}
+
+// ResetMonitorFirstVisibleMs resets all changes to the "monitor_first_visible_ms" field.
+func (m *UsageLogMutation) ResetMonitorFirstVisibleMs() {
+	m.monitor_first_visible_ms = nil
+	m.addmonitor_first_visible_ms = nil
+	delete(m.clearedFields, usagelog.FieldMonitorFirstVisibleMs)
 }
 
 // SetInputTokens sets the "input_tokens" field.
@@ -47250,7 +47854,7 @@ func (m *UsageLogMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *UsageLogMutation) Fields() []string {
-	fields := make([]string, 0, 47)
+	fields := make([]string, 0, 56)
 	if m.user != nil {
 		fields = append(fields, usagelog.FieldUserID)
 	}
@@ -47295,6 +47899,33 @@ func (m *UsageLogMutation) Fields() []string {
 	}
 	if m.subscription != nil {
 		fields = append(fields, usagelog.FieldSubscriptionID)
+	}
+	if m.request_origin != nil {
+		fields = append(fields, usagelog.FieldRequestOrigin)
+	}
+	if m.monitor_observation_version != nil {
+		fields = append(fields, usagelog.FieldMonitorObservationVersion)
+	}
+	if m.monitor_input_tokens_total != nil {
+		fields = append(fields, usagelog.FieldMonitorInputTokensTotal)
+	}
+	if m.monitor_cache_read_tokens != nil {
+		fields = append(fields, usagelog.FieldMonitorCacheReadTokens)
+	}
+	if m.monitor_visible_output_tokens != nil {
+		fields = append(fields, usagelog.FieldMonitorVisibleOutputTokens)
+	}
+	if m.monitor_generation_ms != nil {
+		fields = append(fields, usagelog.FieldMonitorGenerationMs)
+	}
+	if m.monitor_output_tps_milli != nil {
+		fields = append(fields, usagelog.FieldMonitorOutputTpsMilli)
+	}
+	if m.monitor_tps_method != nil {
+		fields = append(fields, usagelog.FieldMonitorTpsMethod)
+	}
+	if m.monitor_first_visible_ms != nil {
+		fields = append(fields, usagelog.FieldMonitorFirstVisibleMs)
 	}
 	if m.input_tokens != nil {
 		fields = append(fields, usagelog.FieldInputTokens)
@@ -47430,6 +48061,24 @@ func (m *UsageLogMutation) Field(name string) (ent.Value, bool) {
 		return m.GroupID()
 	case usagelog.FieldSubscriptionID:
 		return m.SubscriptionID()
+	case usagelog.FieldRequestOrigin:
+		return m.RequestOrigin()
+	case usagelog.FieldMonitorObservationVersion:
+		return m.MonitorObservationVersion()
+	case usagelog.FieldMonitorInputTokensTotal:
+		return m.MonitorInputTokensTotal()
+	case usagelog.FieldMonitorCacheReadTokens:
+		return m.MonitorCacheReadTokens()
+	case usagelog.FieldMonitorVisibleOutputTokens:
+		return m.MonitorVisibleOutputTokens()
+	case usagelog.FieldMonitorGenerationMs:
+		return m.MonitorGenerationMs()
+	case usagelog.FieldMonitorOutputTpsMilli:
+		return m.MonitorOutputTpsMilli()
+	case usagelog.FieldMonitorTpsMethod:
+		return m.MonitorTpsMethod()
+	case usagelog.FieldMonitorFirstVisibleMs:
+		return m.MonitorFirstVisibleMs()
 	case usagelog.FieldInputTokens:
 		return m.InputTokens()
 	case usagelog.FieldOutputTokens:
@@ -47533,6 +48182,24 @@ func (m *UsageLogMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldGroupID(ctx)
 	case usagelog.FieldSubscriptionID:
 		return m.OldSubscriptionID(ctx)
+	case usagelog.FieldRequestOrigin:
+		return m.OldRequestOrigin(ctx)
+	case usagelog.FieldMonitorObservationVersion:
+		return m.OldMonitorObservationVersion(ctx)
+	case usagelog.FieldMonitorInputTokensTotal:
+		return m.OldMonitorInputTokensTotal(ctx)
+	case usagelog.FieldMonitorCacheReadTokens:
+		return m.OldMonitorCacheReadTokens(ctx)
+	case usagelog.FieldMonitorVisibleOutputTokens:
+		return m.OldMonitorVisibleOutputTokens(ctx)
+	case usagelog.FieldMonitorGenerationMs:
+		return m.OldMonitorGenerationMs(ctx)
+	case usagelog.FieldMonitorOutputTpsMilli:
+		return m.OldMonitorOutputTpsMilli(ctx)
+	case usagelog.FieldMonitorTpsMethod:
+		return m.OldMonitorTpsMethod(ctx)
+	case usagelog.FieldMonitorFirstVisibleMs:
+		return m.OldMonitorFirstVisibleMs(ctx)
 	case usagelog.FieldInputTokens:
 		return m.OldInputTokens(ctx)
 	case usagelog.FieldOutputTokens:
@@ -47710,6 +48377,69 @@ func (m *UsageLogMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetSubscriptionID(v)
+		return nil
+	case usagelog.FieldRequestOrigin:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRequestOrigin(v)
+		return nil
+	case usagelog.FieldMonitorObservationVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMonitorObservationVersion(v)
+		return nil
+	case usagelog.FieldMonitorInputTokensTotal:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMonitorInputTokensTotal(v)
+		return nil
+	case usagelog.FieldMonitorCacheReadTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMonitorCacheReadTokens(v)
+		return nil
+	case usagelog.FieldMonitorVisibleOutputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMonitorVisibleOutputTokens(v)
+		return nil
+	case usagelog.FieldMonitorGenerationMs:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMonitorGenerationMs(v)
+		return nil
+	case usagelog.FieldMonitorOutputTpsMilli:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMonitorOutputTpsMilli(v)
+		return nil
+	case usagelog.FieldMonitorTpsMethod:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMonitorTpsMethod(v)
+		return nil
+	case usagelog.FieldMonitorFirstVisibleMs:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMonitorFirstVisibleMs(v)
 		return nil
 	case usagelog.FieldInputTokens:
 		v, ok := value.(int)
@@ -47946,6 +48676,27 @@ func (m *UsageLogMutation) AddedFields() []string {
 	if m.addchannel_id != nil {
 		fields = append(fields, usagelog.FieldChannelID)
 	}
+	if m.addmonitor_observation_version != nil {
+		fields = append(fields, usagelog.FieldMonitorObservationVersion)
+	}
+	if m.addmonitor_input_tokens_total != nil {
+		fields = append(fields, usagelog.FieldMonitorInputTokensTotal)
+	}
+	if m.addmonitor_cache_read_tokens != nil {
+		fields = append(fields, usagelog.FieldMonitorCacheReadTokens)
+	}
+	if m.addmonitor_visible_output_tokens != nil {
+		fields = append(fields, usagelog.FieldMonitorVisibleOutputTokens)
+	}
+	if m.addmonitor_generation_ms != nil {
+		fields = append(fields, usagelog.FieldMonitorGenerationMs)
+	}
+	if m.addmonitor_output_tps_milli != nil {
+		fields = append(fields, usagelog.FieldMonitorOutputTpsMilli)
+	}
+	if m.addmonitor_first_visible_ms != nil {
+		fields = append(fields, usagelog.FieldMonitorFirstVisibleMs)
+	}
 	if m.addinput_tokens != nil {
 		fields = append(fields, usagelog.FieldInputTokens)
 	}
@@ -48016,6 +48767,20 @@ func (m *UsageLogMutation) AddedField(name string) (ent.Value, bool) {
 	switch name {
 	case usagelog.FieldChannelID:
 		return m.AddedChannelID()
+	case usagelog.FieldMonitorObservationVersion:
+		return m.AddedMonitorObservationVersion()
+	case usagelog.FieldMonitorInputTokensTotal:
+		return m.AddedMonitorInputTokensTotal()
+	case usagelog.FieldMonitorCacheReadTokens:
+		return m.AddedMonitorCacheReadTokens()
+	case usagelog.FieldMonitorVisibleOutputTokens:
+		return m.AddedMonitorVisibleOutputTokens()
+	case usagelog.FieldMonitorGenerationMs:
+		return m.AddedMonitorGenerationMs()
+	case usagelog.FieldMonitorOutputTpsMilli:
+		return m.AddedMonitorOutputTpsMilli()
+	case usagelog.FieldMonitorFirstVisibleMs:
+		return m.AddedMonitorFirstVisibleMs()
 	case usagelog.FieldInputTokens:
 		return m.AddedInputTokens()
 	case usagelog.FieldOutputTokens:
@@ -48071,6 +48836,55 @@ func (m *UsageLogMutation) AddField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.AddChannelID(v)
+		return nil
+	case usagelog.FieldMonitorObservationVersion:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddMonitorObservationVersion(v)
+		return nil
+	case usagelog.FieldMonitorInputTokensTotal:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddMonitorInputTokensTotal(v)
+		return nil
+	case usagelog.FieldMonitorCacheReadTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddMonitorCacheReadTokens(v)
+		return nil
+	case usagelog.FieldMonitorVisibleOutputTokens:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddMonitorVisibleOutputTokens(v)
+		return nil
+	case usagelog.FieldMonitorGenerationMs:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddMonitorGenerationMs(v)
+		return nil
+	case usagelog.FieldMonitorOutputTpsMilli:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddMonitorOutputTpsMilli(v)
+		return nil
+	case usagelog.FieldMonitorFirstVisibleMs:
+		v, ok := value.(int64)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddMonitorFirstVisibleMs(v)
 		return nil
 	case usagelog.FieldInputTokens:
 		v, ok := value.(int)
@@ -48250,6 +49064,33 @@ func (m *UsageLogMutation) ClearedFields() []string {
 	if m.FieldCleared(usagelog.FieldSubscriptionID) {
 		fields = append(fields, usagelog.FieldSubscriptionID)
 	}
+	if m.FieldCleared(usagelog.FieldRequestOrigin) {
+		fields = append(fields, usagelog.FieldRequestOrigin)
+	}
+	if m.FieldCleared(usagelog.FieldMonitorObservationVersion) {
+		fields = append(fields, usagelog.FieldMonitorObservationVersion)
+	}
+	if m.FieldCleared(usagelog.FieldMonitorInputTokensTotal) {
+		fields = append(fields, usagelog.FieldMonitorInputTokensTotal)
+	}
+	if m.FieldCleared(usagelog.FieldMonitorCacheReadTokens) {
+		fields = append(fields, usagelog.FieldMonitorCacheReadTokens)
+	}
+	if m.FieldCleared(usagelog.FieldMonitorVisibleOutputTokens) {
+		fields = append(fields, usagelog.FieldMonitorVisibleOutputTokens)
+	}
+	if m.FieldCleared(usagelog.FieldMonitorGenerationMs) {
+		fields = append(fields, usagelog.FieldMonitorGenerationMs)
+	}
+	if m.FieldCleared(usagelog.FieldMonitorOutputTpsMilli) {
+		fields = append(fields, usagelog.FieldMonitorOutputTpsMilli)
+	}
+	if m.FieldCleared(usagelog.FieldMonitorTpsMethod) {
+		fields = append(fields, usagelog.FieldMonitorTpsMethod)
+	}
+	if m.FieldCleared(usagelog.FieldMonitorFirstVisibleMs) {
+		fields = append(fields, usagelog.FieldMonitorFirstVisibleMs)
+	}
 	if m.FieldCleared(usagelog.FieldAccountRateMultiplier) {
 		fields = append(fields, usagelog.FieldAccountRateMultiplier)
 	}
@@ -48329,6 +49170,33 @@ func (m *UsageLogMutation) ClearField(name string) error {
 		return nil
 	case usagelog.FieldSubscriptionID:
 		m.ClearSubscriptionID()
+		return nil
+	case usagelog.FieldRequestOrigin:
+		m.ClearRequestOrigin()
+		return nil
+	case usagelog.FieldMonitorObservationVersion:
+		m.ClearMonitorObservationVersion()
+		return nil
+	case usagelog.FieldMonitorInputTokensTotal:
+		m.ClearMonitorInputTokensTotal()
+		return nil
+	case usagelog.FieldMonitorCacheReadTokens:
+		m.ClearMonitorCacheReadTokens()
+		return nil
+	case usagelog.FieldMonitorVisibleOutputTokens:
+		m.ClearMonitorVisibleOutputTokens()
+		return nil
+	case usagelog.FieldMonitorGenerationMs:
+		m.ClearMonitorGenerationMs()
+		return nil
+	case usagelog.FieldMonitorOutputTpsMilli:
+		m.ClearMonitorOutputTpsMilli()
+		return nil
+	case usagelog.FieldMonitorTpsMethod:
+		m.ClearMonitorTpsMethod()
+		return nil
+	case usagelog.FieldMonitorFirstVisibleMs:
+		m.ClearMonitorFirstVisibleMs()
 		return nil
 	case usagelog.FieldAccountRateMultiplier:
 		m.ClearAccountRateMultiplier()
@@ -48418,6 +49286,33 @@ func (m *UsageLogMutation) ResetField(name string) error {
 		return nil
 	case usagelog.FieldSubscriptionID:
 		m.ResetSubscriptionID()
+		return nil
+	case usagelog.FieldRequestOrigin:
+		m.ResetRequestOrigin()
+		return nil
+	case usagelog.FieldMonitorObservationVersion:
+		m.ResetMonitorObservationVersion()
+		return nil
+	case usagelog.FieldMonitorInputTokensTotal:
+		m.ResetMonitorInputTokensTotal()
+		return nil
+	case usagelog.FieldMonitorCacheReadTokens:
+		m.ResetMonitorCacheReadTokens()
+		return nil
+	case usagelog.FieldMonitorVisibleOutputTokens:
+		m.ResetMonitorVisibleOutputTokens()
+		return nil
+	case usagelog.FieldMonitorGenerationMs:
+		m.ResetMonitorGenerationMs()
+		return nil
+	case usagelog.FieldMonitorOutputTpsMilli:
+		m.ResetMonitorOutputTpsMilli()
+		return nil
+	case usagelog.FieldMonitorTpsMethod:
+		m.ResetMonitorTpsMethod()
+		return nil
+	case usagelog.FieldMonitorFirstVisibleMs:
+		m.ResetMonitorFirstVisibleMs()
 		return nil
 	case usagelog.FieldInputTokens:
 		m.ResetInputTokens()

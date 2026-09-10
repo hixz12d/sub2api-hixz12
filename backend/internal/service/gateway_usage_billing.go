@@ -1138,7 +1138,9 @@ func (s *GatewayService) buildRecordUsageLog(
 			"selected_response_model", strings.TrimSpace(result.UpstreamResponseModel),
 		)
 	}
+	origin := string(RequestOriginFromContext(ctx))
 	usageLog := &UsageLog{
+		RequestOrigin:            &origin,
 		UserID:                   user.ID,
 		APIKeyID:                 apiKey.ID,
 		AccountID:                account.ID,

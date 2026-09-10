@@ -216,6 +216,7 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 
 	// 执行请求
 	client := s.httpClientForUpstreamRequest(entry.client, req)
+	client = httpClientWithMonitorGuard(client, req, accountID)
 	client = httpClientWithGrokAccessDeniedFallback(client)
 	outcome := s.newOpenAIHTTP2Outcome(req, entry, profile)
 	resp, err := servertiming.Do(client, req)
@@ -258,6 +259,13 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 	if req != nil && req.URL != nil && strings.EqualFold(req.URL.Scheme, "http") {
 		return s.Do(req, proxyURL, accountID, accountConcurrency)
 	}
+	// Fingerprint transports need a separate replay audit before monitored use.
+	if req != nil && service.MonitorOutboundGuardFromContext(req.Context()) != nil {
+		if req.Body != nil {
+			_ = req.Body.Close()
+		}
+		return nil, service.ErrMonitorOutboundDenied
+	}
 	applyGrokCLIProxyHeaders(req)
 	upstreamProfile := service.HTTPUpstreamProfileDefault
 	if req != nil {
@@ -290,6 +298,7 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 	}
 
 	client := s.httpClientForUpstreamRequest(entry.client, req)
+	client = httpClientWithMonitorGuard(client, req, accountID)
 	client = httpClientWithGrokAccessDeniedFallback(client)
 	outcome := s.newOpenAIHTTP2Outcome(req, entry, upstreamProfile)
 	resp, err := servertiming.Do(client, req)

@@ -41,16 +41,28 @@ type ChannelMonitorV2CardCurrent struct {
 	WindowSeconds    int    `json:"window_seconds"`
 }
 
+type ChannelMonitorV2ObservationEvidence struct {
+	TPS         string `json:"tps"`
+	VisibleTTFT string `json:"visible_ttft"`
+	Cache       string `json:"cache"`
+}
+
 type ChannelMonitorV2CardWindow struct {
-	SuccessRate      *float64                    `json:"success_rate"`
-	TTFTP50Ms        *int64                      `json:"ttft_p50_ms"`
-	TTFTP90Ms        *int64                      `json:"ttft_p90_ms"`
-	DurationP50Ms    *int64                      `json:"duration_p50_ms"`
-	CacheReadRatio   *float64                    `json:"cache_read_ratio"`
-	Evidence         ChannelMonitorV2Measurement `json:"evidence"`
-	CoveredStart     *time.Time                  `json:"covered_start"`
-	CoveredEnd       *time.Time                  `json:"covered_end"`
-	CoverageComplete bool                        `json:"coverage_complete"`
+	ObservationEvidence    *ChannelMonitorV2ObservationEvidence `json:"observation_evidence,omitempty"`
+	ObservedCacheReadRatio *float64                             `json:"observed_cache_read_ratio,omitempty"`
+	ObservedCacheReason    string                               `json:"observed_cache_reason,omitempty"`
+	SuccessRate            *float64                             `json:"success_rate"`
+	TTFTP50Ms              *int64                               `json:"ttft_p50_ms"`
+	TTFTP90Ms              *int64                               `json:"ttft_p90_ms"`
+	DurationP50Ms          *int64                               `json:"duration_p50_ms"`
+	CacheReadRatio         *float64                             `json:"cache_read_ratio"`
+	ObservedTTFTP90Ms      *int64                               `json:"observed_ttft_p90_ms,omitempty"`
+	OutputTpsP50Milli      *int64                               `json:"output_tps_p50_milli,omitempty"`
+	OutputTpsReason        string                               `json:"output_tps_reason,omitempty"`
+	Evidence               ChannelMonitorV2Measurement          `json:"evidence"`
+	CoveredStart           *time.Time                           `json:"covered_start"`
+	CoveredEnd             *time.Time                           `json:"covered_end"`
+	CoverageComplete       bool                                 `json:"coverage_complete"`
 }
 
 type ChannelMonitorV2CardWindows struct {

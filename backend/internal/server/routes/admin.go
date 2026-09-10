@@ -118,6 +118,7 @@ func RegisterAdminRoutes(
 		// 渠道监控
 		registerChannelMonitorRoutes(admin, h, settingService)
 		registerChannelMonitorV2Routes(admin, h, settingService)
+		registerBenchmarkRoutes(admin, h)
 
 		// 风控中心
 		registerContentModerationRoutes(admin, h)
@@ -386,6 +387,9 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/:id/ollama-cloud-usage/refresh", h.Admin.Account.RefreshOllamaCloudUsage)
 		accounts.DELETE("/:id", h.Admin.Account.Delete)
 		accounts.POST("/:id/test", h.Admin.Account.Test)
+		accounts.GET("/:id/questions", h.Admin.Account.Questions)
+		accounts.GET("/questions/:record/reviews", h.Admin.Account.QuestionHistory)
+		accounts.POST("/questions/:record/reviews", h.Admin.Account.ReviewQuestion)
 		accounts.POST("/:id/recover-state", h.Admin.Account.RecoverState)
 		accounts.POST("/:id/refresh", h.Admin.Account.Refresh)
 		accounts.POST("/:id/apply-oauth-credentials", h.Admin.Account.ApplyOAuthCredentials)

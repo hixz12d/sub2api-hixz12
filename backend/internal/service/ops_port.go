@@ -62,6 +62,7 @@ type OpsRepository interface {
 }
 
 type OpsInsertErrorLogInput struct {
+	RequestOrigin   RequestOrigin
 	RequestID       string
 	ClientRequestID string
 

@@ -99,6 +99,26 @@ export const FeatureFlags = {
     mode: 'opt-out',
     label: 'Channel Monitor',
   }),
+  channelMonitorGroups: defineFlag({
+    key: 'channel_monitor_group_view_enabled',
+    mode: 'opt-in',
+    label: 'Group Monitor',
+  }),
+  llmDetector: defineFlag({
+    key: 'llm_detector_enabled',
+    mode: 'opt-in',
+    label: 'Model Consistency Check',
+  }),
+  llmDetectorUserTesting: defineFlag({
+    key: 'llm_detector_user_testing_enabled',
+    mode: 'opt-in',
+    label: 'Private Model Consistency Check',
+  }),
+  channelMonitorOutputTPS: defineFlag({
+    key: 'channel_monitor_show_output_tps',
+    mode: 'opt-in',
+    label: 'Observed Output Speed',
+  }),
   availableChannels: defineFlag({
     key: 'available_channels_enabled',
     mode: 'opt-in',
@@ -201,4 +221,14 @@ export function isChannelMonitorThroughputHidden(): boolean {
 export function isChannelMonitorQuotaVisible(): boolean {
   const appStore = useAppStore()
   return appStore.cachedPublicSettings?.channel_monitor_show_quota === true
+}
+
+/** Visibility only; execution additionally requires server-side admission checks. */
+export function isChannelMonitorGroupViewEnabled(): boolean {
+  return isChannelMonitorV2Mode() && isFeatureFlagEnabled(FeatureFlags.channelMonitorGroups)
+}
+
+export function isLLMDetectorUserTestingEnabled(): boolean {
+  return isFeatureFlagEnabled(FeatureFlags.llmDetector)
+    && isFeatureFlagEnabled(FeatureFlags.llmDetectorUserTesting)
 }

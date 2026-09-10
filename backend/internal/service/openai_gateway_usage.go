@@ -164,6 +164,11 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 		s.rateLimitService.ResetOpenAI403Counter(ctx, input.Account.ID)
 	}
 
+	monitorFields := CaptureMonitorUsage(result.MonitorObservation)
+	if monitorFields.RequestOrigin == nil {
+		origin := string(RequestOriginFromContext(ctx))
+		monitorFields.RequestOrigin = &origin
+	}
 	apiKey := input.APIKey
 	user := input.User
 	account := input.Account
@@ -368,34 +373,43 @@ func (s *OpenAIGatewayService) RecordUsage(ctx context.Context, input *OpenAIRec
 	}
 
 	usageLog := &UsageLog{
-		UserID:                   user.ID,
-		APIKeyID:                 apiKey.ID,
-		AccountID:                account.ID,
-		RequestID:                requestID,
-		UpstreamRequestID:        usageUpstreamRequestIDPtr(account, result.UpstreamHeaders, result.OpenAIWSMode),
-		Model:                    result.Model,
-		RequestedModel:           requestedModel,
-		UpstreamModel:            optionalTrimmedStringPtr(result.UpstreamModel),
-		UpstreamResponseModel:    optionalTrimmedStringPtr(result.UpstreamResponseModel),
-		UpstreamModelMismatch:    upstreamModelMismatch(sentModel, result.UpstreamResponseModel),
-		ServiceTier:              result.ServiceTier,
-		ReasoningEffort:          result.ReasoningEffort,
-		RequestedReasoningEffort: coalesceRequestedReasoningEffort(result.RequestedReasoningEffort, result.ReasoningEffort),
-		InboundEndpoint:          optionalTrimmedStringPtr(input.InboundEndpoint),
-		UpstreamEndpoint:         optionalTrimmedStringPtr(input.UpstreamEndpoint),
-		InputTokens:              actualInputTokens,
-		OutputTokens:             result.Usage.OutputTokens,
-		CacheCreationTokens:      result.Usage.CacheCreationInputTokens,
-		CacheReadTokens:          result.Usage.CacheReadInputTokens,
-		ImageInputTokens:         result.Usage.ImageInputTokens,
-		ImageOutputTokens:        result.Usage.ImageOutputTokens,
-		ImageCount:               result.ImageCount,
-		ImageSize:                optionalTrimmedStringPtr(result.ImageSize),
-		ImageInputSize:           optionalTrimmedStringPtr(result.ImageInputSize),
-		ImageOutputSize:          optionalTrimmedStringPtr(result.ImageOutputSize),
-		ImageSizeSource:          optionalTrimmedStringPtr(result.ImageSizeSource),
-		ImageSizeBreakdown:       result.ImageSizeBreakdown,
-		NativeCompactionV2:       input.NativeCompactionV2,
+		RequestOrigin:              monitorFields.RequestOrigin,
+		MonitorObservationVersion:  monitorFields.MonitorObservationVersion,
+		MonitorInputTokensTotal:    monitorFields.MonitorInputTokensTotal,
+		MonitorCacheReadTokens:     monitorFields.MonitorCacheReadTokens,
+		MonitorVisibleOutputTokens: monitorFields.MonitorVisibleOutputTokens,
+		MonitorGenerationMs:        monitorFields.MonitorGenerationMs,
+		MonitorOutputTPSMilli:      monitorFields.MonitorOutputTPSMilli,
+		MonitorTPSMethod:           monitorFields.MonitorTPSMethod,
+		MonitorFirstVisibleMs:      monitorFields.MonitorFirstVisibleMs,
+		UserID:                     user.ID,
+		APIKeyID:                   apiKey.ID,
+		AccountID:                  account.ID,
+		RequestID:                  requestID,
+		UpstreamRequestID:          usageUpstreamRequestIDPtr(account, result.UpstreamHeaders, result.OpenAIWSMode),
+		Model:                      result.Model,
+		RequestedModel:             requestedModel,
+		UpstreamModel:              optionalTrimmedStringPtr(result.UpstreamModel),
+		UpstreamResponseModel:      optionalTrimmedStringPtr(result.UpstreamResponseModel),
+		UpstreamModelMismatch:      upstreamModelMismatch(sentModel, result.UpstreamResponseModel),
+		ServiceTier:                result.ServiceTier,
+		ReasoningEffort:            result.ReasoningEffort,
+		RequestedReasoningEffort:   coalesceRequestedReasoningEffort(result.RequestedReasoningEffort, result.ReasoningEffort),
+		InboundEndpoint:            optionalTrimmedStringPtr(input.InboundEndpoint),
+		UpstreamEndpoint:           optionalTrimmedStringPtr(input.UpstreamEndpoint),
+		InputTokens:                actualInputTokens,
+		OutputTokens:               result.Usage.OutputTokens,
+		CacheCreationTokens:        result.Usage.CacheCreationInputTokens,
+		CacheReadTokens:            result.Usage.CacheReadInputTokens,
+		ImageInputTokens:           result.Usage.ImageInputTokens,
+		ImageOutputTokens:          result.Usage.ImageOutputTokens,
+		ImageCount:                 result.ImageCount,
+		ImageSize:                  optionalTrimmedStringPtr(result.ImageSize),
+		ImageInputSize:             optionalTrimmedStringPtr(result.ImageInputSize),
+		ImageOutputSize:            optionalTrimmedStringPtr(result.ImageOutputSize),
+		ImageSizeSource:            optionalTrimmedStringPtr(result.ImageSizeSource),
+		ImageSizeBreakdown:         result.ImageSizeBreakdown,
+		NativeCompactionV2:         input.NativeCompactionV2,
 	}
 	isVideoUsage := isGrokVideoUsageResult(result, billingModels)
 	if isVideoUsage {

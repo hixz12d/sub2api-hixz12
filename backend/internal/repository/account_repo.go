@@ -1904,7 +1904,7 @@ func (r *accountRepository) BindGroups(ctx context.Context, accountID int64, gro
 		builders = append(builders, txClient.AccountGroup.Create().
 			SetAccountID(accountID).
 			SetGroupID(groupID).
-			SetPriority(1),
+			SetPriority(50),
 		)
 	}
 	if len(builders) > 0 {

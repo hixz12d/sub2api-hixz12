@@ -1,5 +1,13 @@
 export default {
     accounts: {
+      questionReview: {
+        disable: '单独停用账号', disabled: '账号已停用', disableFailed: '停用失败，请刷新账号状态',
+        disableConfirm: '确认停用账号 #{id}？该操作影响账号上的全部模型，不只是本次评估模型。人工判定本身不会停用账号，已发送请求也不会被撤销。',
+        title: '问答记录与人工判定', reload: '刷新记录', empty: '暂无问答记录', previous: '上一页', next: '下一页',
+        completed: '回答已接收', failed: '请求失败', incomplete: '回答不完整', verdict: '人工判定',
+        normal: '正常', degraded: '疑似降智', unlabeled: '未标注', reason: '判定依据', save: '保存判定', more: '更多历史',
+        loadFailed: '记录加载失败，请刷新重试', saveFailed: '判定未保存，请刷新记录后重试', recordFailed: '本次问答未归档，请勿将其视为已保存记录'
+      },
       title: '账号管理',
       description: '管理 AI 平台账号和 Cookie',
       createAccount: '添加账号',
@@ -847,6 +855,9 @@ export default {
         testMode: '测试模式',
         testModeDefault: '常规请求',
         testModeCompact: 'Compact 探测',
+        testModeQuestion: '人工问答',
+        questionLabel: '检测问题',
+        questionReceived: '回答接收完成',
         modelRestrictionDisabledByPassthrough: '已开启自动透传：模型白名单/映射不会生效。',
       },
       grok: {

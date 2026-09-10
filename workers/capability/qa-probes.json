@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "module": "qa_probe",
+  "probes": [
+    {
+      "id": "thibault-sottiaux-recall",
+      "revision": 1,
+      "enabled": false,
+      "prompt": "don't search the internet, who is Thibault Sottiaux on X",
+      "tools": [],
+      "review_policy": "manual",
+      "reference_status": "needs_review",
+      "reference_answer": null,
+      "reference_sources": [],
+      "evidence_scope": "knowledge_recall",
+      "limitations": [
+        "A correct answer may reflect memorization or guessing.",
+        "A wrong answer does not independently establish general degradation.",
+        "A no-browsing prompt does not prove the upstream performed no internal search."
+      ]
+    }
+  ]
+}

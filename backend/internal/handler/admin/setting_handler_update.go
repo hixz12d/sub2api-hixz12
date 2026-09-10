@@ -334,6 +334,12 @@ type UpdateSettingsRequest struct {
 	ChannelMonitorDefaultIntervalSeconds *int    `json:"channel_monitor_default_interval_seconds"`
 	ChannelMonitorHideThroughput         *bool   `json:"channel_monitor_hide_throughput"`
 	ChannelMonitorShowQuota              *bool   `json:"channel_monitor_show_quota"`
+	ChannelMonitorGroupViewEnabled       *bool   `json:"channel_monitor_group_view_enabled"`
+	ChannelMonitorGroupProbeEnabled      *bool   `json:"channel_monitor_group_probe_enabled"`
+	ChannelMonitorShowOutputTPS          *bool   `json:"channel_monitor_show_output_tps"`
+	LLMDetectorEnabled                   *bool   `json:"llm_detector_enabled"`
+	LLMDetectorUserTestingEnabled        *bool   `json:"llm_detector_user_testing_enabled"`
+	LLMDetectorScheduledEnabled          *bool   `json:"llm_detector_scheduled_enabled"`
 
 	// Grok model mapping policy
 	GrokDefaultTextModel           *string `json:"grok_default_text_model"`
@@ -483,6 +489,10 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	var sentFields map[string]json.RawMessage
 	if err := c.ShouldBindBodyWith(&sentFields, binding.JSON); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if _, present := sentFields["llm_detector_engine_allowed"]; present {
+		response.BadRequest(c, "llm_detector_engine_allowed is deployment-owned and read-only")
 		return
 	}
 	var req UpdateSettingsRequest
@@ -1906,6 +1916,42 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.ChannelMonitorShowQuota
 		}(),
+		ChannelMonitorGroupViewEnabled: func() bool {
+			if req.ChannelMonitorGroupViewEnabled != nil {
+				return *req.ChannelMonitorGroupViewEnabled
+			}
+			return previousSettings.ChannelMonitorGroupViewEnabled
+		}(),
+		ChannelMonitorGroupProbeEnabled: func() bool {
+			if req.ChannelMonitorGroupProbeEnabled != nil {
+				return *req.ChannelMonitorGroupProbeEnabled
+			}
+			return previousSettings.ChannelMonitorGroupProbeEnabled
+		}(),
+		ChannelMonitorShowOutputTPS: func() bool {
+			if req.ChannelMonitorShowOutputTPS != nil {
+				return *req.ChannelMonitorShowOutputTPS
+			}
+			return previousSettings.ChannelMonitorShowOutputTPS
+		}(),
+		LLMDetectorEnabled: func() bool {
+			if req.LLMDetectorEnabled != nil {
+				return *req.LLMDetectorEnabled
+			}
+			return previousSettings.LLMDetectorEnabled
+		}(),
+		LLMDetectorUserTestingEnabled: func() bool {
+			if req.LLMDetectorUserTestingEnabled != nil {
+				return *req.LLMDetectorUserTestingEnabled
+			}
+			return previousSettings.LLMDetectorUserTestingEnabled
+		}(),
+		LLMDetectorScheduledEnabled: func() bool {
+			if req.LLMDetectorScheduledEnabled != nil {
+				return *req.LLMDetectorScheduledEnabled
+			}
+			return previousSettings.LLMDetectorScheduledEnabled
+		}(),
 		GrokDefaultTextModel: func() string {
 			if req.GrokDefaultTextModel != nil {
 				return *req.GrokDefaultTextModel
@@ -2366,6 +2412,13 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		ChannelMonitorDefaultIntervalSeconds: updatedSettings.ChannelMonitorDefaultIntervalSeconds,
 		ChannelMonitorHideThroughput:         updatedSettings.ChannelMonitorHideThroughput,
 		ChannelMonitorShowQuota:              updatedSettings.ChannelMonitorShowQuota,
+		ChannelMonitorGroupViewEnabled:       updatedSettings.ChannelMonitorGroupViewEnabled,
+		ChannelMonitorGroupProbeEnabled:      updatedSettings.ChannelMonitorGroupProbeEnabled,
+		ChannelMonitorShowOutputTPS:          updatedSettings.ChannelMonitorShowOutputTPS,
+		LLMDetectorEnabled:                   updatedSettings.LLMDetectorEnabled,
+		LLMDetectorUserTestingEnabled:        updatedSettings.LLMDetectorUserTestingEnabled,
+		LLMDetectorScheduledEnabled:          updatedSettings.LLMDetectorScheduledEnabled,
+		LLMDetectorEngineAllowed:             updatedSettings.LLMDetectorEngineAllowed,
 
 		GrokDefaultTextModel:           updatedSettings.GrokDefaultTextModel,
 		GrokCrossClientModelMapEnabled: updatedSettings.GrokCrossClientModelMapEnabled,

@@ -31,7 +31,7 @@
               :aria-selected="adminMonitorTab === 'v2'"
               @click="adminMonitorTab = 'v2'"
             >
-              {{ t('channelMonitorV2.admin.tabV2') }}
+              {{ t('channelMonitorV2.benchmarks.tabObserved') }}
             </button>
             <button
               type="button"
@@ -41,13 +41,21 @@
               :aria-selected="adminMonitorTab === 'legacy'"
               @click="adminMonitorTab = 'legacy'"
             >
-              {{ isV1Mode ? t('channelMonitorV2.admin.tabV1Active') : t('channelMonitorV2.admin.tabV1History') }}
+              {{ isV1Mode ? t('channelMonitorV2.benchmarks.tabActive') : t('channelMonitorV2.benchmarks.tabLegacy') }}
+            </button>
+            <button type="button" role="tab" class="tab flex-1 sm:flex-none" :class="adminMonitorTab === 'benchmarks' ? 'tab-active' : ''" :aria-selected="adminMonitorTab === 'benchmarks'" @click="adminMonitorTab = 'benchmarks'">
+              {{ t('channelMonitorV2.benchmarks.tab') }}
             </button>
           </div>
         </div>
       </header>
 
       <MonitorSettingsPanel v-if="adminMonitorTab === 'v2'" />
+      <div v-else-if="adminMonitorTab === 'benchmarks'">
+        <BenchmarkRegistryPanel />
+        <DetectorTaskPanel />
+        <MonitorPolicyPanel />
+      </div>
 
       <TablePageLayout v-else>
       <template #filters>
@@ -199,12 +207,15 @@ import MonitorActionsCell from '@/components/admin/monitor/MonitorActionsCell.vu
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
 import MonitorSettingsPanel from '@/features/channel-monitor-v2/MonitorSettingsPanel.vue'
+import BenchmarkRegistryPanel from '@/features/channel-monitor-v2/BenchmarkRegistryPanel.vue'
+import DetectorTaskPanel from '@/features/channel-monitor-v2/DetectorTaskPanel.vue'
+import MonitorPolicyPanel from '@/features/channel-monitor-v2/MonitorPolicyPanel.vue'
 import { isChannelMonitorV1Mode } from '@/utils/featureFlags'
 
 const { t } = useI18n()
 const appStore = useAppStore()
 const isV1Mode = computed(() => isChannelMonitorV1Mode())
-const adminMonitorTab = ref<'v2' | 'legacy'>(isChannelMonitorV1Mode() ? 'legacy' : 'v2')
+const adminMonitorTab = ref<'v2' | 'legacy' | 'benchmarks'>(isChannelMonitorV1Mode() ? 'legacy' : 'v2')
 const {
   providerLabel,
   providerBadgeClass,

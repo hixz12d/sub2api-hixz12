@@ -75,6 +75,18 @@ func (UsageLog) Fields() []ent.Field {
 			Optional().
 			Nillable(),
 
+		// Independent monitor observations never inherit billing defaults.
+		// NULL remains unmeasured for historical and unsupported requests.
+		field.String("request_origin").MaxLen(32).Optional().Nillable(),
+		field.Int("monitor_observation_version").Optional().Nillable(),
+		field.Int64("monitor_input_tokens_total").Optional().Nillable(),
+		field.Int64("monitor_cache_read_tokens").Optional().Nillable(),
+		field.Int64("monitor_visible_output_tokens").Optional().Nillable(),
+		field.Int64("monitor_generation_ms").Optional().Nillable(),
+		field.Int64("monitor_output_tps_milli").Optional().Nillable(),
+		field.String("monitor_tps_method").MaxLen(32).Optional().Nillable(),
+		field.Int64("monitor_first_visible_ms").Optional().Nillable(),
+
 		// Token 计数字段
 		field.Int("input_tokens").
 			Default(0),

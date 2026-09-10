@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Manual Question - Offline Fixture</title>
+</head>
+<body>
+<div id="app"></div>
+<script type="module">
+  import { createApp, h, ref } from 'vue'
+  import { createPinia } from 'pinia'
+  import AccountTestModal from '/src/components/admin/account/AccountTestModal.vue'
+  import { apiClient } from '/src/api/client.ts'
+  import i18n, { loadLocaleMessages } from '/src/i18n/index.ts'
+  import '/src/style.css'
+
+  await loadLocaleMessages('zh')
+  i18n.global.locale.value = 'zh'
+  window.__questionRequests = []
+  apiClient.defaults.adapter = async (config) => {
+    let data
+    if (config.method === 'get' && config.url.includes('/models')) data = [{ id: 'gpt-5.4', display_name: 'GPT-5.4' }]
+    else if (config.method === 'get' && config.url.endsWith('/questions')) data = { items: [{ id: 'fixture-record', request_model: 'gpt-5.4', prompt: "don't search the internet, who is Thibault Sottiaux on X", answer: 'Offline stored answer', transport_state: 'completed', created_at: '2026-09-10T00:00:00Z' }], page: 1, has_more: false }
+    else if (config.method === 'get' && config.url.endsWith('/reviews')) data = { items: window.__reviews || [], page: 1, has_more: false }
+    else if (config.method === 'post' && config.url.endsWith('/reviews')) { const input = JSON.parse(config.data); data = { ...input, id: 'review-1', revision: 1, reviewed_by: 1, created_at: '2026-09-10T01:00:00Z' }; window.__reviews = [data] }
+    else if (config.method === 'put' && config.url === '/admin/accounts/42') { window.__disabledRequests = (window.__disabledRequests || 0) + 1; data = { id: 42, status: 'inactive' } }
+    else throw new Error('Offline fixture blocks this API')
+    return { data: { code: 0, data }, status: 200, statusText: 'OK', headers: {}, config }
+  }
+  window.fetch = async (url, options) => {
+    if (!String(url).match(/\/admin\/accounts\/(42|43)\/test$/) || options?.method !== 'POST') throw new Error('Offline fixture blocks network requests')
+    window.__questionRequests.push({ url: String(url), body: JSON.parse(options.body) })
+    const events = [
+      { type: 'content', text: 'Offline fixture answer. No model was contacted.' },
+      { type: 'test_complete', success: true },
+      { type: 'question_record', record_id: 'fixture-record', saved: true }
+    ]
+    return new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(''), { headers: { 'Content-Type': 'text/event-stream' } })
+  }
+  createApp({
+    setup() {
+      const show = ref(false)
+      const account = ref({ id: 42, name: 'Offline Fixture 42', platform: 'openai', type: 'oauth', status: 'active' })
+      window.__openQuestionFixture = (id = 42) => { account.value = { ...account.value, id, name: `Offline Fixture ${id}` }; show.value = true }
+      return () => h('main', { style: 'padding:24px' }, [
+        h('h1', { style: 'font-size:20px;margin-bottom:16px' }, 'Offline UI Fixture'),
+        h('button', { class: 'btn btn-primary', onClick: () => window.__openQuestionFixture(42) }, 'Open Fixture'),
+        h(AccountTestModal, { show: show.value, account: account.value, onClose: () => { show.value = false } })
+      ])
+    }
+  }).use(createPinia()).use(i18n).mount('#app')
+</script>
+</body>
+</html>

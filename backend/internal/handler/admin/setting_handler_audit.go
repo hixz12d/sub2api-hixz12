@@ -32,6 +32,24 @@ func (h *SettingHandler) auditSettingsUpdate(c *gin.Context, before *service.Sys
 
 func diffSettings(before *service.SystemSettings, after *service.SystemSettings, beforeAuthSourceDefaults *service.AuthSourceDefaultSettings, afterAuthSourceDefaults *service.AuthSourceDefaultSettings, req UpdateSettingsRequest) []string {
 	changed := make([]string, 0, 20)
+	if before.ChannelMonitorGroupViewEnabled != after.ChannelMonitorGroupViewEnabled {
+		changed = append(changed, "channel_monitor_group_view_enabled")
+	}
+	if before.ChannelMonitorGroupProbeEnabled != after.ChannelMonitorGroupProbeEnabled {
+		changed = append(changed, "channel_monitor_group_probe_enabled")
+	}
+	if before.ChannelMonitorShowOutputTPS != after.ChannelMonitorShowOutputTPS {
+		changed = append(changed, "channel_monitor_show_output_tps")
+	}
+	if before.LLMDetectorEnabled != after.LLMDetectorEnabled {
+		changed = append(changed, "llm_detector_enabled")
+	}
+	if before.LLMDetectorUserTestingEnabled != after.LLMDetectorUserTestingEnabled {
+		changed = append(changed, "llm_detector_user_testing_enabled")
+	}
+	if before.LLMDetectorScheduledEnabled != after.LLMDetectorScheduledEnabled {
+		changed = append(changed, "llm_detector_scheduled_enabled")
+	}
 	if before.RegistrationEnabled != after.RegistrationEnabled {
 		changed = append(changed, "registration_enabled")
 	}

@@ -28,12 +28,13 @@ import (
 
 // openaiStreamingResult streaming response result
 type openaiStreamingResult struct {
-	usage            *OpenAIUsage
-	firstTokenMs     *int
-	responseID       string
-	imageCount       int
-	imageOutputSizes []string
-	searchCount      int
+	monitorObservation *VisibleOutputObservation
+	usage              *OpenAIUsage
+	firstTokenMs       *int
+	responseID         string
+	imageCount         int
+	imageOutputSizes   []string
+	searchCount        int
 }
 
 type openaiNonStreamingResult struct {
@@ -55,6 +56,11 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	if observer == nil {
 		observer = beginUpstreamResponseModelObservation(c)
 	}
+	var monitor *openAIVisibleStreamObserver
+	if account != nil && account.Platform == PlatformOpenAI {
+		monitor = newOpenAIVisibleStreamObserver(RequestOriginFromContext(ctx), startTime)
+	}
+	observationDelivered := false
 	firstOutputTimeout := time.Duration(0)
 	if account != nil && account.Platform == PlatformOpenAI {
 		firstOutputTimeout = s.openAIFirstOutputTimeout(reasoningEffort)
@@ -342,12 +348,13 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	streamSearchSeen := make(map[string]struct{})
 	resultWithUsage := func() *openaiStreamingResult {
 		return &openaiStreamingResult{
-			usage:            usage,
-			firstTokenMs:     firstTokenMs,
-			responseID:       responseID,
-			imageCount:       imageCounter.Count(),
-			imageOutputSizes: imageCounter.Sizes(),
-			searchCount:      searchCounter,
+			usage:              usage,
+			firstTokenMs:       firstTokenMs,
+			responseID:         responseID,
+			imageCount:         imageCounter.Count(),
+			imageOutputSizes:   imageCounter.Sizes(),
+			searchCount:        searchCounter,
+			monitorObservation: monitor.snapshot(observationDelivered),
 		}
 	}
 	newPreOutputFailoverError := func(payload []byte, message string) *UpstreamFailoverError {
@@ -414,6 +421,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 			return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
 		}
 		logOpenAISuccessMissingUsage(ctx, c, account, resp, usage, terminalEventType, clientDisconnected)
+		observationDelivered = !clientDisconnected && ctx.Err() == nil && (c.Request == nil || c.Request.Context().Err() == nil)
 		return resultWithUsage(), nil
 	}
 	handleScanErr := func(scanErr error) (*openaiStreamingResult, error, bool) {
@@ -481,7 +489,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		flushPending("Client disconnected while flushing output before stream-read failure")
 		return resultWithUsage(), NewOpenAIUpstreamStreamReadError(scanErr), true
 	}
-	processSSELine := func(line string, queueDrained bool) {
+	processSSELine := func(line string, queueDrained bool, receivedAt time.Time) {
 		if streamEarlyErr != nil {
 			return
 		}
@@ -501,6 +509,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				}
 			}
 			eventType := effectiveOpenAISSEEventType(dataBytes, pendingSSEEventType)
+			monitor.observe(dataBytes, eventType, receivedAt)
 			if codexFailureTerminal && sawBareError && !sawResponseFailed &&
 				(eventType == "response.completed" || eventType == "response.done") {
 				// A later successful terminal is authoritative over a pending bare
@@ -834,7 +843,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	if streamInterval <= 0 && keepaliveInterval <= 0 && firstOutputTimeout <= 0 {
 		defer putSSEScannerBuf64K(scanBuf)
 		for documentScanner.Scan() {
-			processSSELine(documentScanner.Text(), true)
+			processSSELine(documentScanner.Text(), true, time.Now())
 			if streamEarlyErr != nil {
 				return resultWithUsage(), streamEarlyErr
 			}
@@ -846,9 +855,10 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	}
 
 	type scanEvent struct {
-		line      string
-		err       error
-		processed chan struct{}
+		line       string
+		receivedAt time.Time
+		err        error
+		processed  chan struct{}
 	}
 	// 独立 goroutine 读取上游，避免读取阻塞影响 keepalive/超时处理
 	// Guard mode permits one queued token plus the token being processed. With
@@ -886,8 +896,9 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 		defer putSSEScannerBuf64K(scanBuf)
 		defer close(events)
 		for documentScanner.Scan() {
-			atomic.StoreInt64(&lastReadAt, time.Now().UnixNano())
-			if !sendEvent(scanEvent{line: documentScanner.Text()}) {
+			receivedAt := time.Now()
+			atomic.StoreInt64(&lastReadAt, receivedAt.UnixNano())
+			if !sendEvent(scanEvent{line: documentScanner.Text(), receivedAt: receivedAt}) {
 				return
 			}
 		}
@@ -912,7 +923,7 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 				markEventProcessed(ev)
 				return result, err
 			}
-			processSSELine(ev.line, len(events) == 0)
+			processSSELine(ev.line, len(events) == 0, ev.receivedAt)
 			markEventProcessed(ev)
 			if streamEarlyErr != nil {
 				return resultWithUsage(), streamEarlyErr

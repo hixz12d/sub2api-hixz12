@@ -227,12 +227,20 @@ export interface MonitorUserRow {
 
 export type MonitorRequestState = 'normal' | 'partial_failure' | 'many_failures' | 'low_sample' | 'no_data'
 
+export type MonitorObservationState = 'valid' | 'low_sample' | 'no_data' | 'partial_coverage' | 'out_of_range'
+
 export interface MonitorCardWindow {
+  observation_evidence?: { tps: MonitorObservationState; visible_ttft: MonitorObservationState; cache: MonitorObservationState }
   success_rate: number | null
   ttft_p50_ms: number | null
   ttft_p90_ms: number | null
   duration_p50_ms: number | null
   cache_read_ratio: number | null
+  observed_cache_read_ratio?: number | null
+  observed_cache_reason?: 'no_data' | 'partial_coverage' | ''
+  observed_ttft_p90_ms?: number | null
+  output_tps_p50_milli?: number | null
+  output_tps_reason?: 'no_data' | 'out_of_range' | 'partial_coverage' | ''
   evidence: MetricEvidence
   covered_start: string | null
   covered_end: string | null

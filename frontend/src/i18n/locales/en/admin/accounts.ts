@@ -1,5 +1,13 @@
 export default {
     accounts: {
+      questionReview: {
+        disable: 'Disable account separately', disabled: 'Account disabled', disableFailed: 'Disabling failed. Refresh account status.',
+        disableConfirm: 'Disable account #{id}? This affects every model on this account, not just the assessed model. A review does not disable the account. Requests already sent cannot be undone.',
+        title: 'Questions and Human Reviews', reload: 'Refresh records', empty: 'No question records', previous: 'Previous page', next: 'Next page',
+        completed: 'Answer received', failed: 'Request failed', incomplete: 'Incomplete answer', verdict: 'Human assessment',
+        normal: 'Normal', degraded: 'Suspected degradation', unlabeled: 'Unlabeled', reason: 'Assessment reason', save: 'Save assessment', more: 'More history',
+        loadFailed: 'Records could not be loaded. Refresh to retry.', saveFailed: 'Assessment not saved. Refresh records before retrying.', recordFailed: 'This answer was not saved to the record.'
+      },
       title: 'Account Management',
       description: 'Manage AI platform accounts and credentials',
       createAccount: 'Create Account',
@@ -765,6 +773,9 @@ export default {
         testMode: 'Test mode',
         testModeDefault: 'Default request',
         testModeCompact: 'Compact probe',
+        testModeQuestion: 'Manual question',
+        questionLabel: 'Question',
+        questionReceived: 'Answer received',
         modelRestrictionDisabledByPassthrough: 'Automatic passthrough is enabled: model whitelist/mapping will not take effect.',
       },
       grok: {

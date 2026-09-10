@@ -418,6 +418,13 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	}
 	updates[SettingKeyChannelMonitorHideThroughput] = strconv.FormatBool(settings.ChannelMonitorHideThroughput)
 	updates[SettingKeyChannelMonitorShowQuota] = strconv.FormatBool(settings.ChannelMonitorShowQuota)
+	updates[SettingKeyChannelMonitorGroupViewEnabled] = strconv.FormatBool(settings.ChannelMonitorGroupViewEnabled)
+	updates[SettingKeyChannelMonitorGroupProbeEnabled] = strconv.FormatBool(settings.ChannelMonitorGroupProbeEnabled)
+	updates[SettingKeyChannelMonitorShowOutputTPS] = strconv.FormatBool(settings.ChannelMonitorShowOutputTPS)
+	updates[SettingKeyLLMDetectorEnabled] = strconv.FormatBool(settings.LLMDetectorEnabled)
+	updates[SettingKeyLLMDetectorUserTestingEnabled] = strconv.FormatBool(settings.LLMDetectorUserTestingEnabled)
+	updates[SettingKeyLLMDetectorScheduledEnabled] = strconv.FormatBool(settings.LLMDetectorScheduledEnabled)
+	// LLMDetectorEngineAllowed is deployment-owned and never persisted here.
 
 	// Grok model mapping policy
 	if v := strings.TrimSpace(settings.GrokDefaultTextModel); v != "" {

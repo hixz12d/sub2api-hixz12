@@ -282,6 +282,11 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Account not found")
 	}
+	if IsAccountQuestionTest(mode) {
+		if err := validateAccountQuestion(account, modelID, prompt); err != nil {
+			return s.sendErrorAndEnd(c, err.Error())
+		}
+	}
 
 	// Synthetic UI load-test accounts exercise the real SSE parsing and modal
 	// interactions, but intentionally do not send their placeholder credentials
@@ -647,10 +652,22 @@ func (s *AccountTestService) testBedrockAccountConnection(c *gin.Context, ctx co
 
 // testOpenAIAccountConnection tests an OpenAI account's connection
 func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account *Account, modelID string, prompt string, mode string) error {
+	mode = normalizeAccountTestMode(mode)
 	ctx := c.Request.Context()
+	if IsAccountQuestionTest(mode) {
+		if err := validateAccountQuestion(account, modelID, prompt); err != nil {
+			return s.sendErrorAndEnd(c, err.Error())
+		}
+		if s.pluginManager != nil && s.pluginManager.ShouldRouteOpenAIOAuth(account) {
+			return s.sendErrorAndEnd(c, "question mode is not supported by the configured plugin transport")
+		}
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.WithValue(ctx, accountQuestionModeKey{}, true), 45*time.Second)
+		defer cancel()
+		c.Request = c.Request.WithContext(ctx)
+	}
 	identity := resolveOpenAIOutboundIdentityWithPolicy(ctx, account, s.accountRepo, s.settingService, s.cfg != nil && s.cfg.Gateway.ForceCodexCLI, c.GetHeader("User-Agent"))
 	ctx = withOpenAIOutboundIdentitySnapshot(ctx, identity)
-	mode = normalizeAccountTestMode(mode)
 
 	// Default to openai.DefaultTestModel for OpenAI testing
 	testModelID := modelID
@@ -740,6 +757,9 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		upstreamTestModelID = normalizeOpenAIModelForUpstream(credentialAccount, testModelID)
 	}
 	payload := createOpenAITestPayload(upstreamTestModelID, isOAuth)
+	if accountQuestionMode(ctx) {
+		applyAccountQuestionPayload(payload, prompt, false, isOAuth)
+	}
 	payloadBytes, _ := json.Marshal(payload)
 
 	// Send test_start event once. A task-invalid Agent Identity response may
@@ -807,7 +827,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if isOAuth && s.accountRepo != nil {
+	if isOAuth && s.accountRepo != nil && !accountQuestionMode(ctx) {
 		if updates, err := extractOpenAICodexProbeUpdates(resp); err == nil && len(updates) > 0 {
 			_ = s.accountRepo.UpdateExtra(ctx, account.ID, updates)
 			mergeAccountExtra(account, updates)
@@ -825,11 +845,11 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 			c.Request = c.Request.WithContext(markAgentIdentityTaskRecoveryTried(ctx))
 			return s.testOpenAIAccountConnection(c, account, modelID, prompt, mode)
 		}
-		if resp.StatusCode == http.StatusTooManyRequests {
+		if resp.StatusCode == http.StatusTooManyRequests && !accountQuestionMode(ctx) {
 			s.reconcileOpenAI429State(ctx, account, resp.Header, body)
 		}
 		// 401 Unauthorized: 标记账号为永久错误
-		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil {
+		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil && !accountQuestionMode(ctx) {
 			errMsg := fmt.Sprintf("Authentication failed (401): %s", string(body))
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
@@ -1985,6 +2005,9 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 	c.Writer.Flush()
 
 	payload := createOpenAIChatCompletionsTestPayload(testModelID, prompt)
+	if accountQuestionMode(ctx) {
+		applyAccountQuestionPayload(payload, prompt, true, false)
+	}
 	payloadBytes, _ := json.Marshal(payload)
 
 	s.sendEvent(c, TestEvent{Type: "test_start", Model: testModelID})
@@ -2021,10 +2044,10 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		if resp.StatusCode == http.StatusTooManyRequests {
+		if resp.StatusCode == http.StatusTooManyRequests && !accountQuestionMode(ctx) {
 			s.reconcileOpenAI429State(ctx, account, resp.Header, body)
 		}
-		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil {
+		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil && !accountQuestionMode(ctx) {
 			errMsg := fmt.Sprintf("Chat Completions authentication failed (401): %s", string(body))
 			_ = s.accountRepo.SetError(ctx, account.ID, errMsg)
 		}
@@ -3107,6 +3130,11 @@ func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
 			if suppressCompletion, _ := suppress.(bool); suppressCompletion {
 				return
 			}
+		}
+	}
+	if capture, ok := c.Get("account_question_capture"); ok {
+		if recorder, ok := capture.(*QuestionCapture); ok {
+			recorder.Observe(event)
 		}
 	}
 	eventJSON, _ := json.Marshal(event)

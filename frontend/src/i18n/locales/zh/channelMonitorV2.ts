@@ -1,6 +1,13 @@
 /** Channel Monitor V2 (user + admin passive monitor UI) */
 export default {
   channelMonitorV2: {
+    benchmarks: {
+      tab: '基准版本', tabObserved: 'V2 观测', tabLegacy: 'V1 历史', tabActive: 'V1 监控',
+      title: '基准版本', import: '导入候选', refresh: '刷新', processing: '正在处理', loading: '加载中', empty: '暂无基准版本',
+      candidate: '待验证', approved: '已批准', withdrawn: '已撤回', approve: '验证并批准', activate: '激活', withdraw: '撤回',
+      channel: '发布通道', revision: '修订版本', reason: '撤回原因', previous: '上一页', next: '下一页', cancel: '取消', confirm: '确认',
+      conflict: '版本冲突或基准不可用，请关闭弹窗后刷新。', unavailable: '离线验证器不可用或候选未通过验证。', forbidden: '需要管理员权限。', failed: '操作失败，请检查候选文件后重试。'
+    },
     title: '渠道监控',
     updating: '正在更新数据',
     updatedTo: '更新至 {time}',

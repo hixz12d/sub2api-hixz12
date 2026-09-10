@@ -268,8 +268,9 @@
             <AccountCapacityCell :account="row" />
           </template>
           <template #cell-status="{ row }">
-            <div class="flex items-center gap-1.5">
+            <div class="flex flex-col items-start gap-1.5">
               <AccountStatusIndicator :account="row" @show-temp-unsched="handleShowTempUnsched" />
+              <HumanAssessmentLabel :summary="humanAssessments[row.id]" :failed="humanAssessmentsFailed" />
             </div>
           </template>
           <template #cell-schedulable="{ row }">
@@ -434,7 +435,7 @@
     <CreateAccountModal :show="showCreate" :proxies="proxies" :groups="groups" @close="showCreate = false" @created="reload" />
     <EditAccountModal :show="showEdit" :account="edAcc" :proxies="proxies" :groups="groups" @close="showEdit = false" @updated="handleAccountUpdated" />
     <ReAuthAccountModal :show="showReAuth" :account="reAuthAcc" @close="closeReAuthModal" @reauthorized="handleAccountUpdated" />
-    <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" />
+    <AccountTestModal :show="showTest" :account="testingAcc" @close="closeTestModal" @account-updated="reload" />
     <AccountStatsModal :show="showStats" :account="statsAcc" @close="closeStatsModal" />
     <ScheduledTestsPanel :show="showSchedulePanel" :account-id="scheduleAcc?.id ?? null" :model-options="scheduleModelOptions" @close="closeSchedulePanel" />
     <AccountActionMenu :show="menu.show" :account="menu.acc" :position="menu.pos" @close="menu.show = false" @test="handleTest" @stats="handleViewStats" @schedule="handleSchedule" @duplicate="handleDuplicateAccount" @reauth="handleReAuth" @refresh-token="handleRefresh" @recover-state="handleRecoverState" @reset-quota="handleResetQuota" @set-privacy="handleSetPrivacy" @create-spark-shadow="handleCreateSparkShadow" />
@@ -468,6 +469,8 @@
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, toRaw, watch } from 'vue'
+import HumanAssessmentLabel from '@/components/admin/account/HumanAssessmentLabel.vue'
+import { useHumanAssessments } from '@/composables/useHumanAssessments'
 import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
@@ -2521,6 +2524,7 @@ onUnmounted(() => {
   desktopViewportListener = null
   desktopViewportMediaQuery = null
 })
+const { summaries: humanAssessments, failed: humanAssessmentsFailed } = useHumanAssessments('account', computed(() => accounts.value.map(account => account.id)))
 </script>
 
 <style scoped>

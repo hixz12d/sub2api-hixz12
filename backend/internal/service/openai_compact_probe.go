@@ -16,6 +16,8 @@ const (
 
 func normalizeAccountTestMode(mode string) string {
 	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case AccountTestModeQuestion:
+		return AccountTestModeQuestion
 	case AccountTestModeCompact:
 		return AccountTestModeCompact
 	default:

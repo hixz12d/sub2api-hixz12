@@ -1,6 +1,13 @@
 /** Channel Monitor V2 (user + admin passive monitor UI) */
 export default {
   channelMonitorV2: {
+    benchmarks: {
+      tab: 'Benchmarks', tabObserved: 'V2 monitor', tabLegacy: 'V1 history', tabActive: 'V1 monitor',
+      title: 'Benchmark Versions', import: 'Import candidate', refresh: 'Refresh', processing: 'Processing', loading: 'Loading', empty: 'No benchmark versions',
+      candidate: 'Candidate', approved: 'Approved', withdrawn: 'Withdrawn', approve: 'Validate and approve', activate: 'Activate', withdraw: 'Withdraw',
+      channel: 'Release channel', revision: 'Revision', reason: 'Withdrawal reason', previous: 'Previous page', next: 'Next page', cancel: 'Cancel', confirm: 'Confirm',
+      conflict: 'Version conflict or release unavailable. Close this dialog and refresh.', unavailable: 'Offline validator unavailable or candidate rejected.', forbidden: 'Administrator access required.', failed: 'Operation failed. Check the candidate file and try again.'
+    },
     title: 'Channel Monitor',
     updating: 'Updating data',
     updatedTo: 'Updated to {time}',

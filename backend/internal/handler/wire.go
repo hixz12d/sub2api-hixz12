@@ -40,6 +40,7 @@ func ProvideAdminHandlers(
 	scheduledTestHandler *admin.ScheduledTestHandler,
 	channelHandler *admin.ChannelHandler,
 	channelMonitorHandler *admin.ChannelMonitorHandler,
+	benchmarkHandler *admin.BenchmarkHandler,
 	channelMonitorTemplateHandler *admin.ChannelMonitorRequestTemplateHandler,
 	contentModerationHandler *admin.ContentModerationHandler,
 	promptAuditHandler *securityaudit.PromptAdminHandler,
@@ -49,9 +50,15 @@ func ProvideAdminHandlers(
 	auditLogHandler *admin.AuditLogHandler,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	ollamaCloudUsage *service.OllamaCloudUsageService,
+	questionReviews *service.QuestionReviewService,
+	detectorTasks *service.DetectorTaskService,
+	monitorPolicyControl service.MonitorPolicyControl,
 ) *AdminHandlers {
 	accountHandler.SetUpstreamBillingProbeService(upstreamBillingProbe)
 	accountHandler.SetOllamaCloudUsageService(ollamaCloudUsage)
+	accountHandler.SetQuestionReviews(questionReviews)
+	accountHandler.SetDetectorTasks(detectorTasks)
+	accountHandler.SetMonitorPolicyControl(monitorPolicyControl)
 	return &AdminHandlers{
 		Dashboard:              dashboardHandler,
 		User:                   userHandler,
@@ -82,6 +89,7 @@ func ProvideAdminHandlers(
 		ScheduledTest:          scheduledTestHandler,
 		Channel:                channelHandler,
 		ChannelMonitor:         channelMonitorHandler,
+		Benchmark:              benchmarkHandler,
 		ChannelMonitorTemplate: channelMonitorTemplateHandler,
 		ContentModeration:      contentModerationHandler,
 		PromptAudit:            promptAuditHandler,
@@ -277,6 +285,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewScheduledTestHandler,
 	admin.NewChannelHandler,
 	admin.NewChannelMonitorHandler,
+	admin.NewBenchmarkHandler,
 	admin.NewChannelMonitorRequestTemplateHandler,
 	admin.NewContentModerationHandler,
 	admin.NewPaymentHandler,

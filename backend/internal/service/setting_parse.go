@@ -191,6 +191,12 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyChannelMonitorDefaultIntervalSeconds: "60",
 		SettingKeyChannelMonitorHideThroughput:         "true",
 		SettingKeyChannelMonitorShowQuota:              "false",
+		SettingKeyChannelMonitorGroupViewEnabled:       "false",
+		SettingKeyChannelMonitorGroupProbeEnabled:      "false",
+		SettingKeyChannelMonitorShowOutputTPS:          "false",
+		SettingKeyLLMDetectorEnabled:                   "false",
+		SettingKeyLLMDetectorUserTestingEnabled:        "false",
+		SettingKeyLLMDetectorScheduledEnabled:          "false",
 
 		// Grok: safe defaults — no cross-vendor model rewrite unless operators enable it.
 		SettingKeyGrokDefaultTextModel:           "grok-4.6",
@@ -803,6 +809,13 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	// 配额展示默认关闭且 fail-closed：仅字面 "true" 视为开启
 	// （与 setting_public.go 公开读取路径保持一致）。
 	result.ChannelMonitorShowQuota = settings[SettingKeyChannelMonitorShowQuota] == "true"
+	result.ChannelMonitorGroupViewEnabled = settings[SettingKeyChannelMonitorGroupViewEnabled] == "true"
+	result.ChannelMonitorGroupProbeEnabled = settings[SettingKeyChannelMonitorGroupProbeEnabled] == "true"
+	result.ChannelMonitorShowOutputTPS = settings[SettingKeyChannelMonitorShowOutputTPS] == "true"
+	result.LLMDetectorEnabled = settings[SettingKeyLLMDetectorEnabled] == "true"
+	result.LLMDetectorUserTestingEnabled = settings[SettingKeyLLMDetectorUserTestingEnabled] == "true"
+	result.LLMDetectorScheduledEnabled = settings[SettingKeyLLMDetectorScheduledEnabled] == "true"
+	result.LLMDetectorEngineAllowed = s.cfg != nil && s.cfg.LLMDetectorEngineAllowed
 
 	// Grok default mapping policy
 	result.GrokDefaultTextModel = strings.TrimSpace(settings[SettingKeyGrokDefaultTextModel])

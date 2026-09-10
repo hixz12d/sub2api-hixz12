@@ -307,6 +307,13 @@ type SystemSettings struct {
 	ChannelMonitorDefaultIntervalSeconds int    `json:"channel_monitor_default_interval_seconds"`
 	ChannelMonitorHideThroughput         bool   `json:"channel_monitor_hide_throughput"`
 	ChannelMonitorShowQuota              bool   `json:"channel_monitor_show_quota"`
+	ChannelMonitorGroupViewEnabled       bool   `json:"channel_monitor_group_view_enabled"`
+	ChannelMonitorGroupProbeEnabled      bool   `json:"channel_monitor_group_probe_enabled"`
+	ChannelMonitorShowOutputTPS          bool   `json:"channel_monitor_show_output_tps"`
+	LLMDetectorEnabled                   bool   `json:"llm_detector_enabled"`
+	LLMDetectorUserTestingEnabled        bool   `json:"llm_detector_user_testing_enabled"`
+	LLMDetectorScheduledEnabled          bool   `json:"llm_detector_scheduled_enabled"`
+	LLMDetectorEngineAllowed             bool   `json:"llm_detector_engine_allowed"`
 
 	// Grok model mapping policy (admin settings; empty account mapping falls back to these).
 	GrokDefaultTextModel           string `json:"grok_default_text_model"`
@@ -417,6 +424,10 @@ type PublicSettings struct {
 	ChannelMonitorDefaultIntervalSeconds int    `json:"channel_monitor_default_interval_seconds"`
 	ChannelMonitorHideThroughput         bool   `json:"channel_monitor_hide_throughput"`
 	ChannelMonitorShowQuota              bool   `json:"channel_monitor_show_quota"`
+	ChannelMonitorGroupViewEnabled       bool   `json:"channel_monitor_group_view_enabled"`
+	ChannelMonitorShowOutputTPS          bool   `json:"channel_monitor_show_output_tps"`
+	LLMDetectorEnabled                   bool   `json:"llm_detector_enabled"`
+	LLMDetectorUserTestingEnabled        bool   `json:"llm_detector_user_testing_enabled"`
 
 	AvailableChannelsEnabled bool `json:"available_channels_enabled"`
 

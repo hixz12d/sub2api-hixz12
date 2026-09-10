@@ -202,7 +202,7 @@
             class="mt-3 flex items-center gap-2 border-t border-gray-700 pt-3 text-green-400"
           >
             <Icon name="check" size="sm" :stroke-width="2" />
-            <span>{{ t('admin.accounts.testCompleted') }}</span>
+            <span>{{ t(isQuestionTest ? 'admin.accounts.openai.questionReceived' : 'admin.accounts.testCompleted') }}</span>
           </div>
           <div
             v-else-if="status === 'error'"
@@ -223,6 +223,9 @@
           <Icon name="link" size="sm" :stroke-width="2" />
         </button>
       </div>
+
+      <p v-if="questionSaveFailed" role="alert" class="text-sm text-red-600">{{ t('admin.accounts.questionReview.recordFailed') }}</p>
+      <QuestionReviewPanel v-if="isQuestionTest && account" :key="account.id" :account-id="account.id" :refresh-token="questionRefresh" @account-updated="emit('account-updated')" />
 
       <div v-if="generatedImages.length > 0" class="space-y-2">
         <div class="text-xs font-medium text-gray-600 dark:text-gray-300">
@@ -368,6 +371,7 @@
 import { computed, ref, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import QuestionReviewPanel from './QuestionReviewPanel.vue'
 import Select from '@/components/common/Select.vue'
 import TextArea from '@/components/common/TextArea.vue'
 import { Icon } from '@/components/icons'
@@ -397,6 +401,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'close'): void
+  (e: 'account-updated'): void
 }>()
 
 const terminalRef = ref<HTMLElement | null>(null)
@@ -404,6 +409,8 @@ const status = ref<'idle' | 'connecting' | 'success' | 'error'>('idle')
 const outputLines = ref<OutputLine[]>([])
 const streamingContent = ref('')
 const errorMessage = ref('')
+const questionRefresh = ref(0)
+const questionSaveFailed = ref(false)
 const availableModels = ref<ClaudeModel[]>([])
 const selectedModelId = ref('')
 const testPrompt = ref('')
@@ -413,7 +420,9 @@ const generatedImages = ref<PreviewMedia[]>([])
 const generatedAudios = ref<PreviewMedia[]>([])
 const generatedVideos = ref<PreviewMedia[]>([])
 const previewImageUrl = ref('')
-const testMode = ref<'default' | 'compact'>('default')
+const testMode = ref<'default' | 'compact' | 'question'>('default')
+const isQuestionTest = computed(() => isOpenAIAccount.value && testMode.value === 'question')
+const defaultQuestion = "don't search the internet, who is Thibault Sottiaux on X"
 const grokTestMode = ref<'text' | 'image' | 'video' | 'search' | 'tts' | 'stt' | 'realtime'>('text')
 const uploadImageDataURL = ref('')
 const uploadImagePreview = ref('')
@@ -426,7 +435,8 @@ const isOpenAIAccount = computed(() => props.account?.platform === 'openai')
 const isGrokAccount = computed(() => props.account?.platform === 'grok')
 const openAITestModeOptions = computed(() => [
   { value: 'default', label: t('admin.accounts.openai.testModeDefault') },
-  { value: 'compact', label: t('admin.accounts.openai.testModeCompact') }
+  { value: 'compact', label: t('admin.accounts.openai.testModeCompact') },
+  { value: 'question', label: t('admin.accounts.openai.testModeQuestion') }
 ])
 const grokTestModeOptions = computed(() => [
   { value: 'text', label: t('admin.accounts.grok.testModeText') },
@@ -497,6 +507,7 @@ const modelOptionsForMode = computed(() => {
 })
 
 const supportsPromptInput = computed(() => {
+  if (isQuestionTest.value) return true
   if (!isGrokAccount.value) {
     return supportsImageTest.value
   }
@@ -597,6 +608,7 @@ const clearMediaUploads = () => {
 }
 
 const promptInputLabel = computed(() => {
+  if (isQuestionTest.value) return t('admin.accounts.openai.questionLabel')
   if (supportsGrokVideoTest.value || grokTestMode.value === 'video') {
     return t('admin.accounts.videoPromptLabel')
   }
@@ -613,6 +625,7 @@ const promptInputLabel = computed(() => {
 })
 
 const promptInputPlaceholder = computed(() => {
+  if (isQuestionTest.value) return defaultQuestion
   if (grokTestMode.value === 'video') {
     return t('admin.accounts.videoPromptPlaceholder')
   }
@@ -629,6 +642,7 @@ const promptInputPlaceholder = computed(() => {
 })
 
 const promptInputHint = computed(() => {
+  if (isQuestionTest.value) return ''
   if (grokTestMode.value === 'video') {
     return t('admin.accounts.videoTestHint')
   }
@@ -651,6 +665,7 @@ const promptInputHint = computed(() => {
 })
 
 const testModeSummary = computed(() => {
+  if (isQuestionTest.value) return t('admin.accounts.openai.testModeQuestion')
   if (isGrokAccount.value) {
     switch (grokTestMode.value) {
       case 'video':
@@ -675,6 +690,7 @@ const testModeSummary = computed(() => {
 
 const canStartTest = computed(() => {
   if (status.value === 'connecting') return false
+  if (isQuestionTest.value) return Boolean(selectedModelId.value && testPrompt.value.trim()) && !supportsOpenAIImageTest.value
   if (isGrokAccount.value) {
     if (
       grokTestMode.value === 'search' ||
@@ -737,8 +753,10 @@ watch(
   () => props.show,
   async (newVal) => {
     if (newVal && props.account) {
-      testPrompt.value = ''
-      testMode.value = 'default'
+      if (!isQuestionTest.value) {
+        testPrompt.value = ''
+        testMode.value = 'default'
+      }
       grokTestMode.value = 'text'
       resetState()
       await loadAvailableModels()
@@ -752,6 +770,9 @@ watch(
   }
 )
 
+watch(testMode, () => {
+  if (isQuestionTest.value && !testPrompt.value.trim()) testPrompt.value = defaultQuestion
+})
 watch(grokTestMode, () => {
   if (!isGrokAccount.value) return
   testPrompt.value = ''
@@ -791,6 +812,7 @@ const loadAvailableModels = async () => {
 }
 
 const resetState = () => {
+  questionSaveFailed.value = false
   status.value = 'idle'
   outputLines.value = []
   streamingContent.value = ''
@@ -841,7 +863,9 @@ const startTest = async () => {
 
   abortStream()
 
-  abortController = new AbortController()
+  const controller = new AbortController()
+  abortController = controller
+  const isCurrentTest = () => abortController === controller && !controller.signal.aborted
 
   try {
     const requestBody: {
@@ -852,7 +876,7 @@ const startTest = async () => {
       audio_data_url?: string
     } = {
       model_id: showModelSelect.value ? selectedModelId.value : '',
-      prompt: supportsPromptInput.value ? testPrompt.value.trim() : ''
+      prompt: isQuestionTest.value ? testPrompt.value : supportsPromptInput.value ? testPrompt.value.trim() : ''
     }
     if (isOpenAIAccount.value) {
       requestBody.mode = testMode.value
@@ -889,9 +913,13 @@ const startTest = async () => {
         [ADMIN_UI_REQUEST_HEADER]: '1'
       },
       body: JSON.stringify(requestBody),
-      signal: abortController.signal
+      signal: controller.signal
     })
 
+    if (!isCurrentTest()) {
+      await response.body?.cancel?.()
+      return
+    }
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`)
     }
@@ -906,6 +934,10 @@ const startTest = async () => {
 
     while (true) {
       const { done, value } = await reader.read()
+      if (!isCurrentTest()) {
+        await reader.cancel?.()
+        return
+      }
       if (done) break
 
       buffer += decoder.decode(value, { stream: true })
@@ -927,6 +959,7 @@ const startTest = async () => {
       }
     }
   } catch (error: unknown) {
+    if (!isCurrentTest()) return
     if (error instanceof DOMException && error.name === 'AbortError') {
       status.value = 'idle'
       return
@@ -939,6 +972,8 @@ const startTest = async () => {
 }
 
 const handleEvent = (event: {
+  saved?: boolean
+  record_id?: string
   type: string
   text?: string
   model?: string
@@ -1020,6 +1055,11 @@ const handleEvent = (event: {
       if (event.text) {
         addLine(event.text, 'text-cyan-300')
       }
+      break
+
+    case 'question_record':
+      questionSaveFailed.value = !event.saved
+      if (event.saved) questionRefresh.value++
       break
 
     case 'test_complete':

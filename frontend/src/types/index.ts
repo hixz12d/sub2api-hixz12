@@ -273,6 +273,10 @@ export interface PublicSettings {
   channel_monitor_hide_throughput?: boolean
   /** When true, user monitor shows account quota/balance snapshots (default off). */
   channel_monitor_show_quota?: boolean
+  channel_monitor_group_view_enabled?: boolean
+  channel_monitor_show_output_tps?: boolean
+  llm_detector_enabled?: boolean
+  llm_detector_user_testing_enabled?: boolean
   available_channels_enabled: boolean
   model_plaza_enabled: boolean
   model_plaza_require_auth: boolean

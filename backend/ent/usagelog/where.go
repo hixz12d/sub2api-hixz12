@@ -130,6 +130,51 @@ func SubscriptionID(v int64) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldSubscriptionID, v))
 }
 
+// RequestOrigin applies equality check predicate on the "request_origin" field. It's identical to RequestOriginEQ.
+func RequestOrigin(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldRequestOrigin, v))
+}
+
+// MonitorObservationVersion applies equality check predicate on the "monitor_observation_version" field. It's identical to MonitorObservationVersionEQ.
+func MonitorObservationVersion(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldMonitorObservationVersion, v))
+}
+
+// MonitorInputTokensTotal applies equality check predicate on the "monitor_input_tokens_total" field. It's identical to MonitorInputTokensTotalEQ.
+func MonitorInputTokensTotal(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldMonitorInputTokensTotal, v))
+}
+
+// MonitorCacheReadTokens applies equality check predicate on the "monitor_cache_read_tokens" field. It's identical to MonitorCacheReadTokensEQ.
+func MonitorCacheReadTokens(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldMonitorCacheReadTokens, v))
+}
+
+// MonitorVisibleOutputTokens applies equality check predicate on the "monitor_visible_output_tokens" field. It's identical to MonitorVisibleOutputTokensEQ.
+func MonitorVisibleOutputTokens(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldMonitorVisibleOutputTokens, v))
+}
+
+// MonitorGenerationMs applies equality check predicate on the "monitor_generation_ms" field. It's identical to MonitorGenerationMsEQ.
+func MonitorGenerationMs(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldMonitorGenerationMs, v))
+}
+
+// MonitorOutputTpsMilli applies equality check predicate on the "monitor_output_tps_milli" field. It's identical to MonitorOutputTpsMilliEQ.
+func MonitorOutputTpsMilli(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldMonitorOutputTpsMilli, v))
+}
+
+// MonitorTpsMethod applies equality check predicate on the "monitor_tps_method" field. It's identical to MonitorTpsMethodEQ.
+func MonitorTpsMethod(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldMonitorTpsMethod, v))
+}
+
+// MonitorFirstVisibleMs applies equality check predicate on the "monitor_first_visible_ms" field. It's identical to MonitorFirstVisibleMsEQ.
+func MonitorFirstVisibleMs(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldMonitorFirstVisibleMs, v))
+}
+
 // InputTokens applies equality check predicate on the "input_tokens" field. It's identical to InputTokensEQ.
 func InputTokens(v int) predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldEQ(FieldInputTokens, v))
@@ -1053,6 +1098,506 @@ func SubscriptionIDIsNil() predicate.UsageLog {
 // SubscriptionIDNotNil applies the NotNil predicate on the "subscription_id" field.
 func SubscriptionIDNotNil() predicate.UsageLog {
 	return predicate.UsageLog(sql.FieldNotNull(FieldSubscriptionID))
+}
+
+// RequestOriginEQ applies the EQ predicate on the "request_origin" field.
+func RequestOriginEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldRequestOrigin, v))
+}
+
+// RequestOriginNEQ applies the NEQ predicate on the "request_origin" field.
+func RequestOriginNEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldRequestOrigin, v))
+}
+
+// RequestOriginIn applies the In predicate on the "request_origin" field.
+func RequestOriginIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldRequestOrigin, vs...))
+}
+
+// RequestOriginNotIn applies the NotIn predicate on the "request_origin" field.
+func RequestOriginNotIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldRequestOrigin, vs...))
+}
+
+// RequestOriginGT applies the GT predicate on the "request_origin" field.
+func RequestOriginGT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldRequestOrigin, v))
+}
+
+// RequestOriginGTE applies the GTE predicate on the "request_origin" field.
+func RequestOriginGTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldRequestOrigin, v))
+}
+
+// RequestOriginLT applies the LT predicate on the "request_origin" field.
+func RequestOriginLT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldRequestOrigin, v))
+}
+
+// RequestOriginLTE applies the LTE predicate on the "request_origin" field.
+func RequestOriginLTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldRequestOrigin, v))
+}
+
+// RequestOriginContains applies the Contains predicate on the "request_origin" field.
+func RequestOriginContains(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContains(FieldRequestOrigin, v))
+}
+
+// RequestOriginHasPrefix applies the HasPrefix predicate on the "request_origin" field.
+func RequestOriginHasPrefix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasPrefix(FieldRequestOrigin, v))
+}
+
+// RequestOriginHasSuffix applies the HasSuffix predicate on the "request_origin" field.
+func RequestOriginHasSuffix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasSuffix(FieldRequestOrigin, v))
+}
+
+// RequestOriginIsNil applies the IsNil predicate on the "request_origin" field.
+func RequestOriginIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldRequestOrigin))
+}
+
+// RequestOriginNotNil applies the NotNil predicate on the "request_origin" field.
+func RequestOriginNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldRequestOrigin))
+}
+
+// RequestOriginEqualFold applies the EqualFold predicate on the "request_origin" field.
+func RequestOriginEqualFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEqualFold(FieldRequestOrigin, v))
+}
+
+// RequestOriginContainsFold applies the ContainsFold predicate on the "request_origin" field.
+func RequestOriginContainsFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContainsFold(FieldRequestOrigin, v))
+}
+
+// MonitorObservationVersionEQ applies the EQ predicate on the "monitor_observation_version" field.
+func MonitorObservationVersionEQ(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldMonitorObservationVersion, v))
+}
+
+// MonitorObservationVersionNEQ applies the NEQ predicate on the "monitor_observation_version" field.
+func MonitorObservationVersionNEQ(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldMonitorObservationVersion, v))
+}
+
+// MonitorObservationVersionIn applies the In predicate on the "monitor_observation_version" field.
+func MonitorObservationVersionIn(vs ...int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldMonitorObservationVersion, vs...))
+}
+
+// MonitorObservationVersionNotIn applies the NotIn predicate on the "monitor_observation_version" field.
+func MonitorObservationVersionNotIn(vs ...int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldMonitorObservationVersion, vs...))
+}
+
+// MonitorObservationVersionGT applies the GT predicate on the "monitor_observation_version" field.
+func MonitorObservationVersionGT(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldMonitorObservationVersion, v))
+}
+
+// MonitorObservationVersionGTE applies the GTE predicate on the "monitor_observation_version" field.
+func MonitorObservationVersionGTE(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldMonitorObservationVersion, v))
+}
+
+// MonitorObservationVersionLT applies the LT predicate on the "monitor_observation_version" field.
+func MonitorObservationVersionLT(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldMonitorObservationVersion, v))
+}
+
+// MonitorObservationVersionLTE applies the LTE predicate on the "monitor_observation_version" field.
+func MonitorObservationVersionLTE(v int) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldMonitorObservationVersion, v))
+}
+
+// MonitorObservationVersionIsNil applies the IsNil predicate on the "monitor_observation_version" field.
+func MonitorObservationVersionIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldMonitorObservationVersion))
+}
+
+// MonitorObservationVersionNotNil applies the NotNil predicate on the "monitor_observation_version" field.
+func MonitorObservationVersionNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldMonitorObservationVersion))
+}
+
+// MonitorInputTokensTotalEQ applies the EQ predicate on the "monitor_input_tokens_total" field.
+func MonitorInputTokensTotalEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldMonitorInputTokensTotal, v))
+}
+
+// MonitorInputTokensTotalNEQ applies the NEQ predicate on the "monitor_input_tokens_total" field.
+func MonitorInputTokensTotalNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldMonitorInputTokensTotal, v))
+}
+
+// MonitorInputTokensTotalIn applies the In predicate on the "monitor_input_tokens_total" field.
+func MonitorInputTokensTotalIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldMonitorInputTokensTotal, vs...))
+}
+
+// MonitorInputTokensTotalNotIn applies the NotIn predicate on the "monitor_input_tokens_total" field.
+func MonitorInputTokensTotalNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldMonitorInputTokensTotal, vs...))
+}
+
+// MonitorInputTokensTotalGT applies the GT predicate on the "monitor_input_tokens_total" field.
+func MonitorInputTokensTotalGT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldMonitorInputTokensTotal, v))
+}
+
+// MonitorInputTokensTotalGTE applies the GTE predicate on the "monitor_input_tokens_total" field.
+func MonitorInputTokensTotalGTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldMonitorInputTokensTotal, v))
+}
+
+// MonitorInputTokensTotalLT applies the LT predicate on the "monitor_input_tokens_total" field.
+func MonitorInputTokensTotalLT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldMonitorInputTokensTotal, v))
+}
+
+// MonitorInputTokensTotalLTE applies the LTE predicate on the "monitor_input_tokens_total" field.
+func MonitorInputTokensTotalLTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldMonitorInputTokensTotal, v))
+}
+
+// MonitorInputTokensTotalIsNil applies the IsNil predicate on the "monitor_input_tokens_total" field.
+func MonitorInputTokensTotalIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldMonitorInputTokensTotal))
+}
+
+// MonitorInputTokensTotalNotNil applies the NotNil predicate on the "monitor_input_tokens_total" field.
+func MonitorInputTokensTotalNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldMonitorInputTokensTotal))
+}
+
+// MonitorCacheReadTokensEQ applies the EQ predicate on the "monitor_cache_read_tokens" field.
+func MonitorCacheReadTokensEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldMonitorCacheReadTokens, v))
+}
+
+// MonitorCacheReadTokensNEQ applies the NEQ predicate on the "monitor_cache_read_tokens" field.
+func MonitorCacheReadTokensNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldMonitorCacheReadTokens, v))
+}
+
+// MonitorCacheReadTokensIn applies the In predicate on the "monitor_cache_read_tokens" field.
+func MonitorCacheReadTokensIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldMonitorCacheReadTokens, vs...))
+}
+
+// MonitorCacheReadTokensNotIn applies the NotIn predicate on the "monitor_cache_read_tokens" field.
+func MonitorCacheReadTokensNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldMonitorCacheReadTokens, vs...))
+}
+
+// MonitorCacheReadTokensGT applies the GT predicate on the "monitor_cache_read_tokens" field.
+func MonitorCacheReadTokensGT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldMonitorCacheReadTokens, v))
+}
+
+// MonitorCacheReadTokensGTE applies the GTE predicate on the "monitor_cache_read_tokens" field.
+func MonitorCacheReadTokensGTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldMonitorCacheReadTokens, v))
+}
+
+// MonitorCacheReadTokensLT applies the LT predicate on the "monitor_cache_read_tokens" field.
+func MonitorCacheReadTokensLT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldMonitorCacheReadTokens, v))
+}
+
+// MonitorCacheReadTokensLTE applies the LTE predicate on the "monitor_cache_read_tokens" field.
+func MonitorCacheReadTokensLTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldMonitorCacheReadTokens, v))
+}
+
+// MonitorCacheReadTokensIsNil applies the IsNil predicate on the "monitor_cache_read_tokens" field.
+func MonitorCacheReadTokensIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldMonitorCacheReadTokens))
+}
+
+// MonitorCacheReadTokensNotNil applies the NotNil predicate on the "monitor_cache_read_tokens" field.
+func MonitorCacheReadTokensNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldMonitorCacheReadTokens))
+}
+
+// MonitorVisibleOutputTokensEQ applies the EQ predicate on the "monitor_visible_output_tokens" field.
+func MonitorVisibleOutputTokensEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldMonitorVisibleOutputTokens, v))
+}
+
+// MonitorVisibleOutputTokensNEQ applies the NEQ predicate on the "monitor_visible_output_tokens" field.
+func MonitorVisibleOutputTokensNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldMonitorVisibleOutputTokens, v))
+}
+
+// MonitorVisibleOutputTokensIn applies the In predicate on the "monitor_visible_output_tokens" field.
+func MonitorVisibleOutputTokensIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldMonitorVisibleOutputTokens, vs...))
+}
+
+// MonitorVisibleOutputTokensNotIn applies the NotIn predicate on the "monitor_visible_output_tokens" field.
+func MonitorVisibleOutputTokensNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldMonitorVisibleOutputTokens, vs...))
+}
+
+// MonitorVisibleOutputTokensGT applies the GT predicate on the "monitor_visible_output_tokens" field.
+func MonitorVisibleOutputTokensGT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldMonitorVisibleOutputTokens, v))
+}
+
+// MonitorVisibleOutputTokensGTE applies the GTE predicate on the "monitor_visible_output_tokens" field.
+func MonitorVisibleOutputTokensGTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldMonitorVisibleOutputTokens, v))
+}
+
+// MonitorVisibleOutputTokensLT applies the LT predicate on the "monitor_visible_output_tokens" field.
+func MonitorVisibleOutputTokensLT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldMonitorVisibleOutputTokens, v))
+}
+
+// MonitorVisibleOutputTokensLTE applies the LTE predicate on the "monitor_visible_output_tokens" field.
+func MonitorVisibleOutputTokensLTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldMonitorVisibleOutputTokens, v))
+}
+
+// MonitorVisibleOutputTokensIsNil applies the IsNil predicate on the "monitor_visible_output_tokens" field.
+func MonitorVisibleOutputTokensIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldMonitorVisibleOutputTokens))
+}
+
+// MonitorVisibleOutputTokensNotNil applies the NotNil predicate on the "monitor_visible_output_tokens" field.
+func MonitorVisibleOutputTokensNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldMonitorVisibleOutputTokens))
+}
+
+// MonitorGenerationMsEQ applies the EQ predicate on the "monitor_generation_ms" field.
+func MonitorGenerationMsEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldMonitorGenerationMs, v))
+}
+
+// MonitorGenerationMsNEQ applies the NEQ predicate on the "monitor_generation_ms" field.
+func MonitorGenerationMsNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldMonitorGenerationMs, v))
+}
+
+// MonitorGenerationMsIn applies the In predicate on the "monitor_generation_ms" field.
+func MonitorGenerationMsIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldMonitorGenerationMs, vs...))
+}
+
+// MonitorGenerationMsNotIn applies the NotIn predicate on the "monitor_generation_ms" field.
+func MonitorGenerationMsNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldMonitorGenerationMs, vs...))
+}
+
+// MonitorGenerationMsGT applies the GT predicate on the "monitor_generation_ms" field.
+func MonitorGenerationMsGT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldMonitorGenerationMs, v))
+}
+
+// MonitorGenerationMsGTE applies the GTE predicate on the "monitor_generation_ms" field.
+func MonitorGenerationMsGTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldMonitorGenerationMs, v))
+}
+
+// MonitorGenerationMsLT applies the LT predicate on the "monitor_generation_ms" field.
+func MonitorGenerationMsLT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldMonitorGenerationMs, v))
+}
+
+// MonitorGenerationMsLTE applies the LTE predicate on the "monitor_generation_ms" field.
+func MonitorGenerationMsLTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldMonitorGenerationMs, v))
+}
+
+// MonitorGenerationMsIsNil applies the IsNil predicate on the "monitor_generation_ms" field.
+func MonitorGenerationMsIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldMonitorGenerationMs))
+}
+
+// MonitorGenerationMsNotNil applies the NotNil predicate on the "monitor_generation_ms" field.
+func MonitorGenerationMsNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldMonitorGenerationMs))
+}
+
+// MonitorOutputTpsMilliEQ applies the EQ predicate on the "monitor_output_tps_milli" field.
+func MonitorOutputTpsMilliEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldMonitorOutputTpsMilli, v))
+}
+
+// MonitorOutputTpsMilliNEQ applies the NEQ predicate on the "monitor_output_tps_milli" field.
+func MonitorOutputTpsMilliNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldMonitorOutputTpsMilli, v))
+}
+
+// MonitorOutputTpsMilliIn applies the In predicate on the "monitor_output_tps_milli" field.
+func MonitorOutputTpsMilliIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldMonitorOutputTpsMilli, vs...))
+}
+
+// MonitorOutputTpsMilliNotIn applies the NotIn predicate on the "monitor_output_tps_milli" field.
+func MonitorOutputTpsMilliNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldMonitorOutputTpsMilli, vs...))
+}
+
+// MonitorOutputTpsMilliGT applies the GT predicate on the "monitor_output_tps_milli" field.
+func MonitorOutputTpsMilliGT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldMonitorOutputTpsMilli, v))
+}
+
+// MonitorOutputTpsMilliGTE applies the GTE predicate on the "monitor_output_tps_milli" field.
+func MonitorOutputTpsMilliGTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldMonitorOutputTpsMilli, v))
+}
+
+// MonitorOutputTpsMilliLT applies the LT predicate on the "monitor_output_tps_milli" field.
+func MonitorOutputTpsMilliLT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldMonitorOutputTpsMilli, v))
+}
+
+// MonitorOutputTpsMilliLTE applies the LTE predicate on the "monitor_output_tps_milli" field.
+func MonitorOutputTpsMilliLTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldMonitorOutputTpsMilli, v))
+}
+
+// MonitorOutputTpsMilliIsNil applies the IsNil predicate on the "monitor_output_tps_milli" field.
+func MonitorOutputTpsMilliIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldMonitorOutputTpsMilli))
+}
+
+// MonitorOutputTpsMilliNotNil applies the NotNil predicate on the "monitor_output_tps_milli" field.
+func MonitorOutputTpsMilliNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldMonitorOutputTpsMilli))
+}
+
+// MonitorTpsMethodEQ applies the EQ predicate on the "monitor_tps_method" field.
+func MonitorTpsMethodEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldMonitorTpsMethod, v))
+}
+
+// MonitorTpsMethodNEQ applies the NEQ predicate on the "monitor_tps_method" field.
+func MonitorTpsMethodNEQ(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldMonitorTpsMethod, v))
+}
+
+// MonitorTpsMethodIn applies the In predicate on the "monitor_tps_method" field.
+func MonitorTpsMethodIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldMonitorTpsMethod, vs...))
+}
+
+// MonitorTpsMethodNotIn applies the NotIn predicate on the "monitor_tps_method" field.
+func MonitorTpsMethodNotIn(vs ...string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldMonitorTpsMethod, vs...))
+}
+
+// MonitorTpsMethodGT applies the GT predicate on the "monitor_tps_method" field.
+func MonitorTpsMethodGT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldMonitorTpsMethod, v))
+}
+
+// MonitorTpsMethodGTE applies the GTE predicate on the "monitor_tps_method" field.
+func MonitorTpsMethodGTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldMonitorTpsMethod, v))
+}
+
+// MonitorTpsMethodLT applies the LT predicate on the "monitor_tps_method" field.
+func MonitorTpsMethodLT(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldMonitorTpsMethod, v))
+}
+
+// MonitorTpsMethodLTE applies the LTE predicate on the "monitor_tps_method" field.
+func MonitorTpsMethodLTE(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldMonitorTpsMethod, v))
+}
+
+// MonitorTpsMethodContains applies the Contains predicate on the "monitor_tps_method" field.
+func MonitorTpsMethodContains(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContains(FieldMonitorTpsMethod, v))
+}
+
+// MonitorTpsMethodHasPrefix applies the HasPrefix predicate on the "monitor_tps_method" field.
+func MonitorTpsMethodHasPrefix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasPrefix(FieldMonitorTpsMethod, v))
+}
+
+// MonitorTpsMethodHasSuffix applies the HasSuffix predicate on the "monitor_tps_method" field.
+func MonitorTpsMethodHasSuffix(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldHasSuffix(FieldMonitorTpsMethod, v))
+}
+
+// MonitorTpsMethodIsNil applies the IsNil predicate on the "monitor_tps_method" field.
+func MonitorTpsMethodIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldMonitorTpsMethod))
+}
+
+// MonitorTpsMethodNotNil applies the NotNil predicate on the "monitor_tps_method" field.
+func MonitorTpsMethodNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldMonitorTpsMethod))
+}
+
+// MonitorTpsMethodEqualFold applies the EqualFold predicate on the "monitor_tps_method" field.
+func MonitorTpsMethodEqualFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEqualFold(FieldMonitorTpsMethod, v))
+}
+
+// MonitorTpsMethodContainsFold applies the ContainsFold predicate on the "monitor_tps_method" field.
+func MonitorTpsMethodContainsFold(v string) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldContainsFold(FieldMonitorTpsMethod, v))
+}
+
+// MonitorFirstVisibleMsEQ applies the EQ predicate on the "monitor_first_visible_ms" field.
+func MonitorFirstVisibleMsEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldEQ(FieldMonitorFirstVisibleMs, v))
+}
+
+// MonitorFirstVisibleMsNEQ applies the NEQ predicate on the "monitor_first_visible_ms" field.
+func MonitorFirstVisibleMsNEQ(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNEQ(FieldMonitorFirstVisibleMs, v))
+}
+
+// MonitorFirstVisibleMsIn applies the In predicate on the "monitor_first_visible_ms" field.
+func MonitorFirstVisibleMsIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIn(FieldMonitorFirstVisibleMs, vs...))
+}
+
+// MonitorFirstVisibleMsNotIn applies the NotIn predicate on the "monitor_first_visible_ms" field.
+func MonitorFirstVisibleMsNotIn(vs ...int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotIn(FieldMonitorFirstVisibleMs, vs...))
+}
+
+// MonitorFirstVisibleMsGT applies the GT predicate on the "monitor_first_visible_ms" field.
+func MonitorFirstVisibleMsGT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGT(FieldMonitorFirstVisibleMs, v))
+}
+
+// MonitorFirstVisibleMsGTE applies the GTE predicate on the "monitor_first_visible_ms" field.
+func MonitorFirstVisibleMsGTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldGTE(FieldMonitorFirstVisibleMs, v))
+}
+
+// MonitorFirstVisibleMsLT applies the LT predicate on the "monitor_first_visible_ms" field.
+func MonitorFirstVisibleMsLT(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLT(FieldMonitorFirstVisibleMs, v))
+}
+
+// MonitorFirstVisibleMsLTE applies the LTE predicate on the "monitor_first_visible_ms" field.
+func MonitorFirstVisibleMsLTE(v int64) predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldLTE(FieldMonitorFirstVisibleMs, v))
+}
+
+// MonitorFirstVisibleMsIsNil applies the IsNil predicate on the "monitor_first_visible_ms" field.
+func MonitorFirstVisibleMsIsNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldIsNull(FieldMonitorFirstVisibleMs))
+}
+
+// MonitorFirstVisibleMsNotNil applies the NotNil predicate on the "monitor_first_visible_ms" field.
+func MonitorFirstVisibleMsNotNil() predicate.UsageLog {
+	return predicate.UsageLog(sql.FieldNotNull(FieldMonitorFirstVisibleMs))
 }
 
 // InputTokensEQ applies the EQ predicate on the "input_tokens" field.

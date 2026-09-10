@@ -210,6 +210,17 @@ type UsageLog struct {
 
 	CreatedAt time.Time
 
+	// Nullable upstream observations, independent of customer billing quantities.
+	RequestOrigin              *string
+	MonitorObservationVersion  *int
+	MonitorInputTokensTotal    *int64
+	MonitorCacheReadTokens     *int64
+	MonitorVisibleOutputTokens *int64
+	MonitorGenerationMs        *int64
+	MonitorOutputTPSMilli      *int64
+	MonitorTPSMethod           *string
+	MonitorFirstVisibleMs      *int64
+
 	User         *User
 	APIKey       *APIKey
 	Account      *Account

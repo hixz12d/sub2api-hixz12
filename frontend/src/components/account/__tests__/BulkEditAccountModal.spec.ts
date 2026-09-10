@@ -929,7 +929,7 @@ describe('BulkEditAccountModal', () => {
 
     await wrapper.get('#bulk-edit-openai-codex-relay-enabled').setValue(true)
     await wrapper.get('[data-testid="codex-relay-mode-select"]').setValue('relay_kernel')
-    await wrapper.get('[data-testid="codex-client-profile-select"]').setValue('codex_cli')
+    await wrapper.get('[data-testid="codex-management-select"]').setValue('explicit')
     await wrapper.get('[data-testid="codex-fingerprint-mode-select"]').setValue('session')
     await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
     await flushPromises()

@@ -66,6 +66,15 @@ const DefaultUpstreamResponseReadMaxBytes int64 = 128 * 1024 * 1024
 const DefaultModelsListReadMaxBytes int64 = 8 * 1024 * 1024
 
 type Config struct {
+	// Deployment approval only; not legal authorization or executor readiness.
+	LLMDetectorEngineAllowed         bool   `mapstructure:"llm_detector_engine_allowed"`
+	ChannelMonitorProbeWorkerAllowed bool   `mapstructure:"channel_monitor_probe_worker_allowed"`
+	LLMDetectorPython                string `mapstructure:"llm_detector_python"`
+	LLMDetectorAdapter               string `mapstructure:"llm_detector_adapter"`
+	LLMDetectorEngineRoot            string `mapstructure:"llm_detector_engine_root"`
+	LLMDetectorAdapterSHA256         string `mapstructure:"llm_detector_adapter_sha256"`
+	LLMDetectorRuntimeConfig         string `mapstructure:"llm_detector_runtime_config"`
+
 	Server                  ServerConfig                  `mapstructure:"server"`
 	Log                     LogConfig                     `mapstructure:"log"`
 	CORS                    CORSConfig                    `mapstructure:"cors"`
@@ -2084,6 +2093,15 @@ func setDefaults() {
 	// CORS
 	viper.SetDefault("cors.allowed_origins", []string{})
 	viper.SetDefault("cors.allow_credentials", true)
+
+	// Deployment-owned model consistency engine admission.
+	viper.SetDefault("llm_detector_engine_allowed", false)
+	viper.SetDefault("llm_detector_python", "")
+	viper.SetDefault("llm_detector_adapter", "")
+	viper.SetDefault("llm_detector_engine_root", "")
+	viper.SetDefault("llm_detector_adapter_sha256", "")
+	viper.SetDefault("llm_detector_runtime_config", "")
+	viper.SetDefault("channel_monitor_probe_worker_allowed", false)
 
 	// WebAuthn / Passkeys are opt-in because every deployment must explicitly
 	// declare its relying-party domain and trusted browser origins.

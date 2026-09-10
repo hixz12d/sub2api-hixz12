@@ -376,6 +376,13 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		ChannelMonitorDefaultIntervalSeconds: settings.ChannelMonitorDefaultIntervalSeconds,
 		ChannelMonitorHideThroughput:         settings.ChannelMonitorHideThroughput,
 		ChannelMonitorShowQuota:              settings.ChannelMonitorShowQuota,
+		ChannelMonitorGroupViewEnabled:       settings.ChannelMonitorGroupViewEnabled,
+		ChannelMonitorGroupProbeEnabled:      settings.ChannelMonitorGroupProbeEnabled,
+		ChannelMonitorShowOutputTPS:          settings.ChannelMonitorShowOutputTPS,
+		LLMDetectorEnabled:                   settings.LLMDetectorEnabled,
+		LLMDetectorUserTestingEnabled:        settings.LLMDetectorUserTestingEnabled,
+		LLMDetectorScheduledEnabled:          settings.LLMDetectorScheduledEnabled,
+		LLMDetectorEngineAllowed:             settings.LLMDetectorEngineAllowed,
 
 		GrokDefaultTextModel:           settings.GrokDefaultTextModel,
 		GrokCrossClientModelMapEnabled: settings.GrokCrossClientModelMapEnabled,

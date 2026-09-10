@@ -247,6 +247,8 @@
         />
       </section>
 
+      <ObservedStatusCards :filter="filter" :admin="isAdmin" :refresh-key="observationRefreshKey" />
+
       <div class="relative min-h-[320px]">
         <MonitorTrendChart
           v-if="trendView === 'line'"
@@ -470,6 +472,7 @@ import MetricCell from '@/features/channel-monitor-v2/MetricCell.vue'
 import MonitorRankBadge from '@/features/channel-monitor-v2/MonitorRankBadge.vue'
 import MonitorTrendChart from '@/features/channel-monitor-v2/MonitorTrendChart.vue'
 import RelayPulseMatrix from '@/features/channel-monitor-v2/RelayPulseMatrix.vue'
+import ObservedStatusCards from '@/features/channel-monitor-v2/ObservedStatusCards.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
 import { extractApiErrorMessage } from '@/utils/apiError'
@@ -560,6 +563,7 @@ const userRows = ref<MonitorUserRow[]>([])
 const loading = ref(false)
 const tabLoading = ref(false)
 const refreshing = ref(false)
+const observationRefreshKey = ref(0)
 const expandedErrors = ref(new Set<string>())
 let controller: AbortController | null = null
 let sequence = 0
@@ -721,6 +725,8 @@ async function loadMetrics(signal?: AbortSignal, id = sequence) {
 }
 
 async function reload(silent = true) {
+  // The cards load themselves on mount; subsequent page refreshes reset their snapshot.
+  if (controller) observationRefreshKey.value++
   controller?.abort()
   const request = new AbortController()
   controller = request
@@ -734,7 +740,7 @@ async function reload(silent = true) {
       loadMetrics(request.signal, id),
     ])
   } catch (error) {
-    if ((error as { name?: string }).name !== 'CanceledError') {
+    if (id === sequence && !request.signal.aborted && (error as { name?: string }).name !== 'CanceledError') {
       appStore.showError(extractApiErrorMessage(error, t('channelMonitorV2.loadFailed')))
     }
   } finally {
@@ -757,7 +763,7 @@ async function reloadMetricsOnly(silent = true) {
   try {
     await loadMetrics(request.signal, id)
   } catch (error) {
-    if ((error as { name?: string }).name !== 'CanceledError') {
+    if (id === sequence && !request.signal.aborted && (error as { name?: string }).name !== 'CanceledError') {
       appStore.showError(extractApiErrorMessage(error, t('channelMonitorV2.loadFailed')))
     }
   } finally {
@@ -768,22 +774,30 @@ async function reloadMetricsOnly(silent = true) {
     }
   }
 }
+let tabSequence = 0
 async function loadTab(signal?: AbortSignal, id = sequence) {
+  const tabId = ++tabSequence
+  const currentTab = activeTab.value
+  const isCurrent = () => id === sequence && tabId === tabSequence && !signal?.aborted
   tabLoading.value = true
   try {
-    if (activeTab.value === 'models') {
-      modelRows.value = (await api.getModels(filter.value, isAdmin.value, signal)).items || []
-    } else if (activeTab.value === 'errors') {
-      errorRows.value = (await api.getErrors(filter.value, isAdmin.value, signal)).items || []
+    if (currentTab === 'models') {
+      const result = await api.getModels(filter.value, isAdmin.value, signal)
+      if (isCurrent()) modelRows.value = result.items || []
+    } else if (currentTab === 'errors') {
+      const result = await api.getErrors(filter.value, isAdmin.value, signal)
+      if (isCurrent()) errorRows.value = result.items || []
     } else {
-      userRows.value = (await api.getUsers(filter.value, isAdmin.value, signal)).items || []
+      const result = await api.getUsers(filter.value, isAdmin.value, signal)
+      if (isCurrent()) userRows.value = result.items || []
     }
   } catch (error) {
+    if (!isCurrent()) return
     const e = error as { name?: string; code?: string }
     if (e?.name === 'AbortError' || e?.name === 'CanceledError' || e?.code === 'ERR_CANCELED') return
     appStore.showError(extractApiErrorMessage(error, t('channelMonitorV2.detailLoadFailed')))
   } finally {
-    if (id === sequence) tabLoading.value = false
+    if (isCurrent()) tabLoading.value = false
   }
 }
 function setRange(value: MonitorRange) {
@@ -908,6 +922,8 @@ watch(activeTab, () => {
 })
 onMounted(() => void reload(false))
 onBeforeUnmount(() => {
+  sequence++
+  tabSequence++
   controller?.abort()
   if (autoRefreshTimer) window.clearInterval(autoRefreshTimer)
 })

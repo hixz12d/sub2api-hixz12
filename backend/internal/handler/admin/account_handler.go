@@ -48,6 +48,9 @@ func NewOAuthHandler(oauthService *service.OAuthService) *OAuthHandler {
 
 // AccountHandler handles admin account management
 type AccountHandler struct {
+	monitorPolicyControl    service.MonitorPolicyControl
+	detectorTasks           *service.DetectorTaskService
+	questionReviews         *service.QuestionReviewService
 	adminService            service.AdminService
 	oauthService            *service.OAuthService
 	openaiOAuthService      *service.OpenAIOAuthService
@@ -1127,13 +1130,20 @@ func (h *AccountHandler) Test(c *gin.Context) {
 		AudioDataURL: req.AudioDataURL,
 	}
 
+	if service.IsAccountQuestionTest(req.Mode) {
+		finish, ok := h.beginQuestionCapture(c, accountID, req)
+		if !ok {
+			return
+		}
+		defer finish()
+	}
 	// Use AccountTestService to test the account with SSE streaming
 	if err := h.accountTestService.TestAccountConnection(c, accountID, req.ModelID, req.Prompt, req.Mode, opts); err != nil {
 		// Error already sent via SSE, just log
 		return
 	}
 
-	if h.rateLimitService != nil {
+	if h.rateLimitService != nil && !service.IsAccountQuestionTest(req.Mode) {
 		if _, err := h.rateLimitService.RecoverAccountAfterSuccessfulTest(c.Request.Context(), accountID); err != nil {
 			_ = c.Error(err)
 		}

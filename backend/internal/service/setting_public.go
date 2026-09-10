@@ -232,6 +232,10 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyChannelMonitorDefaultIntervalSeconds,
 		SettingKeyChannelMonitorHideThroughput,
 		SettingKeyChannelMonitorShowQuota,
+		SettingKeyChannelMonitorGroupViewEnabled,
+		SettingKeyChannelMonitorShowOutputTPS,
+		SettingKeyLLMDetectorEnabled,
+		SettingKeyLLMDetectorUserTestingEnabled,
 		SettingKeyAvailableChannelsEnabled,
 		SettingKeyModelPlazaEnabled,
 		SettingKeyModelPlazaRequireAuth,
@@ -358,6 +362,10 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		ChannelMonitorDefaultIntervalSeconds: parseChannelMonitorInterval(settings[SettingKeyChannelMonitorDefaultIntervalSeconds]),
 		ChannelMonitorHideThroughput:         !isFalseSettingValue(settings[SettingKeyChannelMonitorHideThroughput]),
 		ChannelMonitorShowQuota:              settings[SettingKeyChannelMonitorShowQuota] == "true",
+		ChannelMonitorGroupViewEnabled:       settings[SettingKeyChannelMonitorGroupViewEnabled] == "true",
+		ChannelMonitorShowOutputTPS:          settings[SettingKeyChannelMonitorShowOutputTPS] == "true",
+		LLMDetectorEnabled:                   settings[SettingKeyLLMDetectorEnabled] == "true",
+		LLMDetectorUserTestingEnabled:        settings[SettingKeyLLMDetectorUserTestingEnabled] == "true",
 
 		AvailableChannelsEnabled: settings[SettingKeyAvailableChannelsEnabled] == "true",
 
@@ -618,14 +626,18 @@ type PublicSettingsInjectionPayload struct {
 	ChannelMonitorHideThroughput bool `json:"channel_monitor_hide_throughput"`
 	// ChannelMonitorShowQuota gates the user-facing quota/balance display on
 	// monitors; fail-closed (absent/false = hidden). Admin UI always shows it.
-	ChannelMonitorShowQuota    bool `json:"channel_monitor_show_quota"`
-	AvailableChannelsEnabled   bool `json:"available_channels_enabled"`
-	ModelPlazaEnabled          bool `json:"model_plaza_enabled"`
-	ModelPlazaRequireAuth      bool `json:"model_plaza_require_auth"`
-	PluginManagementEnabled    bool `json:"plugin_management_enabled"`
-	AffiliateEnabled           bool `json:"affiliate_enabled"`
-	RiskControlEnabled         bool `json:"risk_control_enabled"`
-	AllowUserViewErrorRequests bool `json:"allow_user_view_error_requests"`
+	ChannelMonitorShowQuota        bool `json:"channel_monitor_show_quota"`
+	ChannelMonitorGroupViewEnabled bool `json:"channel_monitor_group_view_enabled"`
+	ChannelMonitorShowOutputTPS    bool `json:"channel_monitor_show_output_tps"`
+	LLMDetectorEnabled             bool `json:"llm_detector_enabled"`
+	LLMDetectorUserTestingEnabled  bool `json:"llm_detector_user_testing_enabled"`
+	AvailableChannelsEnabled       bool `json:"available_channels_enabled"`
+	ModelPlazaEnabled              bool `json:"model_plaza_enabled"`
+	ModelPlazaRequireAuth          bool `json:"model_plaza_require_auth"`
+	PluginManagementEnabled        bool `json:"plugin_management_enabled"`
+	AffiliateEnabled               bool `json:"affiliate_enabled"`
+	RiskControlEnabled             bool `json:"risk_control_enabled"`
+	AllowUserViewErrorRequests     bool `json:"allow_user_view_error_requests"`
 }
 
 // GetPublicSettingsForInjection returns public settings in a format suitable for HTML injection.
@@ -700,6 +712,10 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ChannelMonitorDefaultIntervalSeconds: settings.ChannelMonitorDefaultIntervalSeconds,
 		ChannelMonitorHideThroughput:         settings.ChannelMonitorHideThroughput,
 		ChannelMonitorShowQuota:              settings.ChannelMonitorShowQuota,
+		ChannelMonitorGroupViewEnabled:       settings.ChannelMonitorGroupViewEnabled,
+		ChannelMonitorShowOutputTPS:          settings.ChannelMonitorShowOutputTPS,
+		LLMDetectorEnabled:                   settings.LLMDetectorEnabled,
+		LLMDetectorUserTestingEnabled:        settings.LLMDetectorUserTestingEnabled,
 		AvailableChannelsEnabled:             settings.AvailableChannelsEnabled,
 		ModelPlazaEnabled:                    settings.ModelPlazaEnabled,
 		ModelPlazaRequireAuth:                settings.ModelPlazaRequireAuth,

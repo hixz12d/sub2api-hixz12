@@ -1269,6 +1269,7 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 			entry.ClientIP = &clientIP
 		}
 
+		entry.RequestOrigin = service.RequestOriginFromContext(c.Request.Context())
 		enqueueOpsErrorLog(ops, entry)
 	}
 }
@@ -1385,6 +1386,9 @@ func logOpsRecoveredUpstream(c *gin.Context, ops *service.OpsService, finalStatu
 		entry.ClientIP = &clientIP
 	}
 	applyOpsLatencyFieldsFromContext(c, entry)
+	if c.Request != nil {
+		entry.RequestOrigin = service.RequestOriginFromContext(c.Request.Context())
+	}
 	enqueueOpsErrorLog(ops, entry)
 }
 
@@ -1553,6 +1557,9 @@ func logOpsStreamErrorValue(c *gin.Context, ops *service.OpsService, wireStatus 
 		entry.ClientIP = &clientIP
 	}
 
+	if c.Request != nil {
+		entry.RequestOrigin = service.RequestOriginFromContext(c.Request.Context())
+	}
 	enqueueOpsErrorLog(ops, entry)
 }
 

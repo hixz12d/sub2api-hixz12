@@ -222,6 +222,9 @@ func usageRecordContext(parent context.Context, base context.Context) context.Co
 	if base == nil {
 		base = context.Background()
 	}
+	// Copy trusted attribution before the task leaves the request lifetime.
+	// Keep the worker's deadline/cancellation rather than retaining the request.
+	base, _ = service.WithRequestOrigin(base, service.RequestOriginFromContext(parent))
 	if parent == nil {
 		return base
 	}
@@ -4152,6 +4155,7 @@ const cyberPolicyRecordedKey = "ops_cyber_recorded"
 // cyberPolicyOpsErrorMeta carries request-scoped fields captured outside the
 // async goroutine for building the cyber ops_error_logs entry.
 type cyberPolicyOpsErrorMeta struct {
+	RequestOrigin   service.RequestOrigin
 	RequestID       string
 	ClientRequestID string
 	Platform        string
@@ -4176,6 +4180,7 @@ type cyberPolicyOpsErrorMeta struct {
 func buildCyberPolicyOpsErrorEntry(meta cyberPolicyOpsErrorMeta, mark *service.CyberPolicyMark) *service.OpsInsertErrorLogInput {
 	rt := int16(service.RequestTypeCyberBlocked)
 	entry := &service.OpsInsertErrorLogInput{
+		RequestOrigin:     meta.RequestOrigin,
 		RequestID:         meta.RequestID,
 		ClientRequestID:   meta.ClientRequestID,
 		Platform:          meta.Platform,
@@ -4224,6 +4229,7 @@ const cyberSessionBlockedClientMsg = "上游策略命中：本窗可结束。请
 func buildCyberSessionBlockedOpsEntry(meta cyberPolicyOpsErrorMeta) *service.OpsInsertErrorLogInput {
 	rt := int16(service.RequestTypeCyberBlocked)
 	entry := &service.OpsInsertErrorLogInput{
+		RequestOrigin:     meta.RequestOrigin,
 		RequestID:         meta.RequestID,
 		ClientRequestID:   meta.ClientRequestID,
 		Platform:          meta.Platform,
@@ -4378,6 +4384,7 @@ func (h *OpenAIGatewayHandler) enqueueCyberSessionBlockedOpsEntry(c *gin.Context
 	if c.Request != nil {
 		requestCtx = c.Request.Context()
 	}
+	meta.RequestOrigin = service.RequestOriginFromContext(requestCtx)
 	meta.Platform = resolveOpsPlatform(requestCtx, apiKey, guessPlatformFromPath(meta.RequestPath))
 	if c.Request != nil {
 		meta.ClientRequestID, _ = c.Request.Context().Value(ctxkey.ClientRequestID).(string)
@@ -4464,6 +4471,7 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 		apiKeyPrefix = keyPrefix(apiKey.Key, 8)
 	}
 	opsMeta := cyberPolicyOpsErrorMeta{
+		RequestOrigin:   service.RequestOriginFromContext(requestCtx),
 		RequestID:       requestID,
 		ClientRequestID: clientRequestID,
 		Platform:        platform,
@@ -4491,6 +4499,7 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
+		ctx, _ = service.WithRequestOrigin(ctx, opsMeta.RequestOrigin)
 		if cmSvc != nil {
 			cmSvc.RecordCyberPolicyEvent(ctx, service.CyberPolicyRecordInput{
 				RequestID:       requestID,

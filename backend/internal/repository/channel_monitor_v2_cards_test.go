@@ -88,18 +88,20 @@ func TestChannelMonitorV2CardsBatchQueriesAndPrivacy(t *testing.T) {
 			mock.ExpectBegin()
 			mock.ExpectQuery("SELECT w.usage_coverage_start").WillReturnRows(sqlmock.NewRows([]string{"usage", "errors", "through", "computed", "upgrade"}).AddRow(start, start, asOf, now, start))
 			dims := sqlmock.NewRows([]string{"platform", "group_id", "name", "display_model"})
-			facts := sqlmock.NewRows([]string{"at", "platform", "group_id", "model", "success", "errors", "input", "output", "creation", "read", "ttft_sum", "ttft_count", "duration_sum", "duration_count"})
+			facts := sqlmock.NewRows([]string{"at", "platform", "group_id", "model", "success", "errors", "input", "output", "creation", "read", "ttft_sum", "ttft_count", "duration_sum", "duration_count", "observed_total", "observed_cached", "observed_measured"})
 			hist := sqlmock.NewRows([]string{"at", "platform", "group_id", "model", "metric", "bound", "count"})
 			for i := 0; i < count; i++ {
 				model := fmt.Sprintf("model-%03d", i)
 				dims.AddRow("openai", 7, "Public group", model)
-				facts.AddRow(asOf.Add(-5*time.Minute), "openai", 7, model, 90, 10, 10, 50, 0, 0, 90000, 90, 180000, 90)
+				facts.AddRow(asOf.Add(-5*time.Minute), "openai", 7, model, 90, 10, 10, 50, 0, 0, 90000, 90, 180000, 90, 1000, 100, 50)
 				hist.AddRow(asOf.Add(-5*time.Minute), "openai", 7, model, "ttft", 1000, 90)
 			}
 			dims.AddRow("openai", 7, "Public group", "next-page")
 			mock.ExpectQuery("SELECT m.platform,m.group_id,g.name").WithArgs(start, asOf, sqlmock.AnyArg(), sqlmock.AnyArg(), 300, count+1, 0).WillReturnRows(dims)
 			mock.ExpectQuery("SELECT m.bucket_start,m.platform,m.group_id,selected.model, SUM\\(m.success_requests\\)").WithArgs(start, asOf, sqlmock.AnyArg(), sqlmock.AnyArg(), 300, sqlmock.AnyArg()).WillReturnRows(facts)
 			mock.ExpectQuery("SELECT m.bucket_start,m.platform,m.group_id,selected.model,m.metric").WithArgs(start, asOf, sqlmock.AnyArg(), sqlmock.AnyArg(), 300, sqlmock.AnyArg()).WillReturnRows(hist)
+			mock.ExpectQuery("SELECT observation_v1_collection_start").WillReturnRows(sqlmock.NewRows([]string{"start", "through"}).AddRow(start, asOf))
+			mock.ExpectQuery("SELECT m.bucket_start,m.platform,m.group_id,selected.model,m.bucket_index").WithArgs(start, asOf, sqlmock.AnyArg(), sqlmock.AnyArg(), 300, sqlmock.AnyArg()).WillReturnRows(sqlmock.NewRows([]string{"at", "platform", "group", "model", "bucket", "count"}))
 			mock.ExpectCommit()
 			out, err := (&channelMonitorV2Repository{db: db}).GetCards(context.Background(), service.ChannelMonitorV2CardsQuery{Page: 1, PageSize: count, ServerNow: now, Filter: service.ChannelMonitorV2Filter{RestrictGroups: true, AllowedGroupIDs: []int64{7}}}, cfg)
 			require.NoError(t, err)
@@ -110,6 +112,7 @@ func TestChannelMonitorV2CardsBatchQueriesAndPrivacy(t *testing.T) {
 			require.Equal(t, asOf, *out.AsOf)
 			for _, card := range out.Items {
 				require.InDelta(t, .9, *card.Windows.H24.SuccessRate, 1e-9)
+				require.InDelta(t, .1, *card.Windows.H24.ObservedCacheReadRatio, 1e-9)
 				require.Equal(t, int64(1000), *card.Windows.H24.TTFTP90Ms)
 				require.Equal(t, "partial_failure", card.Current.RequestState)
 			}

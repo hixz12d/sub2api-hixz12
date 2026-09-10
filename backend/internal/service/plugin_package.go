@@ -137,6 +137,10 @@ func (i *PluginPackageInstaller) Install(ctx context.Context, reader io.Reader, 
 	if err := i.extractArchive(ctx, &archive.Reader, manifest, extractPath); err != nil {
 		return nil, err
 	}
+	// Release the ZIP handle before committing the archive on Windows.
+	if err := archive.Close(); err != nil {
+		return nil, fmt.Errorf("关闭插件归档: %w", err)
+	}
 	if err := os.Rename(extractPath, installPath); err != nil {
 		return nil, fmt.Errorf("提交插件安装目录: %w", err)
 	}
