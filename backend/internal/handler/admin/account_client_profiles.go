@@ -13,7 +13,7 @@ import (
 
 func (h *AccountHandler) GetClientProfiles(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
-	catalog, err := service.PublicCodexClientCatalog()
+	catalog, err := service.PublicCodexClientCatalogWithUpdates(h.accountTestService.CodexClientVersion(c.Request.Context()), h.accountTestService.ClientProfileUpdates(c.Request.Context()))
 	if err != nil {
 		response.InternalError(c, "Reviewed client catalog unavailable")
 		return
@@ -51,7 +51,30 @@ func (h *AccountHandler) PreviewClientProfile(c *gin.Context) {
 		}
 		status = h.accountTestService.CodexProfilePluginStatus(account)
 	}
-	response.Success(c, service.PreviewCodexClientProfile(input, status))
+	catalog, err := service.PublicCodexClientCatalogWithUpdates(h.accountTestService.CodexClientVersion(c.Request.Context()), h.accountTestService.ClientProfileUpdates(c.Request.Context()))
+	if err != nil {
+		response.InternalError(c, "Reviewed client catalog unavailable")
+		return
+	}
+	response.Success(c, service.PreviewCodexClientProfileWithCatalog(input, status, catalog))
+}
+
+func (h *AccountHandler) SetClientProfileUpdatePolicy(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	var input struct {
+		Action string `json:"action"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(c.Writer, c.Request.Body, 4096))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&input) != nil || decoder.Decode(new(any)) != io.EOF {
+		response.BadRequest(c, "Invalid client update policy")
+		return
+	}
+	if err := h.accountTestService.SetClientProfileUpdatePolicy(c.Request.Context(), c.Param("family"), input.Action); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"family": c.Param("family"), "action": input.Action})
 }
 
 func (h *AccountHandler) GetEffectiveClientProfile(c *gin.Context) {
@@ -66,18 +89,18 @@ func (h *AccountHandler) GetEffectiveClientProfile(c *gin.Context) {
 		response.ErrorFrom(c, err)
 		return
 	}
-	catalog, err := service.PublicCodexClientCatalog()
+	catalog, err := service.PublicCodexClientCatalogWithUpdates(h.accountTestService.CodexClientVersion(c.Request.Context()), h.accountTestService.ClientProfileUpdates(c.Request.Context()))
 	if err != nil {
 		response.InternalError(c, "Reviewed client catalog unavailable")
 		return
 	}
 	extra := make(map[string]any)
-	for _, key := range []string{"codex_relay_mode", "codex_identity_policy_version", "codex_client_profile", "codex_installation_policy", "codex_fingerprint_mode", "codex_relay_shadow_enabled", "enable_tls_fingerprint", "tls_fingerprint_profile_id"} {
+	for _, key := range []string{service.CodexClientPresetExtraKey, "codex_relay_mode", "codex_identity_policy_version", "codex_client_profile", "codex_installation_policy", "codex_fingerprint_mode", "codex_relay_shadow_enabled", "enable_tls_fingerprint", "tls_fingerprint_profile_id"} {
 		if value, ok := account.Extra[key]; ok {
 			extra[key] = value
 		}
 	}
 	input := service.CodexProfilePreviewInput{AccountID: id, Platform: account.Platform, Type: account.Type, Extra: extra,
 		Operation: service.CodexOperationResponses, Transport: service.CodexTransportHTTP, CatalogRevision: catalog.Revision}
-	response.Success(c, service.PreviewCodexClientProfile(input, h.accountTestService.CodexProfilePluginStatus(account)))
+	response.Success(c, service.PreviewCodexClientProfileWithCatalog(input, h.accountTestService.CodexProfilePluginStatus(account), catalog))
 }

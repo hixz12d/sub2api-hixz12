@@ -20,9 +20,6 @@ var monitorChallengePromptTemplates = []string{
 // monitorChallengeNumberRegex 提取响应中的所有整数（含负号）。
 var monitorChallengeNumberRegex = regexp.MustCompile(`-?\d+`)
 
-// monitorChallengeExprRegex 从短 prompt 里抽出算术式，供测试与校验复用。
-var monitorChallengeExprRegex = regexp.MustCompile(`(\d+)\s*([+-])\s*(\d+)`)
-
 // monitorChallenge 一次 challenge 的 prompt + 期望答案。
 type monitorChallenge struct {
 	Prompt   string
@@ -55,21 +52,6 @@ func generateChallenge() monitorChallenge {
 		Prompt:   fmt.Sprintf(tpl, a, op, b),
 		Expected: strconv.Itoa(expected),
 	}
-}
-
-// parseChallengeExpression 从 prompt 中解析出最后一个 "N ± N" 式子的答案。
-func parseChallengeExpression(prompt string) (string, bool) {
-	matches := monitorChallengeExprRegex.FindAllStringSubmatch(prompt, -1)
-	if len(matches) == 0 {
-		return "", false
-	}
-	m := matches[len(matches)-1]
-	left, _ := strconv.Atoi(m[1])
-	right, _ := strconv.Atoi(m[3])
-	if m[2] == "+" {
-		return strconv.Itoa(left + right), true
-	}
-	return strconv.Itoa(left - right), true
 }
 
 // randIntInRange 返回 [min, max] 闭区间的随机整数。

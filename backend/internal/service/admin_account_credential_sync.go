@@ -10,28 +10,28 @@ import (
 // SyncOAuthCredentialsRequest is the v1 narrow credential sync contract.
 // It never enables schedulable and never clears rate-limit / temp blockers.
 type SyncOAuthCredentialsRequest struct {
-	ContractVersion    int            `json:"contract_version"`
-	OperationID        string         `json:"operation_id"`
-	ExpectedUpdatedAt  string         `json:"expected_updated_at"`
-	ExpectedIdentity   map[string]any `json:"expected_identity"`
-	Credentials        map[string]any `json:"credentials"`
-	RecoveryMode       string         `json:"recovery_mode"` // credentials_only | auth_only
+	ContractVersion   int            `json:"contract_version"`
+	OperationID       string         `json:"operation_id"`
+	ExpectedUpdatedAt string         `json:"expected_updated_at"`
+	ExpectedIdentity  map[string]any `json:"expected_identity"`
+	Credentials       map[string]any `json:"credentials"`
+	RecoveryMode      string         `json:"recovery_mode"` // credentials_only | auth_only
 }
 
 // SyncOAuthCredentialsResult separates write success from recovery success.
 type SyncOAuthCredentialsResult struct {
-	ContractVersion         int      `json:"contract_version"`
-	OperationID             string   `json:"operation_id"`
-	RemoteAccountID         int64    `json:"remote_account_id"`
-	CredentialWrite         string   `json:"credential_write"`
-	TokenCacheInvalidation  string   `json:"token_cache_invalidation"`
-	AuthRecovery            string   `json:"auth_recovery"`
-	Schedulable             bool     `json:"schedulable"`
-	SchedulingAssessment    string   `json:"scheduling_assessment"`
-	RemainingBlockers       []string `json:"remaining_blockers"`
-	Partial                 bool     `json:"partial"`
-	Status                  string   `json:"status"`
-	ErrorMessage            string   `json:"error_message,omitempty"`
+	ContractVersion        int      `json:"contract_version"`
+	OperationID            string   `json:"operation_id"`
+	RemoteAccountID        int64    `json:"remote_account_id"`
+	CredentialWrite        string   `json:"credential_write"`
+	TokenCacheInvalidation string   `json:"token_cache_invalidation"`
+	AuthRecovery           string   `json:"auth_recovery"`
+	Schedulable            bool     `json:"schedulable"`
+	SchedulingAssessment   string   `json:"scheduling_assessment"`
+	RemainingBlockers      []string `json:"remaining_blockers"`
+	Partial                bool     `json:"partial"`
+	Status                 string   `json:"status"`
+	ErrorMessage           string   `json:"error_message,omitempty"`
 }
 
 func isRecognizedAuthError(status, message string) bool {
@@ -154,16 +154,7 @@ func (s *adminServiceImpl) SyncOpenAIOAuthCredentials(ctx context.Context, id in
 	if err := identityMatches(account, req.ExpectedIdentity); err != nil {
 		return nil, nil, err
 	}
-	if req.ExpectedUpdatedAt != "" {
-		// Best-effort concurrency token: compare RFC3339 / raw string forms when present.
-		got := account.UpdatedAt.UTC().Format(time.RFC3339Nano)
-		alt := account.UpdatedAt.UTC().Format(time.RFC3339)
-		want := strings.TrimSpace(req.ExpectedUpdatedAt)
-		if want != got && want != alt && want != account.UpdatedAt.String() {
-			// Soft check only when the client supplied a comparable stamp.
-			// Unknown formats do not hard-fail credential writes in v1.
-		}
-	}
+	// ExpectedUpdatedAt remains advisory in v1; credential writes do not enforce it.
 
 	beforeStatus := account.Status
 	beforeError := account.ErrorMessage
@@ -209,7 +200,6 @@ func (s *adminServiceImpl) SyncOpenAIOAuthCredentials(ctx context.Context, id in
 	}
 	result.TokenCacheInvalidation = "pending"
 
-
 	finalAccount, err := s.accountRepo.GetByID(ctx, id)
 	if err != nil {
 		result.Partial = true
@@ -232,7 +222,6 @@ func (s *adminServiceImpl) SyncOpenAIOAuthCredentials(ctx context.Context, id in
 	}
 	return result, finalAccount, nil
 }
-
 
 // RecoverAuthErrorOnly clears a previously observed auth error after credentials
 // were written and token cache invalidation succeeded. It never clears rate limits.

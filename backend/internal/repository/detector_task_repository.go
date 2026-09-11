@@ -17,7 +17,7 @@ func (r *LLMDetectorRepository) ReportsForOwner(ctx context.Context, jobID strin
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := []service.DetectorReportEvidence{}
 	for rows.Next() {
 		var raw []byte
@@ -49,7 +49,7 @@ func (r *LLMDetectorRepository) SaveDetectorPlan(ctx context.Context, p *service
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if err = lockApprovedBenchmarkTx(ctx, tx, p.Benchmark); err != nil {
 		return err
 	}

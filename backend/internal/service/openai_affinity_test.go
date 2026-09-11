@@ -249,7 +249,7 @@ func TestOpenAIAffinityColdStartHundredRequestsChooseOneWinner(t *testing.T) {
 	identity := SessionIdentity{OwnerScopeHash: "owner", NamespaceHash: "namespace", PrimaryHash: "primary",
 		Provider: openAIAffinityProvider, Capability: "responses", Source: "explicit_session", Strength: AffinityExplicit}
 	value := openAIAffinityContextValue{Identity: identity, Enabled: true, Writable: true}
-	ctx := context.WithValue(context.Background(), openAIAffinityContextKey, value)
+	ctx := context.WithValue(context.Background(), openAIAffinityRequestContextKey{}, value)
 
 	const count = 100
 	results := make(chan int64, count)
@@ -377,7 +377,7 @@ func TestOpenAIAffinityStatefulLegacyReadAtomicallyAdoptsOwner(t *testing.T) {
 	svc := &OpenAIGatewayService{openAIAffinityRepo: repo, cache: cache}
 	identity := SessionIdentity{OwnerScopeHash: "owner", NamespaceHash: "namespace", PrimaryHash: "primary",
 		Provider: openAIAffinityProvider, Capability: "responses", Source: "function_call_output", Strength: AffinityStrong, Stateful: true}
-	ctx := context.WithValue(context.Background(), openAIAffinityContextKey,
+	ctx := context.WithValue(context.Background(), openAIAffinityRequestContextKey{},
 		openAIAffinityContextValue{Identity: identity, Enabled: true, Writable: true})
 	accountID, err := svc.getStickySessionAccountID(ctx, nil, "legacy-session")
 	require.NoError(t, err)

@@ -29,7 +29,7 @@ func (r *MonitorJobRepository) ListDueProbePolicyIDs(ctx context.Context, limit 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	ids := make([]int64, 0)
 	for rows.Next() {
 		var id int64
@@ -52,7 +52,7 @@ func (r *MonitorJobRepository) EnqueueProbe(ctx context.Context, policyID, globa
 	if err != nil {
 		return "", err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	policy, err := scanMonitorPolicy(tx.QueryRowContext(ctx, `SELECT `+monitorPolicyColumns+` FROM channel_monitor_group_policies p
  WHERE p.id=$1 AND p.enabled AND p.deleted_at IS NULL AND p.probe_config @> '{"enabled":true}'::jsonb
  AND p.next_probe_at<=clock_timestamp() AND p.active_probe_job_id IS NULL

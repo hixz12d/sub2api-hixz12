@@ -5,12 +5,18 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/clientprofile"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 )
 
 type PublicCodexProfile struct {
+	VersionPolicy    string `json:"version_policy,omitempty"`
+	UpdateStatus     string `json:"update_status,omitempty"`
+	LatestVersion    string `json:"latest_version,omitempty"`
+	PreviousVersion  string `json:"previous_version,omitempty"`
+	LastChecked      string `json:"last_checked,omitempty"`
 	ID               string `json:"id"`
 	Family           string `json:"family"`
 	Variant          string `json:"variant"`
@@ -25,6 +31,7 @@ type PublicCodexProfile struct {
 	NativeValidation string `json:"native_validation"`
 }
 type PublicCodexCatalog struct {
+	Presets                  []CodexClientPreset               `json:"presets"`
 	Revision                 string                            `json:"revision"`
 	RelayContract            string                            `json:"relay_contract"`
 	RelayDigest              string                            `json:"relay_digest"`
@@ -34,15 +41,30 @@ type PublicCodexCatalog struct {
 	ActivationRequirements   []string                          `json:"activation_requirements"`
 }
 
-func PublicCodexClientCatalog() (PublicCodexCatalog, error) {
+func PublicCodexClientCatalog(clientVersions ...string) (PublicCodexCatalog, error) {
+	version := ""
+	if len(clientVersions) > 0 {
+		version = clientVersions[0]
+	}
+	return PublicCodexClientCatalogWithUpdates(version, nil)
+}
+
+func PublicCodexClientCatalogWithUpdates(version string, updates map[string]ClientProfileUpdate) (PublicCodexCatalog, error) {
 	relay, err := clientprofile.LoadRelayCatalog()
 	if err != nil {
 		return PublicCodexCatalog{}, err
 	}
-	result := PublicCodexCatalog{RelayContract: relay.Contract, RelayDigest: clientprofile.RelayCatalogSHA256,
+	result := PublicCodexCatalog{Presets: CodexClientPresets(), RelayContract: relay.Contract, RelayDigest: clientprofile.RelayCatalogSHA256,
 		RelayReferences: relay.Profiles, ActivationRequirements: []string{"affinity-secret", "distributed-registry", "installation-migration-approval"}}
 	result.Profiles = append(result.Profiles, PublicCodexProfile{ID: CodexProfileAuto, Family: "caller", Variant: "auto", AppVersion: "dynamic", Fidelity: "caller-resolved", NativeValidation: "untested"})
 	for _, profile := range CodexClientProfiles() {
+		profile = codexProfileWithClientVersion(profile, version)
+		if isManagedClientProfile(profile.ID) {
+			profile, err = resolveManagedClientProfile(profile.ID, updates[codexClientFamily(profile.ID)].Active)
+			if err != nil {
+				return PublicCodexCatalog{}, err
+			}
+		}
 		digest, err := codexProfileSnapshotDigest(profile)
 		if err != nil {
 			return PublicCodexCatalog{}, err
@@ -66,6 +88,20 @@ func PublicCodexClientCatalog() (PublicCodexCatalog, error) {
 				}
 			}
 		}
+		if isManagedClientProfile(profile.ID) {
+			state, exists := updates[item.Family]
+			if !exists {
+				state = defaultClientProfileUpdate()
+			}
+			item.Variant, item.AppVersion, item.RelayDigest = "managed", managedClientProfileVersion(profile), ""
+			item.VersionPolicy, item.UpdateStatus, item.LatestVersion = state.Mode, state.Status, state.LatestVersion
+			if state.Previous != nil {
+				item.PreviousVersion = state.Previous.Version
+			}
+			if !state.CheckedAt.IsZero() {
+				item.LastChecked = state.CheckedAt.Format(time.RFC3339)
+			}
+		}
 		result.Profiles = append(result.Profiles, item)
 	}
 	data, err := json.Marshal(result)
@@ -81,9 +117,9 @@ func codexClientFamily(id string) string {
 	switch id {
 	case CodexProfileCLI, CodexProfileExec, CodexProfileDesktop:
 		return "codex"
-	case CodexProfilePi, CodexProfilePiBundle:
+	case CodexProfilePi, CodexProfilePiBundle, CodexProfilePiManaged:
 		return "pi"
-	case CodexProfileOpenCode, CodexProfileOpenCodeBundle:
+	case CodexProfileOpenCode, CodexProfileOpenCodeBundle, CodexProfileOpenCodeManaged:
 		return "opencode"
 	default:
 		return "caller"
@@ -151,7 +187,12 @@ type CodexProfilePreview struct {
 	PluginStatus  string                         `json:"plugin_status"`
 }
 
-func PreviewCodexClientProfile(input CodexProfilePreviewInput, pluginStatus string) CodexProfilePreview {
+func PreviewCodexClientProfile(input CodexProfilePreviewInput, pluginStatus string, clientVersions ...string) CodexProfilePreview {
+	catalog, _ := PublicCodexClientCatalog(clientVersions...)
+	return PreviewCodexClientProfileWithCatalog(input, pluginStatus, catalog)
+}
+
+func PreviewCodexClientProfileWithCatalog(input CodexProfilePreviewInput, pluginStatus string, catalog PublicCodexCatalog) CodexProfilePreview {
 	result := CodexProfilePreview{Scope: "configuration-only-no-upstream", Conflicts: []string{},
 		Requirements:  []string{"server-validates-secret-on-save", "distributed-registry-required", "review-active-pins-before-transport-change"},
 		SessionEffect: "existing-pins-retained; transport changes require migration review", PluginStatus: pluginStatus}
@@ -159,8 +200,7 @@ func PreviewCodexClientProfile(input CodexProfilePreviewInput, pluginStatus stri
 		result.Conflicts = append(result.Conflicts, message)
 		return result
 	}
-	catalog, err := PublicCodexClientCatalog()
-	if err != nil {
+	if catalog.Revision == "" {
 		return reject("reviewed relay contract unavailable")
 	}
 	if input.CatalogRevision != catalog.Revision {
@@ -174,6 +214,11 @@ func PreviewCodexClientProfile(input CodexProfilePreviewInput, pluginStatus stri
 		if !allowed[key] {
 			return reject("unknown preview configuration field")
 		}
+	}
+	normalized, err := NormalizeCodexClientPresetExtra(input.Extra)
+	input.Extra = normalized
+	if err != nil {
+		return reject(err.Error())
 	}
 	if input.Operation != CodexOperationResponses && input.Operation != CodexOperationCompact && input.Operation != CodexOperationResume {
 		return reject("unsupported operation")

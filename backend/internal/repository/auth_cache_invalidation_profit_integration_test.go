@@ -89,6 +89,8 @@ func TestAuthCacheInvalidationTrigger_ProfitControlColumns(t *testing.T) {
 		"peak_end":             "peak_end = '09:00'",
 		"peak_rate_multiplier": "peak_rate_multiplier = 1.2",
 		"allow_live":           "allow_live = NOT allow_live",
+		"models_list_config":   `models_list_config = '{"enabled":true,"models":["gpt-5.5"]}'::jsonb`,
+		"model_allowlist":      `model_allowlist = '{"enabled":true,"models":["gpt-5.4"]}'::jsonb`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			clear()

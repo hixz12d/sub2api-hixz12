@@ -209,6 +209,7 @@ type SystemSettings struct {
 	LLMDetectorUserTestingEnabled        bool   `json:"llm_detector_user_testing_enabled"`
 	LLMDetectorScheduledEnabled          bool   `json:"llm_detector_scheduled_enabled"`
 	LLMDetectorEngineAllowed             bool   `json:"llm_detector_engine_allowed"`
+	ChannelMonitorHideUserRanking        bool   `json:"channel_monitor_hide_user_ranking"`
 
 	// Grok model mapping policy (admin settings; empty mapping falls back to these).
 	GrokDefaultTextModel           string `json:"grok_default_text_model"`
@@ -393,6 +394,7 @@ type PublicSettings struct {
 	ChannelMonitorShowOutputTPS          bool   `json:"channel_monitor_show_output_tps"`
 	LLMDetectorEnabled                   bool   `json:"llm_detector_enabled"`
 	LLMDetectorUserTestingEnabled        bool   `json:"llm_detector_user_testing_enabled"`
+	ChannelMonitorHideUserRanking        bool   `json:"channel_monitor_hide_user_ranking"`
 
 	// Grok model mapping policy (admin settings).
 	GrokDefaultTextModel           string `json:"grok_default_text_model"`

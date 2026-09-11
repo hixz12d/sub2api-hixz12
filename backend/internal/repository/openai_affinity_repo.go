@@ -291,7 +291,7 @@ ORDER BY id LIMIT $4`, fromAccountID, includeExpired, now, limit)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []service.OpenAIAffinityMigrationCandidate
 	for rows.Next() {
 		var item service.OpenAIAffinityMigrationCandidate

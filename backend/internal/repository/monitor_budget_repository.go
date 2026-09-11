@@ -123,7 +123,7 @@ func readMonitorBudgetRows(ctx context.Context, tx *sql.Tx, jobID string) ([]mon
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var result []monitorBudgetRow
 	for rows.Next() {
 		var row monitorBudgetRow
@@ -245,7 +245,7 @@ func (r *MonitorBudgetRepository) Reserve(ctx context.Context, jobID string, inp
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if err := reserveMonitorBudgetTx(ctx, tx, jobID, limits); err != nil {
 		return err
 	}
@@ -299,7 +299,7 @@ func (r *MonitorBudgetRepository) Consume(ctx context.Context, jobID, leaseOwner
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if err := consumeMonitorBudgetTx(ctx, tx, jobID, leaseOwner, generation, expectedDispatched, limits); err != nil {
 		return err
 	}
@@ -386,7 +386,7 @@ func (r *MonitorBudgetRepository) Settle(ctx context.Context, jobID string) erro
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if err := settleMonitorBudgetTx(ctx, tx, jobID); err != nil {
 		return err
 	}

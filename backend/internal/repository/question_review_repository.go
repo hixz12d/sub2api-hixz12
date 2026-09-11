@@ -34,7 +34,7 @@ func (r *QuestionReviewRepository) ReviewQuestion(ctx context.Context, input ser
 	if err != nil {
 		return service.QuestionReview{}, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var record string
 	if err = tx.QueryRowContext(ctx, `SELECT id FROM monitor_question_records WHERE id=$1 FOR UPDATE`, input.RecordID).Scan(&record); err != nil {
 		return service.QuestionReview{}, err
@@ -65,7 +65,7 @@ func (r *QuestionReviewRepository) ListQuestions(ctx context.Context, account in
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := []service.QuestionRecord{}
 	for rows.Next() {
 		var item service.QuestionRecord
@@ -84,7 +84,7 @@ func (r *QuestionReviewRepository) ListQuestionReviews(ctx context.Context, reco
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := []service.QuestionReview{}
 	for rows.Next() {
 		var item service.QuestionReview

@@ -217,7 +217,8 @@ func TestWindowFingerprintHeadersAndBodyConsistent(t *testing.T) {
 	applyCodexFingerprintHeaders(outbound, ids)
 	body := map[string]any{"client_metadata": map[string]any{}}
 	require.True(t, applyCodexFingerprintClientMetadata(body, ids))
-	metadata := body["client_metadata"].(map[string]any)
+	metadata, ok := body["client_metadata"].(map[string]any)
+	require.True(t, ok)
 
 	assert.Equal(t, resolveConvergedSessionID(account), outbound.Get("session-id"))
 	assert.Equal(t, ids.sessionID, outbound.Get("conversation_id"))
@@ -360,7 +361,8 @@ func TestWindow40PreservesOfficialEnvironmentMetadata(t *testing.T) {
 		},
 	}
 	require.True(t, applyCodexFingerprintClientMetadata(body, ids))
-	cm := body["client_metadata"].(map[string]any)
+	cm, ok := body["client_metadata"].(map[string]any)
+	require.True(t, ok)
 	assert.Equal(t, ids.windowID, cm["x-codex-window-id"])
 	assert.Equal(t, "danger-full-access", cm["sandbox"])
 	assert.Equal(t, "user", cm["thread_source"])
@@ -393,7 +395,8 @@ func TestWindow40SynthesizesOfficialConversationEnvelope(t *testing.T) {
 
 	body := map[string]any{"model": "gpt-5.4"}
 	require.True(t, applyCodexFingerprintClientMetadata(body, ids))
-	cm := body["client_metadata"].(map[string]any)
+	cm, ok := body["client_metadata"].(map[string]any)
+	require.True(t, ok)
 	assert.Equal(t, ids.sessionID, cm["session_id"])
 	assert.Equal(t, ids.sessionID, cm["thread_id"])
 	assert.Equal(t, ids.windowID, cm["x-codex-window-id"])
@@ -402,7 +405,9 @@ func TestWindow40SynthesizesOfficialConversationEnvelope(t *testing.T) {
 	assert.Equal(t, "user", cm["thread_source"])
 
 	var embedded map[string]any
-	require.NoError(t, json.Unmarshal([]byte(cm["x-codex-turn-metadata"].(string)), &embedded))
+	embeddedRaw, ok := cm["x-codex-turn-metadata"].(string)
+	require.True(t, ok)
+	require.NoError(t, json.Unmarshal([]byte(embeddedRaw), &embedded))
 	assert.Equal(t, headerMeta["session_id"], embedded["session_id"])
 	assert.Equal(t, headerMeta["window_id"], embedded["window_id"])
 	assert.Equal(t, headerMeta["sandbox"], embedded["sandbox"])

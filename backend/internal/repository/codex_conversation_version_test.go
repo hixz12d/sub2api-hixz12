@@ -37,7 +37,8 @@ func TestCodexPinnedProfileSurvivesLuaAndActivityTTL(t *testing.T) {
 			mr := miniredis.RunT(t)
 			client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 			t.Cleanup(func() { _ = client.Close() })
-			registry := NewGatewayCache(client).(service.CodexConversationRegistry)
+			registry, registryOK := NewGatewayCache(client).(service.CodexConversationRegistry)
+			require.True(t, registryOK)
 			digest := testCodexConversationDigest(profile.ID)
 			candidate := testPinnedCodexState(t, profile.ID)
 			stored, created, err := registry.ResolveOrCreateCodexConversation(context.Background(), digest, candidate, 2*time.Hour)
@@ -66,7 +67,8 @@ func TestCodexPinnedProfileConcurrentCreationKeepsOneSnapshot(t *testing.T) {
 	mr := miniredis.RunT(t)
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = client.Close() })
-	registry := NewGatewayCache(client).(service.CodexConversationRegistry)
+	registry, registryOK := NewGatewayCache(client).(service.CodexConversationRegistry)
+	require.True(t, registryOK)
 	digest := testCodexConversationDigest("snapshot-race")
 	candidates := []service.CodexConversationState{testPinnedCodexState(t, service.CodexProfileCLI), testPinnedCodexState(t, service.CodexProfileExec)}
 	const workers = 24

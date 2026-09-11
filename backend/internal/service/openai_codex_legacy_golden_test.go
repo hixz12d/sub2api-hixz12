@@ -102,7 +102,8 @@ func TestCodexLegacyV1DisabledGoldenSanitizesWithoutInventingIdentity(t *testing
 
 	var got map[string]any
 	require.NoError(t, json.Unmarshal(updated, &got))
-	metadata := got["client_metadata"].(map[string]any)
+	metadata, metadataOK := got["client_metadata"].(map[string]any)
+	require.True(t, metadataOK)
 	require.Equal(t, "caller-session", metadata["session_id"])
 	require.Equal(t, "caller-thread", metadata["thread_id"])
 	require.NotContains(t, metadata, "hostname")

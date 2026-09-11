@@ -107,7 +107,7 @@ func TestOpenAIStreamObservationNativeHandler(t *testing.T) {
 				done := make(chan struct{})
 				go func() {
 					defer close(done)
-					defer writer.Close()
+					defer func() { _ = writer.Close() }()
 					_, _ = io.WriteString(writer, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"hello\"}\n\n")
 					time.Sleep(220 * time.Millisecond)
 					_, _ = io.WriteString(writer, "data: {\"type\":\"response.output_text.delta\",\"delta\":\"world\"}\n\n")
@@ -218,7 +218,7 @@ func TestVisibleOutputObservationBoundariesAndTrustedOrigin(t *testing.T) {
 	require.Equal(t, RequestOriginCapabilityDetector, RequestOriginFromContext(context.WithoutCancel(ctx)))
 	_, err = WithRequestOrigin(ctx, "untrusted")
 	require.Error(t, err)
-	require.Equal(t, RequestOriginBusiness, RequestOriginFromContext(nil))
+	require.Equal(t, RequestOriginBusiness, RequestOriginFromContext(nil)) //nolint:staticcheck // Deliberately exercise the nil-context fallback contract.
 	// Valid JSON fixtures are asserted independently of observer filtering.
 	require.True(t, json.Valid([]byte(observationTerminal)))
 }

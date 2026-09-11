@@ -11,7 +11,8 @@ import (
 func TestOpenAICodexTransportScopeIsolatesAccountAndCredentialPool(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.Gateway.ConnectionPoolIsolation = config.ConnectionPoolIsolationProxy
-	upstream := NewHTTPUpstream(cfg).(*httpUpstreamService)
+	upstream, upstreamOK := NewHTTPUpstream(cfg).(*httpUpstreamService)
+	require.True(t, upstreamOK)
 
 	first, err := upstream.getClientEntryWithScope("", 1001, 2, service.HTTPUpstreamProfileOpenAI, "credential-a-profile-cli", false, false)
 	require.NoError(t, err)

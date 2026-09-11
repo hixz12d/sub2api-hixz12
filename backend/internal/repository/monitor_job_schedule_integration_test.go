@@ -123,25 +123,80 @@ func TestMonitorJobSchedulePostgres(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, []int64{policy}, ids)
 	})
-	t.Run("probe version invalidates while capability revision is unchanged", func(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		query  string
+		legacy bool
+	}{
+		{
+			name: "probe configuration invalidates while capability revision is unchanged",
+			query: `UPDATE channel_monitor_group_policies SET version=version+1,
+ probe_config=jsonb_set(probe_config,'{sample_size}',to_jsonb((probe_config->>'sample_size')::integer+1)) WHERE id=$1`,
+		},
+		{
+			name:  "probe target change invalidates the frozen snapshot",
+			query: `UPDATE channel_monitor_group_policies SET version=version+1,primary_model='updated-model' WHERE id=$1`,
+		},
+		{
+			name:   "legacy probe snapshot still invalidates on version change",
+			query:  `UPDATE channel_monitor_group_policies SET version=version+1 WHERE id=$1`,
+			legacy: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := monitorBudgetTestDB(t)
+			jobs := NewMonitorJobRepository(db)
+			budgets := NewMonitorBudgetRepository(db)
+			cfg := service.DefaultGroupProbeConfig()
+			cfg.Enabled = true
+			cfg.SampleSize = 2
+			cfg.IncludeExtraModels = false
+			policy := monitorJobTestDuePolicy(t, db, cfg)
+			id, err := jobs.EnqueueProbe(ctx, policy, 10000)
+			require.NoError(t, err)
+			if tc.legacy {
+				_, err = db.Exec(`UPDATE monitor_jobs SET config_snapshot=jsonb_build_object('policy_version',config_snapshot->'policy_version') WHERE id=$1`, id)
+				require.NoError(t, err)
+			}
+			lease, err := jobs.Claim(ctx, service.MonitorJobAvailability, "worker")
+			require.NoError(t, err)
+			_, err = db.Exec(tc.query, policy)
+			require.NoError(t, err)
+			limits := []MonitorBudgetLimit{{Scope: "global", RequestLimit: 10000}, {Scope: "probe_group", ScopeID: 1, RequestLimit: int64(cfg.DailyRequestLimit)}}
+			require.ErrorIs(t, budgets.Consume(ctx, id, "worker", lease.Generation, 0, limits), ErrMonitorBudgetLease)
+			monitorBudgetTestBucket(t, db, "probe_group", 0, 2, 0)
+			var dispatched int64
+			require.NoError(t, db.QueryRow(`SELECT outbound_dispatched FROM monitor_jobs WHERE id=$1`, id).Scan(&dispatched))
+			require.Zero(t, dispatched)
+			recovered, err := jobs.RecoverNext(ctx)
+			require.NoError(t, err)
+			require.True(t, recovered)
+			monitorBudgetTestBucket(t, db, "probe_group", 0, 0, 0)
+		})
+	}
+	t.Run("metadata-only version change preserves the frozen probe", func(t *testing.T) {
 		db := monitorBudgetTestDB(t)
 		jobs := NewMonitorJobRepository(db)
 		budgets := NewMonitorBudgetRepository(db)
 		cfg := service.DefaultGroupProbeConfig()
 		cfg.Enabled = true
+		cfg.SampleSize = 2
+		cfg.IncludeExtraModels = false
 		policy := monitorJobTestDuePolicy(t, db, cfg)
 		id, err := jobs.EnqueueProbe(ctx, policy, 10000)
 		require.NoError(t, err)
 		lease, err := jobs.Claim(ctx, service.MonitorJobAvailability, "worker")
 		require.NoError(t, err)
-		_, err = db.Exec(`UPDATE channel_monitor_group_policies SET version=version+1 WHERE id=$1`, policy)
+		_, err = db.Exec(`UPDATE channel_monitor_group_policies SET version=version+1,display_name='Renamed' WHERE id=$1`, policy)
 		require.NoError(t, err)
 		limits := []MonitorBudgetLimit{{Scope: "global", RequestLimit: 10000}, {Scope: "probe_group", ScopeID: 1, RequestLimit: int64(cfg.DailyRequestLimit)}}
-		require.ErrorIs(t, budgets.Consume(ctx, id, "worker", lease.Generation, 0, limits), ErrMonitorBudgetLease)
+		require.NoError(t, budgets.Consume(ctx, id, "worker", lease.Generation, 0, limits))
+		monitorBudgetTestBucket(t, db, "probe_group", 0, 1, 1)
 		recovered, err := jobs.RecoverNext(ctx)
 		require.NoError(t, err)
-		require.True(t, recovered)
-		monitorBudgetTestBucket(t, db, "probe_group", 0, 0, 0)
+		require.False(t, recovered)
+		require.NoError(t, jobs.Finish(ctx, *lease, service.MonitorJobFailed))
+		monitorBudgetTestBucket(t, db, "probe_group", 0, 0, 1)
 	})
 	t.Run("disabled policy never reschedules and finish rollback is atomic", func(t *testing.T) {
 		db := monitorBudgetTestDB(t)

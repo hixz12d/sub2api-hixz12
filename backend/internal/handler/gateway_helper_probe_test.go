@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSetClaudeCodeClientContext_ParsedRequestProbeWithoutSystemPrompt(t *testing.T) {
+func TestSetClaudeCodeClientContext_ParsedRequestProbeWithoutSystemPromptBackport(t *testing.T) {
 	for _, tokens := range []int{1, 64} {
 		c, _ := newHelperTestContext(http.MethodPost, "/v1/messages")
 		c.Request.Header.Set("User-Agent", "claude-cli/2.1.260 (external, cli)")

@@ -63,7 +63,7 @@ func (r *MonitorJobRepository) claimSources(ctx context.Context, kind service.Mo
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var lease MonitorJobLease
 	err = tx.QueryRowContext(ctx, `WITH candidate AS (
  SELECT j.id FROM monitor_jobs j WHERE j.kind=$1 AND j.state='queued' AND j.cancel_requested_at IS NULL
@@ -109,7 +109,7 @@ func (r *MonitorJobRepository) Renew(ctx context.Context, lease MonitorJobLease)
 	if err != nil {
 		return time.Time{}, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	job, err := lockMonitorBudgetJob(ctx, tx, lease.JobID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -153,7 +153,7 @@ func (r *MonitorJobRepository) CancelForOwner(ctx context.Context, jobID string,
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var state service.MonitorJobState
 	err = tx.QueryRowContext(ctx, `SELECT state FROM monitor_jobs WHERE id=$1 AND owner_user_id=$2
  AND kind='capability' AND source IN ('external_api','site_api_key') FOR UPDATE`, jobID, ownerID).Scan(&state)
@@ -186,7 +186,7 @@ func (r *MonitorJobRepository) Finish(ctx context.Context, lease MonitorJobLease
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var cancelling bool
 	var kind string
 	var validUntil time.Time
@@ -259,7 +259,7 @@ func (r *MonitorJobRepository) RecoverNext(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var id, code string
 	var state service.MonitorJobState
 	err = tx.QueryRowContext(ctx, `SELECT j.id,j.state,CASE

@@ -141,6 +141,7 @@ export default {
         kimi: 'Kimi',
         zhipu: 'Zhipu GLM',
         deepseek: 'DeepSeek',
+        minimax: 'MiniMax',
       },
       cnProviders: {
         accountMode: {
@@ -509,6 +510,10 @@ export default {
         partialSuccess: 'Partially completed: {success} succeeded, {failed} failed'
       },
       bulkEdit: {
+        longContextParentRequired: 'Select the parent OAuth account to change long-context billing.',
+        longContextShadowHint: 'Shadow accounts inherit long-context billing from their parent OAuth account.',
+        successWithInherited: 'Updated {count} accounts; {inherited} shadow accounts inherit the parent setting.',
+        partialSuccessWithInherited: 'Updated {success} accounts, {failed} failed; {inherited} shadow accounts inherit the parent setting.',
         title: 'Bulk Edit Accounts',
         selectionInfo:
           '{count} account(s) selected. Only checked or filled fields will be updated; others stay unchanged.',
@@ -609,6 +614,8 @@ export default {
         oauthPassthrough: 'Auto passthrough (auth only)',
         oauthPassthroughDesc:
           'When enabled, this OpenAI account uses automatic passthrough: the gateway forwards request/response as-is and only swaps auth, while keeping billing/concurrency/audit and necessary safety filtering.',
+        forceStoreFalse: 'Force store=false (Codex RS compatibility)',
+        forceStoreFalseDesc: 'For this API-key account only: disable server-side storage for ordinary HTTP / WS Responses requests. Compact requests are unchanged. Clients must still provide conversation context.',
         flattenNamespaces: 'Flatten Codex namespace tools (compatibility)',
         flattenNamespacesDesc:
           'Disabled by default: Codex namespace tool declarations are forwarded as-is on /responses, which is what the ChatGPT Codex backend expects. Enable only when this OAuth account is routed to a relay that rejects namespace tools — flattening renames them to namespace__tool, which breaks models that address collaboration tools as functions.<namespace>.<tool>. Compaction requests always flatten regardless of this switch.',
@@ -703,7 +710,7 @@ export default {
         codexClientProfileCodexDesktop: 'Codex Desktop (Official desktop app profile 0.148.0)',
         codexClientProfileOpencode: 'OpenCode (Third-party IDE plugin profile 1.2.4)',
         codexClientProfilePi: 'Pi Coding Agent (General coding agent profile)',
-        codexProfileAppVersion: 'Catalog Version',
+        codexProfileAppVersion: 'Profile Version',
         codexProfileCapabilities: 'Capabilities',
         codexProfileFidelity: 'Protocol Parity',
         codexProfilePending: 'Pending resolution',
@@ -712,6 +719,24 @@ export default {
         codexInstallationStable: 'Stable installation (stable_v1)',
         codexBundleRequiresKernel: 'Shared versioned bundles require Relay Kernel.',
         codexClientConfiguration: 'Client Configuration',
+        codexPresetClient: 'Client Identity',
+        codexPresetManaged: 'Managed Preset',
+        codexPresetCustom: 'Custom (keep existing)',
+        codexPresetCustomize: 'Customize Settings',
+        codexPresetVersionPolicy: 'Version Policy',
+        codexPresetSystemVersion: 'System Version',
+        codexPresetPinnedVersion: 'Pinned Compatibility Version',
+        codexPresetAutoVersion: 'Automatic Compatible Updates',
+        codexPresetHeldVersion: 'Manually Pinned',
+        codexUpdatePending: 'Awaiting the official stable release check.',
+        codexUpdateCurrent: 'Compatible release synchronized.',
+        codexUpdateNeedsReview: 'Stable release {version} needs source or dependency adaptation; the current version is unchanged.',
+        codexUpdateFailed: 'Version check failed; the current version is unchanged.',
+        codexUpdateHeld: 'Automatic updates paused; the current version is pinned.',
+        codexUpdateStorageUnavailable: 'Version storage is unavailable; previously loaded valid profiles are retained.',
+        codexPresetDiagnostics: 'Diagnostics',
+        codexPresetCompatibility: 'HTTP/SSE compatibility profile; native TLS/H2 parity is unverified.',
+        codexPresetLegacySwitch: 'Saving changes the legacy execution path; unpinned conversations must finish first.',
         codexManagementMode: 'Identification Policy',
         codexProfileExplicit: 'Selected Client',
         codexClientFamily: 'Client Family',
@@ -728,7 +753,7 @@ export default {
         codexBulkPreviewPending: 'Bulk TLS setting is unchanged; effective transports require per-account verification.',
         codexPluginPreviewPending: 'Plugin ownership is unverified; the built-in sender is not runtime-approved.',
         codexManagedDefaultGated: 'New managed defaults are gated on joint secret, distributed registry and installation migration acceptance.',
-        codexExistingPinsRetained: 'Existing conversations retain their identities; transport changes require migration review.',
+        codexExistingPinsRetained: 'Pinned conversations retain their identities and transport; unpinned legacy conversations are not migrated automatically.',
         codexInstallationRequiresKernel: 'Stable installation requires Relay Kernel.',
         codexKernelFingerprintDesc: 'Identity is pinned within a conversation; the installation policy determines IDs for new conversations.',
         codexProfileCallerSupplied: 'Caller supplied, unverified',
@@ -848,6 +873,8 @@ export default {
       modelRestriction: 'Model Restriction (Optional)',
       modelWhitelist: 'Model Whitelist',
       modelMapping: 'Model Mapping',
+      fromModel: 'Request model',
+      toModel: 'Target model',
       selectAllowedModels: 'Select allowed models. Leave empty to support all models.',
       mapRequestModels:
         'Map request models to actual models. Left is the requested model, right is the actual model sent to API.',
@@ -870,7 +897,9 @@ export default {
       syncUpstreamModelsFailed: 'Failed to sync upstream models',
       syncUpstreamModelsError: 'Failed to sync upstream models: {message}',
       syncUpstreamModelsMetadataIncomplete:
-        'Model IDs were synced, but capability metadata is incomplete and was not updated.',
+        'Model IDs were synced, but no capability metadata could be updated.',
+      syncUpstreamModelsMetadataPartial:
+        'Some model capabilities were updated; remaining models are still incomplete.',
       clearAllModels: 'Clear all models',
       customModelName: 'Custom model name',
       enterCustomModelName: 'Enter custom model name',
@@ -940,6 +969,30 @@ export default {
       grokClientToolCache: {
         title: 'Client Tool Cache (May Change Automatic Tool Selection)',
         hint: 'For detected Grok Free OAuth accounts, this is enabled by default for client function tools such as Codex and Trae. Turn it off to opt out if the automatic tool-selection behavior is not acceptable.'
+      },
+      grokMediaEligibility: {
+        title: 'Media Generation Eligibility',
+        hint: 'Controls whether this Grok OAuth account may be selected for image and video generation.',
+        auto: 'Automatic detection',
+        enabled: 'Force enable',
+        disabled: 'Force disable',
+        current: 'Current decision:',
+        eligible: 'Eligible',
+        ineligible: 'Not eligible',
+        loading: 'Loading eligibility…',
+        loadFailed: 'Unable to load media eligibility',
+        autoHint: 'Automatic detection only clears the manual override; it does not trigger a media request.',
+        forceEnableWarning: 'Force enable bypasses automatic eligibility checks. Use only for accounts confirmed to support image/video generation.',
+        partialSave: 'Other account settings may have been saved, but media eligibility was not updated. Please retry.',
+        reasons: {
+          eligible: 'Paid entitlement confirmed',
+          billing_inconclusive: 'Billing information inconclusive',
+          billing_forbidden: 'Billing endpoint forbidden',
+          billing_free_tier: 'Free tier account',
+          billing_unobserved: 'Billing not observed yet',
+          override_enabled: 'Manually forced enabled',
+          override_disabled: 'Manually forced disabled'
+        }
       },
       autoPauseOnExpired: 'Auto Pause On Expired',
       autoPauseOnExpiredDesc: 'When enabled, the account will auto pause scheduling after it expires',
@@ -1640,7 +1693,9 @@ export default {
         grokLastProbe: 'Probe {time}',
         grokLastHeadersSeen: 'Headers {time}',
         passiveSampled: 'Passive',
-        activeQuery: 'Query'
+        activeQuery: 'Query',
+        estimatedTotalCost: 'Est. total ${cost}',
+        estimatedTotalCostTooltip: 'Estimated total cost at 100% utilization, based on current window cost and utilization'
       },
       openaiQuotaReset: {
         threads: 'Threads',

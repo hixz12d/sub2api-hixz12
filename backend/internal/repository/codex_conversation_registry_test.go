@@ -18,7 +18,8 @@ import (
 func TestCodexConversationRegistryResolveOrCreateIsAtomic(t *testing.T) {
 	mr := miniredis.RunT(t)
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	registry := NewGatewayCache(client).(service.CodexConversationRegistry)
+	registry, registryOK := NewGatewayCache(client).(service.CodexConversationRegistry)
+	require.True(t, registryOK)
 	digest := testCodexConversationDigest("race")
 
 	const workers = 24
@@ -54,7 +55,8 @@ func TestCodexConversationRegistryResolveOrCreateIsAtomic(t *testing.T) {
 func TestCodexConversationRegistryCASAndInvalidate(t *testing.T) {
 	mr := miniredis.RunT(t)
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	registry := NewGatewayCache(client).(service.CodexConversationRegistry)
+	registry, registryOK := NewGatewayCache(client).(service.CodexConversationRegistry)
+	require.True(t, registryOK)
 	digest := testCodexConversationDigest("cas")
 	candidate := testCodexConversationState(77)
 
@@ -85,7 +87,8 @@ func TestCodexConversationRegistryCASAndInvalidate(t *testing.T) {
 func TestCodexConversationRegistryRejectsRawConversationKey(t *testing.T) {
 	mr := miniredis.RunT(t)
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
-	registry := NewGatewayCache(client).(service.CodexConversationRegistry)
+	registry, registryOK := NewGatewayCache(client).(service.CodexConversationRegistry)
+	require.True(t, registryOK)
 	_, _, err := registry.ResolveOrCreateCodexConversation(context.Background(), "raw-conversation-id", testCodexConversationState(1), time.Hour)
 	require.ErrorContains(t, err, "digest")
 }

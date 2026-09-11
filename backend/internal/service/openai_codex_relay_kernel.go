@@ -91,7 +91,10 @@ func (d *CodexIdentityDeriver) digest(namespace string, parts ...string) [sha256
 	for _, part := range parts {
 		encodedSize += 4 + len(part)
 	}
-	buffer := d.buffers.Get().(*[512]byte)
+	buffer, ok := d.buffers.Get().(*[512]byte)
+	if !ok {
+		panic("codex identity buffer pool contains an unexpected type")
+	}
 	encoded := buffer[:0]
 	if encodedSize > len(buffer) {
 		encoded = make([]byte, 0, encodedSize)
@@ -101,7 +104,10 @@ func (d *CodexIdentityDeriver) digest(namespace string, parts ...string) [sha256
 		encoded = appendCodexDerivationPart(encoded, part)
 	}
 
-	mac := d.macs.Get().(hash.Hash)
+	mac, ok := d.macs.Get().(hash.Hash)
+	if !ok {
+		panic("codex identity HMAC pool contains an unexpected type")
+	}
 	mac.Reset()
 	_, _ = mac.Write(encoded)
 	d.buffers.Put(buffer)
@@ -307,6 +313,7 @@ func (p *CodexRequestPlan) InboundHeaders() http.Header {
 }
 
 type CodexAttemptInput struct {
+	ClientVersion          string
 	TLSFingerprintEnabled  *bool
 	ProfileSnapshot        *CodexClientProfile
 	InstallationPolicy     string
@@ -553,16 +560,7 @@ func buildCodexAttemptIdentityHeaders(profile CodexClientProfile, identity *Code
 	if values == nil {
 		values = make(http.Header)
 	}
-	if profile.ID != CodexProfilePassthrough {
-		values.Set("User-Agent", profile.App.UserAgent)
-		values.Set("originator", profile.App.Originator)
-		if profile.App.Version != "" {
-			values.Set("x-openai-client-version", profile.App.Version)
-		}
-		if profile.App.BetaFeatures != "" {
-			values.Set("OpenAI-Beta", profile.App.BetaFeatures)
-		}
-	}
+	applyCodexAttemptProfile(profile, values)
 	if identity != nil {
 		applyCodexFingerprintHeaders(values, identity)
 	}
@@ -663,9 +661,7 @@ func (s *CodexAttemptState) Profile() CodexClientProfile {
 	if s == nil {
 		return CodexClientProfile{}
 	}
-	profile := s.profile
-	profile.Transport.HeaderOrder = append([]string(nil), profile.Transport.HeaderOrder...)
-	return profile
+	return cloneCodexClientProfile(s.profile)
 }
 
 func (s *CodexAttemptState) Identity() *CodexIdentitySnapshot {

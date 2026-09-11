@@ -28,6 +28,11 @@ vi.mock('@/api/admin', () => ({
   }
 }))
 
+vi.mock('@/api/admin/clientProfiles', async () => {
+  const { clientProfileCatalogFixture } = await import('./clientProfileFixture')
+  return { getClientProfiles: vi.fn().mockResolvedValue(clientProfileCatalogFixture), previewClientProfile: vi.fn().mockResolvedValue({ valid: true, conflicts: [] }) }
+})
+
 vi.mock('@/api/admin/accounts', () => ({
   getAntigravityDefaultModelMapping: vi.fn()
 }))
@@ -218,7 +223,7 @@ describe('BulkEditAccountModal', () => {
     expect(wrapper.findAll('[data-testid="grok-base-url-preset"]').length).toBe(0)
   })
 
-  it.each(['kimi', 'zhipu', 'deepseek'])('全部目标为 %s API Key 时展示请求头覆写', (platform) => {
+  it.each(['kimi', 'zhipu', 'deepseek', 'minimax'])('全部目标为 %s API Key 时展示请求头覆写', (platform) => {
     const wrapper = mountModal({
       selectedPlatforms: [platform],
       selectedTypes: ['apikey']
@@ -227,7 +232,7 @@ describe('BulkEditAccountModal', () => {
     expect(wrapper.find('#bulk-edit-header-override-enabled').exists()).toBe(true)
   })
 
-  it.each(['kimi', 'zhipu', 'deepseek'])('目标为 %s OAuth 时不展示请求头覆写', (platform) => {
+  it.each(['kimi', 'zhipu', 'deepseek', 'minimax'])('目标为 %s OAuth 时不展示请求头覆写', (platform) => {
     const wrapper = mountModal({
       selectedPlatforms: [platform],
       selectedTypes: ['oauth']
@@ -921,29 +926,23 @@ describe('BulkEditAccountModal', () => {
       status: 'active'
     })
   })
-  it('OpenAI OAuth 批量编辑可一键统一 Relay Kernel 整组配置', async () => {
+  it('OpenAI OAuth 批量编辑只选客户端即可提交整组预设', async () => {
     const wrapper = mountModal({
       selectedPlatforms: ['openai'],
       selectedTypes: ['oauth']
     })
 
+    await flushPromises()
     await wrapper.get('#bulk-edit-openai-codex-relay-enabled').setValue(true)
-    await wrapper.get('[data-testid="codex-relay-mode-select"]').setValue('relay_kernel')
-    await wrapper.get('[data-testid="codex-management-select"]').setValue('explicit')
-    await wrapper.get('[data-testid="codex-fingerprint-mode-select"]').setValue('session')
+    await wrapper.get('[data-testid="codex-client-preset-select"]').setValue('pi')
+    expect(wrapper.find('#bulk-edit-openai-tls-fingerprint-enabled').exists()).toBe(false)
+    expect(wrapper.find('#bulk-edit-openai-ws-mode-enabled').exists()).toBe(false)
     await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
     await flushPromises()
 
     expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledTimes(1)
     expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
-      extra: {
-        codex_relay_mode: 'relay_kernel',
-        codex_installation_policy: 'legacy_v2',
-        codex_identity_policy_version: 'v2',
-        codex_client_profile: 'codex_cli',
-        codex_relay_shadow_enabled: false,
-        codex_fingerprint_mode: 'session'
-      }
+      extra: { codex_client_preset: 'pi' }
     })
   })
 
@@ -953,19 +952,26 @@ describe('BulkEditAccountModal', () => {
       selectedTypes: ['oauth']
     })
 
+    await flushPromises()
     await wrapper.get('#bulk-edit-openai-codex-relay-enabled').setValue(true)
+    await wrapper.get('[data-testid="codex-custom-settings"]').trigger('click')
+    await wrapper.get('[data-testid="codex-relay-mode-select"]').setValue('legacy')
+    await wrapper.get('[data-testid="codex-identity-policy-select"]').setValue('v1')
+    await wrapper.get('[data-testid="codex-management-select"]').setValue('auto')
+    await wrapper.get('[data-testid="codex-fingerprint-mode-select"]').setValue('off')
     await wrapper.get('#bulk-edit-account-form').trigger('submit.prevent')
     await flushPromises()
 
     expect(adminAPI.accounts.bulkUpdate).toHaveBeenCalledWith([1, 2], {
-      extra: {
+      extra: expect.objectContaining({
+        codex_client_preset: '',
         codex_relay_mode: 'legacy',
         codex_installation_policy: 'legacy_v2',
         codex_identity_policy_version: 'v1',
         codex_client_profile: 'auto',
         codex_relay_shadow_enabled: false,
         codex_fingerprint_mode: 'off'
-      }
+      })
     })
   })
 

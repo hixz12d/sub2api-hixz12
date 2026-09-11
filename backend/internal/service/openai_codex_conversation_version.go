@@ -33,9 +33,9 @@ func codexStableInstallationID(deriver *CodexIdentityDeriver, accountID int64, p
 	switch profileID {
 	case CodexProfileCLI, CodexProfileExec, CodexProfileDesktop:
 		family = "codex"
-	case CodexProfilePiBundle:
+	case CodexProfilePiBundle, CodexProfilePiManaged:
 		family = CodexProfilePi
-	case CodexProfileOpenCodeBundle:
+	case CodexProfileOpenCodeBundle, CodexProfileOpenCodeManaged:
 		family = CodexProfileOpenCode
 	}
 	return deriver.UUIDv4("codex/installation/stable/v1", strconv.FormatInt(accountID, 10), family)
@@ -57,12 +57,20 @@ func codexProfileSnapshotDigest(profile CodexClientProfile) (string, error) {
 
 func cloneCodexClientProfile(profile CodexClientProfile) CodexClientProfile {
 	profile.Transport.HeaderOrder = append([]string(nil), profile.Transport.HeaderOrder...)
+	if profile.ClientRelease != nil {
+		copy := *profile.ClientRelease
+		profile.ClientRelease = &copy
+	}
 	return profile
 }
 
 func resolveCodexAttemptProfile(input CodexAttemptInput, headers http.Header) (CodexClientProfile, error) {
 	if input.ProfileSnapshot == nil {
-		return ResolveCodexClientProfileForRequest(input.ProfileID, headers)
+		profile, err := ResolveCodexClientProfileForRequest(input.ProfileID, headers)
+		if err != nil {
+			return CodexClientProfile{}, err
+		}
+		return codexProfileWithClientVersion(profile, input.ClientVersion), nil
 	}
 	profile := cloneCodexClientProfile(*input.ProfileSnapshot)
 	if err := ValidateCodexClientProfile(profile); err != nil {
@@ -103,6 +111,18 @@ func pinCodexInputToConversation(input CodexAttemptInput, state CodexConversatio
 	}
 	input.ProfileID = profile.ID
 	input.ProfileSnapshot = &profile
+	// The existing registry already records the selected TLS policy. Retain it
+	// when an account selects a different preset while this conversation is live.
+	if strings.HasPrefix(state.TransportConfigVersion, "tls:") {
+		profileID, enabled, found := strings.Cut(strings.TrimPrefix(state.TransportConfigVersion, "tls:"), ";enabled:")
+		_, profileErr := strconv.ParseUint(profileID, 10, 64)
+		if !found || profileErr != nil || (enabled != "true" && enabled != "false") {
+			return input, errors.New("invalid pinned TLS policy")
+		}
+		value := enabled == "true"
+		input.TLSFingerprintEnabled = &value
+		input.TransportConfigVersion = state.TransportConfigVersion
+	}
 	input.InstallationPolicy, err = normalizeCodexInstallationPolicy(state.InstallationPolicy)
 	if err != nil {
 		return input, err
@@ -119,13 +139,27 @@ func (s *OpenAIGatewayService) pinCodexAttemptInput(ctx context.Context, plan *C
 		return input, errors.New("relay kernel requires a Codex conversation registry")
 	}
 	state, err := registry.GetCodexConversation(ctx, plan.ConversationDigest())
-	if errors.Is(err, ErrCodexConversationNotFound) {
-		return input, nil
-	}
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrCodexConversationNotFound) {
 		return input, err
 	}
-	return pinCodexInputToConversation(input, state)
+	if err == nil {
+		input, err = pinCodexInputToConversation(input, state)
+		if err != nil {
+			return input, err
+		}
+	}
+	if input.ProfileSnapshot == nil && isManagedClientProfile(input.ProfileID) {
+		update := s.settingService.ClientProfileUpdates(ctx)[codexClientFamily(input.ProfileID)]
+		if update.Status == "storage_unavailable" && update.Active == nil {
+			return input, errors.New("managed client release storage unavailable")
+		}
+		profile, err := resolveManagedClientProfile(input.ProfileID, update.Active)
+		if err != nil {
+			return input, err
+		}
+		input.ProfileSnapshot = &profile
+	}
+	return input, nil
 }
 
 func codexConversationMatchesAttempt(state CodexConversationState, attempt *CodexAttemptState) bool {

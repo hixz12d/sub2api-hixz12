@@ -227,16 +227,21 @@ func (r *accountRepository) CreateWithAccountGroups(ctx context.Context, account
 		// Reuse a caller-owned transaction when this repository is already transactional.
 		txClient = r.client
 	}
+	groupIDs := make([]int64, 0, len(groups))
+	for i := range groups {
+		groupIDs = append(groupIDs, groups[i].GroupID)
+	}
+	if err := lockLiveGroups(ctx, txClient, groupIDs); err != nil {
+		return err
+	}
 
 	if err := createAccountRecord(ctx, txClient, account); err != nil {
 		return err
 	}
-	groupIDs := make([]int64, 0, len(groups))
 	if len(groups) > 0 {
 		builders := make([]*dbent.AccountGroupCreate, 0, len(groups))
 		for i := range groups {
 			groups[i].AccountID = account.ID
-			groupIDs = append(groupIDs, groups[i].GroupID)
 			builders = append(builders, txClient.AccountGroup.Create().
 				SetAccountID(account.ID).
 				SetGroupID(groups[i].GroupID).
@@ -1791,13 +1796,30 @@ func (r *accountRepository) ClearAuthErrorOnly(ctx context.Context, id int64, ex
 }
 
 func (r *accountRepository) AddToGroup(ctx context.Context, accountID, groupID int64, priority int) error {
-	_, err := r.client.AccountGroup.Create().
+	tx, err := r.client.Tx(ctx)
+	if err != nil && !errors.Is(err, dbent.ErrTxStarted) {
+		return err
+	}
+	client := r.client
+	if tx != nil {
+		defer func() { _ = tx.Rollback() }()
+		client = tx.Client()
+	}
+	if err := lockLiveGroups(ctx, client, []int64{groupID}); err != nil {
+		return err
+	}
+	_, err = client.AccountGroup.Create().
 		SetAccountID(accountID).
 		SetGroupID(groupID).
 		SetPriority(priority).
 		Save(ctx)
 	if err != nil {
 		return err
+	}
+	if tx != nil {
+		if err := tx.Commit(); err != nil {
+			return err
+		}
 	}
 	payload := buildSchedulerGroupPayload([]int64{groupID})
 	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountGroupsChanged, &accountID, nil, payload); err != nil {
@@ -1841,6 +1863,18 @@ func (r *accountRepository) GetGroups(ctx context.Context, accountID int64) ([]s
 }
 
 func (r *accountRepository) BindGroups(ctx context.Context, accountID int64, groupIDs []int64) error {
+	targetIDs := make([]int64, 0, len(groupIDs))
+	targetSet := make(map[int64]struct{}, len(groupIDs))
+	for _, groupID := range groupIDs {
+		if groupID <= 0 {
+			return fmt.Errorf("group id must be positive: %d", groupID)
+		}
+		if _, seen := targetSet[groupID]; seen {
+			continue
+		}
+		targetSet[groupID] = struct{}{}
+		targetIDs = append(targetIDs, groupID)
+	}
 	// Preserve priorities for retained memberships. Membership rows and the
 	// scheduler event commit together so no crash window can leave stale buckets.
 	txCtx, txClient, tx, err := beginRepositoryTx(ctx, r.client)
@@ -1849,6 +1883,10 @@ func (r *accountRepository) BindGroups(ctx context.Context, accountID int64, gro
 	}
 	if tx != nil {
 		defer func() { _ = tx.Rollback() }()
+	}
+	// Match guarded deletion's group-before-membership lock order.
+	if err := lockLiveGroups(txCtx, txClient, targetIDs); err != nil {
+		return err
 	}
 	// Lock the owning row so concurrent replacements serialize even when the
 	// account currently has no account_groups rows to lock.
@@ -1862,19 +1900,6 @@ func (r *accountRepository) BindGroups(ctx context.Context, accountID int64, gro
 		All(txCtx)
 	if err != nil {
 		return err
-	}
-
-	targetIDs := make([]int64, 0, len(groupIDs))
-	targetSet := make(map[int64]struct{}, len(groupIDs))
-	for _, groupID := range groupIDs {
-		if groupID <= 0 {
-			return fmt.Errorf("group id must be positive: %d", groupID)
-		}
-		if _, seen := targetSet[groupID]; seen {
-			continue
-		}
-		targetSet[groupID] = struct{}{}
-		targetIDs = append(targetIDs, groupID)
 	}
 
 	existingSet := make(map[int64]struct{}, len(existing))

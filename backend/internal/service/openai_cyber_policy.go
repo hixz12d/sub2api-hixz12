@@ -134,10 +134,6 @@ func softenCyberPolicyClientPayload(payload []byte) ([]byte, bool) {
 		"error.message",
 		"response.error.message",
 	} {
-		if !gjson.GetBytes(out, strings.TrimSuffix(path, ".message")).Exists() &&
-			!gjson.GetBytes(out, path).Exists() {
-			// Still try Set when parent error object exists under alternate path.
-		}
 		if gjson.GetBytes(out, path).Exists() ||
 			gjson.GetBytes(out, strings.TrimSuffix(path, ".message")).Exists() {
 			if b, err := sjson.SetBytes(out, path, msg); err == nil {
@@ -192,4 +188,23 @@ func rewriteCyberPolicyClientBody(body []byte, status int) []byte {
 		return rewritten
 	}
 	return nil
+}
+
+func markOpenAICyberPolicyEvent(c *gin.Context, payload []byte, upstreamStatus int, usage *OpenAIUsage) bool {
+	hit, code, message := detectOpenAICyberPolicy(payload)
+	if !hit {
+		return false
+	}
+	mark := CyberPolicyMark{
+		Code:           code,
+		Message:        message,
+		Body:           truncateString(string(payload), 4096),
+		UpstreamStatus: upstreamStatus,
+	}
+	if usage != nil {
+		mark.UpstreamInTok = usage.InputTokens
+		mark.UpstreamOutTok = usage.OutputTokens
+	}
+	MarkOpsCyberPolicy(c, mark)
+	return true
 }

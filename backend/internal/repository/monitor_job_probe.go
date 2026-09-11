@@ -46,7 +46,7 @@ func (r *MonitorJobRepository) BeginProbeDispatch(ctx context.Context, input ser
 	if err != nil {
 		return "", err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	budget, err := lockMonitorBudgetJob(ctx, tx, lease.JobID)
 	if err != nil {
 		return "", err
@@ -129,7 +129,7 @@ func (r *MonitorJobRepository) CompleteProbeDispatch(ctx context.Context, lease 
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err := lockMonitorBudgetJob(ctx, tx, lease.JobID); err != nil {
 		return err
 	}

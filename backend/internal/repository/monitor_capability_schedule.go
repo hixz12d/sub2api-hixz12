@@ -18,7 +18,7 @@ func (r *MonitorJobRepository) DueCapabilityPolicies(ctx context.Context, limit 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := []service.ChannelMonitorGroupPolicy{}
 	for rows.Next() {
 		p, err := scanMonitorPolicy(rows)
@@ -48,7 +48,7 @@ func (r *MonitorJobRepository) EnqueuePlatformCapability(ctx context.Context, p 
 	if err != nil {
 		return "", err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	for _, manifest := range snapshot.Benchmarks {
 		if err = lockApprovedBenchmarkTx(ctx, tx, manifest); err != nil {
 			return "", err

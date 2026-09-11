@@ -848,8 +848,8 @@
         </div>
       </div>
 
-      <!-- OpenAI OAuth WS mode -->
-      <div v-if="allOpenAIOAuth" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <!-- Presets own OAuth transport. -->
+      <div v-if="allOpenAIOAuth && !(enableCodexRelaySettings && codexRelaySettings.codex_client_preset)" class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div class="mb-3 flex items-center justify-between">
           <label
             id="bulk-edit-openai-ws-mode-label"
@@ -981,7 +981,7 @@
             class="input-label mb-0"
             for="bulk-edit-openai-codex-relay-enabled"
           >
-            {{ t('admin.accounts.openai.codexRelayKernelSectionTitle') }}
+            {{ t('admin.accounts.openai.codexClientConfiguration') }}
           </label>
           <input
             id="bulk-edit-openai-codex-relay-enabled"
@@ -1004,12 +1004,14 @@
             :tls-enabled="enableTLSFingerprint ? tlsFingerprintEnabled : null"
             :disabled="!enableCodexRelaySettings"
             :errors="codexRelayErrors"
+            @update:ws-mode="openaiOAuthResponsesWebSocketV2Mode = $event; if (!codexRelaySettings.codex_client_preset) enableOpenAIWSMode = true"
+            @update:tls-enabled="tlsFingerprintEnabled = $event; if (!codexRelaySettings.codex_client_preset) enableTLSFingerprint = true"
           />
         </div>
       </div>
 
-      <!-- TLS 指纹模拟（仅 OpenAI OAuth / Setup Token） -->
-      <div v-if="allOpenAIOAuth" class="border-t border-gray-200 pt-4 dark:border-dark-600">
+      <!-- Presets own TLS; keep independent bulk TLS changes for custom settings. -->
+      <div v-if="allOpenAIOAuth && !(enableCodexRelaySettings && codexRelaySettings.codex_client_preset)" class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div class="mb-3 flex items-center justify-between">
           <label
             id="bulk-edit-openai-tls-fingerprint-label"
@@ -1783,7 +1785,7 @@ const openaiAPIKeyResponsesWebSocketV2Mode = ref<OpenAIWSMode>(OPENAI_WS_MODE_OF
 const upstreamBillingAutoProbeMode = ref<'enabled' | 'disabled'>('enabled')
 const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAppServerEnabled = ref(false)
-const codexRelaySettings = ref<CodexRelayFormState>(createDefaultCodexRelaySettings())
+const codexRelaySettings = ref<CodexRelayFormState>(createDefaultCodexRelaySettings('codex'))
 const tlsFingerprintEnabled = ref(true)
 const codexRelayErrors = computed(() => {
   if (!enableCodexRelaySettings.value) {
@@ -2483,7 +2485,7 @@ watch(
       upstreamBillingAutoProbeMode.value = 'enabled'
       codexCLIOnlyEnabled.value = false
       codexCLIOnlyAppServerEnabled.value = false
-      codexRelaySettings.value = createDefaultCodexRelaySettings()
+      codexRelaySettings.value = createDefaultCodexRelaySettings('codex')
       tlsFingerprintEnabled.value = true
       openAICompactMode.value = 'auto'
       openAICompactModelMappings.value = []

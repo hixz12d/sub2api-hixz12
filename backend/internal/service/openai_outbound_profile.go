@@ -97,7 +97,7 @@ func resolveOpenAIOutboundIdentityWithPolicy(
 		systemUA = settingService.GetOpenAICodexCanonicalUserAgent(ctx)
 	}
 	if forceCodexCLI {
-		return resolveOpenAIOutboundIdentityWithVersion("", codexCLIUserAgent, codexCLIVersion)
+		return resolveOpenAIOutboundIdentityWithVersion("", codexCLIUserAgent, settingService.GetOpenAICodexClientVersion(ctx))
 	}
 	if !codexIdentityEnforcement.Load() && strings.TrimSpace(accountUA) == "" {
 		if identity, ok := validOpenAIOutboundIdentity(inboundUserAgent); ok {

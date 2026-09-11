@@ -142,7 +142,8 @@ func TestCodexResponseSnapshotIsTenantScopedAndCannotBeRebound(t *testing.T) {
 	attempt, _ := codexAttemptStateFromGin(c)
 	digest, err := codexResponseConversationDigest(c, "resp_owned", attempt.deriver)
 	require.NoError(t, err)
-	registry := svc.cache.(*codexResponseRegistryTestCache)
+	registry, registryOK := svc.cache.(*codexResponseRegistryTestCache)
+	require.True(t, registryOK)
 	registry.mu.Lock()
 	replaced := registry.states[digest]
 	replaced.SessionID = "a-different-winner"

@@ -13,6 +13,7 @@ var (
 	ErrGroupExists                  = infraerrors.Conflict("GROUP_EXISTS", "group name already exists")
 	ErrAccountGroupPriorityConflict = infraerrors.Conflict("ACCOUNT_GROUP_PRIORITY_CONFLICT", "account group priority changed or membership no longer exists")
 	ErrGroupPriorityModeConflict    = infraerrors.Conflict("GROUP_PRIORITY_MODE_CONFLICT", "group priority mode changed concurrently")
+	ErrGroupNotEmpty                = infraerrors.Conflict("GROUP_NOT_EMPTY", "group contains accounts")
 )
 
 type GroupRepository interface {
@@ -70,6 +71,12 @@ type AdminGroupRepository interface {
 	GroupRepository
 	GroupDuplicateRepository
 	AccountGroupPriorityRepository
+	EmptyGroupDeleteRepository
+}
+
+// EmptyGroupDeleteRepository provides the guarded cascade used by simple mode.
+type EmptyGroupDeleteRepository interface {
+	DeleteCascadeIfEmpty(ctx context.Context, id int64) ([]int64, error)
 }
 
 // GroupSortOrderUpdate 分组排序更新

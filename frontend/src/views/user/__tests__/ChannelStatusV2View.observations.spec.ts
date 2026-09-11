@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({ auth: { isAdmin: false }, showError: vi.fn(), 
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => mocks.auth }))
 vi.mock('@/stores/app', () => ({ useAppStore: () => ({ showError: mocks.showError }) }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }), useRouter: () => ({ replace: mocks.replace }) }))
-vi.mock('@/utils/featureFlags', () => ({ isChannelMonitorThroughputHidden: () => false }))
+vi.mock('@/utils/featureFlags', () => ({ isChannelMonitorThroughputHidden: () => false, isChannelMonitorUserRankingHidden: () => false }))
 vi.mock('@/api/channelMonitorV2', () => ({ getCards: vi.fn(), getDimensions: vi.fn(), getSnapshot: vi.fn(), getMatrix: vi.fn(), getModels: vi.fn(), getErrors: vi.fn(), getUsers: vi.fn() }))
 
 const coverage = { data_through: '2026-09-09T00:00:00Z', coverage_complete: true }

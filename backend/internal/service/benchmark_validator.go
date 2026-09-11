@@ -37,7 +37,7 @@ func readBenchmarkFile(path string, limit int64) ([]byte, error) {
 	if err != nil {
 		return nil, ErrBenchmarkValidator
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil || int64(len(raw)) > limit {
 		return nil, ErrBenchmarkValidator

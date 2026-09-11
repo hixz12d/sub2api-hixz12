@@ -65,12 +65,17 @@ func (s *OpenAICodexVersionSyncService) Start() {
 		defer s.wg.Done()
 		ticker := time.NewTicker(s.interval)
 		defer ticker.Stop()
+		profileTicker := time.NewTicker(time.Minute)
+		defer profileTicker.Stop()
 
 		s.runInitial()
+		s.syncClientProfiles()
 		for {
 			select {
 			case <-ticker.C:
 				s.runOnce()
+			case <-profileTicker.C:
+				s.syncClientProfiles()
 			case <-s.stopCh:
 				return
 			}

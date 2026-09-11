@@ -172,13 +172,13 @@ func TestOpenAIRecoverySafetyClassifiesOnlyExplicitFirstDeadline(t *testing.T) {
 	}
 	c, _ := newRecoverySafetyContext(t)
 	svc := &OpenAIGatewayService{}
-	err := svc.newOpenAIFirstOutputTimeoutError(context.Background(), c, &Account{ID: 41}, time.Now(), "gpt-5", "", time.Second, "response_headers", nil)
+	err := svc.newOpenAIFirstOutputTimeoutError(context.Background(), c, &Account{ID: 41}, nil, opsProxyNameDirect, time.Now(), "gpt-5", "", time.Second, "response_headers", nil)
 	require.ErrorIs(t, err, ErrOpenAIFirstOutputTimeout)
 }
 
 func TestOpenAIRecoverySafetyDoesNotAdvertiseForbiddenFailover(t *testing.T) {
 	failure := &UpstreamFailoverError{StatusCode: 400, NextAccountAction: NextAccountStop}
-	annotateOpenAIPreOutputFailover(nil, failure, OpenAIFailureCauseStreamRead, OpenAIRetryDecisionFailoverOtherAccount)
+	require.Same(t, failure, annotateOpenAIPreOutputFailover(nil, failure, OpenAIFailureCauseStreamRead, OpenAIRetryDecisionFailoverOtherAccount))
 	require.Equal(t, OpenAIRetryDecisionFailClosed, failure.RetryDecisionReason)
 	require.False(t, failure.ShouldRetryNextAccount())
 }

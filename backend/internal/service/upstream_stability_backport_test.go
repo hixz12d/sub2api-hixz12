@@ -43,7 +43,7 @@ func TestRawChatUnsupportedWebAccessIsGrokOnly(t *testing.T) {
 	}
 }
 
-func TestGeminiMonitorBodyIncludesExplicitUserRole(t *testing.T) {
+func TestGeminiMonitorBodyIncludesExplicitUserRoleBackport(t *testing.T) {
 	body, err := providerAdapters[MonitorProviderGemini].buildBody("gemini-3.6-flash", "Reply with only 7.")
 	require.NoError(t, err)
 	require.Equal(t, int64(1), gjson.GetBytes(body, "contents.#").Int())

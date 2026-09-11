@@ -25,7 +25,9 @@ func TestOpenAIOAuthQuarantineMatchesCredentialsAndPublishesAtomically(t *testin
 		require.Equal(t, service.PlatformOpenAI, exec.execArgs[0][3])
 		require.Equal(t, service.AccountTypeOAuth, exec.execArgs[0][4])
 		require.Equal(t, service.StatusActive, exec.execArgs[0][5])
-		require.JSONEq(t, `{"access_token":"old","refresh_token":"refresh","_token_version":7}`, exec.execArgs[0][6].(string))
+		credentials, ok := exec.execArgs[0][6].(string)
+		require.True(t, ok)
+		require.JSONEq(t, `{"access_token":"old","refresh_token":"refresh","_token_version":7}`, credentials)
 		require.Equal(t, service.SchedulerOutboxEventAccountChanged, exec.execArgs[0][7])
 	}
 }

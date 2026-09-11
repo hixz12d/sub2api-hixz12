@@ -94,7 +94,7 @@ func TestCandidateResponsesPreserveCallerSemantics(t *testing.T) {
 					t.Fatalf("unexpected header %s", name)
 				}
 			}
-			if _, duplicate := out["user-agent"]; duplicate {
+			if _, duplicate := map[string][]string(out)["user-agent"]; duplicate {
 				t.Fatal("noncanonical duplicate UA survived")
 			}
 			if out.Get("Authorization") != headers.Get("Authorization") {

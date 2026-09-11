@@ -425,6 +425,7 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	updates[SettingKeyLLMDetectorUserTestingEnabled] = strconv.FormatBool(settings.LLMDetectorUserTestingEnabled)
 	updates[SettingKeyLLMDetectorScheduledEnabled] = strconv.FormatBool(settings.LLMDetectorScheduledEnabled)
 	// LLMDetectorEngineAllowed is deployment-owned and never persisted here.
+	updates[SettingKeyChannelMonitorHideUserRanking] = strconv.FormatBool(settings.ChannelMonitorHideUserRanking)
 
 	// Grok model mapping policy
 	if v := strings.TrimSpace(settings.GrokDefaultTextModel); v != "" {

@@ -81,7 +81,7 @@ type legacyCompletionsRequest struct {
 func legacyCompletionsToChatCompletions(body []byte) ([]byte, bool, error) {
 	var req legacyCompletionsRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		return nil, false, fmt.Errorf("Failed to parse request body")
+		return nil, false, fmt.Errorf("failed to parse request body")
 	}
 	if strings.TrimSpace(req.Model) == "" {
 		return nil, false, fmt.Errorf("model is required")
@@ -161,7 +161,7 @@ func legacyCompletionsToChatCompletions(body []byte) ([]byte, bool, error) {
 
 	chatBody, err := json.Marshal(payload)
 	if err != nil {
-		return nil, false, fmt.Errorf("Failed to build compatible Chat Completions request")
+		return nil, false, fmt.Errorf("failed to build compatible Chat Completions request")
 	}
 	return chatBody, req.Stream, nil
 }
@@ -275,7 +275,7 @@ func chatMessageText(raw json.RawMessage) string {
 	var builder strings.Builder
 	for _, part := range parts {
 		if value, ok := part["text"].(string); ok {
-			builder.WriteString(value)
+			_, _ = builder.WriteString(value)
 		}
 	}
 	return builder.String()

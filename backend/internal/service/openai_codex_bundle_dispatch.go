@@ -17,10 +17,13 @@ const (
 )
 
 func isCodexBundleProfile(id string) bool {
-	return id == CodexProfilePiBundle || id == CodexProfileOpenCodeBundle
+	return id == CodexProfilePiBundle || id == CodexProfileOpenCodeBundle || isManagedClientProfile(id)
 }
 
 func resolveCodexBundleProfile(id string) (CodexClientProfile, error) {
+	if isManagedClientProfile(id) {
+		return resolveManagedClientProfile(id, nil)
+	}
 	bundle, digest, err := clientprofile.LoadCandidate(id)
 	if err != nil {
 		return CodexClientProfile{}, err
@@ -37,6 +40,9 @@ func resolveCodexBundleProfile(id string) (CodexClientProfile, error) {
 
 func validateCodexBundleProfile(profile CodexClientProfile) error {
 	expected, err := resolveCodexBundleProfile(profile.BundleID)
+	if isManagedClientProfile(profile.ID) {
+		expected, err = resolveManagedClientProfile(profile.ID, profile.ClientRelease)
+	}
 	if err != nil {
 		return err
 	}
@@ -119,6 +125,9 @@ func applyCodexBundleAtDispatch(request *http.Request) error {
 		return err
 	}
 	headers.Set("Content-Type", "application/json")
+	// Adapt with the immutable base rules, then apply the captured release UA.
+	// In particular Pi does not acquire a synthetic version header.
+	headers.Set("User-Agent", profile.App.UserAgent)
 	headers.Set("Accept", "text/event-stream")
 	headers.Del("Content-Length")
 	if request.Body != nil {

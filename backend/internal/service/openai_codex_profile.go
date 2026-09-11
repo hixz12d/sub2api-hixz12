@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/clientprofile"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/tlsfingerprint"
 )
@@ -54,15 +55,16 @@ type CodexTransportProfile struct {
 }
 
 type CodexClientProfile struct {
-	BundleID     string `json:"BundleID,omitempty"`
-	BundleDigest string `json:"BundleDigest,omitempty"`
-	ID           string
-	Revision     int
-	App          CodexAppIdentityProfile
-	Transport    CodexTransportProfile
-	Capabilities CodexProfileCapability
-	Fidelity     CodexProfileFidelity
-	FidelityNote string
+	ClientRelease *clientprofile.CompatibleRelease `json:"ClientRelease,omitempty"`
+	BundleID      string                           `json:"BundleID,omitempty"`
+	BundleDigest  string                           `json:"BundleDigest,omitempty"`
+	ID            string
+	Revision      int
+	App           CodexAppIdentityProfile
+	Transport     CodexTransportProfile
+	Capabilities  CodexProfileCapability
+	Fidelity      CodexProfileFidelity
+	FidelityNote  string
 }
 
 var codexProfileVersionPattern = regexp.MustCompile(`^[0-9]+(?:\.[0-9]+){1,3}(?:[-+][0-9A-Za-z.-]+)?$`)
@@ -169,7 +171,7 @@ var codexProfileCatalog = map[string]CodexClientProfile{
 }
 
 func CodexClientProfiles() []CodexClientProfile {
-	ids := []string{CodexProfilePassthrough, CodexProfileCLI, CodexProfileExec, CodexProfileDesktop, CodexProfileOpenCode, CodexProfilePi, CodexProfilePiBundle, CodexProfileOpenCodeBundle}
+	ids := []string{CodexProfilePassthrough, CodexProfileCLI, CodexProfileExec, CodexProfileDesktop, CodexProfileOpenCode, CodexProfilePi, CodexProfilePiBundle, CodexProfileOpenCodeBundle, CodexProfilePiManaged, CodexProfileOpenCodeManaged}
 	out := make([]CodexClientProfile, 0, len(ids))
 	for _, id := range ids {
 		profile, _ := ResolveCodexClientProfile(id)
@@ -225,6 +227,9 @@ func ResolveCodexClientProfileForRequest(id string, inbound http.Header) (CodexC
 }
 
 func ValidateCodexClientProfile(profile CodexClientProfile) error {
+	if profile.ClientRelease != nil && !isManagedClientProfile(profile.ID) {
+		return errors.New("client release requires an automatic client selector")
+	}
 	if profile.BundleID != "" || profile.BundleDigest != "" || isCodexBundleProfile(profile.ID) {
 		return validateCodexBundleProfile(profile)
 	}
@@ -338,6 +343,13 @@ func ResolveCodexRelaySettings(account *Account) (CodexRelaySettings, error) {
 		settings.ProfileID = raw
 	}
 	settings.ShadowEnabled, _ = account.Extra[CodexRelayShadowEnabledExtraKey].(bool)
+	// Existing explicit presets follow updates; historical custom selectors stay fixed.
+	switch account.GetExtraString(CodexClientPresetExtraKey) {
+	case "pi":
+		settings.ProfileID = CodexProfilePiManaged
+	case "opencode":
+		settings.ProfileID = CodexProfileOpenCodeManaged
+	}
 	var installationErr error
 	settings.InstallationPolicy, installationErr = normalizeCodexInstallationPolicy(account.GetExtraString(CodexInstallationPolicyExtraKey))
 	if installationErr != nil {
@@ -371,6 +383,7 @@ func ResolveCodexRelaySettings(account *Account) (CodexRelaySettings, error) {
 }
 
 var codexRelayAccountExtraKeys = []string{
+	CodexClientPresetExtraKey,
 	CodexInstallationPolicyExtraKey,
 	CodexRelayModeExtraKey,
 	CodexIdentityPolicyVersionExtraKey,
@@ -382,8 +395,10 @@ var codexRelayAccountExtraKeys = []string{
 // hasCodexRelayAccountExtraUpdate keeps generic JSONB merge paths under the
 // same validation contract as full account updates.
 func hasCodexRelayAccountExtraUpdate(extra map[string]any) bool {
-	if _, present := extra["enable_tls_fingerprint"]; present {
-		return true
+	for _, key := range []string{"enable_tls_fingerprint", "openai_ws_force_http", "openai_oauth_responses_websockets_v2_mode", "openai_oauth_responses_websockets_v2_enabled"} {
+		if _, present := extra[key]; present {
+			return true
+		}
 	}
 	for _, key := range codexRelayAccountExtraKeys {
 		if _, ok := extra[key]; ok {
@@ -400,6 +415,11 @@ func ValidateCodexRelayAccountExtra(platform, accountType string, extra map[stri
 }
 
 func validateCodexRelayAccountExtra(platform, accountType string, extra map[string]any, derivationSecret string, checkSecret bool) error {
+	normalized, presetErr := NormalizeCodexClientPresetExtra(extra)
+	if presetErr != nil {
+		return presetErr
+	}
+	extra = normalized
 	if raw, present := extra["enable_tls_fingerprint"]; present && platform == PlatformOpenAI {
 		if _, valid := raw.(bool); !valid {
 			return infraerrors.BadRequest("CODEX_RELAY_SETTINGS_INVALID", "enable_tls_fingerprint must be a boolean")

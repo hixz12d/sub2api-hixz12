@@ -13,7 +13,7 @@ import (
 func TestChannelMonitorV2CardsUpgradeCoverageIsConservative(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	now := time.Date(2026, 8, 8, 12, 5, 0, 0, time.UTC)
 	oldStart := now.Add(-30 * 24 * time.Hour)
 	upgradeStart := now.Add(-7 * 24 * time.Hour).Add(12 * time.Second)
@@ -31,7 +31,7 @@ func TestChannelMonitorV2CardsUpgradeCoverageIsConservative(t *testing.T) {
 func TestChannelMonitorV2CardsRejectsAsOfBeyondWatermark(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	now := time.Now().UTC().Truncate(5 * time.Minute)
 	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT w.usage_coverage_start").WillReturnRows(sqlmock.NewRows([]string{"usage", "errors", "through", "computed", "upgrade"}).AddRow(now.Add(-time.Hour), now.Add(-time.Hour), now.Add(-5*time.Minute), now, now.Add(-time.Hour)))

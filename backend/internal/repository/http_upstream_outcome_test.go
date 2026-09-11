@@ -23,13 +23,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newHTTP2OutcomeTestService() *httpUpstreamService {
+func newHTTP2OutcomeTestService(t *testing.T) *httpUpstreamService {
+	t.Helper()
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIHTTP2 = config.GatewayOpenAIHTTP2Config{
 		Enabled: true, AllowProxyFallbackToHTTP1: true,
 		FallbackErrorThreshold: 2, FallbackWindowSeconds: 60, FallbackTTLSeconds: 600,
 	}
-	return NewHTTPUpstream(cfg).(*httpUpstreamService)
+	upstream, ok := NewHTTPUpstream(cfg).(*httpUpstreamService)
+	require.True(t, ok)
+	return upstream
 }
 
 func newHTTP2OutcomeForTest(t *testing.T, svc *httpUpstreamService, proxy string, major int) *openAIHTTP2Outcome {
@@ -41,7 +44,7 @@ func newHTTP2OutcomeForTest(t *testing.T, svc *httpUpstreamService, proxy string
 }
 
 func TestHTTP2OutcomeExactlyOnceAndGenerationIsolation(t *testing.T) {
-	svc := newHTTP2OutcomeTestService()
+	svc := newHTTP2OutcomeTestService(t)
 	proxy := "http://proxy.example:8080"
 	staleSuccess := newHTTP2OutcomeForTest(t, svc, proxy, 2)
 	staleFailure := newHTTP2OutcomeForTest(t, svc, proxy, 2)
@@ -79,52 +82,61 @@ func TestHTTP2OutcomeIgnoresH1CancellationTimeoutAndUnboundResponse(t *testing.T
 		{"business_error", 2, errors.New("rate limit exceeded")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			svc := newHTTP2OutcomeTestService()
+			svc := newHTTP2OutcomeTestService(t)
 			for i := 0; i < 3; i++ {
 				newHTTP2OutcomeForTest(t, svc, "http://proxy.example:8080", tc.major).report(tc.err)
 			}
 			require.False(t, svc.isOpenAIHTTP2FallbackActive("http://proxy.example:8080"))
 		})
 	}
-	svc := newHTTP2OutcomeTestService()
+	svc := newHTTP2OutcomeTestService(t)
 	for i := 0; i < 3; i++ {
 		svc.RecordOpenAIHTTP2ResponseOutcome(&http.Response{ProtoMajor: 2, Request: httptest.NewRequest(http.MethodGet, "https://upstream.example", nil)}, io.ErrUnexpectedEOF)
 	}
 	require.False(t, svc.isOpenAIHTTP2FallbackActive("http://proxy.example:8080"))
 }
 
-func TestHTTP2OutcomeTerminalSuccessResetsOnlyItsWindow(t *testing.T) {
-	svc := newHTTP2OutcomeTestService()
+func TestHTTP2OutcomeTerminalSuccessPreservesRecentFailures(t *testing.T) {
+	svc := newHTTP2OutcomeTestService(t)
 	proxy := "http://proxy.example:8080"
 	newHTTP2OutcomeForTest(t, svc, proxy, 2).report(io.ErrUnexpectedEOF)
 	success := newHTTP2OutcomeForTest(t, svc, proxy, 2)
 	success.report(nil)
 	success.report(io.ErrUnexpectedEOF)
-	newHTTP2OutcomeForTest(t, svc, proxy, 2).report(io.ErrUnexpectedEOF)
-	require.False(t, svc.isOpenAIHTTP2FallbackActive(proxy))
+	require.False(t, svc.isOpenAIHTTP2FallbackActive(proxy), "one response can report only one outcome")
 	require.Equal(t, 1, svc.getOrCreateOpenAIHTTP2FallbackState(proxy).errorCount)
+	newHTTP2OutcomeForTest(t, svc, proxy, 2).report(io.ErrUnexpectedEOF)
+	require.True(t, svc.isOpenAIHTTP2FallbackActive(proxy), "interleaved success must not hide intermittent failures")
 }
 
 // Exercise the real Do -> CONNECT -> TLS/ALPN -> SSE read-error path. The proxy
 // accepts only this test server, and every hijacked connection is closed/joined.
 func TestHTTP2OutcomeRealDoFallsBackAfterTwoBrokenStreams(t *testing.T) {
-	testHTTP2OutcomeRealDo(t, "http", false)
+	testHTTP2OutcomeRealDo(t, "http", false, 2)
 }
 
 func TestHTTP2OutcomeRealDoSOCKSFallbackPreservesProxy(t *testing.T) {
 	for _, scheme := range []string{"socks5", "socks5h"} {
-		t.Run(scheme, func(t *testing.T) { testHTTP2OutcomeRealDo(t, scheme, false) })
+		t.Run(scheme, func(t *testing.T) { testHTTP2OutcomeRealDo(t, scheme, false, 2) })
 	}
 }
 
-func testHTTP2OutcomeRealDo(t *testing.T, scheme string, useTLSFingerprint bool) {
+func testHTTP2OutcomeRealDo(t *testing.T, scheme string, useTLSFingerprint bool, fallbackThreshold int) {
+	t.Helper()
+	wantFailures := fallbackThreshold
+	if wantFailures == 0 {
+		wantFailures = 1
+	}
 	var h2Calls atomic.Int32
 	target := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		if r.ProtoMajor == 2 {
 			h2Calls.Add(1)
 			_, _ = io.WriteString(w, "data: {\"type\":\"response.created\"}\n\n")
-			w.(http.Flusher).Flush()
+			if err := http.NewResponseController(w).Flush(); err != nil {
+				t.Errorf("flush SSE response: %v", err)
+				return
+			}
 			panic(http.ErrAbortHandler)
 		}
 		_, _ = io.WriteString(w, "data: {\"type\":\"response.completed\"}\n\n")
@@ -145,7 +157,7 @@ func testHTTP2OutcomeRealDo(t *testing.T, scheme string, useTLSFingerprint bool)
 			w.WriteHeader(http.StatusBadGateway)
 			return
 		}
-		client, rw, err := w.(http.Hijacker).Hijack()
+		client, rw, err := http.NewResponseController(w).Hijack()
 		if err != nil {
 			_ = upstream.Close()
 			return
@@ -175,7 +187,9 @@ func testHTTP2OutcomeRealDo(t *testing.T, scheme string, useTLSFingerprint bool)
 		mu.Unlock()
 		tunnels.Wait()
 	}()
-	svc := newHTTP2OutcomeTestService()
+	svc := newHTTP2OutcomeTestService(t)
+	svc.cfg.Gateway.OpenAIHTTP2.FallbackErrorThreshold = fallbackThreshold
+	budget := service.NewOpenAIRetryBudget(false)
 	proxyURL := proxy.URL
 	var socksCalls *atomic.Int64
 	if scheme != "http" {
@@ -195,7 +209,10 @@ func testHTTP2OutcomeRealDo(t *testing.T, scheme string, useTLSFingerprint bool)
 	}
 	proxyKey, _, err := normalizeProxyURL(proxyURL)
 	require.NoError(t, err)
-	for i := 0; i < 3; i++ {
+	for i := 0; i <= wantFailures; i++ {
+		if fallbackThreshold == 0 {
+			require.NoError(t, budget.Reserve(1), "default fallback must fit the existing two-attempt budget")
+		}
 		var entry *upstreamClientEntry
 		if profile == nil {
 			entry, err = svc.getClientEntry(proxyURL, 1, 1, service.HTTPUpstreamProfileOpenAI, false, false)
@@ -205,10 +222,13 @@ func testHTTP2OutcomeRealDo(t *testing.T, scheme string, useTLSFingerprint bool)
 		require.NoError(t, err)
 		// uTLS uses the isolated process's temporary trust store; native TLS can
 		// receive a pool directly, before first use of each cached transport.
-		if profile == nil && i != 1 {
-			tr := entry.client.Transport.(*http.Transport)
+		if profile == nil && (i == 0 || i == wantFailures) {
+			tr, ok := entry.client.Transport.(*http.Transport)
+			require.True(t, ok)
 			if tr.TLSClientConfig == nil {
-				tr.TLSClientConfig = target.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
+				targetTransport, ok := target.Client().Transport.(*http.Transport)
+				require.True(t, ok)
+				tr.TLSClientConfig = targetTransport.TLSClientConfig.Clone()
 				tr.TLSClientConfig.InsecureSkipVerify = false
 			}
 			tr.TLSClientConfig.RootCAs = roots
@@ -224,12 +244,12 @@ func testHTTP2OutcomeRealDo(t *testing.T, scheme string, useTLSFingerprint bool)
 		resp, err := svc.DoWithTLS(req, proxyURL, 1, 1, profile)
 		require.NoError(t, err)
 		_, readErr := io.ReadAll(resp.Body)
-		if i < 2 {
+		if i < wantFailures {
 			require.Equal(t, 2, resp.ProtoMajor)
 			require.Error(t, readErr)
 			svc.RecordOpenAIHTTP2ResponseOutcome(resp, readErr)
 			svc.RecordOpenAIHTTP2ResponseOutcome(resp, readErr)
-			require.Equal(t, i == 1, svc.isOpenAIHTTP2FallbackActive(proxyKey))
+			require.Equal(t, i == wantFailures-1, svc.isOpenAIHTTP2FallbackActive(proxyKey))
 		} else {
 			require.Equal(t, 1, resp.ProtoMajor)
 			require.NoError(t, readErr)
@@ -240,7 +260,11 @@ func testHTTP2OutcomeRealDo(t *testing.T, scheme string, useTLSFingerprint bool)
 		cancel()
 		require.Zero(t, atomic.LoadInt64(&entry.inFlight))
 	}
-	require.Equal(t, int32(2), h2Calls.Load())
+	require.Equal(t, int32(wantFailures), h2Calls.Load())
+	if fallbackThreshold == 0 {
+		require.Equal(t, 2, budget.Snapshot().Attempts)
+		require.ErrorIs(t, budget.Reserve(1), service.ErrOpenAIRetryBudgetExhausted)
+	}
 	if socksCalls != nil {
 		require.GreaterOrEqual(t, socksCalls.Load(), int64(2), "fallback must open its H1 connection through the SOCKS proxy")
 	}

@@ -64,8 +64,7 @@ func (o *openAIHTTP2Outcome) report(err error) {
 			return
 		}
 		if err == nil {
-			s.windowStart = time.Time{}
-			s.errorCount = 0
+			s.expireErrorWindowLocked(time.Now(), o.settings.fallbackWindow)
 			return
 		}
 		activated, until := s.recordFailureLocked(time.Now(), o.settings.fallbackErrorThreshold, o.settings.fallbackWindow, o.settings.fallbackTTL)

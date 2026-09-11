@@ -156,7 +156,7 @@ func (e *CapabilityExecutor) sample(ctx context.Context, lease MonitorJobLease, 
 	g.mu.Unlock()
 	if attempt == "" {
 		if response != nil && response.Body != nil {
-			response.Body.Close()
+			_ = response.Body.Close()
 		}
 		return nil, ErrMonitorOutboundDenied
 	}
@@ -165,7 +165,7 @@ func (e *CapabilityExecutor) sample(ctx context.Context, lease MonitorJobLease, 
 		status := response.StatusCode
 		outcome.HTTPStatus = &status
 		raw, readErr := io.ReadAll(io.LimitReader(response.Body, 1024*1024+1))
-		response.Body.Close()
+		_ = response.Body.Close()
 		switch {
 		case sendErr != nil || readErr != nil:
 		case len(raw) > 1024*1024:
@@ -257,7 +257,7 @@ func (g *capabilityGuard) Authorize(ctx context.Context, account int64, req *htt
 		return ErrMonitorOutboundDenied
 	}
 	raw, err := io.ReadAll(io.LimitReader(body, 65537))
-	body.Close()
+	_ = body.Close()
 	if err != nil || !bytes.Equal(raw, g.payload) {
 		return ErrMonitorOutboundDenied
 	}

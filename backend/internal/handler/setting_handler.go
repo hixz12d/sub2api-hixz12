@@ -112,6 +112,7 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 		ChannelMonitorShowOutputTPS:          settings.ChannelMonitorShowOutputTPS,
 		LLMDetectorEnabled:                   settings.LLMDetectorEnabled,
 		LLMDetectorUserTestingEnabled:        settings.LLMDetectorUserTestingEnabled,
+		ChannelMonitorHideUserRanking:        settings.ChannelMonitorHideUserRanking,
 
 		AvailableChannelsEnabled: settings.AvailableChannelsEnabled,
 

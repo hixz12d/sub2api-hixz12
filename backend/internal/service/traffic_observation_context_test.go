@@ -33,5 +33,5 @@ func TestRequestOriginContract(t *testing.T) {
 		_, err := WithRequestOrigin(context.Background(), invalid)
 		require.Error(t, err)
 	}
-	require.Equal(t, RequestOriginBusiness, RequestOriginFromContext(nil))
+	require.Equal(t, RequestOriginBusiness, RequestOriginFromContext(nil)) //nolint:staticcheck // Deliberately exercise the nil-context fallback contract.
 }
