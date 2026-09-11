@@ -2515,7 +2515,7 @@ func setDefaults() {
 	// OpenAI HTTP upstream protocol strategy
 	viper.SetDefault("gateway.openai_http2.enabled", true)
 	viper.SetDefault("gateway.openai_http2.allow_proxy_fallback_to_http1", true)
-	viper.SetDefault("gateway.openai_http2.fallback_error_threshold", 2)
+	viper.SetDefault("gateway.openai_http2.fallback_error_threshold", 1)
 	viper.SetDefault("gateway.openai_http2.fallback_window_seconds", 60)
 	viper.SetDefault("gateway.openai_http2.fallback_ttl_seconds", 600)
 	viper.SetDefault("gateway.openai_proxy_stream_circuit.disabled", false)

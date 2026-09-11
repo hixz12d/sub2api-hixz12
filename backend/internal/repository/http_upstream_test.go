@@ -1069,13 +1069,13 @@ func (s *HTTPUpstreamSuite) TestOpenAIHTTP2HeaderSuccessDoesNotResetStreamFailur
 	require.True(s.T(), svc.isOpenAIHTTP2FallbackActive(proxyURL),
 		"two serial stream EOFs without header-success resets must activate H2 fallback")
 
-	// Non-stream header success may still clear the window (unchanged contract).
+	// A non-stream success must not hide recent stream failures either.
 	svc2 := s.newService()
 	svc2.RecordOpenAIHTTP2StreamFailure(proxyURL, io.ErrUnexpectedEOF)
 	svc2.recordOpenAIHTTP2Success(service.HTTPUpstreamProfileOpenAI, upstreamProtocolModeOpenAIH2, proxyURL)
 	svc2.RecordOpenAIHTTP2StreamFailure(proxyURL, io.ErrUnexpectedEOF)
-	require.False(s.T(), svc2.isOpenAIHTTP2FallbackActive(proxyURL),
-		"explicit non-stream success still resets the window; threshold needs two failures after reset")
+	require.True(s.T(), svc2.isOpenAIHTTP2FallbackActive(proxyURL),
+		"interleaved non-stream success must preserve failures within the window")
 }
 
 func (s *HTTPUpstreamSuite) TestOpenAIHTTP2StreamingResponseSkipsHeaderSuccessReset() {

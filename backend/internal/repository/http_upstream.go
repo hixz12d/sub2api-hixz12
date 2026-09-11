@@ -73,7 +73,8 @@ const (
 	// defaultClientIdleTTLSeconds: 默认客户端空闲回收阈值（15分钟）
 	defaultClientIdleTTLSeconds = 900
 	// OpenAI HTTP/2 代理回退策略默认值
-	defaultOpenAIHTTP2FallbackErrorThreshold = 2
+	// Leave the second attempt in the OAuth budget available for HTTP/1.1.
+	defaultOpenAIHTTP2FallbackErrorThreshold = 1
 	defaultOpenAIHTTP2FallbackWindow         = 60 * time.Second
 	defaultOpenAIHTTP2FallbackTTL            = 10 * time.Minute
 	// OpenAI HTTP/2 连接健康探测：Codex 上游改走 HTTP/2 后，池化连接被代理/NAT
@@ -1257,7 +1258,9 @@ func (s *httpUpstreamService) recordOpenAIHTTP2Success(profile service.HTTPUpstr
 	if !ok || state == nil {
 		return
 	}
-	state.resetErrorWindow()
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	state.expireErrorWindowLocked(time.Now(), s.resolveOpenAIHTTP2Settings().fallbackWindow)
 }
 
 func (s *openAIHTTP2FallbackState) isFallbackActive(now time.Time) bool {
@@ -1274,11 +1277,15 @@ func (s *openAIHTTP2FallbackState) isFallbackActive(now time.Time) bool {
 	return false
 }
 
-func (s *openAIHTTP2FallbackState) resetErrorWindow() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.windowStart = time.Time{}
-	s.errorCount = 0
+func (s *openAIHTTP2FallbackState) expireErrorWindowLocked(now time.Time, window time.Duration) {
+	if window <= 0 {
+		window = defaultOpenAIHTTP2FallbackWindow
+	}
+	// A healthy concurrent stream does not disprove failures in this window.
+	if !s.windowStart.IsZero() && now.Sub(s.windowStart) > window {
+		s.windowStart = time.Time{}
+		s.errorCount = 0
+	}
 }
 
 func (s *openAIHTTP2FallbackState) recordFailure(now time.Time, threshold int, window, ttl time.Duration) (bool, time.Time) {

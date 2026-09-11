@@ -452,7 +452,9 @@ gateway:
   openai_http2:
     enabled: true
     allow_proxy_fallback_to_http1: true
-    fallback_error_threshold: 2
+    # First classified H2 failure makes the next eligible attempt use HTTP/1.1.
+    # Success does not erase failures within the window; explicit thresholds are respected.
+    fallback_error_threshold: 1
     fallback_window_seconds: 60
     fallback_ttl_seconds: 600
   # OpenAI Responses SSE 代理断流熔断；按 proxy_id 跨账号隔离，仅影响下一次调度。
