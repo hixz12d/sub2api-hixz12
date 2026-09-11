@@ -292,10 +292,9 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if account.Platform == PlatformOpenAI {
 		policyBody, changed, policyErr := ApplyOpenAIReasoningEffortPolicyFromContext(ctx, responsesBody)
 		if policyErr != nil {
-			var overLimit *ReasoningEffortOverLimitError
-			if errors.As(policyErr, &overLimit) {
+			if IsReasoningEffortPolicyDenied(policyErr) {
 				MarkOpsClientBusinessLimited(c, OpsClientBusinessLimitedReasonLocalPolicyDenied)
-				writeAnthropicError(c, http.StatusForbidden, "forbidden_error", overLimit.Error())
+				writeAnthropicError(c, http.StatusForbidden, "forbidden_error", policyErr.Error())
 			}
 			return nil, policyErr
 		}
@@ -774,6 +773,8 @@ func (s *OpenAIGatewayService) recordOpenAIMessagesStreamUpstreamError(c *gin.Co
 	message = sanitizeUpstreamErrorMessage(message)
 	setOpsUpstreamError(c, http.StatusBadGateway, message, "")
 	event := OpsUpstreamErrorEvent{
+		ProxyID:            opsUpstreamProxyID(account),
+		ProxyName:          opsUpstreamProxyName(account),
 		Platform:           PlatformOpenAI,
 		UpstreamStatusCode: http.StatusBadGateway,
 		UpstreamRequestID:  strings.TrimSpace(upstreamRequestID),
@@ -1686,7 +1687,7 @@ func (s *OpenAIGatewayService) handleAnthropicStreamingResponseWithReasoning(
 			if firstOutputStage != nil {
 				_ = firstOutputStage.Close()
 			}
-			err := s.newOpenAIFirstOutputTimeoutError(ctx, c, account, startTime, originalModel, reasoningEffort, firstOutputTimeout, "semantic_output", resp.Header)
+			err := s.newOpenAIFirstOutputTimeoutError(ctx, c, account, opsUpstreamProxyID(account), opsUpstreamProxyName(account), startTime, originalModel, reasoningEffort, firstOutputTimeout, "semantic_output", resp.Header)
 			return resultWithUsage(), annotateOpenAIPreOutputFailover(c, err, OpenAIFailureCauseFirstOutputTimeout, OpenAIRetryDecisionFailoverOtherAccount)
 		}
 	}

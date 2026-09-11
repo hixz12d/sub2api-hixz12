@@ -30,3 +30,21 @@ func normalizeGroupModelsListConfig(cfg GroupModelsListConfig) GroupModelsListCo
 func (g *Group) CustomModelsListEnabled() bool {
 	return g != nil && g.ModelsListConfig.Enabled && len(g.ModelsListConfig.Models) > 0
 }
+
+// ModelListingFilter combines display preferences with admission restrictions only
+// for discovery responses. Request admission must continue to use ModelAllowlist.
+func (g *Group) ModelListingFilter() GroupModelAllowlist {
+	if g == nil {
+		return GroupModelAllowlist{}
+	}
+	if !g.CustomModelsListEnabled() {
+		return g.ModelAllowlist
+	}
+	models := make([]string, 0, len(g.ModelsListConfig.Models))
+	for _, model := range g.ModelsListConfig.Models {
+		if g.ModelAllowlist.Allows(model) {
+			models = append(models, model)
+		}
+	}
+	return GroupModelAllowlist{Enabled: true, Models: models}
+}

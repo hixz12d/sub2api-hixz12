@@ -269,7 +269,11 @@ func (Group) Fields() []ent.Field {
 		field.JSON("models_list_config", domain.GroupModelsListConfig{}).
 			Default(domain.GroupModelsListConfig{}).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}).
-			Comment("自定义 /v1/models 展示列表配置；仅影响模型列表响应，不影响调度"),
+			Comment("Custom model listing only; independent of request admission"),
+		field.JSON("model_allowlist", domain.GroupModelAllowlist{}).
+			Default(domain.GroupModelAllowlist{}).
+			SchemaType(map[string]string{dialect.Postgres: "jsonb"}).
+			Comment("分组模型白名单：同时约束模型列表接口与请求准入"),
 		field.JSON("codex_models_manifest_config", domain.GroupCodexModelsManifestConfig{}).
 			Default(domain.GroupCodexModelsManifestConfig{}).
 			SchemaType(map[string]string{dialect.Postgres: "jsonb"}).

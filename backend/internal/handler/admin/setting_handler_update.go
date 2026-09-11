@@ -340,6 +340,7 @@ type UpdateSettingsRequest struct {
 	LLMDetectorEnabled                   *bool   `json:"llm_detector_enabled"`
 	LLMDetectorUserTestingEnabled        *bool   `json:"llm_detector_user_testing_enabled"`
 	LLMDetectorScheduledEnabled          *bool   `json:"llm_detector_scheduled_enabled"`
+	ChannelMonitorHideUserRanking        *bool   `json:"channel_monitor_hide_user_ranking"`
 
 	// Grok model mapping policy
 	GrokDefaultTextModel           *string `json:"grok_default_text_model"`
@@ -1952,6 +1953,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.LLMDetectorScheduledEnabled
 		}(),
+		ChannelMonitorHideUserRanking: func() bool {
+			if req.ChannelMonitorHideUserRanking != nil {
+				return *req.ChannelMonitorHideUserRanking
+			}
+			return previousSettings.ChannelMonitorHideUserRanking
+		}(),
 		GrokDefaultTextModel: func() string {
 			if req.GrokDefaultTextModel != nil {
 				return *req.GrokDefaultTextModel
@@ -2419,6 +2426,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		LLMDetectorUserTestingEnabled:        updatedSettings.LLMDetectorUserTestingEnabled,
 		LLMDetectorScheduledEnabled:          updatedSettings.LLMDetectorScheduledEnabled,
 		LLMDetectorEngineAllowed:             updatedSettings.LLMDetectorEngineAllowed,
+		ChannelMonitorHideUserRanking:        updatedSettings.ChannelMonitorHideUserRanking,
 
 		GrokDefaultTextModel:           updatedSettings.GrokDefaultTextModel,
 		GrokCrossClientModelMapEnabled: updatedSettings.GrokCrossClientModelMapEnabled,

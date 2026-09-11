@@ -277,6 +277,8 @@ export interface PublicSettings {
   channel_monitor_show_output_tps?: boolean
   llm_detector_enabled?: boolean
   llm_detector_user_testing_enabled?: boolean
+  /** When true, user monitor hides the user ranking tab and /users payload. */
+  channel_monitor_hide_user_ranking?: boolean
   available_channels_enabled: boolean
   model_plaza_enabled: boolean
   model_plaza_require_auth: boolean
@@ -535,7 +537,7 @@ export interface PaginationConfig {
 
 // ==================== API Key & Group Types ====================
 
-export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek' | 'composite'
+export type GroupPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek' | 'minimax' | 'composite'
 
 export type VideoModelPrices = Record<string, Record<string, number>>
 
@@ -565,7 +567,7 @@ export interface Group {
   platform: GroupPlatform
   rate_multiplier: number
   rpm_limit?: number // Group-level RPM cap (0 = unlimited); overrides user-level rpm_limit when set
-  max_reasoning_effort?: string // OpenAI/Codex reasoning ceiling; empty means unlimited
+  max_reasoning_effort?: string // Anthropic/OpenAI reasoning ceiling; empty means unlimited
   max_reasoning_effort_over_limit?: string // downgrade (default) or deny when over the ceiling
   reasoning_effort_mappings?: ReasoningEffortMapping[]
   is_exclusive: boolean
@@ -650,6 +652,7 @@ export interface AdminGroup extends Group {
   default_mapped_model?: string
   messages_dispatch_model_config?: OpenAIMessagesDispatchModelConfig
   models_list_config?: ModelsListConfig
+  model_allowlist?: ModelAllowlist
   codex_models_manifest_config?: CodexModelsManifestConfig
 
   // 分组排序
@@ -657,6 +660,11 @@ export interface AdminGroup extends Group {
 }
 
 export interface ModelsListConfig {
+  enabled: boolean
+  models: string[]
+}
+
+export interface ModelAllowlist {
   enabled: boolean
   models: string[]
 }
@@ -833,6 +841,7 @@ export interface CreateGroupRequest {
   mcp_xml_inject?: boolean
   supported_model_scopes?: string[]
   models_list_config?: ModelsListConfig
+  model_allowlist?: ModelAllowlist
   codex_models_manifest_config?: CodexModelsManifestConfig
   allow_messages_dispatch?: boolean
   allow_live?: boolean
@@ -900,6 +909,7 @@ export interface UpdateGroupRequest {
   mcp_xml_inject?: boolean
   supported_model_scopes?: string[]
   models_list_config?: ModelsListConfig
+  model_allowlist?: ModelAllowlist
   codex_models_manifest_config?: CodexModelsManifestConfig
   allow_messages_dispatch?: boolean
   allow_live?: boolean
@@ -919,7 +929,7 @@ export interface UpdateGroupRequest {
 
 // ==================== Account & Proxy Types ====================
 
-export type AccountPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek'
+export type AccountPlatform = 'anthropic' | 'openai' | 'gemini' | 'antigravity' | 'grok' | 'kimi' | 'zhipu' | 'deepseek' | 'minimax'
 export type AccountType = 'oauth' | 'setup-token' | 'apikey' | 'upstream' | 'bedrock' | 'service_account'
 export type OAuthAddMethod = 'oauth' | 'setup-token'
 export type ProxyProtocol = 'http' | 'https' | 'socks5' | 'socks5h'
@@ -1305,6 +1315,10 @@ export interface AccountGroup {
   group?: Group
 }
 
+// The admin account list may return this compact shape when lite=1. Detail
+// operations still use Account from /admin/accounts/:id.
+export type AccountListItem = Omit<Account, 'groups'>
+
 export interface AccountSchedulerGroupScore {
   group_id?: number | null
   group_name?: string
@@ -1515,6 +1529,15 @@ export interface UpdateAccountRequest {
   upstream_billing_probe_enabled?: boolean
   upstream_billing_rate_sync_enabled?: boolean
   confirm_mixed_channel_risk?: boolean
+}
+
+export type GrokMediaEligibilityMode = 'auto' | 'enabled' | 'disabled'
+
+export interface GrokMediaEligibilityState {
+  account_id: number
+  mode: GrokMediaEligibilityMode
+  eligible: boolean
+  reason: string
 }
 
 export interface CheckMixedChannelRequest {

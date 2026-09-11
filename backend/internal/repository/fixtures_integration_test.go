@@ -92,6 +92,8 @@ func mustCreateGroup(t *testing.T, client *dbent.Client, g *service.Group) *serv
 		SetIsExclusive(g.IsExclusive).
 		SetForceOpenaiFast(g.ForceOpenAIFast).
 		SetFreeOpenaiFast(g.FreeOpenAIFast).
+		SetModelsListConfig(g.ModelsListConfig).
+		SetModelAllowlist(service.DomainGroupModelAllowlist(g.ModelAllowlist)).
 		SetCodexModelsManifestConfig(g.CodexModelsManifestConfig).
 		SetProfitControlEnabled(g.ProfitControlEnabled).
 		SetProfitMinMargin(g.ProfitMinMargin).

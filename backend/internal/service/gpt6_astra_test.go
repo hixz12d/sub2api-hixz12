@@ -116,7 +116,7 @@ func TestGPT6AstraCodexDescriptorCapabilities(t *testing.T) {
 	require.Equal(t, int64(1_050_000), descriptor.MaxContextWindow)
 	require.NotNil(t, descriptor.DefaultReasoningLevel)
 	require.Equal(t, "low", *descriptor.DefaultReasoningLevel)
-	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max"}, effortsFromConfiguredCodexLevels(descriptor.SupportedReasoningLevels))
+	require.Equal(t, []string{"low", "medium", "high", "xhigh", "max", "ultra"}, effortsFromConfiguredCodexLevels(descriptor.SupportedReasoningLevels))
 	require.True(t, descriptor.SupportsParallelToolCalls)
 	require.True(t, descriptor.SupportVerbosity)
 	require.True(t, configuredCodexSupportsPriorityServiceTier("gpt-6-astra"))

@@ -172,7 +172,7 @@ func TestOpenAIRecoverySafetyClassifiesOnlyExplicitFirstDeadline(t *testing.T) {
 	}
 	c, _ := newRecoverySafetyContext(t)
 	svc := &OpenAIGatewayService{}
-	err := svc.newOpenAIFirstOutputTimeoutError(context.Background(), c, &Account{ID: 41}, time.Now(), "gpt-5", "", time.Second, "response_headers", nil)
+	err := svc.newOpenAIFirstOutputTimeoutError(context.Background(), c, &Account{ID: 41}, nil, opsProxyNameDirect, time.Now(), "gpt-5", "", time.Second, "response_headers", nil)
 	require.ErrorIs(t, err, ErrOpenAIFirstOutputTimeout)
 }
 

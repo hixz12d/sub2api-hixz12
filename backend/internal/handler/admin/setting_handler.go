@@ -383,6 +383,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		LLMDetectorUserTestingEnabled:        settings.LLMDetectorUserTestingEnabled,
 		LLMDetectorScheduledEnabled:          settings.LLMDetectorScheduledEnabled,
 		LLMDetectorEngineAllowed:             settings.LLMDetectorEngineAllowed,
+		ChannelMonitorHideUserRanking:        settings.ChannelMonitorHideUserRanking,
 
 		GrokDefaultTextModel:           settings.GrokDefaultTextModel,
 		GrokCrossClientModelMapEnabled: settings.GrokCrossClientModelMapEnabled,

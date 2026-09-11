@@ -88,7 +88,7 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 	upstreamMsg string,
 	upstreamModel string,
 ) *UpstreamFailoverError {
-	shouldFailover := s.shouldFailoverOpenAIUpstreamResponse(resp.StatusCode, upstreamMsg, respBody)
+	shouldFailover := s.shouldFailoverOpenAIUpstreamResponse(account, resp.StatusCode, upstreamMsg, respBody)
 	if c == nil && shouldFailover && !s.shouldFailoverUpstreamError(resp.StatusCode) && !isOpenAIRequestBodyTooLargeError(resp.StatusCode, upstreamMsg, respBody) {
 		// Message-only transient classification is request handling policy. Without a
 		// response context there is no safe failover chain to own the retry.
@@ -117,6 +117,8 @@ func (s *OpenAIGatewayService) failoverOpenAIUpstreamHTTPError(
 		upstreamDetail = truncateString(string(respBody), maxBytes)
 	}
 	appendOpsUpstreamError(c, OpsUpstreamErrorEvent{
+		ProxyID:            opsUpstreamProxyID(account),
+		ProxyName:          opsUpstreamProxyName(account),
 		Platform:           account.Platform,
 		AccountID:          account.ID,
 		AccountName:        account.Name,
@@ -225,6 +227,7 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 	}
 	// 账号级请求头覆写必须先于 OpenAI 统一身份收口。
 	account.ApplyHeaderOverrides(upstreamReq.Header)
+	applyOpenCodeSessionHeader(c, account, targetURL, upstreamReq.Header)
 	if account.Platform == PlatformOpenAI {
 		policy := openAIOutboundAPIKeyPolicy
 		if account.Type == AccountTypeOAuth {

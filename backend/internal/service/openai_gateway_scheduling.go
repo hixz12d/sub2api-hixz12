@@ -286,7 +286,7 @@ func (s *OpenAIGatewayService) SelectAccountForTokenCount(
 // kimi 分组请求只命中 kimi 账号，语义与 openai/grok 一致。
 func normalizeOpenAICompatiblePlatform(platform string) string {
 	switch platform {
-	case PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek:
+	case PlatformGrok, PlatformKimi, PlatformZhipu, PlatformDeepseek, PlatformMiniMax:
 		return platform
 	default:
 		return PlatformOpenAI

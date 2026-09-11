@@ -236,6 +236,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyChannelMonitorShowOutputTPS,
 		SettingKeyLLMDetectorEnabled,
 		SettingKeyLLMDetectorUserTestingEnabled,
+		SettingKeyChannelMonitorHideUserRanking,
 		SettingKeyAvailableChannelsEnabled,
 		SettingKeyModelPlazaEnabled,
 		SettingKeyModelPlazaRequireAuth,
@@ -366,6 +367,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		ChannelMonitorShowOutputTPS:          settings[SettingKeyChannelMonitorShowOutputTPS] == "true",
 		LLMDetectorEnabled:                   settings[SettingKeyLLMDetectorEnabled] == "true",
 		LLMDetectorUserTestingEnabled:        settings[SettingKeyLLMDetectorUserTestingEnabled] == "true",
+		ChannelMonitorHideUserRanking:        isTrueSettingValue(settings[SettingKeyChannelMonitorHideUserRanking]),
 
 		AvailableChannelsEnabled: settings[SettingKeyAvailableChannelsEnabled] == "true",
 
@@ -438,6 +440,9 @@ type ChannelMonitorRuntime struct {
 	// snapshots; otherwise the user handler strips them server-side.
 	// Parsed fail-closed (only literal "true" enables). Admin always sees them.
 	ShowQuota bool
+	// HideUserRanking: when true, user-facing V2 views hide the user ranking tab
+	// and the /users payload. Parsed fail-open (only literal "true" hides it).
+	HideUserRanking bool
 }
 
 // ActiveProbesAllowed reports whether V1 active provider probes may run.
@@ -467,6 +472,7 @@ func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMo
 		SettingKeyChannelMonitorDefaultIntervalSeconds,
 		SettingKeyChannelMonitorHideThroughput,
 		SettingKeyChannelMonitorShowQuota,
+		SettingKeyChannelMonitorHideUserRanking,
 	})
 	if err != nil {
 		return ChannelMonitorRuntime{
@@ -482,6 +488,7 @@ func (s *SettingService) GetChannelMonitorRuntime(ctx context.Context) ChannelMo
 		DefaultIntervalSeconds: parseChannelMonitorInterval(vals[SettingKeyChannelMonitorDefaultIntervalSeconds]),
 		HideThroughput:         !isFalseSettingValue(vals[SettingKeyChannelMonitorHideThroughput]),
 		ShowQuota:              vals[SettingKeyChannelMonitorShowQuota] == "true",
+		HideUserRanking:        isTrueSettingValue(vals[SettingKeyChannelMonitorHideUserRanking]),
 	}
 }
 
@@ -638,6 +645,8 @@ type PublicSettingsInjectionPayload struct {
 	AffiliateEnabled               bool `json:"affiliate_enabled"`
 	RiskControlEnabled             bool `json:"risk_control_enabled"`
 	AllowUserViewErrorRequests     bool `json:"allow_user_view_error_requests"`
+	// Hide ranking only for non-admin monitor viewers; default false.
+	ChannelMonitorHideUserRanking bool `json:"channel_monitor_hide_user_ranking"`
 }
 
 // GetPublicSettingsForInjection returns public settings in a format suitable for HTML injection.
@@ -716,6 +725,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ChannelMonitorShowOutputTPS:          settings.ChannelMonitorShowOutputTPS,
 		LLMDetectorEnabled:                   settings.LLMDetectorEnabled,
 		LLMDetectorUserTestingEnabled:        settings.LLMDetectorUserTestingEnabled,
+		ChannelMonitorHideUserRanking:        settings.ChannelMonitorHideUserRanking,
 		AvailableChannelsEnabled:             settings.AvailableChannelsEnabled,
 		ModelPlazaEnabled:                    settings.ModelPlazaEnabled,
 		ModelPlazaRequireAuth:                settings.ModelPlazaRequireAuth,
