@@ -200,6 +200,7 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthIdentity(
 	}
 	tlsEnabled := account.IsTLSFingerprintEnabled()
 	attemptInput := CodexAttemptInput{
+		ClientVersion:          s.settingService.GetOpenAICodexClientVersion(c.Request.Context()),
 		TLSFingerprintEnabled:  &tlsEnabled,
 		InstallationPolicy:     settings.InstallationPolicy,
 		AccountID:              account.ID,
@@ -253,8 +254,16 @@ func applyCodexAttemptProfile(profile CodexClientProfile, headers http.Header) {
 	}
 	headers.Set("User-Agent", profile.App.UserAgent)
 	headers.Set("originator", profile.App.Originator)
+	// Application identity fields are one tuple; never retain a Version from
+	// the legacy resolver after applying a pinned or non-Codex profile.
+	deleteOpenAIHeaderEqualFold(headers, "Version")
+	deleteOpenAIHeaderEqualFold(headers, "x-openai-client-version")
+	deleteOpenAIHeaderEqualFold(headers, "OpenAI-Beta")
 	if profile.App.Version != "" {
 		headers.Set("x-openai-client-version", profile.App.Version)
+		if codexClientFamily(profile.ID) == "codex" {
+			headers.Set("Version", profile.App.Version)
+		}
 	}
 	if profile.App.BetaFeatures != "" {
 		headers.Set("OpenAI-Beta", profile.App.BetaFeatures)
@@ -392,7 +401,9 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthHeaders(
 ) {
 	sanitizeCodexOAuthHeaders(headers)
 	if isOpenAICompatMessagesBridgeContext(c) {
-		canonical := resolveOpenAIOutboundIdentityWithVersion("", codexCLIUserAgent, codexCLIVersion)
+		// Keep the bridge's CLI family while honoring the attempt's version snapshot.
+		identity := s.resolveOpenAIOutboundIdentity(ctx, account)
+		canonical := resolveOpenAIOutboundIdentityWithVersion("", codexCLIUserAgent, identity.Version)
 		applyResolvedOpenAIOutboundIdentityWithPolicy(headers, canonical, openAIOutboundOAuthPolicy)
 	} else {
 		s.applyOpenAIOutboundIdentityPolicy(ctx, account, headers, openAIOutboundOAuthPolicy)

@@ -1,7 +1,17 @@
 import { apiClient } from '../client'
-import type { ClientProfileCatalogItem } from '@/components/account/codexRelaySchema'
+import type { ClientProfileCatalogItem, CodexClientPreset, CodexClientProfile, CodexRelayFormState } from '@/components/account/codexRelaySchema'
+
+export interface ClientPreset {
+  id: CodexClientPreset
+  profile: CodexClientProfile
+  extra: Partial<CodexRelayFormState> & {
+    enable_tls_fingerprint: boolean
+    openai_oauth_responses_websockets_v2_mode: 'off' | 'ctx_pool'
+  }
+}
 
 export interface ClientProfileCatalog {
+  presets: ClientPreset[]
   revision: string
   relay_contract: string
   relay_digest: string

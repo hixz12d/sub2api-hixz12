@@ -13,6 +13,59 @@ afterEach(() => { vi.useRealTimers(); vi.clearAllMocks() })
 const managedBundle = (): CodexRelayFormState => ({ ...createDefaultCodexRelaySettings(), codex_relay_mode: 'relay_kernel', codex_identity_policy_version: 'v2', codex_fingerprint_mode: 'device', codex_client_profile: 'pi-0.57.1-oauth-sse-r1' })
 
 describe('CodexRelaySettings.vue', () => {
+  it('offers only client presets in normal mode and hides diagnostic choices', async () => {
+    const wrapper = mount(CodexRelaySettings, { props: { modelValue: createDefaultCodexRelaySettings('codex') } })
+    await flushPromises()
+    const selector = wrapper.findComponent('[data-testid="codex-client-preset-select"]')
+    expect(selector.props('options').map((item: { label: string }) => item.label)).toEqual(['Codex', 'Pi', 'OpenCode'])
+    expect(wrapper.find('[data-testid="codex-management-select"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="codex-effective-preview"]').element.tagName).toBe('DETAILS')
+    expect(wrapper.get('[data-testid="codex-effective-preview"]').attributes('open')).toBeUndefined()
+    selector.vm.$emit('update:modelValue', 'pi')
+    expect(wrapper.emitted('update:modelValue')?.[0]?.[0]).toMatchObject({ codex_client_preset: 'pi' })
+    expect(wrapper.emitted('update:tlsEnabled')?.[0]).toEqual([false])
+    wrapper.unmount()
+  })
+
+  it('previews a managed Pi preset in bulk without a separate TLS choice', async () => {
+    vi.useFakeTimers()
+    const wrapper = mount(CodexRelaySettings, { props: { modelValue: createDefaultCodexRelaySettings('pi'), bulk: true, tlsEnabled: null } })
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(250)
+    expect(previewClientProfile).toHaveBeenCalledWith(expect.objectContaining({ extra: expect.objectContaining({ codex_client_preset: 'pi', enable_tls_fingerprint: false }) }), expect.anything())
+    expect(wrapper.text()).not.toContain('codexBundleBulkTLSRequired')
+    wrapper.unmount()
+  })
+
+  it('shows a pending adaptation without claiming the latest release is active', async () => {
+    const { clientProfileCatalogFixture } = await import('./clientProfileFixture')
+    const { getClientProfiles } = await import('@/api/admin/clientProfiles')
+    vi.mocked(getClientProfiles).mockResolvedValueOnce({
+      ...clientProfileCatalogFixture,
+      profiles: clientProfileCatalogFixture.profiles.map((item) => item.id === 'pi-managed'
+        ? { ...item, update_status: 'needs_review' as const, latest_version: '0.99.0' } : item)
+    })
+    const wrapper = mount(CodexRelaySettings, { props: { modelValue: createDefaultCodexRelaySettings('pi') } })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="codex-update-status"]').text()).toContain('codexUpdateNeedsReview')
+    expect(wrapper.get('[data-testid="codex-profile-version"]').text()).toBe('remote-test-version')
+    wrapper.unmount()
+  })
+
+  it('copies the resolved tuple when leaving a preset for custom settings', async () => {
+    const wrapper = mount(CodexRelaySettings, { props: { modelValue: createDefaultCodexRelaySettings('pi') } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('codexPresetAutoVersion')
+    expect(wrapper.get('[data-testid="codex-update-status"]').text()).toContain('codexUpdateCurrent')
+    await wrapper.get('[data-testid="codex-custom-settings"]').trigger('click')
+    expect(wrapper.emitted('update:modelValue')?.[0]?.[0]).toMatchObject({
+      codex_client_preset: '', codex_client_profile: 'pi-managed',
+      codex_relay_mode: 'relay_kernel', codex_identity_policy_version: 'v2', codex_fingerprint_mode: 'device'
+    })
+    expect(wrapper.emitted('update:tlsEnabled')?.[0]).toEqual([false])
+    wrapper.unmount()
+  })
+
   it('renders exactly three client families and keeps compatibility controls in advanced settings', async () => {
     const wrapper = mount(CodexRelaySettings, { props: { modelValue: createDefaultCodexRelaySettings() } })
     await flushPromises()

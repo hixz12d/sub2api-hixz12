@@ -3071,9 +3071,9 @@
         </div>
       </div>
 
-      <!-- OpenAI WS Mode 三态（off/ctx_pool/passthrough） -->
+      <!-- Presets own OAuth transport; API keys retain independent controls. -->
       <div
-        v-if="form.platform === 'openai' && (accountCategory === 'oauth-based' || accountCategory === 'apikey')"
+        v-if="form.platform === 'openai' && ((accountCategory === 'oauth-based' && !codexRelaySettings.codex_client_preset) || accountCategory === 'apikey')"
         data-testid="create-openai-ws-mode"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
@@ -3253,12 +3253,13 @@
       <CodexRelaySettings
         v-if="form.platform === 'openai' && accountCategory === 'oauth-based'"
         v-model="codexRelaySettings"
-        :tls-enabled="tlsFingerprintEnabled"
+        v-model:tls-enabled="tlsFingerprintEnabled"
         :account-type="form.type"
+        @update:ws-mode="openaiOAuthResponsesWebSocketV2Mode = $event"
       />
-      <!-- OpenAI OAuth TLS：默认 Chrome/Electron，不按用户拆标签 -->
+      <!-- Presets own TLS; expose the legacy switch only for custom settings. -->
       <div
-        v-if="form.platform === 'openai' && accountCategory === 'oauth-based'"
+        v-if="form.platform === 'openai' && accountCategory === 'oauth-based' && !codexRelaySettings.codex_client_preset"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between">
@@ -4295,7 +4296,7 @@ const codexCLIOnlyEnabled = ref(false)
 const codexCLIOnlyAppServerEnabled = ref(false)
 type CodexFingerprintMode = 'off' | 'device' | 'session' | 'window' | 'window40' | 'full'
 const codexFingerprintMode = ref<CodexFingerprintMode>('off')
-const codexRelaySettings = ref<CodexRelaySettingsValue>(createDefaultCodexRelaySettings())
+const codexRelaySettings = ref<CodexRelaySettingsValue>(createDefaultCodexRelaySettings('codex'))
 type AnthropicAPIKeyAuthScheme = 'x_api_key' | 'authorization_bearer'
 const anthropicPassthroughEnabled = ref(false)
 const anthropicAPIKeyAuthScheme = ref<AnthropicAPIKeyAuthScheme>('x_api_key')
@@ -5271,7 +5272,7 @@ const resetForm = () => {
   codexCLIOnlyEnabled.value = false
   codexCLIOnlyAppServerEnabled.value = false
   codexFingerprintMode.value = 'off'
-  codexRelaySettings.value = createDefaultCodexRelaySettings()
+  codexRelaySettings.value = createDefaultCodexRelaySettings('codex')
   anthropicPassthroughEnabled.value = false
   anthropicAPIKeyAuthScheme.value = 'x_api_key'
   webSearchEmulationMode.value = 'default'
@@ -5383,6 +5384,7 @@ const buildOpenAIExtra = (base?: Record<string, unknown>): Record<string, unknow
     if (!relayValidation.valid) throw new Error(Object.values(relayValidation.errors).join('; '))
     serializeCodexRelaySettingsToExtra(codexRelaySettings.value, extra)
   } else {
+    delete extra.codex_client_preset
     delete extra.codex_fingerprint_mode
     delete extra.codex_relay_mode
     delete extra.codex_installation_policy

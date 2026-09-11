@@ -57,6 +57,14 @@ vi.mock('@/api/admin', () => ({
   },
 }))
 
+vi.mock('@/api/admin/clientProfiles', async () => {
+  const { clientProfileCatalogFixture } = await import('./clientProfileFixture')
+  return {
+    getClientProfiles: vi.fn().mockResolvedValue(clientProfileCatalogFixture),
+    previewClientProfile: vi.fn().mockResolvedValue({ valid: true, conflicts: [], requirements: [], plugin_status: 'unknown' }),
+  }
+})
+
 vi.mock('@/api/admin/accounts', () => ({
   getAntigravityDefaultModelMapping: vi.fn().mockResolvedValue([]),
 }))
@@ -225,7 +233,12 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await wrapper.get('[data-testid="select-pricing-groups"]').trigger('click')
 
     expect(wrapper.find('[data-testid="openai-long-context-billing-toggle"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="create-openai-ws-mode"]').exists()).toBe(false)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="codex-client-preset-select"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="codex-custom-settings"]').trigger('click')
     expect(wrapper.find('[data-testid="create-openai-ws-mode"]').exists()).toBe(true)
+    wrapper.unmount()
   })
 
   it('keeps the account toggle when any selected group disables tier pricing', async () => {
@@ -239,7 +252,12 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await wrapper.get('[data-testid="select-pricing-groups"]').trigger('click')
 
     expect(wrapper.find('[data-testid="openai-long-context-billing-toggle"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="create-openai-ws-mode"]').exists()).toBe(false)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="codex-client-preset-select"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="codex-custom-settings"]').trigger('click')
     expect(wrapper.find('[data-testid="create-openai-ws-mode"]').exists()).toBe(true)
+    wrapper.unmount()
   })
 
   it('only opts an API-key account into the store=false policy when selected', async () => {

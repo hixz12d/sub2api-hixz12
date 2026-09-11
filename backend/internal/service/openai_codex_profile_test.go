@@ -17,7 +17,7 @@ import (
 
 func TestCodexClientProfileCatalogValidatesAndReturnsCopies(t *testing.T) {
 	profiles := CodexClientProfiles()
-	require.Len(t, profiles, 8)
+	require.Len(t, profiles, 10)
 	for _, profile := range profiles {
 		require.NoError(t, ValidateCodexClientProfile(profile), profile.ID)
 	}

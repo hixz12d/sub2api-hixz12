@@ -307,6 +307,7 @@ func (p *CodexRequestPlan) InboundHeaders() http.Header {
 }
 
 type CodexAttemptInput struct {
+	ClientVersion          string
 	TLSFingerprintEnabled  *bool
 	ProfileSnapshot        *CodexClientProfile
 	InstallationPolicy     string
@@ -553,16 +554,7 @@ func buildCodexAttemptIdentityHeaders(profile CodexClientProfile, identity *Code
 	if values == nil {
 		values = make(http.Header)
 	}
-	if profile.ID != CodexProfilePassthrough {
-		values.Set("User-Agent", profile.App.UserAgent)
-		values.Set("originator", profile.App.Originator)
-		if profile.App.Version != "" {
-			values.Set("x-openai-client-version", profile.App.Version)
-		}
-		if profile.App.BetaFeatures != "" {
-			values.Set("OpenAI-Beta", profile.App.BetaFeatures)
-		}
-	}
+	applyCodexAttemptProfile(profile, values)
 	if identity != nil {
 		applyCodexFingerprintHeaders(values, identity)
 	}
@@ -663,9 +655,7 @@ func (s *CodexAttemptState) Profile() CodexClientProfile {
 	if s == nil {
 		return CodexClientProfile{}
 	}
-	profile := s.profile
-	profile.Transport.HeaderOrder = append([]string(nil), profile.Transport.HeaderOrder...)
-	return profile
+	return cloneCodexClientProfile(s.profile)
 }
 
 func (s *CodexAttemptState) Identity() *CodexIdentitySnapshot {

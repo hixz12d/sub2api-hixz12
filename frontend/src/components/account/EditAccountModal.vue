@@ -1792,9 +1792,9 @@
         </div>
       </div>
 
-      <!-- OpenAI WS Mode 三态（off/ctx_pool/passthrough） -->
+      <!-- Presets own OAuth transport; API keys retain independent controls. -->
       <div
-        v-if="account?.platform === 'openai' && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
+        v-if="account?.platform === 'openai' && (((account?.type === 'oauth' || account?.type === 'setup-token') && !codexRelaySettings.codex_client_preset) || account?.type === 'apikey')"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between">
@@ -2176,13 +2176,14 @@
           !isSparkShadow
         "
         v-model="codexRelaySettings"
-        :tls-enabled="tlsFingerprintEnabled"
+        v-model:tls-enabled="tlsFingerprintEnabled"
         :account-id="account?.id"
         :account-type="account?.type"
+        @update:ws-mode="openaiOAuthResponsesWebSocketV2Mode = $event"
       />
-      <!-- OpenAI OAuth TLS：默认 Chrome/Electron -->
+      <!-- Presets own TLS; expose the legacy switch only for custom settings. -->
       <div
-        v-if="account?.platform === 'openai' && account?.type === 'oauth'"
+        v-if="account?.platform === 'openai' && account?.type === 'oauth' && !codexRelaySettings.codex_client_preset"
         class="border-t border-gray-200 pt-4 dark:border-dark-600"
       >
         <div class="flex items-center justify-between">
@@ -5560,6 +5561,7 @@ const handleSubmit = async () => {
         if (!relayValidation.valid) throw new Error(Object.values(relayValidation.errors).join('; '))
         serializeCodexRelaySettingsToExtra(codexRelaySettings.value, newExtra)
       } else {
+        delete newExtra.codex_client_preset
         delete newExtra.codex_fingerprint_mode
         delete newExtra.codex_relay_mode
         delete newExtra.codex_installation_policy

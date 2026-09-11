@@ -6,6 +6,8 @@ short `pi` / `opencode` selectors and existing conversations are NOT automatical
 migrated. Bundle ID and exact artifact digest are included in the pinned profile.
 Native TLS/HTTP2 parity is still unverified; this is not a fully verified native
 client impersonation release. See INTEGRATION.md for the bounded canary contract.
+See [VERSION_SYNC.md](VERSION_SYNC.md) for the separate automatic presets,
+source-compatibility gate, immutable release snapshots and rollback controls.
 
 ## Packaged Candidates
 
@@ -17,8 +19,10 @@ client impersonation release. See INTEGRATION.md for the bounded canary contract
 The declared Windows environment is `win32 10.0.26200; x64`. This is an
 operator-declared candidate environment, not evidence that a Linux VPS runs
 Windows. Sources/blob references are transcribed from the supplied blueprint.
-Resolved release commits, lockfile hashes, binary hashes and live captures have
-not been independently collected. Evidence therefore remains
+The frozen artifacts do not include resolved release commits; the automatic
+update layer tracks its independently checked source references separately.
+Lockfile hashes, binary hashes and live captures remain unverified. Packaged
+evidence therefore remains
 `blueprint_source_reference / pending / unverified`; approval is rejected.
 
 ## Loading And Digest

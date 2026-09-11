@@ -14,6 +14,24 @@ import {
 describe('codexRelaySchema', () => {
   const dummyT = (key: string) => key
 
+  it('serializes managed presets without requiring manual TLS or identity choices', () => {
+    const state = createDefaultCodexRelaySettings('pi')
+    expect(validateCodexRelayState(state, dummyT, { tlsEnabled: null, bulk: true }).valid).toBe(true)
+    const extra: Record<string, unknown> = {}
+    serializeCodexRelaySettingsToExtra(state, extra)
+    expect(extra.codex_client_preset).toBe('pi')
+    serializeCodexRelayToBulkExtra({ ...state, codex_client_preset: '' }, extra)
+    expect(extra.codex_client_preset).toBe('')
+  })
+
+  it('preserves a stored preset and rejects unknown presets', () => {
+    const original = { codex_client_preset: 'opencode' }
+    const extra = { ...original }
+    serializeCodexRelaySettingsToExtra(extractCodexRelaySettingsFromExtra(original), extra)
+    expect(extra).toEqual(original)
+    expect(validateCodexRelayState(extractCodexRelaySettingsFromExtra({ codex_client_preset: 'unknown' }), dummyT).valid).toBe(false)
+  })
+
   it.each([{}, { codex_client_profile: 'codex_exec', codex_fingerprint_mode: 'window40' }, { codex_client_profile: 'future-client', codex_relay_shadow_enabled: 'false' }])('round-trips persisted public values without activating defaults: %j', (original) => {
     const state = extractCodexRelaySettingsFromExtra(original)
     const extra = { ...original, unrelated: 'preserved' }

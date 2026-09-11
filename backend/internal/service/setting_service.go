@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
@@ -130,6 +131,9 @@ type SettingService struct {
 	openAICodexUASF             singleflight.Group
 	openAICodexVersionCache     atomic.Value // *cachedOpenAICodexClientVersion
 	openAICodexVersionSF        singleflight.Group
+	clientProfileMu             sync.Mutex
+	clientProfileCache          map[string]ClientProfileUpdate
+	clientProfileExpires        time.Time
 	codexRestrictionPolicyCache atomic.Value // *cachedCodexRestrictionPolicy
 	codexRestrictionPolicySF    singleflight.Group
 
