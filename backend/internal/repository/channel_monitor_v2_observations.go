@@ -41,11 +41,11 @@ func (r *channelMonitorV2Repository) recomputeMonitorObservations(ctx context.Co
 	}
 	bounds := service.MonitorTPSBoundsV1()
 	var bucket strings.Builder
-	bucket.WriteString("CASE")
+	_, _ = bucket.WriteString("CASE")
 	for i, upper := range bounds {
 		fmt.Fprintf(&bucket, " WHEN ul.monitor_output_tps_milli <= %d THEN %d", upper, i)
 	}
-	bucket.WriteString(" ELSE " + strconv.Itoa(len(bounds)) + " END")
+	_, _ = bucket.WriteString(" ELSE " + strconv.Itoa(len(bounds)) + " END")
 	query = `INSERT INTO channel_monitor_v2_tps_histograms_1m(bucket_start,platform,group_id,model,metric_version,bucket_index,sample_count)
  SELECT date_trunc('minute',ul.created_at),` + channelMonitorV2PlatformSQL + `,COALESCE(ul.group_id,0),` + channelMonitorV2ModelSQL + `,1,` + bucket.String() + `,COUNT(*)
  FROM usage_logs ul LEFT JOIN groups g ON g.id=ul.group_id LEFT JOIN accounts a ON a.id=ul.account_id

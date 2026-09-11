@@ -159,7 +159,8 @@ func TestOpenAIOAuthCompactAndPassthroughHeaderProtocol(t *testing.T) {
 		require.NoError(t, err)
 		var decoded map[string]any
 		require.NoError(t, json.Unmarshal(outBody, &decoded))
-		metadata := decoded["client_metadata"].(map[string]any)
+		metadata, metadataOK := decoded["client_metadata"].(map[string]any)
+		require.True(t, metadataOK)
 		require.Equal(t, ids.sessionID, metadata["session_id"])
 		require.Equal(t, ids.threadID, metadata["thread_id"])
 		require.NotContains(t, metadata, codexSessionHeader)

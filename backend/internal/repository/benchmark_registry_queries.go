@@ -17,7 +17,7 @@ func (r *BenchmarkRegistryRepository) List(ctx context.Context, limit, offset in
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := make([]service.BenchmarkReleaseSummary, 0)
 	for rows.Next() {
 		var b service.BenchmarkReleaseSummary
@@ -35,7 +35,7 @@ func (r *BenchmarkRegistryRepository) Channels(ctx context.Context) ([]service.B
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result := make([]service.BenchmarkChannel, 0)
 	for rows.Next() {
 		var c service.BenchmarkChannel

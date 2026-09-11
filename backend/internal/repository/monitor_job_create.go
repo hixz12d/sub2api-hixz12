@@ -47,7 +47,7 @@ func (r *MonitorJobRepository) CreateFromPlan(ctx context.Context, input CreateM
 	if err != nil {
 		return "", err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	existing := func() (string, error) {
 		var id, plan, hash string
 		err := tx.QueryRowContext(ctx, `SELECT id,plan_id,payload_hash FROM monitor_jobs WHERE owner_user_id=$1

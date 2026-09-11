@@ -63,12 +63,12 @@ func TestCodexConnectionOnlyRefreshPreservesIdentityAndLateCommit(t *testing.T) 
 	svc.cache = registry
 	plan := mustCodexPlanForTest(t, "turn", "conversation", CodexTransportHTTP, time.Now())
 	plan.previousResponseID = "resp_existing"
-	input := CodexAttemptInput{AccountID: 44, ProfileID: CodexProfileCLI, FingerprintMode: "device", ProxyIdentity: "direct", EgressRoute: "official", TransportConfigVersion: "tls:0"}
+	input := CodexAttemptInput{AccountID: 44, ProfileID: CodexProfileCLI, FingerprintMode: "device", ProxyIdentity: "direct", EgressRoute: "official", TransportConfigVersion: "tls:0;enabled:false"}
 	original, err := FinalizeCodexAttempt(plan, input, testCodexRelaySecret)
 	require.NoError(t, err)
 	original, err = svc.resolveCodexConversationAttempt(context.Background(), plan, original, input, false)
 	require.NoError(t, err)
-	input.TransportConfigVersion = "tls:1"
+	input.TransportConfigVersion = "tls:1;enabled:true"
 	input.CredentialVersion = "refreshed"
 	newer, err := FinalizeCodexAttempt(plan, input, testCodexRelaySecret)
 	require.NoError(t, err)
@@ -81,7 +81,7 @@ func TestCodexConnectionOnlyRefreshPreservesIdentityAndLateCommit(t *testing.T) 
 	require.NoError(t, svc.CommitCodexConversation(late))
 	current, err := registry.GetCodexConversation(context.Background(), plan.ConversationDigest())
 	require.NoError(t, err)
-	require.Equal(t, "tls:1", current.TransportConfigVersion)
+	require.Equal(t, "tls:0;enabled:false", current.TransportConfigVersion, "the existing conversation keeps its pinned TLS policy")
 
 	input.ProxyIdentity = "proxy:other"
 	changed, err := FinalizeCodexAttempt(plan, input, testCodexRelaySecret)
@@ -94,6 +94,11 @@ func TestCodexConnectionOnlyRefreshPreservesIdentityAndLateCommit(t *testing.T) 
 	current, err = registry.GetCodexConversation(context.Background(), plan.ConversationDigest())
 	require.NoError(t, err)
 	require.Equal(t, "proxy:other", current.ProxyIdentity)
+	require.NoError(t, svc.CommitCodexConversation(late))
+	current, err = registry.GetCodexConversation(context.Background(), plan.ConversationDigest())
+	require.NoError(t, err)
+	require.Equal(t, "proxy:other", current.ProxyIdentity, "a late commit must not restore the old connection route")
+	require.Equal(t, "tls:0;enabled:false", current.TransportConfigVersion)
 }
 
 func TestCodexResponsePinTTLDoesNotUndercutOwnership(t *testing.T) {

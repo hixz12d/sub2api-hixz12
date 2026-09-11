@@ -80,7 +80,7 @@ func TestOpenAIStorePolicyHTTPBuilders(t *testing.T) {
 				actual, err := io.ReadAll(request.Body)
 				require.NoError(t, err)
 				require.NoError(t, request.Body.Close())
-				require.Equal(t, !(enabled && path == "/v1/responses"), gjson.GetBytes(actual, "store").Bool())
+				require.Equal(t, !enabled || path != "/v1/responses", gjson.GetBytes(actual, "store").Bool())
 				require.Equal(t, "Bearer test-key", request.Header.Get("Authorization"))
 			}
 		}

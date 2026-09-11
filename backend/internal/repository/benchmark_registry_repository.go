@@ -49,7 +49,7 @@ func (r *BenchmarkRegistryRepository) Stage(ctx context.Context, input Benchmark
 	if err != nil {
 		return "", err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	_, err = tx.ExecContext(ctx, `INSERT INTO monitor_benchmark_packages(benchmark_id,benchmark_version,sha256,content_sha256,mode,payload) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(benchmark_id,benchmark_version) DO NOTHING`, input.ID, input.Version, input.SHA256, input.ContentSHA256, input.Mode, input.Payload)
 	if err != nil {
 		return "", err
@@ -121,7 +121,7 @@ func (r *BenchmarkRegistryRepository) ApproveValidated(ctx context.Context, id, 
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var state string
 	err = tx.QueryRowContext(ctx, `SELECT r.state FROM monitor_benchmark_releases r JOIN monitor_benchmark_packages p ON p.id=r.package_id WHERE r.id=$1 AND p.sha256=$2 AND r.engine_lock_sha256=$3 FOR UPDATE OF r`, id, packageHash, engineHash).Scan(&state)
 	if err != nil {
@@ -145,14 +145,14 @@ func (r *BenchmarkRegistryRepository) ApproveValidated(ctx context.Context, id, 
 }
 
 func (r *BenchmarkRegistryRepository) Activate(ctx context.Context, channel, id string, expected, actor int64) (int64, error) {
-	if !benchmarkLabel(channel, 200) || !validDetectorResourceID(id) || expected < 0 || expected >= 9223372036854775807 || actor <= 0 {
+	if !benchmarkLabel(channel, 200) || !validDetectorResourceID(id) || expected < 0 || expected == 9223372036854775807 || actor <= 0 {
 		return 0, ErrBenchmarkRelease
 	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var state string
 	err = tx.QueryRowContext(ctx, `SELECT state FROM monitor_benchmark_releases WHERE id=$1 FOR SHARE`, id).Scan(&state)
 	if err != nil {
@@ -205,7 +205,7 @@ func (r *BenchmarkRegistryRepository) Withdraw(ctx context.Context, id, reason s
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var state string
 	err = tx.QueryRowContext(ctx, `SELECT state FROM monitor_benchmark_releases WHERE id=$1 FOR UPDATE`, id).Scan(&state)
 	if err != nil {

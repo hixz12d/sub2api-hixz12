@@ -577,21 +577,21 @@ func (s *OpenAIGatewayService) resolveAccountByPreviousResponseIDForCapability(
 		}
 		return 0, nil, "", nil
 	}
-		if persistent {
-			if account.Status != StatusActive || !account.Schedulable || !account.IsOpenAIOAuth() ||
-				!s.openAIAccountMatchesSchedulingGroup(account, groupID) ||
-				(requestedModel != "" && !account.IsModelSupported(requestedModel)) ||
-				!account.SupportsOpenAIEndpointCapability(requiredCapability) ||
-				(requireCompact && openAICompactSupportTier(account) == 0) {
-				return 0, nil, "", store
-			}
-			return accountID, account, responseID, store
+	if persistent {
+		if account.Status != StatusActive || !account.Schedulable || !account.IsOpenAIOAuth() ||
+			!s.openAIAccountMatchesSchedulingGroup(account, groupID) ||
+			(requestedModel != "" && !account.IsModelSupported(requestedModel)) ||
+			!account.SupportsOpenAIEndpointCapability(requiredCapability) ||
+			(requireCompact && openAICompactSupportTier(account) == 0) {
+			return 0, nil, "", store
 		}
-		// OAuth/SetupToken continuation state lives on the WSv2 session and cannot
-		// survive an HTTP fallback. Official API-key Responses HTTP requests are
-		// different: previous_response_id is supported by the provider and scoped to
-		// the selected key/project, so the response-id binding must retain that key.
-		if !account.IsOpenAIApiKey() && s.getOpenAIWSProtocolResolver().Resolve(account).Transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
+		return accountID, account, responseID, store
+	}
+	// OAuth/SetupToken continuation state lives on the WSv2 session and cannot
+	// survive an HTTP fallback. Official API-key Responses HTTP requests are
+	// different: previous_response_id is supported by the provider and scoped to
+	// the selected key/project, so the response-id binding must retain that key.
+	if !account.IsOpenAIApiKey() && s.getOpenAIWSProtocolResolver().Resolve(account).Transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
 		return 0, nil, "", nil
 	}
 	if shouldClearStickySession(account, requestedModel) || !account.IsOpenAI() || !account.IsSchedulableForModel(requestedModel) {

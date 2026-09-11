@@ -23,13 +23,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func newHTTP2OutcomeTestService() *httpUpstreamService {
+func newHTTP2OutcomeTestService(t *testing.T) *httpUpstreamService {
+	t.Helper()
 	cfg := &config.Config{}
 	cfg.Gateway.OpenAIHTTP2 = config.GatewayOpenAIHTTP2Config{
 		Enabled: true, AllowProxyFallbackToHTTP1: true,
 		FallbackErrorThreshold: 2, FallbackWindowSeconds: 60, FallbackTTLSeconds: 600,
 	}
-	return NewHTTPUpstream(cfg).(*httpUpstreamService)
+	upstream, ok := NewHTTPUpstream(cfg).(*httpUpstreamService)
+	require.True(t, ok)
+	return upstream
 }
 
 func newHTTP2OutcomeForTest(t *testing.T, svc *httpUpstreamService, proxy string, major int) *openAIHTTP2Outcome {
@@ -41,7 +44,7 @@ func newHTTP2OutcomeForTest(t *testing.T, svc *httpUpstreamService, proxy string
 }
 
 func TestHTTP2OutcomeExactlyOnceAndGenerationIsolation(t *testing.T) {
-	svc := newHTTP2OutcomeTestService()
+	svc := newHTTP2OutcomeTestService(t)
 	proxy := "http://proxy.example:8080"
 	staleSuccess := newHTTP2OutcomeForTest(t, svc, proxy, 2)
 	staleFailure := newHTTP2OutcomeForTest(t, svc, proxy, 2)
@@ -79,14 +82,14 @@ func TestHTTP2OutcomeIgnoresH1CancellationTimeoutAndUnboundResponse(t *testing.T
 		{"business_error", 2, errors.New("rate limit exceeded")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			svc := newHTTP2OutcomeTestService()
+			svc := newHTTP2OutcomeTestService(t)
 			for i := 0; i < 3; i++ {
 				newHTTP2OutcomeForTest(t, svc, "http://proxy.example:8080", tc.major).report(tc.err)
 			}
 			require.False(t, svc.isOpenAIHTTP2FallbackActive("http://proxy.example:8080"))
 		})
 	}
-	svc := newHTTP2OutcomeTestService()
+	svc := newHTTP2OutcomeTestService(t)
 	for i := 0; i < 3; i++ {
 		svc.RecordOpenAIHTTP2ResponseOutcome(&http.Response{ProtoMajor: 2, Request: httptest.NewRequest(http.MethodGet, "https://upstream.example", nil)}, io.ErrUnexpectedEOF)
 	}
@@ -94,7 +97,7 @@ func TestHTTP2OutcomeIgnoresH1CancellationTimeoutAndUnboundResponse(t *testing.T
 }
 
 func TestHTTP2OutcomeTerminalSuccessPreservesRecentFailures(t *testing.T) {
-	svc := newHTTP2OutcomeTestService()
+	svc := newHTTP2OutcomeTestService(t)
 	proxy := "http://proxy.example:8080"
 	newHTTP2OutcomeForTest(t, svc, proxy, 2).report(io.ErrUnexpectedEOF)
 	success := newHTTP2OutcomeForTest(t, svc, proxy, 2)
@@ -130,7 +133,10 @@ func testHTTP2OutcomeRealDo(t *testing.T, scheme string, useTLSFingerprint bool,
 		if r.ProtoMajor == 2 {
 			h2Calls.Add(1)
 			_, _ = io.WriteString(w, "data: {\"type\":\"response.created\"}\n\n")
-			w.(http.Flusher).Flush()
+			if err := http.NewResponseController(w).Flush(); err != nil {
+				t.Errorf("flush SSE response: %v", err)
+				return
+			}
 			panic(http.ErrAbortHandler)
 		}
 		_, _ = io.WriteString(w, "data: {\"type\":\"response.completed\"}\n\n")
@@ -151,7 +157,7 @@ func testHTTP2OutcomeRealDo(t *testing.T, scheme string, useTLSFingerprint bool,
 			w.WriteHeader(http.StatusBadGateway)
 			return
 		}
-		client, rw, err := w.(http.Hijacker).Hijack()
+		client, rw, err := http.NewResponseController(w).Hijack()
 		if err != nil {
 			_ = upstream.Close()
 			return
@@ -181,7 +187,7 @@ func testHTTP2OutcomeRealDo(t *testing.T, scheme string, useTLSFingerprint bool,
 		mu.Unlock()
 		tunnels.Wait()
 	}()
-	svc := newHTTP2OutcomeTestService()
+	svc := newHTTP2OutcomeTestService(t)
 	svc.cfg.Gateway.OpenAIHTTP2.FallbackErrorThreshold = fallbackThreshold
 	budget := service.NewOpenAIRetryBudget(false)
 	proxyURL := proxy.URL
@@ -217,9 +223,12 @@ func testHTTP2OutcomeRealDo(t *testing.T, scheme string, useTLSFingerprint bool,
 		// uTLS uses the isolated process's temporary trust store; native TLS can
 		// receive a pool directly, before first use of each cached transport.
 		if profile == nil && (i == 0 || i == wantFailures) {
-			tr := entry.client.Transport.(*http.Transport)
+			tr, ok := entry.client.Transport.(*http.Transport)
+			require.True(t, ok)
 			if tr.TLSClientConfig == nil {
-				tr.TLSClientConfig = target.Client().Transport.(*http.Transport).TLSClientConfig.Clone()
+				targetTransport, ok := target.Client().Transport.(*http.Transport)
+				require.True(t, ok)
+				tr.TLSClientConfig = targetTransport.TLSClientConfig.Clone()
 				tr.TLSClientConfig.InsecureSkipVerify = false
 			}
 			tr.TLSClientConfig.RootCAs = roots

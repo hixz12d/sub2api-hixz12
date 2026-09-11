@@ -41,7 +41,8 @@ func TestCodexIdentityFinalizerSanitizesMalformedManagedMetadata(t *testing.T) {
 
 	body := map[string]any{"client_metadata": map[string]any{"x-codex-turn-metadata": `{"broken"`}}
 	require.True(t, applyCodexFingerprintClientMetadata(body, snapshot))
-	metadata := body["client_metadata"].(map[string]any)
+	metadata, metadataOK := body["client_metadata"].(map[string]any)
+	require.True(t, metadataOK)
 	_, retained := metadata["x-codex-turn-metadata"]
 	require.False(t, retained)
 }
@@ -168,7 +169,8 @@ func TestCodexIdentityFinalizerWSTurnAndReconnectWire(t *testing.T) {
 		headers  http.Header
 		payload  map[string]any
 	}{{first, firstHeaders, firstPayload}, {second, reconnectHeaders, secondPayload}} {
-		metadata := wire.payload["client_metadata"].(map[string]any)
+		metadata, metadataOK := wire.payload["client_metadata"].(map[string]any)
+		require.True(t, metadataOK)
 		require.Equal(t, wire.snapshot.sessionID, wire.headers.Get("session-id"))
 		require.Equal(t, wire.snapshot.threadID, wire.headers.Get("thread-id"))
 		require.Equal(t, wire.snapshot.turnID, wire.headers.Get("x-client-request-id"))

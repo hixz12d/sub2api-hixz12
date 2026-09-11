@@ -41,7 +41,7 @@ func TestClientReleaseSourceVerification(t *testing.T) {
 			blob := func(data string) string {
 				h := sha1.New()
 				fmt.Fprintf(h, "blob %d\x00", len(data))
-				h.Write([]byte(data))
+				_, _ = h.Write([]byte(data))
 				sha := hex.EncodeToString(h.Sum(nil))
 				blobs[sha] = data
 				return sha

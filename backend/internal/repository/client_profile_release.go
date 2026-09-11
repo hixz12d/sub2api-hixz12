@@ -39,7 +39,7 @@ func (c *githubReleaseClient) clientProfileJSON(ctx context.Context, path, etag 
 	if err != nil {
 		return "", false, err
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode == http.StatusNotModified && etag != "" {
 		return etag, true, nil
 	}
@@ -74,7 +74,7 @@ func (c *githubReleaseClient) clientProfileBlob(ctx context.Context, repo, sha s
 	}
 	hash := sha1.New() // Git object identity, not a signature or trust boundary.
 	fmt.Fprintf(hash, "blob %d\x00", len(data))
-	hash.Write(data)
+	_, _ = hash.Write(data)
 	if hex.EncodeToString(hash.Sum(nil)) != sha {
 		return nil, errors.New("client manifest blob digest mismatch")
 	}

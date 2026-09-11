@@ -275,10 +275,9 @@ func (h *OpenAIGatewayHandler) ChatCompletions(c *gin.Context) {
 		forwardStart := time.Now()
 
 		forwardBody := body
-		forwardModel := reqModel
 		if channelMapping.Mapped {
 			forwardBody = h.gatewayService.ReplaceModelInBody(body, channelMapping.MappedModel)
-			forwardModel = channelMapping.MappedModel
+			forwardModel := channelMapping.MappedModel
 			if _, err := h.prepareCodexRequestPlan(c, forwardBody, sessionHash, "", forwardModel, service.CodexTransportHTTP); err != nil {
 				if accountReleaseFunc != nil {
 					accountReleaseFunc()

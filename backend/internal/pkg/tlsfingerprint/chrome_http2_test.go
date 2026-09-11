@@ -21,7 +21,7 @@ func (c fakeH2TLSConn) ConnectionState() tls.ConnectionState {
 		HandshakeComplete:          true,
 		Version:                    tls.VersionTLS13,
 		NegotiatedProtocol:         "h2",
-		NegotiatedProtocolIsMutual: true,
+		NegotiatedProtocolIsMutual: true, //nolint:staticcheck // Keep the standard TLS state invariant in this compatibility fixture.
 	}
 }
 

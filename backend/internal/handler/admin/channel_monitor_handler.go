@@ -39,15 +39,15 @@ func NewChannelMonitorHandler(monitorService *service.ChannelMonitorService) *Ch
 // --- Request / Response ---
 
 type channelMonitorCreateRequest struct {
-	Name             string            `json:"name" binding:"required,max=100"`
-	Provider         string            `json:"provider" binding:"required,oneof=openai anthropic gemini grok antigravity kimi zhipu deepseek"`
-	APIMode          string            `json:"api_mode" binding:"omitempty,oneof=chat_completions responses"`
-	Endpoint         string            `json:"endpoint" binding:"omitempty,max=500"`
-	APIKey           string            `json:"api_key" binding:"omitempty,max=2000"`
-	PrimaryModel     string            `json:"primary_model" binding:"max=200"`
-	ExtraModels      []string          `json:"extra_models"`
-	GroupName        string            `json:"group_name" binding:"max=100"`
-	Enabled          *bool             `json:"enabled"`
+	Name         string   `json:"name" binding:"required,max=100"`
+	Provider     string   `json:"provider" binding:"required,oneof=openai anthropic gemini grok antigravity kimi zhipu deepseek"`
+	APIMode      string   `json:"api_mode" binding:"omitempty,oneof=chat_completions responses"`
+	Endpoint     string   `json:"endpoint" binding:"omitempty,max=500"`
+	APIKey       string   `json:"api_key" binding:"omitempty,max=2000"`
+	PrimaryModel string   `json:"primary_model" binding:"max=200"`
+	ExtraModels  []string `json:"extra_models"`
+	GroupName    string   `json:"group_name" binding:"max=100"`
+	Enabled      *bool    `json:"enabled"`
 	// IntervalSeconds / JitterSeconds 上限必须与 service.monitorMaxIntervalSeconds=9600
 	// 及 interval-jitter>=15 对齐，否则前端合法值会在 gin binding 被提前拒绝。
 	IntervalSeconds  int               `json:"interval_seconds" binding:"required,min=15,max=9600"`

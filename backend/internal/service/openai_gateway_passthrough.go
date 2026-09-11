@@ -1959,7 +1959,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		if c.Writer.Written() {
 			return
 		}
-		c.Writer.Header().Del(http.CanonicalHeaderKey(openAICodexTurnStateHeader))
+		c.Writer.Header().Del(openAICodexTurnStateHeader)
 		for key, values := range attemptResponseHeaders {
 			c.Writer.Header().Del(key)
 			for _, value := range values {

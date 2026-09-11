@@ -25,14 +25,17 @@ func TestSanitizeCodexClientMetadataFailsClosed(t *testing.T) {
 	}
 
 	require.True(t, sanitizeCodexClientMetadata(body))
-	metadata := body["client_metadata"].(map[string]any)
+	metadata, metadataOK := body["client_metadata"].(map[string]any)
+	require.True(t, metadataOK)
 	require.Equal(t, "session", metadata["session_id"])
 	for _, key := range []string{"cwd", "workspace", "git_branch", "os", "terminal", "plugin", "mcp", "trace_id"} {
 		_, exists := metadata[key]
 		require.False(t, exists, "metadata key %q must not reach upstream", key)
 	}
 	var turn map[string]any
-	require.NoError(t, json.Unmarshal([]byte(metadata["x-codex-turn-metadata"].(string)), &turn))
+	turnMetadata, ok := metadata["x-codex-turn-metadata"].(string)
+	require.True(t, ok)
+	require.NoError(t, json.Unmarshal([]byte(turnMetadata), &turn))
 	require.Equal(t, "install", turn["installation_id"])
 	require.Equal(t, "thread", turn["thread_id"])
 	require.NotContains(t, turn, "workspace")

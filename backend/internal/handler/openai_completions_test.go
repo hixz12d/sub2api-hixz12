@@ -32,7 +32,12 @@ func TestLegacyCompletionsToChatCompletions(t *testing.T) {
 	require.Equal(t, "user-1", got["user"])
 	require.Equal(t, float64(7), got["seed"])
 	require.Equal(t, float64(64), got["max_tokens"])
-	require.Equal(t, "Write a haiku", got["messages"].([]any)[0].(map[string]any)["content"])
+	messages, ok := got["messages"].([]any)
+	require.True(t, ok)
+	require.Len(t, messages, 1)
+	message, ok := messages[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "Write a haiku", message["content"])
 }
 
 func TestLegacyCompletionsToChatCompletionsRejectsUnsupportedSemantics(t *testing.T) {

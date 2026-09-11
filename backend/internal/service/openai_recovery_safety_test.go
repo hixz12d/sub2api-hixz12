@@ -178,7 +178,7 @@ func TestOpenAIRecoverySafetyClassifiesOnlyExplicitFirstDeadline(t *testing.T) {
 
 func TestOpenAIRecoverySafetyDoesNotAdvertiseForbiddenFailover(t *testing.T) {
 	failure := &UpstreamFailoverError{StatusCode: 400, NextAccountAction: NextAccountStop}
-	annotateOpenAIPreOutputFailover(nil, failure, OpenAIFailureCauseStreamRead, OpenAIRetryDecisionFailoverOtherAccount)
+	require.Same(t, failure, annotateOpenAIPreOutputFailover(nil, failure, OpenAIFailureCauseStreamRead, OpenAIRetryDecisionFailoverOtherAccount))
 	require.Equal(t, OpenAIRetryDecisionFailClosed, failure.RetryDecisionReason)
 	require.False(t, failure.ShouldRetryNextAccount())
 }

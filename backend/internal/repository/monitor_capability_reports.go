@@ -14,7 +14,7 @@ func (r *ChannelMonitorGroupRepository) PolicyReports(ctx context.Context, polic
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := []service.PlatformCapabilityReport{}
 	for rows.Next() {
 		var item service.PlatformCapabilityReport

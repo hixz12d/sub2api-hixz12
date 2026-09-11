@@ -27,7 +27,7 @@ func TestHTTP2OutcomeSuccessExpiresOnlyStaleFailures(t *testing.T) {
 			name = "expired"
 		}
 		t.Run(name, func(t *testing.T) {
-			svc := newHTTP2OutcomeTestService()
+			svc := newHTTP2OutcomeTestService(t)
 			proxy := "http://proxy.example:8080"
 			state := svc.getOrCreateOpenAIHTTP2FallbackState(proxy)
 			started := time.Now()
@@ -52,7 +52,7 @@ func TestHTTP2OutcomeSuccessExpiresOnlyStaleFailures(t *testing.T) {
 }
 
 func TestHTTP2OutcomeConcurrentSuccessDoesNotHideFailures(t *testing.T) {
-	svc := newHTTP2OutcomeTestService()
+	svc := newHTTP2OutcomeTestService(t)
 	proxy := "socks5://proxy.example:1080"
 	outcomes := make([]*openAIHTTP2Outcome, 32)
 	for i := range outcomes {
@@ -78,7 +78,7 @@ func TestHTTP2OutcomeConcurrentSuccessDoesNotHideFailures(t *testing.T) {
 }
 
 func TestHTTP2OutcomeDefaultFallbackIsScopedAndExpires(t *testing.T) {
-	svc := newHTTP2OutcomeTestService()
+	svc := newHTTP2OutcomeTestService(t)
 	svc.cfg.Gateway.OpenAIHTTP2.FallbackErrorThreshold = 0
 	require.Equal(t, 1, svc.resolveOpenAIHTTP2Settings().fallbackErrorThreshold)
 	proxy := "http://proxy.example:8080"
@@ -112,7 +112,7 @@ func TestHTTP2OutcomeDefaultStillIgnoresNonTransportFailures(t *testing.T) {
 		{"business_error", errors.New("rate limit exceeded")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			svc := newHTTP2OutcomeTestService()
+			svc := newHTTP2OutcomeTestService(t)
 			svc.cfg.Gateway.OpenAIHTTP2.FallbackErrorThreshold = 0
 			proxy := "http://proxy.example:8080"
 			newHTTP2OutcomeForTest(t, svc, proxy, 2).report(tc.err)
@@ -134,7 +134,7 @@ func TestHTTP2OutcomeFallbackOptOutAndDirectRemainUnchanged(t *testing.T) {
 		{name: "direct", proxy: "direct"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			svc := newHTTP2OutcomeTestService()
+			svc := newHTTP2OutcomeTestService(t)
 			svc.cfg.Gateway.OpenAIHTTP2.FallbackErrorThreshold = 0
 			svc.cfg.Gateway.OpenAIHTTP2.Enabled = !tc.disabled
 			svc.cfg.Gateway.OpenAIHTTP2.AllowProxyFallbackToHTTP1 = !tc.optOut

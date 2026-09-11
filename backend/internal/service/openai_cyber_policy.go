@@ -134,10 +134,6 @@ func softenCyberPolicyClientPayload(payload []byte) ([]byte, bool) {
 		"error.message",
 		"response.error.message",
 	} {
-		if !gjson.GetBytes(out, strings.TrimSuffix(path, ".message")).Exists() &&
-			!gjson.GetBytes(out, path).Exists() {
-			// Still try Set when parent error object exists under alternate path.
-		}
 		if gjson.GetBytes(out, path).Exists() ||
 			gjson.GetBytes(out, strings.TrimSuffix(path, ".message")).Exists() {
 			if b, err := sjson.SetBytes(out, path, msg); err == nil {

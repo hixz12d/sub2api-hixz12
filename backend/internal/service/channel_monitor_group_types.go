@@ -151,7 +151,7 @@ func validateMonitorJSONValue(decoder *json.Decoder, depth int) error {
 			seen[name] = true
 			// encoding/json otherwise accepts case-folded aliases of tagged fields.
 			for _, ch := range name {
-				if !(ch >= 'a' && ch <= 'z' || ch >= '0' && ch <= '9' || ch == '_') {
+				if (ch < 'a' || ch > 'z') && (ch < '0' || ch > '9') && ch != '_' {
 					return errors.New("monitor config keys must use lowercase ASCII names")
 				}
 			}

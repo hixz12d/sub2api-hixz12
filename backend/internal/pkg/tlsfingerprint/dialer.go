@@ -429,7 +429,7 @@ func (c *stdTLSConn) ConnectionState() tls.ConnectionState {
 		DidResume:                   st.DidResume,
 		CipherSuite:                 st.CipherSuite,
 		NegotiatedProtocol:          st.NegotiatedProtocol,
-		NegotiatedProtocolIsMutual:  st.NegotiatedProtocolIsMutual,
+		NegotiatedProtocolIsMutual:  st.NegotiatedProtocolIsMutual, //nolint:staticcheck // Preserve the compatibility field when adapting the complete uTLS state.
 		ServerName:                  st.ServerName,
 		PeerCertificates:            st.PeerCertificates,
 		VerifiedChains:              st.VerifiedChains,

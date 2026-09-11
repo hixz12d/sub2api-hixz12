@@ -15,7 +15,7 @@ func (r *MonitorJobRepository) CancelDisabledNext(ctx context.Context, probe, pl
 	if err != nil {
 		return false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var id string
 	err = tx.QueryRowContext(ctx, `SELECT id FROM monitor_jobs WHERE state='queued' AND
  ((kind='availability' AND NOT $1::boolean) OR

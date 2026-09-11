@@ -37,7 +37,7 @@ func main() {
 	if err != nil {
 		fatalf("open database: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := db.PingContext(ctx); err != nil {
@@ -73,7 +73,7 @@ func main() {
 	}
 	payload = append(payload, '\n')
 	if strings.TrimSpace(*planOut) != "" {
-		if err := os.WriteFile(*planOut, payload, 0o600); err != nil {
+		if err := os.WriteFile(*planOut, payload, 0o600); err != nil { //nolint:gosec // G703: this local operator-only CLI explicitly accepts the output path; no request input reaches it.
 			fatalf("write plan: %v", err)
 		}
 	}

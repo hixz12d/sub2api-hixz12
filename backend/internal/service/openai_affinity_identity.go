@@ -19,7 +19,6 @@ import (
 const (
 	openAIAffinityProvider        = "openai"
 	openAIAffinityDomain          = "openai-affinity-v1"
-	openAIAffinityLogDomain       = "openai-affinity-log-v1"
 	openAIAffinityContextKey      = "openai_affinity_identity_v2"
 	openAIAffinityMinSecretBytes  = 32
 	openAIAffinityMaxAliases      = 12
@@ -251,6 +250,8 @@ func (s *OpenAIGatewayService) resolveOpenAISessionIdentity(c *gin.Context, body
 	return identity, nil
 }
 
+type openAIAffinityRequestContextKey struct{}
+
 func attachOpenAIAffinityIdentity(c *gin.Context, identity SessionIdentity, enabled, writable bool) {
 	if c == nil {
 		return
@@ -258,7 +259,7 @@ func attachOpenAIAffinityIdentity(c *gin.Context, identity SessionIdentity, enab
 	value := openAIAffinityContextValue{Identity: identity, Enabled: enabled, Writable: writable}
 	c.Set(openAIAffinityContextKey, value)
 	if c.Request != nil {
-		ctx := context.WithValue(c.Request.Context(), openAIAffinityContextKey, value)
+		ctx := context.WithValue(c.Request.Context(), openAIAffinityRequestContextKey{}, value)
 		c.Request = c.Request.WithContext(ctx)
 	}
 }
@@ -267,7 +268,7 @@ func openAIAffinityFromContext(ctx context.Context) (openAIAffinityContextValue,
 	if ctx == nil {
 		return openAIAffinityContextValue{}, false
 	}
-	value, ok := ctx.Value(openAIAffinityContextKey).(openAIAffinityContextValue)
+	value, ok := ctx.Value(openAIAffinityRequestContextKey{}).(openAIAffinityContextValue)
 	return value, ok && value.Enabled
 }
 
@@ -291,25 +292,13 @@ func (s *OpenAIGatewayService) prepareOpenAIAffinityIdentity(c *gin.Context, bod
 	}
 	identity, err := s.resolveOpenAISessionIdentity(c, body, legacySessionHash)
 	attachOpenAIAffinityIdentity(c, identity, true, s.openAIAffinityWritesEnabled())
-	if err != nil {
+	if err != nil && c != nil {
 		value, _ := openAIAffinityFromGin(c)
 		value.Err = err
-		attachOpenAIAffinityIdentity(c, value.Identity, true, s.openAIAffinityWritesEnabled())
-		if raw, ok := c.Get(openAIAffinityContextKey); ok {
-			v := raw.(openAIAffinityContextValue)
-			v.Err = err
-			c.Set(openAIAffinityContextKey, v)
-			if c.Request != nil {
-				c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), openAIAffinityContextKey, v))
-			}
+		c.Set(openAIAffinityContextKey, value)
+		if c.Request != nil {
+			c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), openAIAffinityRequestContextKey{}, value))
 		}
 	}
 	return err
-}
-
-func openAIAffinityLogDigest(secret []byte, value string) string {
-	if strings.TrimSpace(value) == "" {
-		return ""
-	}
-	return openAIAffinityDigest(secret, openAIAffinityLogDomain, value)[:16]
 }

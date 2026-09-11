@@ -58,7 +58,7 @@ func TestHTTP2OutcomeFingerprintFallbackALPN(t *testing.T) {
 }
 
 func TestHTTP2OutcomeDoWithTLSBindsAttempt(t *testing.T) {
-	svc := newHTTP2OutcomeTestService()
+	svc := newHTTP2OutcomeTestService(t)
 	profile := tlsfingerprint.BuiltinChromeAutoProfile()
 	proxy := "socks5://proxy.example:1080"
 	proxyKey, _, err := normalizeProxyURL(proxy)

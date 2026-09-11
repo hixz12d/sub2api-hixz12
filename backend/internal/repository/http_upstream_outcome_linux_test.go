@@ -26,12 +26,14 @@ func TestHTTP2OutcomeRealUTLSProxyFallback(t *testing.T) {
 		testHTTP2OutcomeRealDo(t, scheme, true, threshold)
 		return
 	}
+	executable, err := os.Executable()
+	require.NoError(t, err)
 	for _, scheme := range []string{"http", "socks5", "socks5h"} {
 		for _, mode := range []string{"default", "explicit"} {
 			t.Run(scheme+"/"+mode, func(t *testing.T) {
 				ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 				defer cancel()
-				cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestHTTP2OutcomeRealUTLSProxyFallback$", "-test.timeout=45s", "-test.v")
+				cmd := exec.CommandContext(ctx, executable, "-test.run=^TestHTTP2OutcomeRealUTLSProxyFallback$", "-test.timeout=45s", "-test.v")
 				cmd.Env = append(os.Environ(), childMode+"="+scheme, thresholdMode+"="+mode)
 				output, err := cmd.CombinedOutput()
 				require.NoError(t, err, "%s", output)

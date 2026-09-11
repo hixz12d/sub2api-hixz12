@@ -91,7 +91,10 @@ func (d *CodexIdentityDeriver) digest(namespace string, parts ...string) [sha256
 	for _, part := range parts {
 		encodedSize += 4 + len(part)
 	}
-	buffer := d.buffers.Get().(*[512]byte)
+	buffer, ok := d.buffers.Get().(*[512]byte)
+	if !ok {
+		panic("codex identity buffer pool contains an unexpected type")
+	}
 	encoded := buffer[:0]
 	if encodedSize > len(buffer) {
 		encoded = make([]byte, 0, encodedSize)
@@ -101,7 +104,10 @@ func (d *CodexIdentityDeriver) digest(namespace string, parts ...string) [sha256
 		encoded = appendCodexDerivationPart(encoded, part)
 	}
 
-	mac := d.macs.Get().(hash.Hash)
+	mac, ok := d.macs.Get().(hash.Hash)
+	if !ok {
+		panic("codex identity HMAC pool contains an unexpected type")
+	}
 	mac.Reset()
 	_, _ = mac.Write(encoded)
 	d.buffers.Put(buffer)

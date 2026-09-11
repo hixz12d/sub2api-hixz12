@@ -54,7 +54,7 @@ func (r *MonitorJobRepository) BeginCapabilityExecution(ctx context.Context, inp
 	if err != nil {
 		return "", err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	job, err := lockCapabilityJob(ctx, tx, input.Lease)
 	if err != nil {
 		return "", err
@@ -117,7 +117,7 @@ func (r *MonitorJobRepository) BeginCapabilityDispatch(ctx context.Context, inpu
 	if err != nil {
 		return "", err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	job, err := lockCapabilityJob(ctx, tx, input.Lease)
 	if err != nil {
 		return "", err
@@ -181,7 +181,7 @@ func (r *MonitorJobRepository) CompleteCapabilityDispatch(ctx context.Context, l
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if _, err = lockCapabilityJob(ctx, tx, lease); err != nil {
 		return err
 	}
@@ -232,7 +232,7 @@ func (r *MonitorJobRepository) SaveCapabilityReport(ctx context.Context, lease M
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	job, err := lockCapabilityJob(ctx, tx, lease)
 	if err != nil {
 		return err

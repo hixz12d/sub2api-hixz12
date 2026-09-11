@@ -15,7 +15,7 @@ func (r *ChannelMonitorGroupRepository) ListPolicies(ctx context.Context, limit,
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	items := []service.ChannelMonitorGroupPolicy{}
 	for rows.Next() {
 		p, err := scanMonitorPolicy(rows)

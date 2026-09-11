@@ -51,7 +51,7 @@ func TestChannelMonitorV2CardsTimelineAndWindowAggregation(t *testing.T) {
 func TestChannelMonitorV2CardsEmptyScopeHasNoDatabaseCalls(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	r := &channelMonitorV2Repository{db: db}
 	out, err := r.GetCards(context.Background(), service.ChannelMonitorV2CardsQuery{Filter: service.ChannelMonitorV2Filter{RestrictGroups: true}, Page: 1, PageSize: 20}, service.ChannelMonitorV2Config{})
 	require.NoError(t, err)
@@ -63,7 +63,7 @@ func TestChannelMonitorV2CardsEmptyScopeHasNoDatabaseCalls(t *testing.T) {
 func TestChannelMonitorV2CardsNoWatermark(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT w.usage_coverage_start").WillReturnRows(sqlmock.NewRows([]string{"usage", "errors", "through", "computed", "upgrade"}))
 	mock.ExpectCommit()
@@ -80,7 +80,7 @@ func TestChannelMonitorV2CardsBatchQueriesAndPrivacy(t *testing.T) {
 		t.Run(fmt.Sprint(count), func(t *testing.T) {
 			db, mock, err := sqlmock.New()
 			require.NoError(t, err)
-			defer db.Close()
+			defer func() { _ = db.Close() }()
 			now := time.Date(2026, 8, 8, 12, 5, 0, 0, time.UTC)
 			asOf := now.Add(-20 * time.Minute)
 			start := asOf.Add(-7 * 24 * time.Hour)

@@ -49,7 +49,7 @@ func TestResetForAccountSwitchClearsAllRequestLocalContinuationState(t *testing.
 
 	svc := &OpenAIGatewayService{}
 	store := svc.getOpenAIWSStateStore()
-	store.BindResponseAccount(context.Background(), 0, "resp-a", 11, 0)
+	require.NoError(t, store.BindResponseAccount(context.Background(), 0, "resp-a", 11, 0))
 	store.BindResponseConn("resp-a", "conn-a", 0)
 	store.BindSessionTurnState(0, "session-a", "turn-a", 0)
 	store.BindSessionConn(0, "session-a", "conn-a", 0)

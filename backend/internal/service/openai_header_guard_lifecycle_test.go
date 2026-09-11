@@ -67,7 +67,10 @@ func TestBlueprintV2HeaderGuardDisarmPreservesHTTPBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w, "data: first\n\n")
-		w.(http.Flusher).Flush()
+		if err := http.NewResponseController(w).Flush(); err != nil {
+			t.Errorf("flush SSE response: %v", err)
+			return
+		}
 		select {
 		case <-finish:
 			_, _ = io.WriteString(w, "data: last\n\n")
@@ -84,7 +87,7 @@ func TestBlueprintV2HeaderGuardDisarmPreservesHTTPBody(t *testing.T) {
 	require.NoError(t, err)
 	resp, err := server.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.False(t, guard.stopHeaderWait())
 	require.False(t, guard.stopHeaderWait())
 	reader := bufio.NewReader(resp.Body)
