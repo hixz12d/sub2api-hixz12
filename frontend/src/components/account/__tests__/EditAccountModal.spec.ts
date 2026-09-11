@@ -344,6 +344,25 @@ describe('EditAccountModal', () => {
     updateAccountPrioritiesMock.mockReset()
   })
 
+  it('loads, disables and preserves the account-scoped store=false policy', async () => {
+    const account = { ...buildAccount(), extra: { openai_force_store_false: true, unrelated: 'keep' } }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    checkMixedChannelRiskMock.mockReset().mockResolvedValue({ has_risk: false })
+    const wrapper = mountModal(account)
+    const toggle = wrapper.get('[data-testid="edit-openai-force-store-false"]')
+    expect(toggle.attributes('aria-checked')).toBe('true')
+    await toggle.trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra).not.toHaveProperty('openai_force_store_false')
+    expect(updateAccountMock.mock.calls[0]?.[1]?.extra?.unrelated).toBe('keep')
+    await wrapper.setProps({ account: buildAccount() })
+    expect(wrapper.get('[data-testid="edit-openai-force-store-false"]').attributes('aria-checked')).toBe('false')
+    await wrapper.setProps({ account: buildOpenAIOAuthParentAccount() })
+    expect(wrapper.find('[data-testid="edit-openai-force-store-false"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('uses the originally loaded membership priority as the CAS expectation', async () => {
     authIsSimpleMode.value = false
     const account = {

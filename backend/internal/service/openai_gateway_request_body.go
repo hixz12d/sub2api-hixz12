@@ -1075,12 +1075,15 @@ func normalizeOpenAIResponseFormatSchemasBody(body []byte) ([]byte, bool, error)
 	return normalized, true, nil
 }
 
-func normalizeOpenAIResponsesWebSocketCompatibilityBody(body []byte, account *Account, responsesLite bool) ([]byte, bool, error) {
+func normalizeOpenAIResponsesWebSocketCompatibilityBody(body []byte, account *Account, responsesLite bool, compact ...bool) ([]byte, bool, error) {
 	if account == nil || !account.IsOpenAI() {
 		return body, false, nil
 	}
-	normalized := body
-	changed := false
+	normalized, err := applyOpenAIStorePolicy(body, account, len(compact) > 0 && compact[0])
+	if err != nil {
+		return body, false, err
+	}
+	changed := !bytes.Equal(normalized, body)
 	if account.IsOpenAIOAuthLike() {
 		var err error
 		normalized, changed, err = normalizeOpenAIResponsesLegacyIngress(body)

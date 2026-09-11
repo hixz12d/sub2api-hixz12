@@ -2673,10 +2673,8 @@ func createOpenAITestPayload(modelID string, isOAuth bool) map[string]any {
 		"stream": true,
 	}
 
-	// OAuth accounts using ChatGPT internal API require store: false
-	if isOAuth {
-		payload["store"] = false
-	}
+	// Probes never need persisted responses; Codex-backed API-key relays require this too.
+	payload["store"] = false
 
 	// All accounts require instructions for Responses API
 	payload["instructions"] = openai.DefaultInstructions
