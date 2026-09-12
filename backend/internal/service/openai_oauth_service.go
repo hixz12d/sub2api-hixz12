@@ -15,6 +15,8 @@ import (
 
 // OpenAIOAuthService handles OpenAI OAuth authentication flows
 type OpenAIOAuthService struct {
+	refreshFence         OpenAIRefreshFenceRepository
+	refreshCoordinator   *OAuthRefreshAPI
 	sessionStore         *openai.SessionStore
 	proxyRepo            ProxyRepository
 	oauthClient          OpenAIOAuthClient
@@ -224,6 +226,24 @@ func (s *OpenAIOAuthService) RefreshToken(ctx context.Context, refreshToken stri
 
 // RefreshTokenWithClientID refreshes an OpenAI OAuth token with optional client_id.
 func (s *OpenAIOAuthService) RefreshTokenWithClientID(ctx context.Context, refreshToken string, proxyURL string, clientID string, identities ...openAIOutboundIdentity) (*OpenAITokenInfo, error) {
+	attempt, managed := ctx.Value(openAIRefreshAttemptKey{}).(*openAIRefreshAttempt)
+	if !managed {
+		attempt = &openAIRefreshAttempt{}
+	}
+	if s.refreshFence != nil {
+		ticket, beginErr := s.refreshFence.BeginOpenAIRefresh(ctx, refreshToken)
+		if beginErr != nil {
+			return nil, beginErr
+		}
+		attempt.ticket = ticket
+		if !managed {
+			defer func() {
+				if !attempt.finished {
+					markOpenAIRefreshUncertain(s.refreshFence, ticket)
+				}
+			}()
+		}
+	}
 	identity := resolveOpenAIOutboundIdentityFromSettings(ctx, nil, nil)
 	if len(identities) > 0 {
 		identity = identities[0]
@@ -270,6 +290,15 @@ func (s *OpenAIOAuthService) RefreshTokenWithClientID(ctx context.Context, refre
 	}
 
 	s.enrichTokenInfo(ctx, tokenInfo, proxyURL, identity)
+	if s.refreshFence != nil && !managed {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if _, finishErr := s.refreshFence.FinishOpenAIRefresh(ctx, attempt.ticket, nil, nil, tokenInfo.RefreshToken); finishErr != nil {
+			return nil, ErrOpenAIRefreshUncertain
+		}
+		attempt.finished = true
+	}
 
 	return tokenInfo, nil
 }
@@ -355,6 +384,11 @@ func resolveChatGPTSubscriptionAccountID(tokenInfo *OpenAITokenInfo, orgID strin
 
 // RefreshAccountToken refreshes token for an OpenAI OAuth account
 func (s *OpenAIOAuthService) RefreshAccountToken(ctx context.Context, account *Account) (*OpenAITokenInfo, error) {
+	if s.refreshFence != nil && account.ID > 0 && account.GetCredential("refresh_token") != "" && !account.IsOpenAIPersonalAccessToken() {
+		if _, ok := ctx.Value(openAIRefreshAttemptKey{}).(*openAIRefreshAttempt); !ok {
+			return nil, ErrOpenAIRefreshFenced
+		}
+	}
 	if account.Platform != PlatformOpenAI {
 		return nil, infraerrors.New(http.StatusBadRequest, "OPENAI_OAUTH_INVALID_ACCOUNT", "account is not an OpenAI account")
 	}

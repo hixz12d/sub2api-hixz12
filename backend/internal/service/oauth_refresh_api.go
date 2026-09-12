@@ -264,6 +264,16 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 
 	// 4. 执行平台特定刷新逻辑
 	attemptedAccount := snapshotOAuthRefreshAccount(freshAccount)
+	fence, fenced := api.accountRepo.(OpenAIRefreshFenceRepository)
+	attempt := &openAIRefreshAttempt{}
+	if freshAccount.IsOpenAIOAuth() && fenced && !freshAccount.IsOpenAIPersonalAccessToken() {
+		ctx = context.WithValue(ctx, openAIRefreshAttemptKey{}, attempt)
+		defer func() {
+			if !attempt.finished {
+				markOpenAIRefreshUncertain(fence, attempt.ticket)
+			}
+		}()
+	}
 	newCredentials, refreshErr := executor.Refresh(ctx, freshAccount)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		// A provider implementation may ignore cancellation and return late
@@ -302,7 +312,25 @@ func (api *OAuthRefreshAPI) RefreshIfNeeded(
 	// 5. 设置版本号 + 更新 DB
 	if newCredentials != nil {
 		newCredentials["_token_version"] = time.Now().UnixMilli()
-		if freshAccount.IsGrokOAuth() {
+		if freshAccount.IsOpenAIOAuth() && fenced && !freshAccount.IsOpenAIPersonalAccessToken() {
+			if attempt.ticket == nil {
+				return nil, ErrOpenAIRefreshFenced
+			}
+			nextRT, _ := newCredentials["refresh_token"].(string)
+			applied, finishErr := fence.FinishOpenAIRefresh(ctx, attempt.ticket, attemptedAccount, newCredentials, nextRT)
+			if finishErr != nil {
+				return nil, ErrOpenAIRefreshUncertain
+			}
+			attempt.finished = true
+			current, readErr := api.loadGrokDurableAccountAfterPersist(ctx, cacheKey, freshAccount.ID)
+			if readErr != nil || current == nil {
+				return nil, ErrOpenAIRefreshUncertain
+			}
+			if !applied {
+				return &OAuthRefreshResult{Account: current}, nil
+			}
+			freshAccount = current
+		} else if freshAccount.IsGrokOAuth() {
 			conditionalRepo, ok := api.accountRepo.(GrokOAuthRefreshSuccessRepository)
 			if !ok {
 				return nil, &providerConfigurationRefreshError{

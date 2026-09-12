@@ -169,6 +169,7 @@ func ProvideOpenAITokenProvider(
 	refreshAPI *OAuthRefreshAPI,
 ) *OpenAITokenProvider {
 	p := NewOpenAITokenProvider(accountRepo, tokenCache, openaiOAuthService)
+	openaiOAuthService.SetRefreshCoordination(accountRepo, refreshAPI)
 	executor := NewOpenAITokenRefresher(openaiOAuthService, accountRepo)
 	p.SetRefreshAPI(refreshAPI, executor)
 	p.SetRefreshPolicy(OpenAIProviderRefreshPolicy())
@@ -906,6 +907,7 @@ var ProviderSet = wire.NewSet(
 	ProvideUserMessageQueueService,
 	NewUsageRecordWorkerPool,
 	ProvideSchedulerSnapshotService,
+	ProvideOAuthSyncService,
 	NewIdentityService,
 	NewCRSSyncService,
 	ProvideUpdateService,

@@ -146,6 +146,11 @@ docs/audit/*
 !docs/COMPOSITE_GROUPS.md
 !docs/PLUGIN_DEVELOPMENT.md
 !docs/channel-monitor-v2-safe-defaults.md
+!docs/team-credential-sync-v1.md
+!docs/team-credential-sync-v2.md
+!docs/team-credential-sync-v3.md
+!docs/team-credential-sync-v4.md
+!docs/team-credential-sync-v5.md
 !docs/legal/
 !docs/legal/*.md
 !docs/screenshots/

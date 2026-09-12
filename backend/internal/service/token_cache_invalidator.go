@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strconv"
 )
@@ -21,8 +22,15 @@ func NewCompositeTokenCacheInvalidator(cache GeminiTokenCache) *CompositeTokenCa
 }
 
 func (c *CompositeTokenCacheInvalidator) InvalidateToken(ctx context.Context, account *Account) error {
+	_ = c.InvalidateTokenStrict(ctx, account)
+	return nil
+}
+
+// InvalidateTokenStrict is used when a caller must acknowledge cache deletion.
+// Existing best-effort callers retain their original behavior.
+func (c *CompositeTokenCacheInvalidator) InvalidateTokenStrict(ctx context.Context, account *Account) error {
 	if c == nil || c.cache == nil || account == nil {
-		return nil
+		return errors.New("token cache invalidation is unavailable")
 	}
 	if account.Type != AccountTypeOAuth {
 		return nil
@@ -55,6 +63,7 @@ func (c *CompositeTokenCacheInvalidator) InvalidateToken(ctx context.Context, ac
 
 	// 删除所有可能的缓存键（去重后）
 	seen := make(map[string]bool)
+	var failures []error
 	for _, key := range keysToDelete {
 		if seen[key] {
 			continue
@@ -62,10 +71,11 @@ func (c *CompositeTokenCacheInvalidator) InvalidateToken(ctx context.Context, ac
 		seen[key] = true
 		if err := c.cache.DeleteAccessToken(ctx, key); err != nil {
 			slog.Warn("token_cache_delete_failed", "key", key, "account_id", account.ID, "error", err)
+			failures = append(failures, err)
 		}
 	}
 
-	return nil
+	return errors.Join(failures...)
 }
 
 // CheckTokenVersion 检查 account 的 token 版本是否已过时，并返回最新的 account

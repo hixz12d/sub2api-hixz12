@@ -2,23 +2,30 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
+
+	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
 
-// SyncOAuthCredentialsRequest is the v1 narrow credential sync contract.
-// It never enables schedulable and never clears rate-limit / temp blockers.
+var (
+	ErrOAuthSyncConflict            = infraerrors.Conflict("CREDENTIAL_VERSION_CONFLICT", "account changed; read current state before submitting a new operation")
+	ErrOAuthSyncInvalid             = infraerrors.BadRequest("OAUTH_SYNC_INVALID", "invalid credential sync request")
+	ErrOAuthSyncRecoveryUnsupported = infraerrors.BadRequest("AUTH_RECOVERY_UNSUPPORTED", "auth-only recovery requires candidate validation and versioned auth errors; no credentials were written")
+)
+
+// This contract writes credentials only. It does not validate provider capabilities
+// or remove authentication, manual, quota, or rotation blockers.
 type SyncOAuthCredentialsRequest struct {
-	ContractVersion   int            `json:"contract_version"`
-	OperationID       string         `json:"operation_id"`
-	ExpectedUpdatedAt string         `json:"expected_updated_at"`
-	ExpectedIdentity  map[string]any `json:"expected_identity"`
-	Credentials       map[string]any `json:"credentials"`
-	RecoveryMode      string         `json:"recovery_mode"` // credentials_only | auth_only
+	ContractVersion    int            `json:"contract_version"`
+	OperationID        string         `json:"operation_id"`
+	ExpectedUpdatedAt  string         `json:"expected_updated_at"`
+	ExpectedInstanceID string         `json:"expected_instance_id,omitempty"`
+	ExpectedIdentity   map[string]any `json:"expected_identity"`
+	Credentials        map[string]any `json:"credentials"`
+	RecoveryMode       string         `json:"recovery_mode"`
 }
 
-// SyncOAuthCredentialsResult separates write success from recovery success.
 type SyncOAuthCredentialsResult struct {
 	ContractVersion        int      `json:"contract_version"`
 	OperationID            string   `json:"operation_id"`
@@ -34,48 +41,28 @@ type SyncOAuthCredentialsResult struct {
 	ErrorMessage           string   `json:"error_message,omitempty"`
 }
 
+type OAuthCredentialSyncRepository interface {
+	UpdateOAuthCredentialsIfUnchanged(context.Context, int64, time.Time, map[string]any, map[string]any) (bool, error)
+}
+
 func isRecognizedAuthError(status, message string) bool {
-	st := strings.ToLower(strings.TrimSpace(status))
-	msg := strings.ToLower(strings.TrimSpace(message))
-	if st != strings.ToLower(StatusError) && st != "unauthorized" && st != "auth_error" {
+	if !strings.EqualFold(strings.TrimSpace(status), StatusError) {
 		return false
 	}
-	if msg == "" {
+	switch strings.ToLower(strings.TrimSpace(message)) {
+	case "token is expired", "token_expired", "invalid_token", "401 unauthorized", "oauth 401 unauthorized":
+		return true
+	default:
 		return false
 	}
-	markers := []string{
-		"401",
-		"unauthorized",
-		"token_expired",
-		"token is expired",
-		"invalid_token",
-		"authentication",
-		"oauth",
-		"access token",
-		"refresh token",
-	}
-	for _, marker := range markers {
-		if strings.Contains(msg, marker) {
-			return true
-		}
-	}
-	return false
 }
 
 func filterOAuthCredentialPatch(incoming map[string]any) map[string]any {
-	if incoming == nil {
-		return map[string]any{}
-	}
-	allowed := []string{"access_token", "refresh_token", "id_token", "expires_at", "expired", "email"}
 	out := map[string]any{}
-	for _, key := range allowed {
+	for _, key := range []string{"access_token", "refresh_token", "id_token", "expires_at", "expired", "client_id"} {
 		if value, ok := incoming[key]; ok {
-			// Explicit empty string is not a default wipe for refresh_token.
-			if key == "refresh_token" {
-				text, isString := value.(string)
-				if isString && strings.TrimSpace(text) == "" {
-					continue
-				}
+			if text, isString := value.(string); isString && strings.TrimSpace(text) == "" {
+				continue
 			}
 			out[key] = value
 		}
@@ -83,164 +70,180 @@ func filterOAuthCredentialPatch(incoming map[string]any) map[string]any {
 	return out
 }
 
+func syncIdentityString(values map[string]any, key string) string {
+	value, _ := values[key].(string)
+	return strings.TrimSpace(value)
+}
+
 func identityMatches(account *Account, expected map[string]any) error {
-	if expected == nil {
-		return nil
+	if account == nil || expected == nil {
+		return infraerrors.BadRequest("OAUTH_SYNC_INVALID", "expected identity is required")
 	}
-	if emailRaw, ok := expected["email"]; ok {
-		want := strings.ToLower(strings.TrimSpace(fmt.Sprint(emailRaw)))
-		if want != "" {
-			got := ""
-			if account.Credentials != nil {
-				if v, ok := account.Credentials["email"]; ok {
-					got = strings.ToLower(strings.TrimSpace(fmt.Sprint(v)))
-				}
-			}
-			if got != "" && got != want {
-				return fmt.Errorf("expected identity email mismatch")
-			}
+	want := syncIdentityString(expected, "email")
+	got := syncIdentityString(account.Credentials, "email")
+	if got == "" {
+		got = syncIdentityString(account.Extra, "email")
+	}
+	if want == "" || got == "" || !strings.EqualFold(want, got) {
+		return infraerrors.BadRequest("OAUTH_SYNC_INVALID", "remote email is missing or does not match")
+	}
+	workspace, explicit := expected["workspace_id"]
+	if !explicit {
+		return infraerrors.BadRequest("OAUTH_SYNC_INVALID", "expected workspace context is required")
+	}
+	if workspace != nil {
+		if _, ok := workspace.(string); !ok {
+			return infraerrors.BadRequest("OAUTH_SYNC_INVALID", "expected workspace context must be a string or null")
 		}
 	}
-	if wsRaw, ok := expected["workspace_id"]; ok {
-		want := strings.TrimSpace(fmt.Sprint(wsRaw))
-		if want != "" {
-			got := ""
-			if account.Credentials != nil {
-				for _, key := range []string{"workspace_id", "organization_id", "organization_uuid"} {
-					if v, ok := account.Credentials[key]; ok && strings.TrimSpace(fmt.Sprint(v)) != "" {
-						got = strings.TrimSpace(fmt.Sprint(v))
-						break
-					}
-				}
+	wantWorkspace := syncIdentityString(expected, "workspace_id")
+	gotWorkspace := ""
+	for _, key := range []string{"workspace_id", "organization_uuid", "organization_id"} {
+		if value := syncIdentityString(account.Credentials, key); value != "" {
+			if gotWorkspace != "" && !strings.EqualFold(gotWorkspace, value) {
+				return infraerrors.BadRequest("OAUTH_SYNC_INVALID", "remote workspace metadata is ambiguous")
 			}
-			if got != "" && got != want {
-				return fmt.Errorf("expected identity workspace mismatch")
-			}
+			gotWorkspace = value
 		}
+	}
+	if gotWorkspace == "" {
+		gotWorkspace = syncIdentityString(account.Extra, "workspace_id")
+	}
+	if !strings.EqualFold(wantWorkspace, gotWorkspace) {
+		return infraerrors.BadRequest("OAUTH_SYNC_INVALID", "remote workspace does not match")
 	}
 	return nil
 }
 
-// SyncOpenAIOAuthCredentials writes OAuth tokens with optional auth-only recovery.
-// It must not call ClearAccountError or flip schedulable.
-func (s *adminServiceImpl) SyncOpenAIOAuthCredentials(ctx context.Context, id int64, req *SyncOAuthCredentialsRequest) (*SyncOAuthCredentialsResult, *Account, error) {
-	if req == nil {
-		return nil, nil, fmt.Errorf("request required")
+func validateOAuthSyncPatch(account *Account, incoming map[string]any) (map[string]any, error) {
+	patch := filterOAuthCredentialPatch(incoming)
+	for key, value := range incoming {
+		if _, allowed := patch[key]; !allowed {
+			return nil, infraerrors.BadRequest("OAUTH_SYNC_INVALID", "unsupported or empty credential field")
+		}
+		if key == "expired" {
+			if _, ok := value.(bool); !ok {
+				return nil, infraerrors.BadRequest("OAUTH_SYNC_INVALID", "expired must be a boolean")
+			}
+			continue
+		}
+		if text, ok := value.(string); !ok || strings.TrimSpace(text) == "" {
+			return nil, infraerrors.BadRequest("OAUTH_SYNC_INVALID", "credential fields must be nonempty strings")
+		}
 	}
-	if req.ContractVersion != 0 && req.ContractVersion != 1 {
-		return nil, nil, fmt.Errorf("unsupported contract_version")
+	if syncIdentityString(patch, "access_token") == "" {
+		return nil, infraerrors.BadRequest("OAUTH_SYNC_INVALID", "access_token is required")
+	}
+	oldClient := syncIdentityString(account.Credentials, "client_id")
+	newClient := syncIdentityString(patch, "client_id")
+	if newClient != "" && oldClient != "" && newClient != oldClient {
+		return nil, infraerrors.BadRequest("OAUTH_SYNC_INVALID", "OAuth client changed; credential grant handoff is required")
+	}
+	if syncIdentityString(patch, "refresh_token") != "" && newClient == "" {
+		return nil, infraerrors.BadRequest("OAUTH_SYNC_INVALID", "client_id is required with refresh_token")
+	}
+	if syncIdentityString(account.Credentials, "refresh_token") != "" && syncIdentityString(patch, "refresh_token") == "" && syncIdentityString(patch, "access_token") != syncIdentityString(account.Credentials, "access_token") {
+		return nil, infraerrors.BadRequest("OAUTH_SYNC_INVALID", "replacement access_token must not inherit an unverified refresh_token")
+	}
+	return patch, nil
+}
+
+func (s *adminServiceImpl) SyncOpenAIOAuthCredentials(ctx context.Context, id int64, req *SyncOAuthCredentialsRequest) (*SyncOAuthCredentialsResult, *Account, error) {
+	if req == nil || id <= 0 || (req.ContractVersion != 0 && req.ContractVersion != 1) {
+		return nil, nil, ErrOAuthSyncInvalid
+	}
+	operationID, err := NormalizeIdempotencyKey(req.OperationID)
+	if err != nil || operationID == "" {
+		return nil, nil, infraerrors.BadRequest("OAUTH_SYNC_INVALID", "operation_id is required and must be a valid idempotency key")
 	}
 	mode := strings.TrimSpace(req.RecoveryMode)
-	if mode == "" {
-		mode = "credentials_only"
+	if mode == "auth_only" {
+		return nil, nil, ErrOAuthSyncRecoveryUnsupported
 	}
-	if mode != "credentials_only" && mode != "auth_only" {
-		return nil, nil, fmt.Errorf("unsupported recovery_mode")
+	if mode != "" && mode != "credentials_only" {
+		return nil, nil, infraerrors.BadRequest("OAUTH_SYNC_INVALID", "unsupported recovery_mode")
 	}
-
+	expectedAt, err := time.Parse(time.RFC3339Nano, req.ExpectedUpdatedAt)
+	if err != nil {
+		return nil, nil, infraerrors.BadRequest("OAUTH_SYNC_INVALID", "expected_updated_at must be the timestamp returned by the account API")
+	}
 	account, err := s.accountRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, nil, err
 	}
 	if account == nil {
-		return nil, nil, fmt.Errorf("account not found")
+		return nil, nil, ErrAccountNotFound
 	}
-	if account.IsShadow() {
-		return nil, nil, fmt.Errorf("shadow accounts are not supported")
+	if account.IsShadow() || !account.IsOpenAI() || !account.IsOAuth() {
+		return nil, nil, infraerrors.BadRequest("OAUTH_SYNC_INVALID", "only non-shadow OpenAI OAuth accounts are supported")
 	}
-	if !account.IsOpenAI() || !account.IsOAuth() {
-		return nil, nil, fmt.Errorf("only OpenAI OAuth accounts are supported")
+	if !account.UpdatedAt.Equal(expectedAt) {
+		return nil, nil, ErrOAuthSyncConflict
 	}
 	if err := identityMatches(account, req.ExpectedIdentity); err != nil {
 		return nil, nil, err
 	}
-	// ExpectedUpdatedAt remains advisory in v1; credential writes do not enforce it.
-
-	beforeStatus := account.Status
-	beforeError := account.ErrorMessage
-	beforeSchedulable := account.Schedulable
-
-	patch := filterOAuthCredentialPatch(req.Credentials)
-	if len(patch) == 0 {
-		return nil, nil, fmt.Errorf("no credential fields to write")
-	}
-	merged := MergePreservingSensitiveCreds(account.Credentials, patch)
-	updater, ok := s.accountRepo.(interface {
-		UpdateCredentials(context.Context, int64, map[string]any) error
-	})
-	if !ok {
-		return nil, nil, fmt.Errorf("credential updater unavailable")
-	}
-	if err := updater.UpdateCredentials(ctx, id, merged); err != nil {
+	patch, err := validateOAuthSyncPatch(account, req.Credentials)
+	if err != nil {
 		return nil, nil, err
 	}
-
-	result := &SyncOAuthCredentialsResult{
-		ContractVersion:        1,
-		OperationID:            req.OperationID,
-		RemoteAccountID:        id,
-		CredentialWrite:        "succeeded",
-		TokenCacheInvalidation: "skipped",
-		AuthRecovery:           "skipped",
-		Schedulable:            beforeSchedulable,
-		SchedulingAssessment:   "unknown",
-		RemainingBlockers:      []string{},
-		Partial:                false,
-		Status:                 beforeStatus,
-		ErrorMessage:           beforeError,
+	merged := MergePreservingSensitiveCreds(account.Credentials, patch)
+	version := time.Now().UnixMilli()
+	if old := account.GetCredentialAsInt64("_token_version"); old >= version {
+		version = old + 1
 	}
-
-	// Reload after credential write. Token cache invalidation is done by the handler
-	// so this service never owns broad recovery side effects.
-	if _, err := s.accountRepo.GetByID(ctx, id); err != nil {
-		result.Partial = true
-		result.CredentialWrite = "succeeded"
-		result.TokenCacheInvalidation = "pending"
-		return result, account, nil
+	merged["_token_version"] = version
+	updater, ok := s.accountRepo.(OAuthCredentialSyncRepository)
+	if !ok {
+		return nil, nil, infraerrors.ServiceUnavailable("OAUTH_SYNC_CAS_UNAVAILABLE", "conditional credential storage is unavailable")
 	}
-	result.TokenCacheInvalidation = "pending"
-
-	finalAccount, err := s.accountRepo.GetByID(ctx, id)
+	applied, err := updater.UpdateOAuthCredentialsIfUnchanged(ctx, id, expectedAt, account.Credentials, merged)
 	if err != nil {
-		result.Partial = true
-		return result, account, nil
+		return nil, nil, err
 	}
-	result.Schedulable = finalAccount.Schedulable
-	result.Status = finalAccount.Status
-	result.ErrorMessage = finalAccount.ErrorMessage
-	if !finalAccount.Schedulable {
-		result.RemainingBlockers = append(result.RemainingBlockers, "schedulable_off")
-		result.SchedulingAssessment = "paused"
-	} else if strings.EqualFold(finalAccount.Status, StatusError) {
-		result.RemainingBlockers = append(result.RemainingBlockers, "status_error")
-		result.SchedulingAssessment = "blocked"
-	} else if finalAccount.TempUnschedulableUntil != nil && finalAccount.TempUnschedulableUntil.After(time.Now()) {
-		result.RemainingBlockers = append(result.RemainingBlockers, "temp_unschedulable")
-		result.SchedulingAssessment = "blocked"
-	} else if result.AuthRecovery == "cleared" || result.AuthRecovery == "not_applicable" || result.AuthRecovery == "skipped" {
-		result.SchedulingAssessment = "configuration_allows_scheduling"
+	if !applied {
+		return nil, nil, ErrOAuthSyncConflict
 	}
-	return result, finalAccount, nil
+	return &SyncOAuthCredentialsResult{
+		ContractVersion: 1, OperationID: operationID, RemoteAccountID: id,
+		CredentialWrite: "succeeded", TokenCacheInvalidation: "pending", AuthRecovery: "skipped",
+		Schedulable: account.Schedulable, SchedulingAssessment: "not_assessed",
+		RemainingBlockers: []string{}, Status: account.Status,
+	}, account, nil
 }
 
-// RecoverAuthErrorOnly clears a previously observed auth error after credentials
-// were written and token cache invalidation succeeded. It never clears rate limits.
-func (s *adminServiceImpl) RecoverAuthErrorOnly(ctx context.Context, id int64, expectedStatus, expectedErrorMessage string) (string, error) {
-	if !isRecognizedAuthError(expectedStatus, expectedErrorMessage) {
-		return "not_applicable", nil
+// Legacy service callers must not bypass candidate validation via this helper.
+func (s *adminServiceImpl) RecoverAuthErrorOnly(context.Context, int64, string, string) (string, error) {
+	return "unsupported", ErrOAuthSyncRecoveryUnsupported
+}
+
+// Read only the existing, redacted receipt. Expired or ambiguous operations are
+// never treated as evidence that a credential write did not happen.
+func LookupOAuthSyncOperation(ctx context.Context, scope, operationID string) (map[string]any, error) {
+	key, err := NormalizeIdempotencyKey(operationID)
+	if err != nil || key == "" {
+		return nil, ErrOAuthSyncInvalid
 	}
-	clearer, ok := s.accountRepo.(interface {
-		ClearAuthErrorOnly(context.Context, int64, string, string) (bool, error)
-	})
-	if !ok {
-		return "not_supported_by_repo", nil
+	coordinator := DefaultIdempotencyCoordinator()
+	if coordinator == nil || coordinator.repo == nil {
+		return nil, ErrIdempotencyStoreUnavail
 	}
-	cleared, err := clearer.ClearAuthErrorOnly(ctx, id, expectedStatus, expectedErrorMessage)
+	record, err := coordinator.repo.GetByScopeAndKeyHash(ctx, scope, HashIdempotencyKey(key))
 	if err != nil {
-		return "failed", err
+		return nil, ErrIdempotencyStoreUnavail
 	}
-	if !cleared {
-		return "conflict", nil
+	result := map[string]any{"operation_id": key, "state": "unknown"}
+	if record == nil || !record.ExpiresAt.After(time.Now()) {
+		return result, nil
 	}
-	return "cleared", nil
+	if record.Status != IdempotencyStatusSucceeded {
+		return result, nil
+	}
+	receipt, err := coordinator.decodeStoredResponse(record.ResponseBody)
+	if err != nil {
+		return nil, ErrIdempotencyStoreUnavail
+	}
+	result["state"] = "recorded"
+	result["receipt"] = receipt
+	return result, nil
 }

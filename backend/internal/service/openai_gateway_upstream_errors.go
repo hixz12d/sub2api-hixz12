@@ -585,6 +585,7 @@ func (s *OpenAIGatewayService) readUpstreamErrorBody(resp *http.Response) []byte
 }
 
 func (s *OpenAIGatewayService) handleFailoverSideEffects(ctx context.Context, resp *http.Response, account *Account, responseBody []byte, canonicalModel ...string) bool {
+	ctx = withOAuthResponseCredential(ctx, resp)
 	if len(canonicalModel) > 0 {
 		return s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, responseBody, canonicalModel[0])
 	}
@@ -600,6 +601,7 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 	requestedModel ...string,
 ) (*OpenAIForwardResult, error) {
 	body := s.readUpstreamErrorBody(resp)
+	ctx = withOAuthResponseCredential(ctx, resp)
 	body = s.redactAgentIdentitySensitiveBody(ctx, account, body)
 
 	// cyber_policy 硬阻断：透传上游原始错误体给客户端（不重包成通用 502），不冷却账号。
@@ -946,7 +948,7 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 		modelForCooldown = requestedModel[0]
 	}
 	shouldDisable := s.handleOpenAIAccountUpstreamError(
-		c.Request.Context(), account, resp.StatusCode, resp.Header, body, modelForCooldown,
+		withOAuthResponseCredential(c.Request.Context(), resp), account, resp.StatusCode, resp.Header, body, modelForCooldown,
 	)
 	kind := "http_error"
 	if shouldDisable {

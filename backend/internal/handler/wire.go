@@ -11,6 +11,7 @@ import (
 
 // ProvideAdminHandlers creates the AdminHandlers struct
 func ProvideAdminHandlers(
+	oauthSync *service.OAuthSyncService,
 	dashboardHandler *admin.DashboardHandler,
 	userHandler *admin.UserHandler,
 	groupHandler *admin.GroupHandler,
@@ -56,6 +57,7 @@ func ProvideAdminHandlers(
 ) *AdminHandlers {
 	accountHandler.SetUpstreamBillingProbeService(upstreamBillingProbe)
 	accountHandler.SetOllamaCloudUsageService(ollamaCloudUsage)
+	accountHandler.SetOAuthSyncService(oauthSync)
 	accountHandler.SetQuestionReviews(questionReviews)
 	accountHandler.SetDetectorTasks(detectorTasks)
 	accountHandler.SetMonitorPolicyControl(monitorPolicyControl)

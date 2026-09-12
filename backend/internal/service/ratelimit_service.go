@@ -431,6 +431,12 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 		}
 		// OpenAI: token_invalidated / token_revoked 表示 token 被永久作废（非过期），直接标记 error
 		openai401Code := extractUpstreamErrorCode(responseBody)
+		permanentAuth := openai401Code == "token_invalidated" || openai401Code == "token_revoked" || gjson.GetBytes(responseBody, "detail").String() == "Unauthorized" || strings.TrimSpace(authAccount.GetCredential("refresh_token")) == ""
+		credential401 := openai401Code == "token_invalidated" || openai401Code == "token_revoked" || openai401Code == "token_expired" || openai401Code == "invalid_token" || gjson.GetBytes(responseBody, "detail").String() == "Unauthorized"
+		if credential401 && s.recordVersionedOAuth401(ctx, authAccount, permanentAuth) {
+			shouldDisable = true
+			break
+		}
 		if authAccount.Platform == PlatformOpenAI && (openai401Code == "token_invalidated" || openai401Code == "token_revoked") {
 			msg := "Token revoked (401): account authentication permanently revoked"
 			if upstreamMsg != "" {
@@ -2181,7 +2187,9 @@ func (s *RateLimitService) GetTempUnschedStatus(ctx context.Context, accountID i
 		if err != nil {
 			return nil, err
 		}
-		if state != nil && state.UntilUnix > now {
+		// Versioned auth holds may be cleared transactionally by OAuth sync.
+		// Recheck their DB owner instead of deleting a potentially newer cache entry.
+		if state != nil && state.UntilUnix > now && state.ErrorMessage != "OAuth authentication failed (versioned 401)" {
 			return state, nil
 		}
 	}

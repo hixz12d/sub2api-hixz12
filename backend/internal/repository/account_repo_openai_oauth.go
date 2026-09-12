@@ -17,6 +17,8 @@ func (r *accountRepository) SetOpenAIOAuthErrorIfCredentialsUnchanged(ctx contex
 	if err != nil {
 		return false, err
 	}
+	before := &service.Account{Credentials: expectedCredentials}
+	attributed := errorMsg == "OpenAI OAuth refresh credential rejected; reauthorize the account" && before.GetCredentialAsInt64("_token_version") > 0 && before.GetCredential("access_token") != "" && before.GetCredential("refresh_token") != ""
 	result, err := r.sql.ExecContext(ctx, `
 		WITH updated AS (
 		UPDATE accounts AS a
@@ -28,11 +30,17 @@ func (r *accountRepository) SetOpenAIOAuthErrorIfCredentialsUnchanged(ctx contex
 			AND a.status = $6
 			AND a.credentials = $7::jsonb
 		RETURNING a.id
+        ), evidence AS (
+            INSERT INTO oauth_auth_errors (account_id, kind, credential_version, token_hash, message)
+            SELECT id, 'error', $10, $11, $2 FROM updated WHERE $9
+            ON CONFLICT (account_id, kind) DO UPDATE SET credential_version=EXCLUDED.credential_version,
+                token_hash=EXCLUDED.token_hash, message=EXCLUDED.message, blocked_until=NULL, observed_at=clock_timestamp()
 		)
 		INSERT INTO scheduler_outbox (event_type, account_id, group_id, payload)
 		SELECT $8, updated.id, NULL, NULL FROM updated
 	`, service.StatusError, errorMsg, id, service.PlatformOpenAI, service.AccountTypeOAuth,
-		service.StatusActive, string(expectedJSON), service.SchedulerOutboxEventAccountChanged)
+		service.StatusActive, string(expectedJSON), service.SchedulerOutboxEventAccountChanged,
+		attributed, before.GetCredentialAsInt64("_token_version"), service.OAuthAccessTokenHash(before.GetCredential("access_token")))
 	if err != nil {
 		return false, err
 	}

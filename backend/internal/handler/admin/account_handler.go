@@ -49,6 +49,7 @@ func NewOAuthHandler(oauthService *service.OAuthService) *OAuthHandler {
 
 // AccountHandler handles admin account management
 type AccountHandler struct {
+	oauthSync               oauthSyncControl
 	monitorPolicyControl    service.MonitorPolicyControl
 	detectorTasks           *service.DetectorTaskService
 	questionReviews         *service.QuestionReviewService
@@ -1420,6 +1421,10 @@ func (h *AccountHandler) refreshSingleAccount(ctx context.Context, account *serv
 	var newCredentials map[string]any
 
 	if account.IsOpenAI() {
+		if !account.IsOpenAIPersonalAccessToken() && account.GetCredential("refresh_token") != "" {
+			current, err := h.openaiOAuthService.RefreshManagedAccount(ctx, account)
+			return current, "", err
+		}
 		tokenInfo, err := h.openaiOAuthService.RefreshAccountToken(ctx, account)
 		if err != nil {
 			// 刷新失败但 access_token 可能仍有效，尝试设置隐私

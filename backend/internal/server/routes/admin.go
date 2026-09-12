@@ -358,6 +358,7 @@ func registerGroupRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 }
 
 func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {
+	admin.GET("/integration/capabilities", h.Admin.Account.IntegrationCapabilities)
 	accounts := admin.Group("/accounts")
 	{
 		accounts.GET("", h.Admin.Account.List)
@@ -397,6 +398,11 @@ func registerAccountRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAu
 		accounts.POST("/:id/refresh", h.Admin.Account.Refresh)
 		accounts.POST("/:id/apply-oauth-credentials", h.Admin.Account.ApplyOAuthCredentials)
 		accounts.POST("/:id/sync-oauth-credentials", h.Admin.Account.SyncOAuthCredentials)
+		accounts.GET("/:id/credential-sync-operations/:operation_id", h.Admin.Account.GetOAuthSyncOperation)
+		accounts.GET("/:id/credential-sync-state", h.Admin.Account.GetOAuthSyncState)
+		accounts.POST("/:id/credential-sync-access-token", h.Admin.Account.ReadOAuthSyncAccessToken)
+		accounts.POST("/:id/credential-refresh-handoff", h.Admin.Account.OAuthRefreshHandoff)
+		accounts.POST("/:id/credential-sync-operations/:operation_id/retry", h.Admin.Account.RetryOAuthSyncOperation)
 		accounts.POST("/:id/set-privacy", h.Admin.Account.SetPrivacy)
 		accounts.POST("/:id/refresh-tier", h.Admin.Account.RefreshTier)
 		accounts.GET("/:id/stats", h.Admin.Account.GetStats)

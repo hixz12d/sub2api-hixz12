@@ -265,6 +265,15 @@ func (h *OpenAIOAuthHandler) RefreshAccountToken(c *gin.Context) {
 	}
 
 	// Use OpenAI OAuth service to refresh token
+	if !account.IsOpenAIPersonalAccessToken() && account.GetCredential("refresh_token") != "" {
+		current, refreshErr := h.openaiOAuthService.RefreshManagedAccount(c.Request.Context(), account)
+		if refreshErr != nil {
+			response.ErrorFrom(c, refreshErr)
+			return
+		}
+		response.Success(c, dto.AccountFromService(current))
+		return
+	}
 	tokenInfo, err := h.openaiOAuthService.RefreshAccountToken(c.Request.Context(), account)
 	if err != nil {
 		response.ErrorFrom(c, err)
