@@ -91,7 +91,9 @@ func TestOAuthCredentialSyncHandlerRetryAcceptsOnlyInstancePrecondition(t *testi
 	require.Zero(t, stub.writes)
 	var payload map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
-	require.Equal(t, "recorded", payload["data"].(map[string]any)["state"])
+	data, ok := payload["data"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, "recorded", data["state"])
 }
 func TestOAuthCredentialSyncHandlerUnavailableFailsClosed(t *testing.T) {
 	router := gin.New()

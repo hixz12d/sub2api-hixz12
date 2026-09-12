@@ -50,7 +50,9 @@ func TestOpenAIRefreshHandoffDrainsBeforeReleasingAndFencesOldTicket(t *testing.
 	req.Action = "read"
 	read, err := repo.OpenAIRefreshHandoff(ctx, fresh, "scope", req)
 	require.NoError(t, err)
-	require.Equal(t, rt+"-new", read["credentials"].(map[string]any)["refresh_token"])
+	credentials, ok := read["credentials"].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, rt+"-new", credentials["refresh_token"])
 	after, err := repo.GetByID(ctx, before.ID)
 	require.NoError(t, err)
 	require.Empty(t, after.GetCredential("refresh_token"))
