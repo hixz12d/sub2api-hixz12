@@ -3216,27 +3216,31 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				}
 				// 防御式清理：避免异常路径下旧槽位覆盖导致泄漏。
 				releaseTurnSlots()
-				// 非首轮 turn 需要重新抢占并发槽位，避免长连接空闲占槽。
-				userReleaseFunc, userAcquired, err := h.concurrencyHelper.TryAcquireUserSlotForAPIKey(ctx, subject.UserID, subject.Concurrency, apiKey.ID)
+				waitCtx, cancelWait := service.OpenAIWSClientWaitContext(ctx, c)
+				defer cancelWait()
+				userReleaseFunc, accountReleaseFunc, err := h.concurrencyHelper.acquireWSTurnSlots(
+					waitCtx, subject.UserID, subject.Concurrency, apiKey.ID, account.ID, accountMaxConcurrency, openAIWSTurnConcurrencyWait,
+				)
 				if err != nil {
-					return service.NewOpenAIWSClientCloseError(coderws.StatusInternalError, "failed to acquire user concurrency slot", err)
-				}
-				if !userAcquired {
-					return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "too many concurrent requests, please retry later", nil)
-				}
-				accountReleaseFunc, accountAcquired, err := h.concurrencyHelper.TryAcquireAccountSlot(ctx, account.ID, accountMaxConcurrency)
-				if err != nil {
-					if userReleaseFunc != nil {
-						userReleaseFunc()
+					if waitCtx.Err() != nil {
+						return context.Cause(waitCtx)
 					}
-					return service.NewOpenAIWSClientCloseError(coderws.StatusInternalError, "failed to acquire account concurrency slot", err)
-				}
-				if !accountAcquired {
-					if userReleaseFunc != nil {
-						userReleaseFunc()
+					var queueErr *WaitQueueFullError
+					var concurrencyErr *ConcurrencyError
+					if errors.As(err, &queueErr) || errors.As(err, &concurrencyErr) || errors.Is(err, context.DeadlineExceeded) {
+						return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "concurrency is busy after a short wait; please retry shortly", err)
 					}
-					return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "account is busy, please retry later", nil)
+					return service.NewOpenAIWSClientCloseError(coderws.StatusInternalError, "failed to acquire concurrency slots", err)
 				}
+				// A brief wait can cross a pricing window. Recheck at admission and
+				// use the same timestamp for this turn's billing.
+				turnCtx, turnAt = h.gatewayService.WithOpenAITurnPricingContext(ctx, apiKey.GroupID)
+				if _, vetoed, _ := h.gatewayService.ProfitControlVetoLatest(turnCtx, account); vetoed {
+					userReleaseFunc()
+					accountReleaseFunc()
+					return service.NewOpenAIWSClientCloseError(coderws.StatusTryAgainLater, "account is no longer eligible for this connection, please reconnect", nil)
+				}
+				turnPricing.freeze(turnAt)
 				currentUserRelease = wrapReleaseOnDone(ctx, userReleaseFunc)
 				currentAccountRelease = wrapReleaseOnDone(ctx, accountReleaseFunc)
 				return nil

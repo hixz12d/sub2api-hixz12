@@ -4472,9 +4472,9 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ClientDisconnect
 	cfg.Gateway.OpenAIWS.WriteTimeoutSeconds = 3
 
 	// 多个上游事件：前几个为非 terminal 事件，最后一个为 terminal。
-	// 第一个事件延迟 250ms 让客户端 RST 有时间传播，使 writeClientMessage 可靠失败。
+	// 已经输出后断线应收尾计费；尚未输出即断线由 native lifecycle 测试验证立即取消。
 	captureConn := &openAIWSCaptureConn{
-		readDelays: []time.Duration{250 * time.Millisecond, 0, 0},
+		readDelays: []time.Duration{0, 250 * time.Millisecond, 0},
 		events: [][]byte{
 			[]byte(`{"type":"response.created","response":{"id":"resp_ingress_disconnect","model":"gpt-5.1"}}`),
 			[]byte(`{"type":"response.output_item.added","response":{"id":"resp_ingress_disconnect"}}`),
@@ -4566,7 +4566,12 @@ func TestOpenAIGatewayService_ProxyResponsesWebSocketFromClient_ClientDisconnect
 	err = clientConn.Write(writeCtx, coderws.MessageText, []byte(`{"type":"response.create","model":"custom-original-model","stream":false,"service_tier":"flex"}`))
 	cancelWrite()
 	require.NoError(t, err)
-	// 立即关闭客户端，模拟客户端在 relay 期间断连。
+	// 先确认收到一个事件，再模拟 relay 期间断线。
+	readCtx, cancelRead := context.WithTimeout(context.Background(), 3*time.Second)
+	_, firstEvent, readErr := clientConn.Read(readCtx)
+	cancelRead()
+	require.NoError(t, readErr)
+	require.Contains(t, string(firstEvent), "response.created")
 	require.NoError(t, clientConn.CloseNow(), "模拟 ingress 客户端提前断连")
 
 	select {

@@ -327,10 +327,9 @@ func (h *UsageHandler) ListErrors(c *gin.Context) {
 		filter.StatusCodes = []int{n}
 	}
 
-	if cat := strings.TrimSpace(c.Query("category")); cat != "" {
-		phases, types := service.CategoryToFilter(cat)
-		filter.ErrorPhasesAny = phases
-		filter.ErrorTypesAny = types
+	switch cat := strings.TrimSpace(c.Query("category")); cat {
+	case "auth", "rate_limit", "quota", "invalid_request", "service_unavailable", "upstream", "internal", "cyber", "other":
+		filter.UserErrorCategory = cat
 	}
 
 	// 排序对齐用量明细:列白名单与方向归一在 repo 层,非法值回退 created_at DESC。

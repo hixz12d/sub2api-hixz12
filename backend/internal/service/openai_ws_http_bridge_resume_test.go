@@ -104,6 +104,23 @@ func TestProxyOpenAIWSHTTPBridgeTurnLaterTurnDoesNotFailOverAfterDownstreamOutpu
 }
 
 func TestOpenAIWSHTTPBridgeLaterTurn429RetriesCurrentTurnOnReplacementAccount(t *testing.T) {
+	testHTTPBridgeCurrentTurnRecovery(t, http.StatusTooManyRequests)
+}
+
+func TestOpenAIWSHTTPBridgeLaterTurnServerErrorRetriesCurrentTurn(t *testing.T) {
+	for _, status := range []int{http.StatusInternalServerError, http.StatusServiceUnavailable} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			testHTTPBridgeCurrentTurnRecovery(t, status)
+		})
+	}
+}
+
+func TestOpenAIWSHTTPBridgeLaterTurnTransportErrorRetriesCurrentTurn(t *testing.T) {
+	testHTTPBridgeCurrentTurnRecovery(t, 0)
+}
+
+func testHTTPBridgeCurrentTurnRecovery(t *testing.T, failureStatus int) {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 
 	cfg := &config.Config{}
@@ -128,9 +145,9 @@ func TestOpenAIWSHTTPBridgeLaterTurn429RetriesCurrentTurnOnReplacementAccount(t 
 			)),
 		},
 		{
-			StatusCode: http.StatusTooManyRequests,
+			StatusCode: failureStatus,
 			Header:     http.Header{"Retry-After": []string{"60"}},
-			Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached"}}`)),
+			Body:       io.NopCloser(strings.NewReader(`{"error":{"type":"server_error","message":"temporary upstream failure"}}`)),
 		},
 		{
 			StatusCode: http.StatusOK,
@@ -146,6 +163,16 @@ func TestOpenAIWSHTTPBridgeLaterTurn429RetriesCurrentTurnOnReplacementAccount(t 
 		cache:            &stubGatewayCache{},
 		openaiWSResolver: NewOpenAIWSProtocolResolver(cfg),
 		toolCorrector:    NewCodexToolCorrector(),
+	}
+	if failureStatus == 0 {
+		svc.httpUpstream = &bridgeLifecycleUpstream{do: func(req *http.Request) (*http.Response, error) {
+			resp, err := upstream.Do(req, "", 0, 1)
+			if resp != nil && resp.StatusCode == 0 {
+				_ = resp.Body.Close()
+				return nil, io.ErrUnexpectedEOF
+			}
+			return resp, err
+		}}
 	}
 	account := &Account{
 		ID: 129, Name: "limited", Platform: PlatformOpenAI, Type: AccountTypeOAuth,

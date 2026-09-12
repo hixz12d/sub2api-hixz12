@@ -1040,6 +1040,25 @@ func buildOpsErrorLogsWhere(filter *service.OpsErrorLogFilter) (string, []any) {
 		args = append(args, pq.Array(filter.ErrorTypesAny))
 		clauses = append(clauses, "e.error_type = ANY($"+itoa(len(args))+")")
 	}
+	if filter.UserErrorCategory != "" {
+		args = append(args, filter.UserErrorCategory)
+		// Keep the phase precedence and fallback identical to MapUserErrorCategory.
+		clauses = append(clauses, `(CASE e.error_phase
+			WHEN 'auth' THEN 'auth'
+			WHEN 'routing' THEN 'service_unavailable'
+			WHEN 'account_auth' THEN 'upstream'
+			WHEN 'upstream' THEN 'upstream'
+			WHEN 'network' THEN 'upstream'
+			WHEN 'internal' THEN 'internal'
+			WHEN 'request' THEN CASE e.error_type
+				WHEN 'rate_limit_error' THEN 'rate_limit'
+				WHEN 'billing_error' THEN 'quota'
+				WHEN 'subscription_error' THEN 'quota'
+				WHEN 'invalid_request_error' THEN 'invalid_request'
+				WHEN 'cyber_policy' THEN 'cyber'
+				ELSE 'other' END
+			ELSE 'other' END) = $`+itoa(len(args)))
+	}
 
 	return "WHERE " + strings.Join(clauses, " AND "), args
 }

@@ -11,10 +11,17 @@
     <!-- Error state -->
     <div v-else-if="loadError" class="py-8 text-center text-sm text-red-500">
       {{ t('usage.errors.detail.loadFailed') }}
+      <button type="button" class="btn btn-secondary mx-auto mt-3 block" @click="reload++">{{ t('usage.errors.detail.retry') }}</button>
     </div>
 
     <!-- Detail content -->
     <div v-else-if="detail" class="space-y-4 text-sm">
+      <div class="rounded-lg border border-primary-200 bg-primary-50 p-4 dark:border-primary-800 dark:bg-primary-950/30" data-testid="error-advice">
+        <p class="font-medium text-gray-900 dark:text-dark-100">{{ t('usage.errors.detail.nextStep') }}</p>
+        <p class="mt-1 leading-6 text-gray-700 dark:text-dark-200">{{ t('usage.errors.detail.advice.' + userErrorAdvice(detail)) }}</p>
+        <button type="button" class="btn btn-secondary mt-3" data-testid="copy-error-report" @click="copyToClipboard(buildUserErrorReport(detail))">{{ t('usage.errors.detail.copyReport') }}</button>
+        <p class="mt-2 text-xs text-gray-500 dark:text-dark-400">{{ t('usage.errors.detail.reportHint') }}</p>
+      </div>
       <div class="grid grid-cols-2 gap-x-6 gap-y-3">
         <!-- Time -->
         <div>
@@ -77,6 +84,8 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import { getMyErrorDetail } from '@/api/usage'
 import { formatDateTime } from '@/utils/format'
 import type { UserErrorRequestDetail } from '@/types'
+import { useClipboard } from '@/composables/useClipboard'
+import { buildUserErrorReport, userErrorAdvice } from '@/utils/userErrorAdvice'
 
 const props = defineProps<{
   show: boolean
@@ -88,34 +97,37 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const { copyToClipboard } = useClipboard()
+const reload = ref(0)
+let requestVersion = 0
 
 const loading = ref(false)
 const loadError = ref(false)
 const detail = ref<UserErrorRequestDetail | null>(null)
 
 watch(
-  () => [props.show, props.errorId] as const,
-  ([show, id]) => {
-    if (show && id != null) {
-      fetchDetail(id)
-    } else if (!show) {
-      detail.value = null
-      loadError.value = false
-    }
-  }
+  () => [props.show, props.errorId, reload.value] as const,
+  ([show, id], _previous, onCleanup) => {
+    const version = ++requestVersion
+    const controller = new AbortController()
+    onCleanup(() => { controller.abort(); requestVersion++ })
+    detail.value = null
+    loadError.value = false
+    loading.value = false
+    if (show && id != null) void fetchDetail(id, controller.signal, version)
+  },
+  { immediate: true }
 )
 
-async function fetchDetail(id: number) {
+async function fetchDetail(id: number, signal: AbortSignal, version: number) {
   loading.value = true
-  loadError.value = false
-  detail.value = null
   try {
-    detail.value = await getMyErrorDetail(id)
-  } catch (e) {
-    console.error('[UserErrorDetailModal] Failed to load error detail:', e)
-    loadError.value = true
+    const result = await getMyErrorDetail(id, signal)
+    if (!signal.aborted && version === requestVersion) detail.value = result
+  } catch {
+    if (!signal.aborted && version === requestVersion) loadError.value = true
   } finally {
-    loading.value = false
+    if (version === requestVersion) loading.value = false
   }
 }
 

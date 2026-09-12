@@ -53,11 +53,18 @@ func readOpenAIWSClientMessageWithTimeoutStart(
 		controlCtx = context.Background()
 	}
 
-	readDone := make(chan openAIWSClientReadResult, 1)
-	go func() {
-		messageType, payload, err := conn.Read(context.Background())
-		readDone <- openAIWSClientReadResult{messageType: messageType, payload: payload, err: err}
-	}()
+	reader := openAIWSClientReaderFromContext(controlCtx)
+	var readDone <-chan openAIWSClientReadResult
+	if reader != nil {
+		readDone = reader.messages
+	} else {
+		oneRead := make(chan openAIWSClientReadResult, 1)
+		readDone = oneRead
+		go func() {
+			messageType, payload, err := conn.Read(context.Background())
+			oneRead <- openAIWSClientReadResult{messageType: messageType, payload: payload, err: err}
+		}()
+	}
 
 	var timer *time.Timer
 	var timeoutCh <-chan time.Time
@@ -88,21 +95,32 @@ func readOpenAIWSClientMessageWithTimeoutStart(
 	}()
 
 	closeAndJoin := func(status coderws.StatusCode, reason string, cause error) (coderws.MessageType, []byte, error) {
-		_ = conn.Close(status, reason)
-		_ = conn.CloseNow()
-		<-readDone
+		if reader != nil {
+			reader.close(status, reason, cause)
+			<-reader.done
+		} else {
+			_ = conn.Close(status, reason)
+			_ = conn.CloseNow()
+			<-readDone
+		}
 		return 0, nil, NewOpenAIWSClientCloseError(status, reason, cause)
 	}
 
 	for {
 		select {
-		case result := <-readDone:
+		case result, ok := <-readDone:
+			if !ok && reader != nil {
+				return 0, nil, context.Cause(reader.ctx)
+			}
 			return result.messageType, result.payload, result.err
 		case <-timeoutStart:
 			startTimeout()
 		case <-timeoutCh:
 			return closeAndJoin(timeoutStatus, timeoutReason, context.DeadlineExceeded)
 		case <-controlCtx.Done():
+			if reader != nil && reader.ctx.Err() != nil {
+				return 0, nil, context.Cause(reader.ctx)
+			}
 			cause := context.Cause(controlCtx)
 			if errors.Is(cause, ErrOpenAIWSIngressLeaseLost) {
 				return closeAndJoin(

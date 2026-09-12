@@ -133,6 +133,15 @@
           </nav>
         </div>
 
+        <ConnectionDiagnostics
+          v-if="showCodexModelCatalog"
+          :base-url="baseUrl || windowOrigin"
+          :api-key="apiKey"
+          :initial-model="diagnosticModel"
+          :windows="activeTab === 'windows'"
+          :auth-mode="platform === 'openai' ? codexAuthMode : 'env'"
+        />
+
         <!-- Code Blocks (Stacked for multi-file platforms) -->
         <div class="space-y-4">
           <div
@@ -259,6 +268,7 @@ import { ref, computed, h, watch, type Component } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { saveAs } from 'file-saver'
 import BaseDialog from '@/components/common/BaseDialog.vue'
+import ConnectionDiagnostics from '@/components/keys/ConnectionDiagnostics.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { fetchCodexModelsManifest } from '@/api/codex'
@@ -694,6 +704,8 @@ const comment = (value: string) => wrapToken('text-slate-500', value)
 
 // Syntax highlighting helpers
 // Generate file configs based on platform and active tab
+const windowOrigin = window.location.origin
+const diagnosticModel = computed(() => currentFiles.value.find(file => file.path.endsWith('config.toml'))?.content.match(/^model = "([^"]+)"/m)?.[1] || '')
 const currentFiles = computed((): FileConfig[] => {
   const baseUrl = props.baseUrl || window.location.origin
   const apiKey = props.apiKey

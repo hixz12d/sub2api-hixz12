@@ -66,6 +66,7 @@ func MapUserErrorCategory(phase, errType string) string {
 // CategoryToFilter 把用户侧分类码反向映射为后端过滤条件（plain ANY）。
 // 未知分类返回两个空切片（即不施加分类过滤）。
 // 注意："other" 与未知分类都走 default 返回空切片——"other" 无对应的 phase/type 组合，无法精确反查，因此等价于不过滤。
+// Deprecated: 用户错误接口应设置 OpsErrorLogFilter.UserErrorCategory，保证与展示分类完全一致。
 func CategoryToFilter(category string) (phases []string, errorTypes []string) {
 	switch category {
 	case "auth":

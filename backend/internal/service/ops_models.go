@@ -149,6 +149,9 @@ type OpsErrorLogFilter struct {
 	// Used to map user-facing coarse categories to backend conditions.
 	ErrorPhasesAny []string
 	ErrorTypesAny  []string
+	// UserErrorCategory matches the exact category rendered by MapUserErrorCategory,
+	// including its fallback "other", without weakening ownership/status filters.
+	UserErrorCategory string
 
 	// View controls error categorization for list endpoints.
 	// - errors: show actionable errors (exclude business-limited / 429 / 529)

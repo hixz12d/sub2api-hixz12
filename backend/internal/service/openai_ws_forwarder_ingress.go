@@ -83,6 +83,18 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	if account == nil {
 		return errors.New("account is nil")
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	readerParent := ctx
+	if c.Request != nil {
+		readerParent = c.Request.Context()
+	}
+	if hooks != nil && hooks.ClientLifecycleContext != nil {
+		readerParent = hooks.ClientLifecycleContext
+	}
+	clientReader := openAIWSClientReaderForIngress(readerParent, c, clientConn)
+	ctx = context.WithValue(ctx, openAIWSClientReaderContextKey{}, clientReader)
 	// A handler may reuse the same gin context across account failover attempts.
 	// Never let an OAuth attempt's response aliases leak into the next account.
 	setCodexToolNameReverse(c, nil)
@@ -152,6 +164,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			// 首轮准入由握手路径完成；后续 response.create 会在写入上游前
 			// 依次回调 BeforeRequest 和 BeforeTurn，并在终止或失败时回调
 			// AfterTurn，从而覆盖 turn 级利润复核、定价冻结和并发槽位释放。
+			clientReader.start()
 			return s.proxyResponsesWebSocketV2Passthrough(
 				ctx,
 				c,
@@ -582,6 +595,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		}
 	}
 	refreshIngressRouteState(firstPayload)
+	clientReader.start()
 
 	if useHTTPBridge {
 		logOpenAIWSModeInfo(
@@ -695,8 +709,18 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					return fmt.Errorf("resolve Grok websocket cache identity: %w", err)
 				}
 			}
+			// Only a rebuilt current turn may recover a later-turn transport
+			// failure. Never replay the connection's already completed first turn.
+			bridgeCtx := ctx
+			if turn > 1 {
+				// Reuse the already rebuilt bridge body for the eligibility check.
+				// Materialize and validate the full retry payload only on failure.
+				coverage := AnalyzeToolCallOutputContextCoverageBytes(bridgePayloadRaw)
+				retrySafe := turnAccountFailoverInputExists && (!coverage.HasFunctionCallOutput || coverage.ContextCoversAllCallIDs)
+				bridgeCtx = context.WithValue(ctx, openAIWSHTTPBridgeReplaySafeKey{}, retrySafe)
+			}
 			result, bridgeErr := s.proxyOpenAIWSHTTPBridgeTurn(
-				ctx,
+				bridgeCtx,
 				c,
 				account,
 				token,
@@ -888,7 +912,9 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		req.ForcePreferredConn = forcePreferredConn
 		// dedicated 模式下每次获取均新建连接，避免跨会话复用残留上下文。
 		req.ForceNewConn = dedicatedMode
-		acquireCtx, acquireCancel := context.WithTimeout(ctx, acquireTimeout)
+		clientWaitCtx, cancelClientWait := OpenAIWSClientWaitContext(ctx, c)
+		defer cancelClientWait()
+		acquireCtx, acquireCancel := context.WithTimeout(clientWaitCtx, acquireTimeout)
 		lease, acquireErr := pool.Acquire(acquireCtx, req)
 		acquireCancel()
 		var dialErr *openAIWSDialError
@@ -990,7 +1016,16 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 		payloadBytes := len(payload)
 		turnStart := time.Now()
 		wroteDownstream := false
-		if err := lease.WriteJSONWithContextTimeout(ctx, json.RawMessage(payload), s.openAIWSWriteTimeout()); err != nil {
+		// Reuse bounded client draining; native reads retain their own timeout.
+		lifecycle := newOpenAIWSHTTPBridgeWatchdog(ctx, 0, 0)
+		defer lifecycle.close()
+		stopClientClose := context.AfterFunc(clientReader.ctx, func() { lifecycle.clientClosed(context.Cause(clientReader.ctx)) })
+		defer stopClientClose()
+		if clientReader.ctx.Err() != nil {
+			lease.MarkBroken()
+			return nil, context.Cause(clientReader.ctx)
+		}
+		if err := lease.WriteJSONWithContextTimeout(lifecycle.ctx, json.RawMessage(payload), s.openAIWSWriteTimeout()); err != nil {
 			return nil, wrapOpenAIWSIngressTurnError(
 				"write_upstream",
 				fmt.Errorf("write upstream websocket request: %w", err),
@@ -1038,9 +1073,13 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			}
 		}
 		for {
-			upstreamMessage, readErr := lease.ReadMessageWithContextTimeout(ctx, s.openAIWSReadTimeout())
+			upstreamMessage, readErr := lease.ReadMessageWithContextTimeout(lifecycle.ctx, s.openAIWSReadTimeout())
+			clientDisconnected = clientDisconnected || lifecycle.clientDisconnected()
 			if readErr != nil {
 				lease.MarkBroken()
+				if disconnectErr := lifecycle.disconnectError(); disconnectErr != nil {
+					return nil, disconnectErr
+				}
 				return nil, wrapOpenAIWSIngressTurnError(
 					"read_upstream",
 					fmt.Errorf("read upstream websocket event: %w", readErr),
@@ -1174,7 +1213,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 						false,
 					)
 				}
-				if !wroteDownstream && isOpenAIWSRateLimitError(errCodeRaw, errTypeRaw, errMsgRaw) {
+				if !clientDisconnected && !wroteDownstream && isOpenAIWSRateLimitError(errCodeRaw, errTypeRaw, errMsgRaw) {
 					lease.MarkBroken()
 					return nil, s.newOpenAIWSRateLimitFailoverError(account, lease.HandshakeHeaders(), upstreamMessage, errMsgRaw)
 				}
@@ -1221,9 +1260,11 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 						clientMessage = rewritten
 					}
 				}
+				lifecycle.clientOutput()
 				if err := writeClientMessage(clientMessage); err != nil {
 					if isOpenAIWSClientDisconnectError(err) {
 						clientDisconnected = true
+						lifecycle.clientClosed(err)
 						closeStatus, closeReason := summarizeOpenAIWSReadCloseError(err)
 						logOpenAIWSModeInfo(
 							"ingress_ws_client_disconnected_drain account_id=%d turn=%d conn_id=%s close_status=%s close_reason=%s",
@@ -1288,6 +1329,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					OpenAIWSMode:                  true,
 					UpstreamTerminalEvent:         terminalEvent,
 					ResponseHeaders:               lease.HandshakeHeaders(),
+					ClientDisconnect:              clientDisconnected,
 					Duration:                      time.Since(turnStart),
 					FirstTokenMs:                  firstTokenMs,
 				}
