@@ -264,6 +264,7 @@ type UpdateGroupRequest struct {
 	OpenAIAccountPriorityMode *string                        `json:"openai_account_priority_mode" binding:"omitempty,oneof=global binding"`
 	RateMultiplier            *float64                       `json:"rate_multiplier"`
 	IsExclusive               *bool                          `json:"is_exclusive"`
+	PreserveExistingUsers     bool                           `json:"preserve_existing_users"`
 	Status                    string                         `json:"status" binding:"omitempty,oneof=active inactive"`
 	SubscriptionType          string                         `json:"subscription_type" binding:"omitempty,oneof=standard subscription"`
 	DailyLimitUSD             optionalLimitField             `json:"daily_limit_usd"`
@@ -829,6 +830,7 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		OpenAIAccountPriorityMode:       req.OpenAIAccountPriorityMode,
 		RateMultiplier:                  req.RateMultiplier,
 		IsExclusive:                     req.IsExclusive,
+		PreserveExistingUsers:           req.PreserveExistingUsers,
 		Status:                          req.Status,
 		SubscriptionType:                req.SubscriptionType,
 		DailyLimitUSD:                   req.DailyLimitUSD.ToServiceInput(),

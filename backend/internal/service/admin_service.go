@@ -327,6 +327,7 @@ type UpdateGroupInput struct {
 	OpenAIAccountPriorityMode *string
 	RateMultiplier            *float64 // 使用指针以支持设置为0
 	IsExclusive               *bool
+	PreserveExistingUsers     bool // Public → exclusive: atomically retain access for existing eligible users.
 	Status                    string
 	SubscriptionType          string   // standard/subscription
 	DailyLimitUSD             *float64 // 日限额 (USD)

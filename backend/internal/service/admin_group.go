@@ -763,6 +763,19 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 
 	// 渠道缓存里存了 groupID → platform 的映射，改了平台要让它失效（见函数末尾）
 	previousPlatform := group.Platform
+	expectedUpdatedAt := group.UpdatedAt
+	var accessTransitionRepo GroupAccessTransitionRepository
+	if input.PreserveExistingUsers {
+		if group.IsExclusive || group.IsSubscriptionType() || input.IsExclusive == nil || !*input.IsExclusive ||
+			(input.SubscriptionType != "" && input.SubscriptionType != SubscriptionTypeStandard) {
+			return nil, infraerrors.BadRequest("INVALID_GROUP_ACCESS_TRANSITION", "preserving existing users requires converting a public standard group to exclusive")
+		}
+		var ok bool
+		accessTransitionRepo, ok = s.groupRepo.(GroupAccessTransitionRepository)
+		if !ok {
+			return nil, errors.New("atomic group access transition is unavailable")
+		}
+	}
 
 	if input.Name != "" {
 		group.Name = input.Name
@@ -1108,7 +1121,11 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	}
 
 	persist := func(opCtx context.Context) error {
-		if err := s.groupRepo.Update(opCtx, group); err != nil {
+		if accessTransitionRepo != nil {
+			if err := accessTransitionRepo.UpdatePreservingUserAccess(opCtx, group, expectedUpdatedAt); err != nil {
+				return err
+			}
+		} else if err := s.groupRepo.Update(opCtx, group); err != nil {
 			return err
 		}
 		if copyAccounts {

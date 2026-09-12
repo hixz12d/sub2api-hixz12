@@ -53,6 +53,9 @@ coverage/
 /plugins/
 
 # Local config
+# Local release evidence, browser profiles, and development previews.
+/handoff/
+/frontend/handoff/
 config.yaml
 config.local.yaml
 

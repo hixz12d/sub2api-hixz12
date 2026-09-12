@@ -866,6 +866,7 @@ export interface UpdateGroupRequest {
   platform?: GroupPlatform
   rate_multiplier?: number
   is_exclusive?: boolean
+  preserve_existing_users?: boolean
   status?: 'active' | 'inactive'
   subscription_type?: SubscriptionType
   daily_limit_usd?: number | null

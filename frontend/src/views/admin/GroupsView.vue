@@ -2347,7 +2347,7 @@
             </div>
           </div>
           <div class="flex items-center gap-3">
-            <Toggle v-model="editForm.is_exclusive" />
+            <Toggle v-model="editForm.is_exclusive" data-testid="edit-group-exclusive" />
             <span class="text-sm text-gray-500 dark:text-gray-400">
               {{
                 editForm.is_exclusive
@@ -2355,6 +2355,18 @@
                   : t("admin.groups.public")
               }}
             </span>
+          </div>
+          <div v-if="canPreserveExistingUsers" class="mt-3 rounded-lg border border-primary-200 bg-primary-50 p-3 dark:border-primary-800 dark:bg-primary-900/20">
+            <label class="flex cursor-pointer items-center gap-2 text-sm font-medium text-gray-800 dark:text-gray-200">
+              <input v-model="preserveExistingUsers" type="checkbox" class="checkbox" data-testid="preserve-existing-users" />
+              {{ t("admin.groups.preserveExistingUsers") }}
+            </label>
+            <p class="mt-1.5 text-xs leading-relaxed text-gray-600 dark:text-gray-400">
+              {{ t("admin.groups.preserveExistingUsersHint") }}
+            </p>
+            <p v-if="!preserveExistingUsers" class="mt-1.5 text-xs text-amber-700 dark:text-amber-400">
+              {{ t("admin.groups.preserveExistingUsersDisabledHint") }}
+            </p>
           </div>
         </div>
         <div>
@@ -4869,6 +4881,15 @@ const showSortModal = ref(false);
 const submitting = ref(false);
 const sortSubmitting = ref(false);
 const editingGroup = ref<AdminGroup | null>(null);
+const preserveExistingUsers = ref(true);
+const canPreserveExistingUsers = computed(() =>
+  !authStore.isSimpleMode &&
+  !!editingGroup.value &&
+  !editingGroup.value.is_exclusive &&
+  editingGroup.value.subscription_type !== "subscription" &&
+  editForm.subscription_type === "standard" &&
+  editForm.is_exclusive,
+);
 const deletingGroup = ref<AdminGroup | null>(null);
 const duplicatingGroupIds = reactive(new Set<number>());
 const showRateMultipliersModal = ref(false);
@@ -6079,6 +6100,7 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.platform = group.platform;
   editForm.rate_multiplier = group.rate_multiplier;
   editForm.is_exclusive = group.is_exclusive;
+  preserveExistingUsers.value = true;
   editForm.status = group.status;
   editForm.subscription_type = group.subscription_type || "standard";
   editForm.daily_limit_usd = group.daily_limit_usd;
@@ -6282,6 +6304,7 @@ const handleUpdateGroup = async () => {
     // 转换 fallback_group_id: null -> 0 (后端使用 0 表示清除)
     const payload = {
       ...editForm,
+      preserve_existing_users: canPreserveExistingUsers.value && preserveExistingUsers.value,
       force_openai_fast: normalizeGroupOpenAIFast(
         editForm.platform,
         editForm.force_openai_fast,

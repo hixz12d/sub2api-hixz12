@@ -397,6 +397,7 @@ export default {
     latency: '延迟',
     latencyFirstToken: '首字',
     latencyDuration: '总耗时',
+    tpsHint: '输出 Token/秒 = 输出 Token 数 ÷（总耗时 − 首字时间）；未记录首字时间时使用总耗时。输出包含上游计入的推理 Token，图片请求或数据不足时不计算。',
     time: '时间',
     ws: 'WS',
     stream: '流式',

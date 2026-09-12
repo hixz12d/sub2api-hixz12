@@ -3,6 +3,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AdminGroup, CodexModelsManifestConfig } from "@/types";
+import { adminAPI } from "@/api/admin";
 import GroupsView from "@/views/admin/GroupsView.vue";
 
 const {
@@ -223,7 +224,12 @@ const mountView = () =>
         GroupCapacityBadge: true,
         GroupRateMultipliersModal: true,
         GroupRPMOverridesModal: true,
-        ReasoningEffortPolicyFields: true,
+        ReasoningEffortPolicyFields: defineComponent({
+          setup(_, { expose }) {
+            expose({ validate: () => true, resetValidation: () => undefined });
+            return () => h("div");
+          },
+        }),
         CodexManifestAccountsField: CodexManifestAccountsFieldStub,
         PricingEntryCard: true,
         VueDraggable: true,
@@ -231,7 +237,7 @@ const mountView = () =>
     },
   });
 
-describe("GroupsView Codex manifest binding", () => {
+describe("GroupsView edit bindings", () => {
   beforeEach(() => {
     localStorage.clear();
     listGroups.mockReset();
@@ -287,6 +293,42 @@ describe("GroupsView Codex manifest binding", () => {
     );
 
     expect((wrapper.get('[data-testid="models-list-config"]').element as HTMLTextAreaElement).value).toBe("gpt-5.5");
+    wrapper.unmount();
+  });
+
+  it.each([true, false])("submits the selected access preservation option: %s", async (preserve) => {
+    vi.mocked(adminAPI.groups.update).mockReset().mockResolvedValue(sourceGroup);
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.findAll("button").find(button => button.text().includes("common.edit"))!.trigger("click");
+    await flushPromises();
+    expect(wrapper.find('[data-testid="preserve-existing-users"]').exists()).toBe(false);
+    await wrapper.get('[data-testid="edit-group-exclusive"]').trigger("click");
+    const checkbox = wrapper.get<HTMLInputElement>('[data-testid="preserve-existing-users"]');
+    expect(checkbox.element.checked).toBe(true);
+    await checkbox.setValue(preserve);
+    await wrapper.get('#edit-group-form').trigger('submit');
+    await flushPromises();
+    expect(adminAPI.groups.update).toHaveBeenCalledWith(sourceGroup.id, expect.objectContaining({
+      is_exclusive: true,
+      preserve_existing_users: preserve,
+      rate_multiplier: sourceGroup.rate_multiplier,
+    }));
+    wrapper.unmount();
+  });
+
+  it("does not enroll users when saving a public group without a transition", async () => {
+    vi.mocked(adminAPI.groups.update).mockReset().mockResolvedValue(sourceGroup);
+    const wrapper = mountView();
+    await flushPromises();
+    await wrapper.findAll("button").find(button => button.text().includes("common.edit"))!.trigger("click");
+    await flushPromises();
+    await wrapper.get('[data-testid="edit-group-exclusive"]').trigger("click");
+    await wrapper.get('[data-testid="edit-group-exclusive"]').trigger("click");
+    expect(wrapper.find('[data-testid="preserve-existing-users"]').exists()).toBe(false);
+    await wrapper.get('#edit-group-form').trigger('submit');
+    await flushPromises();
+    expect(adminAPI.groups.update).toHaveBeenCalledWith(sourceGroup.id, expect.objectContaining({ is_exclusive: false, preserve_existing_users: false }));
     wrapper.unmount();
   });
 });

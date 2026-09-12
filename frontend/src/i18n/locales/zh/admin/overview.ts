@@ -888,6 +888,9 @@ export default {
       },
       exclusive: '专属',
       exclusiveHint: '专属分组，可以手动指定给特定用户',
+      preserveExistingUsers: '保留现有用户访问权限',
+      preserveExistingUsersHint: '保存时，自动为当前已注册且原本可使用此分组的用户授予专属权限，已有 Key 继续可用，后续新用户不可见。旧分组请保持原价，再新建公开分组设置新价格；此选项只保留权限，不锁定价格。',
+      preserveExistingUsersDisabledHint: '关闭后，未单独授权的老用户及其已有 Key 将无法使用此分组。',
       exclusiveTooltip: {
         title: '什么是专属分组？',
         description:

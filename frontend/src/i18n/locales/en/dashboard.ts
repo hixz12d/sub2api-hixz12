@@ -392,6 +392,7 @@ export default {
     latency: 'Latency',
     latencyFirstToken: 'First',
     latencyDuration: 'Total',
+    tpsHint: 'Output tokens/second = output tokens ÷ (total duration − time to first token). Uses total duration when first-token time is unavailable. Includes upstream-reported reasoning tokens; unavailable for images or insufficient data.',
     time: 'Time',
     ws: 'WS',
     stream: 'Stream',

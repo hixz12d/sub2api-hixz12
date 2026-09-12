@@ -922,6 +922,9 @@ export default {
       groupDeletedSuccess: 'Group deleted successfully',
       rateMultiplierHint: 'Cost multiplier for this group (e.g., 1.5 = 150% of base cost)',
       exclusiveHint: 'Exclusive group, manually assign to specific users',
+      preserveExistingUsers: 'Keep access for existing users',
+      preserveExistingUsersHint: 'On save, grant exclusive access to registered users who could already use this group. Existing keys keep working; future users cannot see it. Keep this group’s original price and create a public group for the new price. This option preserves access, not prices.',
+      preserveExistingUsersDisabledHint: 'When disabled, existing users and keys without an explicit grant will lose access to this group.',
       exclusiveTooltip: {
         title: 'What is an exclusive group?',
         description: 'When enabled, users cannot see this group when creating API Keys. Only after an admin manually assigns a user to this group can they use it.',

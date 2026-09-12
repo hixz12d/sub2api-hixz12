@@ -93,6 +93,7 @@ const DataTableStub = {
         <slot name="cell-billing_mode" :row="row" />
         <slot name="cell-tokens" :row="row" />
         <slot name="cell-cost" :row="row" />
+        <slot name="cell-latency" :row="row" />
         <slot name="cell-request_id" :row="row" />
         <slot name="cell-upstream_request_id" :row="row" />
       </div>
@@ -129,6 +130,23 @@ const baseImageRow = {
 }
 
 describe('admin UsageTable tooltip', () => {
+  it('renders TPS below duration and omits it for image usage', () => {
+    const wrapper = mount(UsageTable, {
+      props: {
+        data: [
+          { ...baseImageRow, request_id: 'text-tps', billing_mode: 'token', image_count: 0, output_tokens: 542, duration_ms: 8240, first_token_ms: 2820 },
+          { ...baseImageRow, request_id: 'image-tps', duration_ms: 8240, output_tokens: 542 },
+        ],
+        columns: [],
+      } as any,
+      global: { stubs: { DataTable: DataTableStub, EmptyState: true, Icon: true } },
+    })
+    expect(wrapper.findAll('[data-testid="usage-tps"]').map(cell => cell.text())).toEqual(['100.0 tok/s', '—'])
+    const grid = wrapper.get('[data-testid="usage-tps"]').element.parentElement!
+    expect(grid.children[2].textContent).toBe('usage.latencyDuration')
+    expect(grid.children[4].textContent).toBe('TPS')
+    wrapper.unmount()
+  })
   beforeEach(() => {
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
       x: 0,
