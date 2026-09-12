@@ -27,6 +27,8 @@ func TestOAuthCredentialSyncCASAndOutboxAreAtomic(t *testing.T) {
 		require.NotContains(t, query, "status =")
 		require.Equal(t, stamp, exec.execArgs[0][4])
 		require.Equal(t, service.PlatformOpenAI, exec.execArgs[0][2])
-		require.JSONEq(t, `{"access_token":"old"}`, exec.execArgs[0][5].(string))
+		original, ok := exec.execArgs[0][5].(string)
+		require.True(t, ok)
+		require.JSONEq(t, `{"access_token":"old"}`, original)
 	}
 }

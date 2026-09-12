@@ -149,12 +149,14 @@ func TestOAuthDurableSyncCacheFailureAndLeaseLossNeverAdvanceScheduler(t *testin
 	require.NoError(t, err)
 	require.False(t, repo.op.CacheDone)
 	require.Equal(t, "token_cache_failed", repo.op.LastError)
-	require.Zero(t, svc.projector.(*durableSyncProjection).calls)
+	projection, ok := svc.projector.(*durableSyncProjection)
+	require.True(t, ok)
+	require.Zero(t, projection.calls)
 	cache.err = nil
 	repo.progressErr = errors.New("lease lost")
 	_, err = svc.ProcessNext(context.Background())
 	require.Error(t, err)
-	require.Zero(t, svc.projector.(*durableSyncProjection).calls)
+	require.Zero(t, projection.calls)
 }
 func TestOAuthDurableSyncUsesCurrentAccountAndRedactsState(t *testing.T) {
 	svc, repo, accounts, req := durableSyncFixture()
