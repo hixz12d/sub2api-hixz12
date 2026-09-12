@@ -648,7 +648,7 @@ func (h *OpenAIGatewayHandler) Responses(c *gin.Context) {
 	httpToolCoverage := service.AnalyzeToolCallOutputContextCoverageBytes(body)
 	previousResponseCanMove := !httpToolCoverage.HasFunctionCallOutput || httpToolCoverage.ContextCoversAllCallIDs
 	if previousResponseID != "" {
-		previousResponseCanMove = previousResponseCanMove && service.CanRebuildOpenAIContinuation(body, c.Request.Header)
+		previousResponseCanMove = previousResponseCanMove && service.CanRebuildOpenAIHTTPContinuation(body)
 	}
 	maxAccountSwitches := h.maxAccountSwitches
 	if service.OpenAIRetryRequestIsStateful(c, body) && !previousResponseCanMove {

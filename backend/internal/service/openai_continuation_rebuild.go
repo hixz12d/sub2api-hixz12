@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -89,6 +90,13 @@ func CanRebuildOpenAIContinuation(body []byte, headers http.Header) bool {
 	return userSeen && assistantSeen
 }
 
+// CanRebuildOpenAIHTTPContinuation validates the local transcript independently
+// of the old turn token. Callers must explicitly rebase the HTTP attempt and
+// strip that token before dispatch; native WS continuations keep the strict gate.
+func CanRebuildOpenAIHTTPContinuation(body []byte) bool {
+	return CanRebuildOpenAIContinuation(body, nil)
+}
+
 func visibleCodexMessageContent(content gjson.Result) bool {
 	if content.Type == gjson.String {
 		return strings.TrimSpace(content.String()) != ""
@@ -129,13 +137,13 @@ func PrepareCodexFullContextRecovery(c *gin.Context, accountID int64, body []byt
 		return noop, codexRecoveryFailure(codexRecoveryOwnerMissing)
 	}
 	plan, ok := CodexRequestPlanFromContext(c.Request.Context())
-	if !ok || plan.previousResponseID == "" {
+	if !ok || (plan.previousResponseID == "" && strings.TrimSpace(plan.inboundHeaders.Get(openAIWSTurnStateHeader)) == "") {
 		return noop, nil
 	}
 	if plan.transport != CodexTransportHTTP {
 		return noop, codexRecoveryFailure(codexRecoverySnapshotMissing)
 	}
-	if !CanRebuildOpenAIContinuation(plan.body, plan.inboundHeaders) || !CanRebuildOpenAIContinuation(body, plan.inboundHeaders) {
+	if !CanRebuildOpenAIHTTPContinuation(plan.body) || !CanRebuildOpenAIHTTPContinuation(body) {
 		return noop, codexRecoveryFailure(codexRecoveryAccountMismatch)
 	}
 	guard := NewCodexCommitGuard(c).Snapshot()
@@ -151,6 +159,8 @@ func PrepareCodexFullContextRecovery(c *gin.Context, accountID int64, body []byt
 	clone := *plan
 	clone.rebuildFromLocalHistory = true
 	clone.body = SanitizeCodexBodyForCrossAccountRecovery(body)
+	clone.inboundHeaders = plan.InboundHeaders()
+	deleteOpenAIHeaderEqualFold(clone.inboundHeaders, openAIWSTurnStateHeader)
 	clone.previousResponseID, clone.promptCacheKey = "", ""
 	clone.requireExistingConversation = false
 	clone.operation = CodexOperationResponses
@@ -166,4 +176,37 @@ func PrepareCodexFullContextRecovery(c *gin.Context, accountID int64, body []byt
 			c.Request = c.Request.WithContext(ContextWithCodexRequestPlan(c.Request.Context(), plan))
 		}
 	}, nil
+}
+
+// A complete HTTP transcript can outlive its account-bound turn token. Recover
+// only a known cross-account pin after response ownership validation has run.
+// Rebase onto a separate key so other in-flight turns retain their original pin.
+func (s *OpenAIGatewayService) recoverCodexHTTPTurnStatePlan(c *gin.Context, plan *CodexRequestPlan, account *Account) (*CodexRequestPlan, error) {
+	if plan == nil || plan.transport != CodexTransportHTTP ||
+		(plan.operation != CodexOperationResponses && plan.operation != CodexOperationResume) ||
+		strings.TrimSpace(plan.inboundHeaders.Get(openAIWSTurnStateHeader)) == "" {
+		return plan, nil
+	}
+	registry, ok := s.codexConversationRegistry()
+	if !ok {
+		return plan, nil
+	}
+	current, err := registry.GetCodexConversation(c.Request.Context(), plan.ConversationDigest())
+	if errors.Is(err, ErrCodexConversationNotFound) {
+		return plan, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if current.AccountID == account.ID || !CanRebuildOpenAIHTTPContinuation(plan.body) {
+		return plan, nil
+	}
+	if err := current.Validate(); err != nil {
+		return nil, err
+	}
+	if _, err := PrepareCodexFullContextRecovery(c, account.ID, plan.body); err != nil {
+		return nil, err
+	}
+	rebuilt, _ := CodexRequestPlanFromContext(c.Request.Context())
+	return rebuilt, nil
 }

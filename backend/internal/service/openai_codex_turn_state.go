@@ -105,6 +105,14 @@ func (s *OpenAIGatewayService) guardOpenAICodexTurnStateEcho(c *gin.Context, acc
 	if s == nil || h == nil || account == nil || strings.TrimSpace(h.Get(openAICodexTurnStateHeader)) == "" {
 		return
 	}
+	if c != nil && c.Request != nil {
+		if plan, ok := CodexRequestPlanFromContext(c.Request.Context()); ok && plan.rebuildFromLocalHistory {
+			// Explicit recovery starts a new upstream conversation even when this
+			// instance never observed the old token's provenance.
+			deleteOpenAIHeaderEqualFold(h, openAICodexTurnStateHeader)
+			return
+		}
+	}
 	seed := openAICodexTurnStateSeed(c)
 	if seed == "" {
 		return
