@@ -28,6 +28,8 @@ func durableSyncPostgresFixture(t *testing.T) (*oauthSyncRepository, *service.Ac
 	op := &service.OAuthSyncOperation{Scope: fmt.Sprintf("fixture-admin:%d", account.ID), OperationID: "fixture-operation", RequestHash: strings.Repeat("a", 64), AccountID: account.ID, CredentialVersion: time.Now().UnixMilli()}
 	t.Cleanup(func() {
 		_, _ = integrationDB.ExecContext(ctx, "DELETE FROM oauth_sync_operations WHERE account_id = $1", account.ID)
+		_, err := integrationDB.ExecContext(ctx, "DELETE FROM scheduler_outbox WHERE account_id = $1", account.ID)
+		require.NoError(t, err)
 		_ = integrationEntClient.Account.DeleteOneID(account.ID).Exec(ctx)
 	})
 	return &oauthSyncRepository{db: integrationDB}, before, op

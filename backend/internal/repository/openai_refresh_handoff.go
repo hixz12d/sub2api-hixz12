@@ -24,7 +24,7 @@ func (r *accountRepository) IsOpenAIRefreshDelegated(ctx context.Context, id int
 	if err != nil {
 		return false, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var found bool
 	if rows.Next() {
 		err = rows.Scan(&found)
@@ -40,7 +40,7 @@ func (r *accountRepository) OpenAIRefreshHandoff(ctx context.Context, before *se
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var grant string
 	err = tx.QueryRowContext(ctx, "SELECT grant_id::text FROM openai_refresh_handoffs WHERE operation_id=$1", req.OperationID).Scan(&grant)
 	if errors.Is(err, sql.ErrNoRows) {

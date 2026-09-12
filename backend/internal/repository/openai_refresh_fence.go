@@ -50,7 +50,7 @@ func (r *accountRepository) BeginOpenAIRefresh(ctx context.Context, token string
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	hash := service.OAuthAccessTokenHash(token)
 	id, err := ensureOpenAIRefreshGrant(ctx, tx, hash)
 	if err != nil {
@@ -81,7 +81,7 @@ func (r *accountRepository) FinishOpenAIRefresh(ctx context.Context, t *service.
 	if err != nil {
 		return false, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	var id string
 	err = tx.QueryRowContext(ctx, `SELECT id::text FROM openai_refresh_grants WHERE id=$1 AND epoch=$2 AND attempt=$3 AND owner IN ('sub2api','draining') AND NOT uncertain FOR UPDATE`, t.GrantID, t.Epoch, t.Attempt).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {

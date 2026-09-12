@@ -88,7 +88,7 @@ func validateOAuthCandidateHTTP(ctx context.Context, client *http.Client, accoun
 		if err != nil {
 			return ErrOAuthValidationFailed
 		}
-		defer response.Body.Close()
+		defer func() { _ = response.Body.Close() }()
 		if response.StatusCode != http.StatusOK {
 			return ErrOAuthValidationFailed
 		}

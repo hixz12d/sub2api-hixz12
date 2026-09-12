@@ -39,5 +39,7 @@ func TestOAuthSyncAccessTokenReadbackIsConditionalAndNarrow(t *testing.T) {
 	require.Zero(t, accounts.writes)
 	require.False(t, account.Schedulable)
 	require.Equal(t, StatusError, account.Status)
-	require.Zero(t, svc.invalidator.(*durableSyncCache).calls)
+	cache, ok := svc.invalidator.(*durableSyncCache)
+	require.True(t, ok)
+	require.Zero(t, cache.calls)
 }

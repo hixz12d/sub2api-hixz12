@@ -18,7 +18,12 @@ func TestOAuthCredentialSyncPostgresConcurrentCASPreservesRuntime(t *testing.T) 
 		Name: "credential-sync-concurrency-fixture", Platform: service.PlatformOpenAI,
 		Credentials: map[string]any{"email": "fixture@example.invalid", "access_token": "old", "refresh_token": "old-rt"},
 	})
-	t.Cleanup(func() { _ = integrationEntClient.Account.DeleteOneID(account.ID).Exec(ctx) })
+	t.Cleanup(func() {
+		// The audit outbox has no account FK; remove only this fixture's events.
+		_, err := integrationDB.ExecContext(ctx, "DELETE FROM scheduler_outbox WHERE account_id = $1", account.ID)
+		require.NoError(t, err)
+		require.NoError(t, integrationEntClient.Account.DeleteOneID(account.ID).Exec(ctx))
+	})
 	reset := time.Now().UTC().Add(time.Hour).Truncate(time.Microsecond)
 	_, err := integrationEntClient.Account.UpdateOneID(account.ID).
 		SetSchedulable(false).SetStatus(service.StatusError).SetErrorMessage("oauth 401 unauthorized").
