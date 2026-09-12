@@ -458,6 +458,8 @@ func TestBindAccountsToGroupWaitingBehindGuardedDeleteCannotCommit(t *testing.T)
 	require.NoError(t, err)
 	require.True(t, rows.Next())
 	require.NoError(t, rows.Close())
+	var deleteBackendPID int
+	require.NoError(t, scanSingleRow(ctx, deleteTx.Client(), "SELECT pg_backend_pid()", nil, &deleteBackendPID))
 
 	bindDone := make(chan error, 1)
 	go func() {
@@ -465,13 +467,15 @@ func TestBindAccountsToGroupWaitingBehindGuardedDeleteCannotCommit(t *testing.T)
 			BindAccountsToGroup(ctx, groupID, []int64{accountID})
 	}()
 
+	// Observe the real blocker, independent of SQL comments or ORM formatting.
 	require.Eventually(t, func() bool {
 		var waiting bool
 		err := scanSingleRow(ctx, integrationDB, `SELECT EXISTS (
 			SELECT 1 FROM pg_stat_activity
-			WHERE query LIKE '/* account_group_live_group_lock */%'
+			WHERE datname = current_database()
+			  AND $1 = ANY(pg_blocking_pids(pid))
 			  AND wait_event_type = 'Lock'
-		)`, nil, &waiting)
+		)`, []any{deleteBackendPID}, &waiting)
 		return err == nil && waiting
 	}, 5*time.Second, 10*time.Millisecond, "binder did not wait on the guarded deletion lock")
 

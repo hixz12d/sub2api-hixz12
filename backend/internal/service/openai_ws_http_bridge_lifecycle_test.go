@@ -108,8 +108,8 @@ func TestHTTPBridgeLifecycle_BodyStallAndFirstOutput(t *testing.T) {
 				cfg.Gateway.OpenAIFirstOutputTimeoutSeconds = 1
 			}
 			reader, writer := io.Pipe()
-			defer reader.Close()
-			defer writer.Close()
+			defer func() { _ = reader.Close() }()
+			defer func() { _ = writer.Close() }()
 			writerDone := make(chan struct{})
 			go func() {
 				defer close(writerDone)
@@ -176,7 +176,7 @@ func TestHTTPBridgeLifecycle_PingAndDisconnectDuringHeaderWait(t *testing.T) {
 			done <- err
 			return
 		}
-		defer conn.CloseNow()
+		defer func() { _ = conn.CloseNow() }()
 		c, _ := gin.CreateTestContext(httptest.NewRecorder())
 		c.Request = r
 		_, payload, err := conn.Read(r.Context())
@@ -192,7 +192,7 @@ func TestHTTPBridgeLifecycle_PingAndDisconnectDuringHeaderWait(t *testing.T) {
 	defer cancel()
 	conn, _, err := coderws.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
 	require.NoError(t, err)
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 	require.NoError(t, conn.Write(ctx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5","input":"hello"}`)))
 	clientReadDone := make(chan struct{})
 	go func() { defer close(clientReadDone); _, _, _ = conn.Read(ctx) }()

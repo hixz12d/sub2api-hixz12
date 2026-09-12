@@ -34,7 +34,7 @@ func TestOpenAIWSClientReader_ControlCloseAndJoin(t *testing.T) {
 					done <- err
 					return
 				}
-				defer conn.CloseNow()
+				defer func() { _ = conn.CloseNow() }()
 				c, _ := gin.CreateTestContext(httptest.NewRecorder())
 				c.Request = r
 				reader := openAIWSClientReaderForIngress(r.Context(), c, conn)
@@ -50,7 +50,7 @@ func TestOpenAIWSClientReader_ControlCloseAndJoin(t *testing.T) {
 			defer stop()
 			conn, _, err := coderws.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
 			require.NoError(t, err)
-			defer conn.CloseNow()
+			defer func() { _ = conn.CloseNow() }()
 			<-ready
 			if tc.cause != nil {
 				cancel(tc.cause)
@@ -78,7 +78,7 @@ func TestOpenAIWSClientReader_BoundsPendingMessages(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer conn.CloseNow()
+		defer func() { _ = conn.CloseNow() }()
 		c, _ := gin.CreateTestContext(httptest.NewRecorder())
 		c.Request = r
 		reader := openAIWSClientReaderForIngress(r.Context(), c, conn)
@@ -91,7 +91,7 @@ func TestOpenAIWSClientReader_BoundsPendingMessages(t *testing.T) {
 	defer cancel()
 	conn, _, err := coderws.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
 	require.NoError(t, err)
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 	for i := 0; i < 2; i++ {
 		require.NoError(t, conn.Write(ctx, coderws.MessageText, []byte(`{"type":"response.create"}`)))
 	}

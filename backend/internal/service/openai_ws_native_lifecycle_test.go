@@ -45,7 +45,7 @@ func TestNativeWSLifecycle_PingDisconnectAndUsage(t *testing.T) {
 					done <- err
 					return
 				}
-				defer conn.CloseNow()
+				defer func() { _ = conn.CloseNow() }()
 				_, payload, err := conn.Read(r.Context())
 				if err != nil {
 					done <- err
@@ -61,7 +61,7 @@ func TestNativeWSLifecycle_PingDisconnectAndUsage(t *testing.T) {
 			defer cancel()
 			conn, _, err := coderws.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
 			require.NoError(t, err)
-			defer conn.CloseNow()
+			defer func() { _ = conn.CloseNow() }()
 			require.NoError(t, conn.Write(ctx, coderws.MessageText, []byte(`{"type":"response.create","model":"gpt-5","input":"hello"}`)))
 			if output {
 				_, _, err = conn.Read(ctx)
