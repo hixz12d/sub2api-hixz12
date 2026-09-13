@@ -130,6 +130,18 @@ const baseImageRow = {
 }
 
 describe('admin UsageTable tooltip', () => {
+  it('uses the public account label in the user column and keeps the admin name', () => {
+    const wrapper = mount(UsageTable, {
+      props: { data: [{ ...baseImageRow, account_label: 'hix**12', account: { id: 1, name: 'Team（hixz2612） 子号' } }], columns: [], loading: false },
+      global: { stubs: {
+        DataTable: { props: ['data'], template: '<div><div data-test="public-account"><slot name="cell-account_label" :row="data[0]" /></div><div data-test="admin-account"><slot name="cell-account" :row="data[0]" /></div></div>' },
+        EmptyState: true, Icon: true, Teleport: true
+      } }
+    })
+    expect(wrapper.get('[data-test="public-account"]').text()).toBe('hix**12')
+    expect(wrapper.get('[data-test="admin-account"]').text()).toBe('Team（hixz2612） 子号')
+    wrapper.unmount()
+  })
   it('renders TPS below duration and omits it for image usage', () => {
     const wrapper = mount(UsageTable, {
       props: {

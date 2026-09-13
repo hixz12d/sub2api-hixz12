@@ -658,6 +658,7 @@ const exportToCSV = async () => {
     const headers = [
       'Time',
       'API Key Name',
+      'Account',
       'Model',
       'Reasoning Effort',
       'Inbound Endpoint',
@@ -677,6 +678,7 @@ const exportToCSV = async () => {
     const rows = allLogs.map((log) => [
       log.created_at,
       log.api_key?.name || '',
+      log.account_label || '',
       log.model,
       formatReasoningEffort(log.reasoning_effort),
       log.inbound_endpoint || '',
@@ -719,6 +721,7 @@ const HIDDEN_COLUMNS_KEY = 'user-usage-hidden-columns'
 
 const allColumns = computed<Column[]>(() => [
   { key: 'api_key', label: t('usage.apiKeyFilter'), sortable: false },
+  { key: 'account_label', label: t('usage.accountLabel'), sortable: false },
   { key: 'model', label: t('usage.model'), sortable: true },
   { key: 'reasoning_effort', label: t('usage.reasoningEffort'), sortable: false },
   { key: 'endpoint', label: t('usage.endpoint'), sortable: false },

@@ -158,6 +158,31 @@ export default {
     lastUsedAt: '上次使用时间',
     lastUsedIP: '最近使用 IP',
     useKey: '使用密钥',
+    test: '测试',
+    questionTest: {
+      title: '人工问答测试',
+      billingHint: '使用此密钥的分组进行真实问答，按正常请求计费并计入使用记录。每次测试独立发送一个问题，停止前已产生的用量仍会计费。',
+      model: '测试模型',
+      selectModel: '请选择模型',
+      question: '检测问题',
+      questionTooLong: '问题不能超过 4096 个 UTF-8 字节（中文通常每字占 3 字节）。',
+      answerPlaceholder: '准备就绪，点击“开始测试”查看模型回答。',
+      start: '开始测试',
+      stop: '停止生成',
+      retry: '重新加载',
+      noModels: '此密钥暂无可用的文本模型，请检查分组配置。',
+      truncated: '回答已达到模型输出上限，内容可能不完整。',
+      status: { idle: '准备就绪', running: '正在回答…', complete: '回答完成', stopped: '已停止', error: '测试失败' },
+      errors: {
+        http: '请求失败，请检查密钥状态、余额和分组权限。',
+        invalidResponse: '服务返回了无法识别的响应，请稍后重试。',
+        incomplete: '回答未正常完成，已收到的内容保留在上方。',
+        empty: '模型没有返回文字回答，请尝试其他模型或问题。',
+        tooLong: '回答过长，已停止接收；已收到的内容保留在上方。',
+        network: '连接失败，请检查网络后重试。',
+        timeout: '请求超时，已停止等待，请稍后重试。'
+      }
+    },
     useKeyModal: {
       title: '使用 API 密钥',
       description: '将以下环境变量添加到您的终端配置文件或直接在终端中运行。',
@@ -330,6 +355,7 @@ export default {
 
   // Usage
   usage: {
+    accountLabel: '账号',
     title: '使用记录',
     description: '查看和分析您的 API 使用历史',
     costDetails: '费用明细',

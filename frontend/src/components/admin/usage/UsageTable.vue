@@ -52,6 +52,10 @@
           <span class="text-sm text-gray-900 dark:text-white">{{ row.account?.name || '-' }}</span>
         </template>
 
+        <template #cell-account_label="{ row }">
+          <span class="font-mono text-sm text-gray-900 dark:text-white">{{ row.account_label || '-' }}</span>
+        </template>
+
         <template #cell-model="{ row }">
           <div class="space-y-0.5 text-xs">
             <div v-if="row.model_mapping_chain && row.model_mapping_chain.includes('→')" class="space-y-0.5">

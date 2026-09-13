@@ -170,6 +170,7 @@ const DataTableStub = {
           <slot name="cell-id" :value="row.id" :row="row" />
         </div>
         <slot name="cell-name" :value="row.name" :row="row" />
+        <slot name="cell-actions" :row="row" />
         <div data-test="current-concurrency">
           <slot name="cell-current_concurrency" :value="row.current_concurrency" :row="row" />
         </div>
@@ -230,6 +231,7 @@ const mountView = async () => {
         SearchInput: SearchInputStub,
         Icon: IconStub,
         UseKeyModal: true,
+        KeyTestModal: true,
         EndpointPopover: true,
         GroupBadge: true,
         GroupOptionItem: true,
@@ -257,6 +259,24 @@ const getButtonByText = (wrapper: VueWrapper, text: string) => {
 }
 
 describe('user KeysView column settings', () => {
+  it('opens manual Q&A for the selected API key', async () => {
+    const wrapper = await mountView()
+    expect(wrapper.findComponent({ name: 'KeyTestModal' }).exists()).toBe(false)
+    await getButtonByText(wrapper, 'keys.test').trigger('click')
+    const dialog = wrapper.findComponent({ name: 'KeyTestModal' })
+    expect(dialog.props('apiKey').key).toBe('sk-test-key')
+    dialog.vm.$emit('close')
+    await nextTick()
+    expect(wrapper.findComponent({ name: 'KeyTestModal' }).exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('disables manual Q&A for an inactive API key', async () => {
+    listKeys.mockResolvedValue({ items: [{ ...createApiKey(), status: 'inactive' }], total: 1, page: 1, page_size: 20, pages: 1 })
+    const wrapper = await mountView()
+    expect(getButtonByText(wrapper, 'keys.test').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
   beforeEach(() => {
     localStorage.clear()
 

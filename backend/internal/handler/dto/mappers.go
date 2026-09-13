@@ -748,6 +748,7 @@ func UsageLogFromService(l *service.UsageLog) *UsageLog {
 		return nil
 	}
 	u := usageLogFromServiceUser(l)
+	u.AccountLabel = userAccountLabel(l.Account)
 	return &u
 }
 

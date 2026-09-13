@@ -91,45 +91,12 @@ describe('OpenAIQuotaResetCell — 外审 F6:影子禁用重置', () => {
     wrapper.unmount()
   })
 
-  it('查询 Threads 后优先展示当天 UTC 桶并在 tooltip 展示 Turns 和 Users', async () => {
-    vi.mocked(getOpenAICodexAnalytics).mockResolvedValue({
-      current_utc_date: '2026-08-13',
-      fetched_at: 1770000000,
-      data: [
-        { date: '2026-08-12', threads: 24, turns: 2413, users: 1 },
-        { date: '2026-08-13', threads: 7, turns: 88, users: 1 },
-      ],
-    })
+  it('不再展示 Threads，保留次数查询和重置按钮', () => {
     const wrapper = mount(OpenAIQuotaResetCell, { props: { account: makeAccount({}) } })
-
-    const button = wrapper.get('[data-testid="codex-threads-query"]')
-    await button.trigger('click')
-    await flushPromises()
-
-    expect(getOpenAICodexAnalytics).toHaveBeenCalledWith(1)
-    expect(button.text()).toContain('7')
-    expect(button.attributes('title')).toContain('88')
-    expect(button.attributes('title')).toContain('2026-08-13')
-    wrapper.unmount()
-  })
-
-  it('当天 UTC 桶缺失时回退展示最近一天', async () => {
-    vi.mocked(getOpenAICodexAnalytics).mockResolvedValue({
-      current_utc_date: '2026-08-13',
-      fetched_at: 1770000000,
-      data: [
-        { date: '2026-08-11', threads: 12, turns: 90, users: 1 },
-        { date: '2026-08-12', threads: 23, turns: 180, users: 1 },
-      ],
-    })
-    const wrapper = mount(OpenAIQuotaResetCell, { props: { account: makeAccount({}) } })
-
-    const button = wrapper.get('[data-testid="codex-threads-query"]')
-    await button.trigger('click')
-    await flushPromises()
-
-    expect(button.text()).toContain('23')
-    expect(button.attributes('title')).toContain('2026-08-12')
+    expect(wrapper.find('[data-testid="codex-threads-query"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="reset-credit-query"]').exists()).toBe(true)
+    expect(resetButton(wrapper).exists()).toBe(true)
+    expect(getOpenAICodexAnalytics).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 

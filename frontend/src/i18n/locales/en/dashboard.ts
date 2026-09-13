@@ -158,6 +158,31 @@ export default {
     lastUsedAt: 'Last Used',
     lastUsedIP: 'Last Used IP',
     useKey: 'Use Key',
+    test: 'Test',
+    questionTest: {
+      title: 'Manual Q&A Test',
+      billingHint: 'Sends a real question through this key’s group. Normal billing and usage logging apply. Each test sends one independent question; usage incurred before stopping is still billed.',
+      model: 'Test model',
+      selectModel: 'Select a model',
+      question: 'Question',
+      questionTooLong: 'The question must not exceed 4096 UTF-8 bytes.',
+      answerPlaceholder: 'Ready. Click “Start test” to see the model’s answer.',
+      start: 'Start test',
+      stop: 'Stop generating',
+      retry: 'Reload',
+      noModels: 'No text models are available for this key. Check its group configuration.',
+      truncated: 'The answer reached the model’s output limit and may be incomplete.',
+      status: { idle: 'Ready', running: 'Answering…', complete: 'Answer complete', stopped: 'Stopped', error: 'Test failed' },
+      errors: {
+        http: 'Request failed. Check the key status, balance and group permissions.',
+        invalidResponse: 'The service returned an unrecognized response. Please try again later.',
+        incomplete: 'The answer did not finish normally. Received text is preserved above.',
+        empty: 'The model returned no text. Try another model or question.',
+        tooLong: 'The answer was too long. Reception stopped; received text is preserved above.',
+        network: 'Connection failed. Check your network and try again.',
+        timeout: 'The request timed out. Please try again later.'
+      }
+    },
     useKeyModal: {
       title: 'Use API Key',
       description:
@@ -325,6 +350,7 @@ export default {
 
   // Usage
   usage: {
+    accountLabel: 'Account',
     title: 'Usage Records',
     description: 'View and analyze your API usage history',
     costDetails: 'Cost Breakdown',
