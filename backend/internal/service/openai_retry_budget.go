@@ -275,9 +275,14 @@ func PrepareOpenAIRetryBudgetWithConfig(c *gin.Context, body []byte, cfg *config
 		budget.firstOutputLimit = time.Duration(cfg.Gateway.OpenAIFirstOutputTimeoutSeconds) * time.Second
 		budget.highFirstOutputLimit = time.Duration(cfg.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds) * time.Second
 	}
-	if raw, ok := c.Get(openAILogicalStartKey); ok {
-		if started, ok := raw.(time.Time); ok && !started.IsZero() {
-			budget.startedAt = started
+	// Only bounded recovery uses an ingress-relative deadline. Legacy
+	// retries start at preparation: counting a slow body upload against their
+	// 20-second window can reject the first upstream attempt before dispatch.
+	if cfg != nil && strings.EqualFold(strings.TrimSpace(cfg.Gateway.OpenAIPreoutputRecoveryMode), "bounded_preoutput") {
+		if raw, ok := c.Get(openAILogicalStartKey); ok {
+			if started, ok := raw.(time.Time); ok && !started.IsZero() {
+				budget.startedAt = started
+			}
 		}
 	}
 	c.Set(openAIRetryBudgetContextKey, budget)
