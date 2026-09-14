@@ -715,6 +715,12 @@ func (s *defaultOpenAIAccountScheduler) selectPinnedCodexConversationAccount(
 	if err != nil || account == nil {
 		return nil, nil
 	}
+	// Registry pins outlive account health changes and scheduler snapshots.
+	// Apply the same fresh eligibility check used by ordinary sticky routing.
+	account = s.service.recheckSelectedOpenAIAccountFromDB(ctx, account, req.GroupID, req.Platform, req.RequestedModel, req.RequireCompact, req.RequiredCapability)
+	if account == nil || !account.IsSchedulableForModel(req.RequestedModel) {
+		return nil, nil
+	}
 	compatible, _ := s.isAccountRequestCompatibleReason(ctx, account, req)
 	hasGroupMetadata := len(account.GroupIDs) > 0 || len(account.AccountGroups) > 0
 	groupCompatible := !hasGroupMetadata || openAIStickyAccountMatchesGroup(account, req.GroupID)
@@ -2644,13 +2650,25 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 		platform:                platform,
 		previousResponseCanMove: previousResponseCanMove,
 	}
-	return s.selectAccountWithStickySpillover(ctx, req, func() (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	next := func() (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
 		return s.selectAccountWithSchedulerBase(
 			ctx, groupID, previousResponseID, sessionHash, requestedModel, excludedIDs,
 			requiredTransport, requiredCapability, requiredImageCapability, requireCompact,
 			platform, previousResponseCanMove, useUpstreamTokenCost,
 		)
+	}
+	selectedFromPool := false
+	selection, decision, err := s.selectAccountWithStickySpillover(ctx, req, func() (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+		selectedFromPool = true
+		return next()
 	})
+	// A capacity spillover lease only names two accounts. If both become
+	// ineligible (for example after a 401), still try the rest of this group.
+	// Preserve the original exclusions, capability and continuation constraints.
+	if !selectedFromPool && errors.Is(err, ErrNoAvailableAccounts) {
+		return next()
+	}
+	return selection, decision, err
 }
 
 // selectAccountWithSchedulerBase wraps selectAccountWithSchedulerOnce with a
