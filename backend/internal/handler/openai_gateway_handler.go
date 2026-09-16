@@ -4659,7 +4659,7 @@ func (h *OpenAIGatewayHandler) recordCyberPolicyIfMarked(c *gin.Context, apiKey 
 		ClientIP:        clientIPStr,
 		CreatedAt:       time.Now(),
 	}
-	if gwSvc != nil && apiKey != nil && (account == nil || !account.IsSuperInstructEnabled()) {
+	if gwSvc != nil && apiKey != nil {
 		plan := buildCyberSessionBlockWritePlan(apiKey.ID, c, cyberBlockBody)
 		if len(plan.keys) > 0 {
 			blockCtx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)

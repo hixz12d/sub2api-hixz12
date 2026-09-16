@@ -33,6 +33,7 @@ export async function list(
   pageSize: number = 20,
   filters?: {
     protocol?: string
+    group_id?: number
     status?: 'active' | 'inactive' | 'expired'
     search?: string
     sort_by?: string
@@ -236,6 +237,7 @@ export async function exportData(options?: {
   ids?: number[]
   filters?: {
     protocol?: string
+    group_id?: number
     status?: 'active' | 'inactive' | 'expired'
     search?: string
     sort_by?: string

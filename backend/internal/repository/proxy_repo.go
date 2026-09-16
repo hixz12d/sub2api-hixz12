@@ -322,7 +322,22 @@ func (r *proxyRepository) ListWithFilters(ctx context.Context, params pagination
 
 // ListWithFiltersAndAccountCount lists proxies with filters and includes account count per proxy
 func (r *proxyRepository) ListWithFiltersAndAccountCount(ctx context.Context, params pagination.PaginationParams, protocol, status, search string) ([]service.ProxyWithAccountCount, *pagination.PaginationResult, error) {
+	return r.ListWithGroupFilterAndAccountCount(ctx, params, protocol, status, search, nil)
+}
+
+func (r *proxyRepository) ListWithGroupFilterAndAccountCount(ctx context.Context, params pagination.PaginationParams, protocol, status, search string, groupID *int64) ([]service.ProxyWithAccountCount, *pagination.PaginationResult, error) {
 	q := r.client.Proxy.Query()
+	if groupID != nil {
+		q.Where(func(s *entsql.Selector) {
+			members := entsql.Table("proxy_group_members")
+			sub := entsql.Select(members.C("proxy_id")).From(members)
+			if *groupID == 0 {
+				s.Where(entsql.NotIn(s.C("id"), sub))
+			} else {
+				s.Where(entsql.In(s.C("id"), sub.Where(entsql.EQ(members.C("group_id"), *groupID))))
+			}
+		})
+	}
 	if protocol != "" {
 		q = q.Where(proxy.ProtocolEQ(protocol))
 	}

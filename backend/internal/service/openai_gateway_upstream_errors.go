@@ -461,6 +461,9 @@ func (s *OpenAIGatewayService) newOpenAIAccountFailoverErrorWithClassificationHe
 	shouldDisable bool,
 	retryableOnSameAccount bool,
 ) *UpstreamFailoverError {
+	if isOpenAICredentialPoolUnavailable(account, statusCode, responseBody) {
+		retryableOnSameAccount = false
+	}
 	oauth429Retry := s.shouldRetryOpenAIOAuth429OnSameAccountWithResponse(account, statusCode, shouldDisable, classificationHeaders, responseBody)
 	failoverErr := newOpenAIUpstreamFailoverError(
 		statusCode,
@@ -603,6 +606,10 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 	body := s.readUpstreamErrorBody(resp)
 	ctx = withOAuthResponseCredential(ctx, resp)
 	body = s.redactAgentIdentitySensitiveBody(ctx, account, body)
+	if isOpenAICredentialPoolUnavailable(account, resp.StatusCode, body) {
+		s.handleOpenAIAccountUpstreamError(ctx, account, resp.StatusCode, resp.Header, body)
+		return nil, newOpenAIUpstreamFailoverError(resp.StatusCode, resp.Header, body, extractUpstreamErrorMessage(body), false)
+	}
 
 	// cyber_policy 硬阻断：透传上游原始错误体给客户端（不重包成通用 502），不冷却账号。
 	// 当前请求恒透传（需求1）；标记供 handler 事后写风控/邮件。400 cyber 不可 failover
@@ -620,12 +627,7 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		if contentType == "" {
 			contentType = "application/json"
 		}
-		outBody := body
-		// SI/Kit accounts: keep status/code, soften client-visible text toward recover-via-skill.
-		if rewritten := rewriteCyberPolicyClientBody(body, resp.StatusCode); len(rewritten) > 0 && shouldSoftenCyberPolicyClientText(account) {
-			outBody = rewritten
-		}
-		c.Data(resp.StatusCode, contentType, outBody)
+		c.Data(resp.StatusCode, contentType, body)
 		if cyberMsg == "" {
 			return nil, fmt.Errorf("openai cyber_policy: %d", resp.StatusCode)
 		}
@@ -859,6 +861,10 @@ func (s *OpenAIGatewayService) handleCompatErrorResponse(
 ) (*OpenAIForwardResult, error) {
 	body := s.readUpstreamErrorBody(resp)
 	body = s.redactAgentIdentitySensitiveBody(context.Background(), account, body)
+	if isOpenAICredentialPoolUnavailable(account, resp.StatusCode, body) {
+		s.handleOpenAIAccountUpstreamError(c.Request.Context(), account, resp.StatusCode, resp.Header, body)
+		return nil, newOpenAIUpstreamFailoverError(resp.StatusCode, resp.Header, body, extractUpstreamErrorMessage(body), false)
+	}
 
 	// cyber_policy：兼容路径（Chat Completions / Anthropic）以各自格式回写错误，
 	// 不原样透传 responses 格式的 cyber body（否则对下游格式不合法）。cyber 是上游网络

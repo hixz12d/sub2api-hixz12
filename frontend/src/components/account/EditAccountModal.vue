@@ -1688,7 +1688,7 @@
           <label class="input-label mb-0">{{ t('admin.accounts.proxy') }}</label>
           <ProxyAdBanner />
         </div>
-        <ProxySelector v-model="form.proxy_id" :proxies="proxies" />
+        <ProxySelector v-model="form.proxy_id" v-model:group-id="proxyGroupId" :proxies="proxies" allow-group />
       </div>
 
       <UpstreamRequestIdHeaderField
@@ -3721,6 +3721,7 @@ const applyAccountCreateTemplateSnapshot = (
 ) => {
   const next = normalizeAccountCreateTemplateValues(values)
   form.proxy_id = next.proxy_id
+  proxyGroupId.value = null
   form.concurrency = next.concurrency
   form.load_factor = next.load_factor
   form.priority = next.priority
@@ -3998,6 +3999,7 @@ const mixedChannelWarningMessageText = computed(() => {
   return mixedChannelWarningRawMessage.value
 })
 
+const proxyGroupId = ref<number | null>(null)
 const form = reactive({
   name: '',
   notes: '',
@@ -4130,6 +4132,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   form.name = newAccount.name
   form.notes = newAccount.notes || ''
   form.proxy_id = newAccount.proxy_id
+  proxyGroupId.value = null
   form.concurrency = newAccount.concurrency
   form.load_factor = newAccount.load_factor ?? null
   form.priority = Number.isFinite(newAccount.priority) && newAccount.priority > 0 ? newAccount.priority : 1
@@ -5210,7 +5213,7 @@ const handleSubmit = async () => {
 		}
 	}
 
-  const updatePayload: Record<string, unknown> = { ...form }
+  const updatePayload: Record<string, unknown> = { ...form, proxy_group_id: proxyGroupId.value ?? undefined }
   try {
     // 后端期望 proxy_id: 0 表示清除代理，而不是 null
     if (updatePayload.proxy_id === null) {

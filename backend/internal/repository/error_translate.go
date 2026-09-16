@@ -8,6 +8,7 @@ import (
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/service"
 	"github.com/lib/pq"
 )
 
@@ -64,6 +65,11 @@ func beginRepositoryTx(ctx context.Context, defaultClient *dbent.Client) (contex
 func translatePersistenceError(err error, notFound, conflict *infraerrors.ApplicationError) error {
 	if err == nil {
 		return nil
+	}
+
+	var capacityErr *pq.Error
+	if errors.As(err, &capacityErr) && capacityErr.Constraint == "proxy_group_capacity" {
+		return service.ErrProxyGroupCapacity.WithCause(err)
 	}
 
 	// 兼容 Ent ORM 和标准 database/sql 的 NotFound 行为。

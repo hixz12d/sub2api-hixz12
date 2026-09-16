@@ -697,7 +697,6 @@ readLoop:
 		if eventType == "error" || eventType == "response.failed" {
 			markOpenAICyberPolicyEvent(c, message, http.StatusOK, usage)
 			// Preserve the original upstream event in the audit mark.
-			message = maybeSoftenCyberPolicyClientPayload(account, message)
 		}
 
 		if eventType == "error" {

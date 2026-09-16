@@ -29,8 +29,6 @@ type openAIWSClientFrameConn struct {
 	// model identifier they supplied for the current turn.
 	restoreResponseModel func([]byte) []byte
 	restoreToolNames     func([]byte) []byte
-	// Optional SI/Kit soft rewrite for upstream cyber_policy frames.
-	softenCyberPayload func([]byte) []byte
 }
 
 // openAIWSPolicyEnforcingFrameConn wraps a client-side FrameConn and runs
@@ -646,9 +644,6 @@ func (c *openAIWSClientFrameConn) WriteFrame(ctx context.Context, msgType coderw
 		if normalized, changed := normalizeCompletedImageGenerationStatus(payload); changed {
 			payload = normalized
 		}
-		if c.softenCyberPayload != nil {
-			payload = c.softenCyberPayload(payload)
-		}
 		if c.restoreResponseModel != nil {
 			payload = c.restoreResponseModel(payload)
 		}
@@ -996,9 +991,6 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 		},
 		restoreToolNames: func(payload []byte) []byte {
 			return restoreCodexToolNamesFromContext(c, payload)
-		},
-		softenCyberPayload: func(payload []byte) []byte {
-			return maybeSoftenCyberPolicyClientPayload(account, payload)
 		},
 	}
 	recordNextTurnStarted := func() {

@@ -298,8 +298,11 @@ const (
 )
 
 // CheckErrorPolicy 检查自定义错误码和临时不可调度规则。
-// 自定义错误码开启时覆盖后续所有逻辑（包括临时不可调度）。
+// 明确的上游凭据池耗尽优先短暂冷却；其他错误由自定义错误码覆盖默认策略。
 func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Account, statusCode int, responseBody []byte, requestedModel ...string) ErrorPolicyResult {
+	if s.handleOpenAICredentialPoolUnavailable(ctx, account, statusCode, responseBody) {
+		return ErrorPolicyTempUnscheduled
+	}
 	ctx = withTempUnschedulableModel(ctx, requestedModel)
 	if account.IsCustomErrorCodesEnabled() {
 		if account.ShouldHandleErrorCode(statusCode) {
@@ -330,6 +333,9 @@ func (s *RateLimitService) CheckErrorPolicy(ctx context.Context, account *Accoun
 // HandleUpstreamError 处理上游错误响应，标记账号状态
 // 返回是否应该停止该账号的调度
 func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Account, statusCode int, headers http.Header, responseBody []byte, requestedModel ...string) (shouldDisable bool) {
+	if s.handleOpenAICredentialPoolUnavailable(ctx, account, statusCode, responseBody) {
+		return true
+	}
 	ctx = withTempUnschedulableModel(ctx, requestedModel)
 	// Team-linked deactivation must run before request-scoped and pool-mode early returns.
 	s.maybeHandleOpenAITeamLinkedError(ctx, account, statusCode, responseBody)

@@ -121,6 +121,10 @@ type AdminService interface {
 	CreateShadow(ctx context.Context, parentID int64, opts ShadowOptions) (*Account, error)
 
 	// Proxy management
+	ListProxyGroups(ctx context.Context) ([]ProxyGroup, error)
+	ListProxiesByGroup(ctx context.Context, page, pageSize int, protocol, status, search, sortBy, sortOrder string, groupID int64) ([]ProxyWithAccountCount, int64, error)
+	SaveProxyGroup(ctx context.Context, group *ProxyGroup) error
+	DeleteProxyGroup(ctx context.Context, id int64) error
 	ListProxies(ctx context.Context, page, pageSize int, protocol, status, search string, sortBy, sortOrder string) ([]Proxy, int64, error)
 	ListProxiesWithAccountCount(ctx context.Context, page, pageSize int, protocol, status, search string, sortBy, sortOrder string) ([]ProxyWithAccountCount, int64, error)
 	GetAllProxies(ctx context.Context) ([]Proxy, error)
@@ -412,6 +416,7 @@ type CreateAccountInput struct {
 	Credentials        map[string]any
 	Extra              map[string]any
 	ProxyID            *int64
+	ProxyGroupID       *int64
 	Concurrency        int
 	Priority           int
 	RateMultiplier     *float64 // 账号计费倍率（>=0，允许 0）
@@ -443,6 +448,7 @@ type UpdateAccountInput struct {
 	Credentials           map[string]any
 	Extra                 map[string]any
 	ProxyID               *int64
+	ProxyGroupID          *int64
 	Concurrency           *int     // 使用指针区分"未提供"和"设置为0"
 	Priority              *int     // 使用指针区分"未提供"和"设置为0"
 	RateMultiplier        *float64 // 账号计费倍率（>=0，允许 0）

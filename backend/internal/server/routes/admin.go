@@ -524,6 +524,10 @@ func registerCNProviderRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 }
 
 func registerProxyRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {
+	admin.GET("/proxy-groups", h.Admin.Proxy.ListGroups)
+	admin.POST("/proxy-groups", h.Admin.Proxy.SaveGroup)
+	admin.PUT("/proxy-groups/:id", h.Admin.Proxy.SaveGroup)
+	admin.DELETE("/proxy-groups/:id", h.Admin.Proxy.DeleteGroup)
 	proxies := admin.Group("/proxies")
 	{
 		proxies.GET("", h.Admin.Proxy.List)

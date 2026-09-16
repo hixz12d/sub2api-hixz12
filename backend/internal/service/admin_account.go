@@ -425,17 +425,18 @@ func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]an
 		priority = 1
 	}
 	account := &Account{
-		Name:        input.Name,
-		Notes:       normalizeAccountNotes(input.Notes),
-		Platform:    input.Platform,
-		Type:        input.Type,
-		Credentials: input.Credentials,
-		Extra:       accountExtra,
-		ProxyID:     input.ProxyID,
-		Concurrency: normalizeAccountConcurrency(input.Platform, input.Type, input.Concurrency),
-		Priority:    priority,
-		Status:      StatusActive,
-		Schedulable: true,
+		Name:         input.Name,
+		Notes:        normalizeAccountNotes(input.Notes),
+		Platform:     input.Platform,
+		Type:         input.Type,
+		Credentials:  input.Credentials,
+		Extra:        accountExtra,
+		ProxyID:      input.ProxyID,
+		ProxyGroupID: input.ProxyGroupID,
+		Concurrency:  normalizeAccountConcurrency(input.Platform, input.Type, input.Concurrency),
+		Priority:     priority,
+		Status:       StatusActive,
+		Schedulable:  true,
 	}
 	if input.ProbeEnabled != nil && *input.ProbeEnabled {
 		if !isUpstreamBillingProbeAccount(account) {
@@ -595,6 +596,13 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 	account, err := s.accountRepo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	if input.ProxyGroupID != nil {
+		if account.IsCredentialShadow() {
+			return nil, infraerrors.BadRequest("SPARK_SHADOW_PROXY_INHERITED", "影子账号继承母账号出口，请修改母账号")
+		}
+		account.ProxyGroupID = input.ProxyGroupID
+		account.Proxy = nil
 	}
 	var normalizedExtra map[string]any
 	if input.Extra != nil {
@@ -906,12 +914,12 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 
 	// 将 proxy 变更传播到 spark 影子账号（同步；Update 内部已触发调度快照）。
 	// 影子自身 proxy 不可独立编辑(见上),故对影子的更新不触发传播。
-	if input.ProxyID != nil && !account.IsCredentialShadow() {
+	if (input.ProxyID != nil || input.ProxyGroupID != nil) && !account.IsCredentialShadow() {
 		if err := s.propagateProxyToShadows(ctx, id, account.ProxyID); err != nil {
 			return nil, err
 		}
 	}
-	if input.ProxyID != nil && s.cfg != nil && s.cfg.Gateway.OpenAIEgress.InvalidateOnProxyChange {
+	if (input.ProxyID != nil || input.ProxyGroupID != nil) && s.cfg != nil && s.cfg.Gateway.OpenAIEgress.InvalidateOnProxyChange {
 		if invalidator, ok := s.runtimeBlocker.(interface{ InvalidateOpenAIRouteAccount(int64) }); ok {
 			invalidator.InvalidateOpenAIRouteAccount(account.ID)
 		}

@@ -154,6 +154,14 @@ func (s *OpenAIGatewayService) handleOpenAIAccountUpstreamError(ctx context.Cont
 	if s.rateLimitService != nil {
 		s.rateLimitService.maybeHandleOpenAITeamLinkedError(stateCtx, account, statusCode, responseBody)
 	}
+	// Credential-pool exhaustion affects every model, including pool-mode relays.
+	if isOpenAICredentialPoolUnavailable(account, statusCode, responseBody) {
+		if s.rateLimitService != nil {
+			s.rateLimitService.handleOpenAICredentialPoolUnavailable(stateCtx, account, statusCode, responseBody)
+		}
+		s.BlockAccountScheduling(account, time.Now().Add(openAICredentialPoolCooldown), "upstream_credential_pool_unavailable")
+		return true
+	}
 	stateCtx = withTempUnschedulableModel(stateCtx, canonicalModel)
 	if s.rateLimitService != nil && len(canonicalModel) > 0 && s.rateLimitService.HandleUpstreamModelNotFound(stateCtx, account, canonicalModel[0], statusCode, responseBody) {
 		return true

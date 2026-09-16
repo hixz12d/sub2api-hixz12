@@ -1498,6 +1498,7 @@ export interface OpenAIResponsesState {
 }
 
 export interface CreateAccountRequest {
+  proxy_group_id?: number
   name: string
   notes?: string | null
   platform: AccountPlatform
@@ -1517,6 +1518,7 @@ export interface CreateAccountRequest {
 }
 
 export interface UpdateAccountRequest {
+  proxy_group_id?: number
   name?: string
   notes?: string | null
   type?: AccountType
@@ -1666,6 +1668,7 @@ export interface CodexSessionImportRequest {
 }
 
 export interface OpenAICodexPATCreateRequest {
+  proxy_group_id?: number
   access_token: string
   name?: string
   notes?: string | null

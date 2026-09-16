@@ -7,6 +7,7 @@ const { listProxies, getAllWithCount } = vi.hoisted(() => ({
   getAllWithCount: vi.fn()
 }))
 
+vi.mock('@/api/admin/proxyGroups', () => ({ listProxyGroups: vi.fn().mockResolvedValue([{ id: 8, name: 'IPv6 egress', proxy_ids: [], available_proxy_ids: [], max_accounts_per_proxy: 2 }]) }))
 vi.mock('@/api/admin', () => ({
   adminAPI: { proxies: { list: listProxies, getAllWithCount } }
 }))
@@ -55,6 +56,18 @@ beforeEach(() => {
 afterEach(() => wrapper?.unmount())
 
 describe('proxy list filter pagination', () => {
+  it('filters groups on the server and resets pagination', async () => {
+    wrapper = mountView()
+    await flushPromises()
+    await wrapper.get('[data-test="page"]').trigger('click')
+    await wrapper.get('select[data-filter="proxyGroups.all"]').setValue('8')
+    await flushPromises()
+    expect(listProxies.mock.lastCall?.[0]).toBe(1)
+    expect(listProxies.mock.lastCall?.[2]).toMatchObject({ group_id: 8 })
+    await wrapper.get('select[data-filter="proxyGroups.all"]').setValue('0')
+    await flushPromises()
+    expect(listProxies.mock.lastCall?.[2]).toMatchObject({ group_id: 0 })
+  })
   it.each([
     ['protocol', 'admin.proxies.allProtocols', 'socks5', ''],
     ['protocol', 'admin.proxies.allProtocols', '', 'http'],

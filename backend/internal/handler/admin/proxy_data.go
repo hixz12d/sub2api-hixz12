@@ -44,6 +44,31 @@ func (h *ProxyHandler) ExportData(c *gin.Context) {
 			response.ErrorFrom(c, err)
 			return
 		}
+		if raw, present := c.GetQuery("group_id"); present {
+			groupID, parseErr := strconv.ParseInt(raw, 10, 64)
+			if parseErr != nil || groupID < 0 {
+				response.BadRequest(c, "Invalid proxy group ID")
+				return
+			}
+			groups, groupErr := h.adminService.ListProxyGroups(ctx)
+			if groupErr != nil {
+				response.ErrorFrom(c, groupErr)
+				return
+			}
+			membership := make(map[int64]int64)
+			for _, group := range groups {
+				for _, id := range group.ProxyIDs {
+					membership[id] = group.ID
+				}
+			}
+			filtered := make([]service.Proxy, 0, len(proxies))
+			for _, proxy := range proxies {
+				if membership[proxy.ID] == groupID {
+					filtered = append(filtered, proxy)
+				}
+			}
+			proxies = filtered
+		}
 	}
 
 	// 构建 id→name 映射，用于导出备用代理 name

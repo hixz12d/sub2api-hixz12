@@ -129,6 +129,9 @@ func newAccountRepositoryWithSQL(client *dbent.Client, sqlq sqlExecutor, schedul
 }
 
 func (r *accountRepository) Create(ctx context.Context, account *service.Account) error {
+	if account != nil && account.ProxyGroupID != nil {
+		return r.CreateWithAccountGroups(ctx, account, nil)
+	}
 	if err := createAccountRecord(ctx, r.client, account); err != nil {
 		return err
 	}
@@ -141,6 +144,9 @@ func (r *accountRepository) Create(ctx context.Context, account *service.Account
 func createAccountRecord(ctx context.Context, client *dbent.Client, account *service.Account) error {
 	if account == nil {
 		return service.ErrAccountNilInput
+	}
+	if err := resolveAccountProxyGroup(ctx, client, account); err != nil {
+		return err
 	}
 
 	builder := client.Account.Create().
@@ -203,6 +209,7 @@ func createAccountRecord(ctx context.Context, client *dbent.Client, account *ser
 	}
 
 	account.ID = created.ID
+	account.ProxyGroupID = nil
 	account.CreatedAt = created.CreatedAt
 	account.UpdatedAt = created.UpdatedAt
 	return nil
@@ -510,6 +517,7 @@ func (r *accountRepository) updateAccount(
 	}
 
 	account.UpdatedAt = updated.UpdatedAt
+	account.ProxyGroupID = nil
 	// 普通账号编辑（如 model_mapping / credentials）也需要立即刷新单账号快照，
 	// 否则网关在 outbox worker 延迟或异常时仍可能读到旧配置。
 	if contextTx == nil {
@@ -526,6 +534,15 @@ func (r *accountRepository) updateLockedAccount(
 	explicitRateSyncEnabled *bool,
 	explicitRateMultiplier *float64,
 ) (*dbent.Account, error) {
+	if account.ProxyGroupID != nil {
+		var id int64
+		if err := scanSingleRow(ctx, client, `SELECT id FROM accounts WHERE id=$1 AND deleted_at IS NULL FOR NO KEY UPDATE`, []any{account.ID}, &id); err != nil {
+			return nil, err
+		}
+		if err := resolveAccountProxyGroup(ctx, client, account); err != nil {
+			return nil, err
+		}
+	}
 	extra, err := lockAndMergeAccountProbeExtra(ctx, client, account, explicitProbeEnabled, explicitRateSyncEnabled)
 	if err != nil {
 		return nil, err
@@ -3138,7 +3155,7 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 
 	result, err := exec.ExecContext(ctx, query, args...)
 	if err != nil {
-		return 0, err
+		return 0, translatePersistenceError(err, nil, nil)
 	}
 	rows, err := result.RowsAffected()
 	if err != nil {

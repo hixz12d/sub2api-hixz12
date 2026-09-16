@@ -1,0 +1,25 @@
+export default {
+  proxyGroups: {
+    title: 'Proxy groups', manage: 'Manage groups', all: 'All proxy groups', ungrouped: 'Ungrouped',
+    create: 'Create group', name: 'Group name', nameHint: 'For example: IPv6 egress, IPv4 egress',
+    limit: 'Maximum independent accounts per proxy', members: 'Group proxies',
+    hint: 'Group proxies by their actual egress. An available proxy is randomly assigned when saving an account and then remains fixed. Inactive, expired and full proxies are excluded. Shadows share their parent’s slot.',
+    selectedHint: 'Select proxies in the table first to add them together. Each proxy belongs to one group.',
+    addSelected: 'Add {count} selected proxies', count: '{count} proxies',
+    auto: 'Automatically assign from this group', autoLabel: '{name} · Automatic assignment',
+    capacity: '{available} proxies available / up to {limit} accounts each',
+    full: 'No available proxy in this group', loadFailed: 'Could not load proxy groups. Reopen to retry.',
+    saved: 'Proxy group saved', deleted: 'Proxy group deleted; account egress unchanged',
+    deleteConfirm: 'Delete this group? Proxies and account assignments are preserved; the group capacity limit is removed.',
+    saveFailed: 'Could not save proxy group', remove: 'Remove from group', preview: 'Preview: {name}; capacity is checked again when saving',
+  },
+  accountCompare: {
+    title: 'Compare account answers', action: 'Compare answers', prompt: 'Shared test question', model: 'Shared text model',
+    hint: 'Uses human question mode for direct OpenAI API key / OAuth accounts. All accounts receive the same question and model. Up to 3 run at once. Tests consume upstream quota.',
+    start: 'Test all accounts', stop: 'Stop tests', waiting: 'Queued', running: 'Answering', success: 'Completed', failed: 'Failed', cancelled: 'Stopped',
+    elapsed: '{seconds}s', empty: 'The answer will appear here', noAccounts: 'Select accounts to test first',
+    incomplete: 'Connection ended without a test completion event', loadFailed: 'Could not load the selected accounts. Please retry.', retry: 'Retry this account',
+    timeout: 'Test stopped after 120 seconds', answerTooLarge: 'Answer too large; reception stopped',
+    reviewSaved: 'Review saved', reviewConflict: 'Someone changed this review. Reload before saving.', reloadReview: 'Reload review',
+  },
+}

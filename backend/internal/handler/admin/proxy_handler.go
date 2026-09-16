@@ -69,7 +69,19 @@ func (h *ProxyHandler) List(c *gin.Context) {
 		search = search[:100]
 	}
 
-	proxies, total, err := h.adminService.ListProxiesWithAccountCount(c.Request.Context(), page, pageSize, protocol, status, search, sortBy, sortOrder)
+	var proxies []service.ProxyWithAccountCount
+	var total int64
+	var err error
+	if raw, present := c.GetQuery("group_id"); present {
+		groupID, parseErr := strconv.ParseInt(raw, 10, 64)
+		if parseErr != nil || groupID < 0 {
+			response.BadRequest(c, "Invalid proxy group ID")
+			return
+		}
+		proxies, total, err = h.adminService.ListProxiesByGroup(c.Request.Context(), page, pageSize, protocol, status, search, sortBy, sortOrder, groupID)
+	} else {
+		proxies, total, err = h.adminService.ListProxiesWithAccountCount(c.Request.Context(), page, pageSize, protocol, status, search, sortBy, sortOrder)
+	}
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

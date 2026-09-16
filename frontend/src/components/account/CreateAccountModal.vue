@@ -3042,7 +3042,7 @@
           <label class="input-label mb-0">{{ t('admin.accounts.proxy') }}</label>
           <ProxyAdBanner />
         </div>
-        <ProxySelector v-model="form.proxy_id" :proxies="proxies" />
+        <ProxySelector v-model="form.proxy_id" v-model:group-id="proxyGroupId" :proxies="proxies" allow-group />
       </div>
 
       <UpstreamRequestIdHeaderField
@@ -4718,6 +4718,12 @@ const openaiResponsesWebSocketV2Mode = computed({
   }
 })
 
+const proxyGroupId = ref<number | null>(null)
+const createWithProxyGroup = (payload: CreateAccountRequest) => adminAPI.accounts.create({
+  ...payload,
+  proxy_group_id: proxyGroupId.value ?? undefined,
+})
+
 const getAccountCreateTemplateSnapshot = (): AccountCreateTemplateValues =>
   normalizeAccountCreateTemplateValues({
     proxy_id: form.proxy_id,
@@ -4749,6 +4755,7 @@ const applyAccountCreateTemplateSnapshot = (
 ) => {
   const next = normalizeAccountCreateTemplateValues(values)
   form.proxy_id = next.proxy_id
+  proxyGroupId.value = null
   form.concurrency = next.concurrency
   form.load_factor = next.load_factor
   form.priority = next.priority
@@ -5372,7 +5379,7 @@ const ensureAntigravityMixedChannelConfirmed = async (onConfirm: () => Promise<v
 const submitCreateAccount = async (payload: CreateAccountRequest) => {
   submitting.value = true
   try {
-    const account = await adminAPI.accounts.create(withAntigravityConfirmFlag(payload))
+    const account = await createWithProxyGroup(withAntigravityConfirmFlag(payload))
     const modelMapping = payload.credentials.model_mapping
     const hasConcreteMappedTarget = payload.type === 'apikey' &&
       typeof modelMapping === 'object' &&
@@ -5432,6 +5439,7 @@ const resetForm = () => {
   form.type = 'oauth'
   form.credentials = {}
   form.proxy_id = null
+  proxyGroupId.value = null
   form.concurrency = 10
   form.load_factor = null
   form.priority = 1
@@ -6216,7 +6224,7 @@ const handleGrokValidateRT = async (refreshTokenInput: string) => {
           return
         }
 
-        await adminAPI.accounts.create({
+        await createWithProxyGroup({
           name: accountName,
           notes: form.notes,
           platform: 'grok',
@@ -6393,7 +6401,7 @@ const handleGrokAuthorizePassword = async (emailPasswordInput: string) => {
           return
         }
 
-        await adminAPI.accounts.create({
+        await createWithProxyGroup({
           name: accountName,
           notes: form.notes,
           platform: 'grok',
@@ -6492,7 +6500,7 @@ const handleOpenAIExchange = async (authCode: string) => {
     }
 
     if (shouldCreateOpenAI) {
-      await adminAPI.accounts.create({
+      await createWithProxyGroup({
         name: form.name,
         notes: form.notes,
         platform: 'openai',
@@ -6679,6 +6687,7 @@ const handleOpenAIImportCodexPAT = async (accessToken: string) => {
   try {
     const extra = buildOpenAICodexImportExtra()
     await adminAPI.accounts.createOpenAICodexPAT({
+      proxy_group_id: proxyGroupId.value ?? undefined,
       access_token: trimmed,
       name: form.name,
       notes: form.notes || null,
@@ -6773,7 +6782,7 @@ const handleOpenAIBatchRT = async (refreshTokenInput: string, clientId?: string)
         const accountName = refreshTokens.length > 1 ? `${baseName} #${i + 1}` : baseName
 
         if (shouldCreateOpenAI) {
-          await adminAPI.accounts.create({
+          await createWithProxyGroup({
             name: accountName,
             notes: form.notes,
             platform: 'openai',
@@ -6888,7 +6897,7 @@ const handleAntigravityValidateRT = async (refreshTokenInput: string) => {
           expires_at: form.expires_at,
           auto_pause_on_expired: autoPauseOnExpired.value
         })
-        await adminAPI.accounts.create(createPayload)
+        await createWithProxyGroup(createPayload)
         successCount++
       } catch (error: any) {
         failedCount++
@@ -7253,7 +7262,7 @@ const handleCookieAuth = async (sessionKey: string) => {
           credentials.temp_unschedulable_rules = tempUnschedPayload
         }
 
-        await adminAPI.accounts.create({
+        await createWithProxyGroup({
           name: accountName,
           notes: form.notes,
           platform: form.platform,

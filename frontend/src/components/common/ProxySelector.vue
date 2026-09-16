@@ -22,6 +22,8 @@
       </span>
     </button>
 
+    <p v-if="groupId && selectedProxy" class="mt-1 text-xs text-gray-500">{{ t('proxyGroups.preview', { name: selectedProxy.name }) }}</p>
+
     <Transition name="select-dropdown">
       <div v-if="isOpen" class="select-dropdown">
         <!-- Search and Batch Test Header -->
@@ -62,6 +64,22 @@
             </svg>
             <Icon v-else name="play" size="sm" />
           </button>
+        </div>
+
+        <div class="space-y-2 border-b p-3 dark:border-dark-600">
+          <select v-model="groupFilter" class="input" :aria-label="t('proxyGroups.title')" @click.stop>
+            <option value="">{{ t('proxyGroups.all') }}</option>
+            <option value="0">{{ t('proxyGroups.ungrouped') }}</option>
+            <option v-for="group in groups" :key="group.id" :value="String(group.id)">{{ group.name }}</option>
+          </select>
+          <p v-if="groupError" role="alert" class="text-xs text-red-500">{{ groupError }}</p>
+          <template v-if="allowGroup && filteredGroup">
+            <button type="button" class="btn btn-primary w-full text-sm" :disabled="groupsLoading || eligibleGroupProxies.length === 0" @click.stop="selectGroup">
+              {{ t('proxyGroups.auto') }}
+            </button>
+            <p class="text-xs text-gray-500">{{ t('proxyGroups.capacity', { available: eligibleGroupProxies.length, limit: filteredGroup.max_accounts_per_proxy }) }}</p>
+            <p v-if="!groupsLoading && eligibleGroupProxies.length === 0" class="text-xs text-amber-600">{{ t('proxyGroups.full') }}</p>
+          </template>
         </div>
 
         <!-- Options list -->
@@ -173,6 +191,7 @@ import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api/admin'
 import Icon from '@/components/icons/Icon.vue'
 import type { Proxy } from '@/types'
+import { listProxyGroups, type ProxyGroup } from '@/api/admin/proxyGroups'
 
 const { t } = useI18n()
 
@@ -190,6 +209,8 @@ interface Props {
   modelValue: number | null
   proxies: Proxy[]
   disabled?: boolean
+  allowGroup?: boolean
+  groupId?: number | null
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -198,8 +219,32 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   'update:modelValue': [value: number | null]
+  'update:groupId': [value: number | null]
 }>()
 
+const groups = ref<ProxyGroup[]>([])
+const groupFilter = ref('')
+const groupError = ref('')
+const groupsLoading = ref(false)
+const filteredGroup = computed(() => groups.value.find(g => g.id === Number(groupFilter.value)))
+const eligibleGroupProxies = computed(() => props.proxies.filter(p => filteredGroup.value?.available_proxy_ids.includes(p.id)))
+async function loadGroups() {
+  groupsLoading.value = true
+  groupError.value = ''
+  try { groups.value = await listProxyGroups() }
+  catch { groups.value = []; groupError.value = t('proxyGroups.loadFailed') }
+  finally { groupsLoading.value = false }
+}
+function selectGroup() {
+  const group = filteredGroup.value
+  const candidates = eligibleGroupProxies.value
+  if (!group || !candidates.length || groupsLoading.value) return
+  const proxy = candidates[Math.floor(Math.random() * candidates.length)]
+  emit('update:modelValue', proxy.id)
+  emit('update:groupId', group.id)
+  isOpen.value = false
+  searchQuery.value = ''
+}
 const isOpen = ref(false)
 const searchQuery = ref('')
 const containerRef = ref<HTMLElement | null>(null)
@@ -216,6 +261,8 @@ const selectedProxy = computed(() => {
 })
 
 const selectedLabel = computed(() => {
+  const group = groups.value.find(g => g.id === props.groupId)
+  if (group) return t('proxyGroups.autoLabel', { name: group.name })
   if (!selectedProxy.value) {
     return t('admin.accounts.noProxy')
   }
@@ -224,11 +271,14 @@ const selectedLabel = computed(() => {
 })
 
 const filteredProxies = computed(() => {
-  if (!searchQuery.value) {
-    return props.proxies
-  }
+  const candidates = props.proxies.filter(p => {
+    if (groupFilter.value === '') return true
+    if (groupFilter.value === '0') return !groups.value.some(g => g.proxy_ids.includes(p.id))
+    return filteredGroup.value?.proxy_ids.includes(p.id)
+  })
+  if (!searchQuery.value) return candidates
   const query = searchQuery.value.toLowerCase()
-  return props.proxies.filter((proxy) => {
+  return candidates.filter((proxy) => {
     const name = proxy.name.toLowerCase()
     const host = proxy.host.toLowerCase()
     return name.includes(query) || host.includes(query)
@@ -239,6 +289,7 @@ const toggle = () => {
   if (props.disabled) return
   isOpen.value = !isOpen.value
   if (isOpen.value) {
+    void loadGroups()
     nextTick(() => {
       searchInputRef.value?.focus()
     })
@@ -246,6 +297,7 @@ const toggle = () => {
 }
 
 const selectOption = (value: number | null) => {
+  emit('update:groupId', null)
   emit('update:modelValue', value)
   isOpen.value = false
   searchQuery.value = ''
@@ -274,7 +326,7 @@ const handleBatchTest = async () => {
   batchTesting.value = true
 
   // Test all proxies in parallel
-  const testPromises = props.proxies.map(async (proxy) => {
+  const testPromises = filteredProxies.value.map(async (proxy) => {
     testingProxyIds.add(proxy.id)
     try {
       const result = await adminAPI.proxies.testProxy(proxy.id)

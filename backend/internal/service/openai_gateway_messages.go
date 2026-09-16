@@ -255,8 +255,6 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		}); err != nil {
 			return nil, err
 		}
-		// Account-level Super-Instruct whitelist (extra.super_instruct=true).
-		applyAccountSuperInstructBridgeFromConfig(reqBody, account, resolveSuperInstructBridgeFile(s.cfg))
 		ensureCodexOAuthInstructionsField(reqBody)
 		if shouldAutoInjectPromptCacheKeyForCompat(upstreamModel) {
 			appendOpenAICompatClaudeCodeTodoGuardToRequestBody(reqBody)

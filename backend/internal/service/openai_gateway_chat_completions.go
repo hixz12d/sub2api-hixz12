@@ -320,8 +320,6 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		if codexResult.PromptCacheKey != "" {
 			promptCacheKey = codexResult.PromptCacheKey
 		}
-		// Account-level Super-Instruct whitelist (extra.super_instruct=true).
-		applyAccountSuperInstructBridgeFromConfig(reqBody, account, resolveSuperInstructBridgeFile(s.cfg))
 		applyCodexAccountIdentityClientMetadataMap(reqBody, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
 		responsesBody, err = json.Marshal(reqBody)
 		if err != nil {

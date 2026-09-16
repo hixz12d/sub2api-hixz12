@@ -29,6 +29,7 @@ type Account struct {
 	Credentials             map[string]any
 	Extra                   map[string]any
 	ProxyID                 *int64
+	ProxyGroupID            *int64 `json:"-"` // Write-only allocation request; only ProxyID is persisted.
 	ProxyFallbackOriginID   *int64
 	ProxyFallbackOriginName *string // 仅展示用
 	Concurrency             int

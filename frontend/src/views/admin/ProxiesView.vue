@@ -36,6 +36,12 @@
             />
           </div>
 
+          <div class="w-full sm:w-44">
+            <Select v-model="proxyGroupFilter" :options="proxyGroupOptions" :placeholder="t('proxyGroups.all')" @change="handleFilterChange" />
+          </div>
+          <span v-if="proxyGroupError" role="alert" class="text-sm text-red-500">{{ proxyGroupError }}</span>
+          <button class="btn btn-secondary" @click="showProxyGroups = true">{{ t('proxyGroups.manage') }}</button>
+
           <!-- Right: All action buttons -->
           <div class="flex flex-1 flex-wrap items-center justify-end gap-2">
             <button
@@ -118,8 +124,9 @@
             />
           </template>
 
-          <template #cell-name="{ value }">
+          <template #cell-name="{ value, row }">
             <span class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
+            <span v-if="proxyGroupName(row.id)" class="mt-1 block text-xs text-primary-500">{{ proxyGroupName(row.id) }}</span>
           </template>
 
           <template #cell-protocol="{ value }">
@@ -960,6 +967,7 @@
         </div>
       </template>
     </BaseDialog>
+    <ProxyGroupsDialog :show="showProxyGroups" :selected-ids="[...selectedProxyIds]" @close="showProxyGroups = false" @saved="onProxyGroupsSaved" />
   </AppLayout>
 </template>
 
@@ -978,6 +986,8 @@ import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import ImportDataModal from '@/components/admin/proxy/ImportDataModal.vue'
+import ProxyGroupsDialog from '@/components/admin/proxy/ProxyGroupsDialog.vue'
+import { listProxyGroups, type ProxyGroup } from '@/api/admin/proxyGroups'
 import Select from '@/components/common/Select.vue'
 import ProxyAdBanner from '@/components/common/ProxyAdBanner.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -1037,6 +1047,25 @@ const editStatusOptions = computed(() => [
   { value: 'inactive', label: t('admin.accounts.status.inactive') }
 ])
 
+const proxyGroups = ref<ProxyGroup[]>([])
+const proxyGroupFilter = ref('')
+const showProxyGroups = ref(false)
+const proxyGroupError = ref('')
+const proxyGroupOptions = computed(() => [
+  { value: '', label: t('proxyGroups.all') },
+  { value: '0', label: t('proxyGroups.ungrouped') },
+  ...proxyGroups.value.map(g => ({ value: String(g.id), label: g.name }))
+])
+const proxyGroupName = (id: number) => proxyGroups.value.find(g => g.proxy_ids.includes(id))?.name
+const loadProxyGroups = async () => {
+  try { proxyGroups.value = await listProxyGroups(); proxyGroupError.value = '' }
+  catch { proxyGroupError.value = t('proxyGroups.loadFailed') }
+}
+const onProxyGroupsSaved = async () => {
+  await loadProxyGroups()
+  if (Number(proxyGroupFilter.value) > 0 && !proxyGroups.value.some(g => g.id === Number(proxyGroupFilter.value))) proxyGroupFilter.value = ''
+  handleFilterChange()
+}
 const proxies = ref<Proxy[]>([])
 const visiblePasswordIds = reactive(new Set<number>())
 const copyMenuProxyId = ref<number | null>(null)
@@ -1181,6 +1210,7 @@ const toggleSelectAllVisible = (event: Event) => {
 
 const buildProxyQueryFilters = () => ({
   protocol: filters.protocol || undefined,
+  group_id: proxyGroupFilter.value === '' ? undefined : Number(proxyGroupFilter.value),
   status: (filters.status || undefined) as 'active' | 'inactive' | 'expired' | undefined,
   search: searchQuery.value || undefined,
   sort_by: sortState.sort_by,
@@ -1816,6 +1846,7 @@ const fetchAllProxiesForBatch = async (): Promise<Proxy[]> => {
       pageSize,
       {
         protocol: filters.protocol || undefined,
+        group_id: proxyGroupFilter.value === '' ? undefined : Number(proxyGroupFilter.value),
         status: filters.status as any,
         search: searchQuery.value || undefined,
         sort_by: sortState.sort_by,
@@ -2076,6 +2107,7 @@ function closeCopyMenu() {
 }
 
 onMounted(() => {
+  loadProxyGroups()
   loadProxies()
   loadBackupProxyOptions()
   document.addEventListener('click', closeCopyMenu)
