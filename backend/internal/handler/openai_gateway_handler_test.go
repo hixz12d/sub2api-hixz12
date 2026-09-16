@@ -143,7 +143,7 @@ func TestEnsureOpenAIStreamReadErrorResponse_ResponsesEmitsSingleSanitizedFailur
 	require.True(t, strings.HasPrefix(body, partial))
 	require.Equal(t, 1, strings.Count(body, "event: response.failed\n"))
 	require.NotContains(t, body, `"type":"error"`)
-	require.NotContains(t, body, "sequence_number")
+	require.Contains(t, body, `"sequence_number":0`)
 	require.NotContains(t, body, "stream ID")
 	require.NotContains(t, body, "INTERNAL_ERROR")
 

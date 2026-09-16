@@ -108,7 +108,8 @@ func codexCanonicalUserAgent() string {
 	resolver := codexCanonicalUAResolver
 	codexCanonicalUAMu.RUnlock()
 	if resolver != nil {
-		if ua := strings.TrimSpace(resolver()); ua != "" {
+		ua := resolver()
+		if _, _, ok := openai.PairCodexClientIdentity(ua); ok {
 			return ua
 		}
 	}
@@ -135,7 +136,7 @@ type codexOutboundIdentity struct {
 // local outbound identity policy instead of the retired official pairing path.
 func resolveCodexOutboundIdentity(candidateUA string) codexOutboundIdentity {
 	var account *Account
-	if ua := strings.TrimSpace(candidateUA); ua != "" {
+	if ua := candidateUA; ua != "" {
 		account = &Account{Platform: PlatformOpenAI, Credentials: map[string]any{"user_agent": ua}}
 	}
 	identity := resolveOpenAIOutboundIdentityWithPolicy(context.Background(), account, nil, nil, false, candidateUA)

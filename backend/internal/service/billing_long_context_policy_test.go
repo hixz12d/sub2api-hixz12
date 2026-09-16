@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/stretchr/testify/require"
@@ -32,7 +33,7 @@ func TestGPTLongContextPolicyPreservesCatalogConfiguration(t *testing.T) {
 					LongContextInputThreshold: tt.threshold, LongContextInputMultiplier: tt.inputMultiplier, LongContextOutputMultiplier: tt.outputMultiplier}
 				pricing := original
 				for _, defaultCard := range []bool{true, false} {
-					resolved := billing.applyModelSpecificPricingPolicyEx(model, &pricing, defaultCard)
+					resolved := billing.applyModelSpecificPricingPolicyEx(model, &pricing, defaultCard, time.Time{})
 					require.Equal(t, tt.threshold, resolved.LongContextInputThreshold)
 					require.Equal(t, tt.inputMultiplier, resolved.LongContextInputMultiplier)
 					require.Equal(t, tt.outputMultiplier, resolved.LongContextOutputMultiplier)

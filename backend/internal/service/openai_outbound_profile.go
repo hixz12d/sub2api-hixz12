@@ -225,7 +225,7 @@ func resolveOpenAIOutboundIdentityWithVersion(accountUA, systemUA, configuredVer
 }
 
 func validOpenAIOutboundIdentity(userAgent string) (openAIOutboundIdentity, bool) {
-	originator, pairedUserAgent, ok := openai.PairCodexClientIdentity(strings.TrimSpace(userAgent))
+	originator, pairedUserAgent, ok := openai.PairCodexClientIdentity(userAgent)
 	if !ok {
 		return openAIOutboundIdentity{}, false
 	}

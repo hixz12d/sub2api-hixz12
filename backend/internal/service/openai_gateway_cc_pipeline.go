@@ -227,7 +227,7 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 	}
 	// 账号级请求头覆写必须先于 OpenAI 统一身份收口。
 	account.ApplyHeaderOverrides(upstreamReq.Header)
-	applyOpenCodeSessionHeader(c, account, targetURL, upstreamReq.Header)
+	applyOpenCodeSessionHeader(c, account, targetURL, upstreamReq.Header, body)
 	if account.Platform == PlatformOpenAI {
 		policy := openAIOutboundAPIKeyPolicy
 		if account.Type == AccountTypeOAuth {
