@@ -19,7 +19,7 @@ func defaultRecovery(value string) string {
 // RecordOAuthUnauthorized never upgrades a stale request or a manual/permission
 // error into recoverable auth evidence. Account mutation and evidence are atomic.
 func (r *accountRepository) RecordOAuthUnauthorized(ctx context.Context, before *service.Account, token string, permanent bool, until time.Time) error {
-	if before == nil || token == "" || token != before.GetCredential("access_token") || before.GetCredentialAsInt64("_token_version") <= 0 {
+	if before == nil || token == "" || token != before.GetCredential("access_token") {
 		return nil
 	}
 	creds, err := json.Marshal(normalizeJSONMap(before.Credentials))
@@ -31,6 +31,11 @@ func (r *accountRepository) RecordOAuthUnauthorized(ctx context.Context, before 
 		kind = "error"
 	}
 	message := "OAuth authentication failed (versioned 401)"
+	if before.GetCredentialAsInt64("_token_version") <= 0 {
+		// Legacy imports still need durable quarantine. Without a version, do not
+		// create evidence that a later credential sync could automatically clear.
+		message = "OAuth authentication failed (401; unversioned credential)"
+	}
 	_, err = r.sql.ExecContext(ctx, `WITH changed AS (
         UPDATE accounts SET
             status = CASE WHEN $4 THEN 'error' ELSE status END,
@@ -46,12 +51,12 @@ func (r *accountRepository) RecordOAuthUnauthorized(ctx context.Context, before 
         RETURNING id
     ), evidence AS (
         INSERT INTO oauth_auth_errors (account_id, kind, credential_version, token_hash, message, blocked_until)
-        SELECT id, $3, $7, $8, $5, CASE WHEN $4 THEN NULL ELSE $6 END FROM changed
+        SELECT id, $3, $7, $8, $5, CASE WHEN $4 THEN NULL ELSE $6 END FROM changed WHERE $7::bigint > 0
         ON CONFLICT (account_id, kind) DO UPDATE SET credential_version = EXCLUDED.credential_version,
             token_hash = EXCLUDED.token_hash, message = EXCLUDED.message, blocked_until = EXCLUDED.blocked_until, observed_at = clock_timestamp()
         RETURNING account_id
     ) INSERT INTO scheduler_outbox (event_type, account_id, payload)
-        SELECT $9, account_id, NULL FROM evidence`, before.ID, string(creds), kind, permanent, message, until,
+        SELECT $9, id, NULL FROM changed`, before.ID, string(creds), kind, permanent, message, until,
 		before.GetCredentialAsInt64("_token_version"), service.OAuthAccessTokenHash(token), service.SchedulerOutboxEventAccountChanged)
 	return err
 }

@@ -65,3 +65,23 @@ func TestOAuthEvidenceRequiresActualOfficialBearerAndCurrentSnapshot(t *testing.
 	}
 	require.False(t, limiter.recordVersionedOAuth401(context.Background(), account, true))
 }
+
+func TestOAuthEvidencePersistsLegacyCredentialWithoutVersion(t *testing.T) {
+	for _, permanent := range []bool{false, true} {
+		recorder := &oauthEvidenceRecorder{}
+		limiter := &RateLimitService{accountRepo: recorder}
+		account := &Account{ID: 42, Platform: PlatformOpenAI, Type: AccountTypeOAuth,
+			Credentials: map[string]any{"access_token": "legacy-AT"}}
+		req, err := http.NewRequest(http.MethodPost, "https://chatgpt.com/backend-api/codex/responses", nil)
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer legacy-AT")
+		ctx := withOAuthResponseCredential(context.Background(), &http.Response{Request: req})
+		require.True(t, limiter.recordVersionedOAuth401(ctx, account, permanent))
+		require.Equal(t, 1, recorder.calls, "missing _token_version must not silently swallow a 401")
+		require.Equal(t, permanent, recorder.permanent)
+
+		account.Credentials["access_token"] = "new-AT"
+		require.True(t, limiter.recordVersionedOAuth401(ctx, account, permanent))
+		require.Equal(t, 1, recorder.calls, "a stale bearer must not quarantine new credentials")
+	}
+}

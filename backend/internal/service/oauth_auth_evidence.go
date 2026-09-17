@@ -38,7 +38,7 @@ func (s *RateLimitService) recordVersionedOAuth401(ctx context.Context, account 
 	}
 	// A cached token differing from the request snapshot has no safe version;
 	// don't let that response disable the current credential.
-	if token != account.GetCredential("access_token") || account.GetCredentialAsInt64("_token_version") <= 0 {
+	if token != account.GetCredential("access_token") {
 		return true
 	}
 	minutes := 10
@@ -46,6 +46,9 @@ func (s *RateLimitService) recordVersionedOAuth401(ctx context.Context, account 
 		minutes = s.cfg.RateLimit.OAuth401CooldownMinutes
 	}
 	until := time.Now().Add(time.Duration(minutes) * time.Minute)
+	// Legacy imports may have no _token_version. The repository still compares
+	// the complete credential snapshot before persisting their 401 state; only
+	// versioned credentials receive automatic-recovery evidence.
 	// Failure leaves no recoverable marker and must never fall back to a blind
 	// overwrite. The request still fails over; the shared outbox handles state.
 	if err := recorder.RecordOAuthUnauthorized(ctx, account, token, permanent, until); err != nil {
