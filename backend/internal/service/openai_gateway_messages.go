@@ -33,6 +33,11 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	promptCacheKey string,
 	defaultMappedModel string,
 ) (out *OpenAIForwardResult, retErr error) {
+	defer func() {
+		if retErr == nil {
+			s.pauseOpenAIAccountOnModelRoute(ctx, account, out)
+		}
+	}()
 	ctx = s.snapshotOpenAIOutboundIdentity(ctx, account, c.GetHeader("User-Agent"))
 	rememberOpenCodeInboundBody(c, body)
 	beginUpstreamResponseModelObservation(c)

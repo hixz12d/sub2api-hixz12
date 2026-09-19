@@ -29,7 +29,7 @@ func (r *proxyRepository) ListProxyGroups(ctx context.Context) ([]service.ProxyG
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	groups := make([]service.ProxyGroup, 0)
 	for rows.Next() {
 		var g service.ProxyGroup
@@ -53,7 +53,7 @@ func (r *proxyRepository) SaveProxyGroup(ctx context.Context, g *service.ProxyGr
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	exec := tx.Client()
 	if err := lockProxyAllocation(ctx, exec); err != nil {
 		return err
@@ -113,7 +113,7 @@ func (r *proxyRepository) DeleteProxyGroup(ctx context.Context, id int64) error 
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 	if err := lockProxyAllocation(ctx, tx.Client()); err != nil {
 		return err
 	}
@@ -160,7 +160,7 @@ func resolveAccountProxyGroup(ctx context.Context, client *dbent.Client, account
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	if !rows.Next() {
 		if err := rows.Err(); err != nil {
 			return err

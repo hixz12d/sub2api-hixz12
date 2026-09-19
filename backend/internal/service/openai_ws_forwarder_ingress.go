@@ -86,6 +86,7 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	hooks = s.withOpenAIModelRoutePauseHooks(ctx, account, hooks)
 	readerParent := ctx
 	if c.Request != nil {
 		readerParent = c.Request.Context()

@@ -1526,7 +1526,11 @@ func (s *OpenAIGatewayService) bindHTTPResponseAccount(ctx context.Context, c *g
 		return
 	}
 	ctx = WithOpenAIWSRequestOwner(ctx, c)
-	if err := s.bindPersistentOpenAIResponse(ctx, c, account, responseID); err != nil {
+	// Preserve tenant/affinity values while detaching all durable binding writes
+	// from a client that disconnects immediately after the terminal event.
+	bindCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), openAIWSStateStoreRedisTimeout)
+	defer cancel()
+	if err := s.bindPersistentOpenAIResponse(bindCtx, c, account, responseID); err != nil {
 		slog.Warn("openai.affinity_response_bind_failed", "account_id", account.ID, "error", err)
 	} else if c != nil && c.Request != nil {
 		if err := s.CommitCodexConversationResponse(c, responseID); err != nil {
@@ -1539,10 +1543,10 @@ func (s *OpenAIGatewayService) bindHTTPResponseAccount(ctx context.Context, c *g
 	}
 	groupID := getOpenAIGroupIDFromContext(c)
 	ttl := s.openAIWSResponseStickyTTL()
-	logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, bindOpenAIWSResponseAccount(ctx, store, groupID, responseID, account.ID, ttl))
+	logOpenAIWSBindResponseAccountWarn(groupID, account.ID, responseID, bindOpenAIWSResponseAccount(bindCtx, store, groupID, responseID, account.ID, ttl))
 	if rawOwner, ok := c.Get(openAIHTTPResponseOwnerContextKey); ok {
 		if owner, ok := rawOwner.(openAIHTTPResponseOwner); ok && owner.userID > 0 && owner.apiKeyID > 0 {
-			if err := s.BindOpenAIHTTPResponseOwner(ctx, groupID, responseID, owner.userID, owner.apiKeyID); err != nil {
+			if err := s.BindOpenAIHTTPResponseOwner(bindCtx, groupID, responseID, owner.userID, owner.apiKeyID); err != nil {
 				logger.L().Warn(
 					"openai.http_bind_response_owner_failed",
 					zap.Int64("group_id", groupID),

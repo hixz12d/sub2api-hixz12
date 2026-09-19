@@ -24,7 +24,7 @@
         class="flex-1 min-w-[120px] border-none bg-transparent text-sm outline-none placeholder:text-gray-400 dark:text-white"
         :placeholder="models.length === 0 ? placeholder : ''"
         @keydown.enter.prevent="addModel"
-        @keydown.tab.prevent="addModel"
+        @keydown.tab="handleTab"
         @keydown.delete="handleBackspace"
         @paste="handlePaste"
         @focus="focused = true"
@@ -100,6 +100,12 @@ function pickSuggestion(model: string) {
   inputValue.value = ''
   focused.value = true
   inputRef.value?.focus()
+}
+
+function handleTab(event: KeyboardEvent) {
+  if (!inputValue.value.trim()) return
+  event.preventDefault()
+  addModel()
 }
 
 function removeModel(idx: number) {

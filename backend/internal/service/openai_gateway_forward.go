@@ -19,6 +19,11 @@ import (
 
 // Forward forwards request to OpenAI API
 func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (out *OpenAIForwardResult, retErr error) {
+	defer func() {
+		if retErr == nil {
+			s.pauseOpenAIAccountOnModelRoute(ctx, account, out)
+		}
+	}()
 	ctx = s.snapshotOpenAIOutboundIdentity(ctx, account, c.GetHeader("User-Agent"))
 	EnsureOpenAIRetryBudget(c, account, body)
 	requestCtx := ctx
