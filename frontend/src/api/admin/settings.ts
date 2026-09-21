@@ -127,6 +127,7 @@ export type PaymentVisibleMethodSource =
   | ""
   | "official_alipay"
   | "easypay_alipay"
+  | "perpay_alipay"
   | "official_wxpay"
   | "easypay_wxpay";
 export type WeChatConnectMode = "open" | "mp" | "mobile";
@@ -170,6 +171,7 @@ const PAYMENT_VISIBLE_METHOD_SOURCE_OPTIONS: Record<
       labelZh: "易支付支付宝",
       labelEn: "EasyPay Alipay",
     },
+    { value: "perpay_alipay", labelZh: "PerPay 支付宝", labelEn: "PerPay Alipay" },
   ],
   wxpay: [
     { value: "", labelZh: "未配置", labelEn: "Not configured" },
@@ -195,6 +197,8 @@ const PAYMENT_VISIBLE_METHOD_SOURCE_ALIASES: Record<
     alipay_direct: "official_alipay",
     official: "official_alipay",
     easypay_alipay: "easypay_alipay",
+    perpay_alipay: "perpay_alipay",
+    perpay: "perpay_alipay",
     easypay: "easypay_alipay",
   },
   wxpay: {

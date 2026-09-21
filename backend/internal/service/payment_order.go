@@ -291,6 +291,10 @@ func buildPaymentOrderProviderSnapshot(sel *payment.InstanceSelection, req Creat
 			snapshot["merchant_app_id"] = merchantAppID
 		}
 	}
+	if providerKey == payment.TypePerPay {
+		snapshot["perpay_origin"] = strings.TrimRight(strings.TrimSpace(sel.Config["apiBase"]), "/")
+		snapshot["currency"] = "CNY"
+	}
 	if providerKey == payment.TypeEasyPay {
 		if merchantID := strings.TrimSpace(sel.Config["pid"]); merchantID != "" {
 			snapshot["merchant_id"] = merchantID
@@ -458,7 +462,11 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 		return nil, classifyCreatePaymentError(req, sel.ProviderKey, err)
 	}
 	sanitizeCreatePaymentResponseDetails(pr)
+	if !pr.ExpiresAt.IsZero() {
+		order.ExpiresAt = pr.ExpiresAt
+	}
 	_, err = s.entClient.PaymentOrder.UpdateOneID(order.ID).
+		SetExpiresAt(order.ExpiresAt).
 		SetNillablePaymentTradeNo(psNilIfEmpty(pr.TradeNo)).
 		SetNillablePayURL(psNilIfEmpty(pr.PayURL)).
 		SetNillableQrCode(psNilIfEmpty(pr.QRCode)).

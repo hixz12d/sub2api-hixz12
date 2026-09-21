@@ -10,6 +10,8 @@ describe('admin settings payment visible method helpers', () => {
     expect(normalizePaymentVisibleMethodSource('alipay', 'official')).toBe('official_alipay')
     expect(normalizePaymentVisibleMethodSource('alipay', 'alipay_direct')).toBe('official_alipay')
     expect(normalizePaymentVisibleMethodSource('alipay', 'easypay')).toBe('easypay_alipay')
+    expect(normalizePaymentVisibleMethodSource('alipay', 'perpay')).toBe('perpay_alipay')
+    expect(normalizePaymentVisibleMethodSource('wxpay', 'perpay')).toBe('')
 
     expect(normalizePaymentVisibleMethodSource('wxpay', 'official')).toBe('official_wxpay')
     expect(normalizePaymentVisibleMethodSource('wxpay', 'wechat')).toBe('official_wxpay')
@@ -40,6 +42,7 @@ describe('admin settings payment visible method helpers', () => {
         labelZh: '易支付支付宝',
         labelEn: 'EasyPay Alipay',
       },
+      { value: 'perpay_alipay', labelZh: 'PerPay 支付宝', labelEn: 'PerPay Alipay' },
     ])
 
     expect(getPaymentVisibleMethodSourceOptions('wxpay')).toEqual([

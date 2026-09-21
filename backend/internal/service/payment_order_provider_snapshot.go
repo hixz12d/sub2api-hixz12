@@ -127,7 +127,19 @@ func expectedNotificationProviderKeyForOrder(registry *payment.Registry, order *
 }
 
 func validateProviderSnapshotMetadata(order *dbent.PaymentOrder, providerKey string, metadata map[string]string) error {
-	if order == nil || len(metadata) == 0 {
+	if order == nil {
+		return nil
+	}
+	if providerKey == payment.TypePerPay {
+		expectedOrigin := psSnapshotStringValue(order.ProviderSnapshot["perpay_origin"])
+		if expectedOrigin == "" || metadata["perpay_origin"] != expectedOrigin || metadata["currency"] != "CNY" || metadata["merchant_order_no"] != order.OutTradeNo || metadata["perpay_order_id"] == "" {
+			return fmt.Errorf("perpay order identity mismatch")
+		}
+		if order.PaymentTradeNo != "" && order.PaymentTradeNo != metadata["perpay_order_id"] {
+			return fmt.Errorf("perpay upstream order mismatch")
+		}
+	}
+	if len(metadata) == 0 {
 		return nil
 	}
 

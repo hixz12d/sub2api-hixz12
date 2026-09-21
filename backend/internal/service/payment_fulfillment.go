@@ -37,6 +37,18 @@ type paymentFulfillmentLease struct {
 // --- Payment Notification & Fulfillment ---
 
 func (s *PaymentService) HandlePaymentNotification(ctx context.Context, n *payment.PaymentNotification, pk string) error {
+	if pk == payment.TypePerPay && n.Status == "disputed" {
+		order, err := s.entClient.PaymentOrder.Query().Where(paymentorder.OutTradeNo(n.OrderID)).Only(ctx)
+		if err != nil {
+			return fmt.Errorf("lookup disputed PerPay order: %w", err)
+		}
+		if err := validateProviderSnapshotMetadata(order, pk, n.Metadata); err != nil {
+			return err
+		}
+		s.writeAuditLog(ctx, order.ID, "PAYMENT_DISPUTED", pk, map[string]any{"metadata": n.Metadata, "action": "manual review required; no automatic balance adjustment"})
+		slog.Warn("PerPay payment disputed; manual review required", "orderID", order.ID)
+		return nil
+	}
 	if n.Status != payment.NotificationStatusSuccess {
 		return nil
 	}
@@ -112,6 +124,9 @@ func (s *PaymentService) confirmPayment(ctx context.Context, oid int64, tradeNo 
 	if math.Abs(paid-o.PayAmount) > paymentAmountToleranceForCurrency(PaymentOrderCurrency(o)) {
 		s.writeAuditLog(ctx, o.ID, "PAYMENT_AMOUNT_MISMATCH", pk, map[string]any{"expected": o.PayAmount, "paid": paid, "tradeNo": tradeNo})
 		return fmt.Errorf("amount mismatch: expected %s, got %s", strconv.FormatFloat(o.PayAmount, 'f', -1, 64), strconv.FormatFloat(paid, 'f', -1, 64))
+	}
+	if pk == payment.TypePerPay {
+		s.writeAuditLog(ctx, o.ID, "PERPAY_PAYMENT_VERIFIED", pk, map[string]any{"metadata": metadata})
 	}
 	return s.toPaid(ctx, o, tradeNo, paid, pk)
 }

@@ -12340,6 +12340,7 @@ const providerDialogRef = ref<InstanceType<
 > | null>(null);
 
 const providerKeyOptions = computed(() => [
+  { value: "perpay", label: "PerPay" },
   { value: "easypay", label: t("admin.settings.payment.providerEasypay") },
   { value: "alipay", label: t("admin.settings.payment.providerAlipay") },
   { value: "wxpay", label: t("admin.settings.payment.providerWxpay") },
@@ -12349,7 +12350,7 @@ const providerKeyOptions = computed(() => [
 
 const enabledProviderKeyOptions = computed(() => {
   const enabled = form.payment_enabled_types;
-  return providerKeyOptions.value.filter((opt) => enabled.includes(opt.value));
+  return providerKeyOptions.value.filter((opt) => opt.value === "perpay" || enabled.includes(opt.value));
 });
 
 const loadBalanceOptions = computed(() => [
@@ -12406,7 +12407,7 @@ function getProviderVisibleMethods(
     }
   };
 
-  if (provider.provider_key === "alipay") {
+  if (provider.provider_key === "alipay" || provider.provider_key === "perpay") {
     if (supportedTypes.length === 0) {
       methods.add("alipay");
     } else {

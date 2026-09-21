@@ -22,7 +22,7 @@ func enabledVisibleMethodsForProvider(providerKey, supportedTypes string) []stri
 	}
 
 	switch strings.TrimSpace(providerKey) {
-	case payment.TypeAlipay:
+	case payment.TypeAlipay, payment.TypePerPay:
 		if strings.TrimSpace(supportedTypes) == "" {
 			addMethod(payment.TypeAlipay)
 			break
