@@ -20,8 +20,8 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/payment"
 )
 
-// PerPay uses a static collection code. The requested amount buys the credit;
-// the independently verified payable amount includes the matching offset.
+// PerPay uses a static collection code. The independently verified payable
+// amount includes the matching offset; balance orders credit that offset too.
 // Never expose the raw collection code: the hosted checkout explains that offset.
 type PerPay struct {
 	apiBase, notifyURL, returnURL string
@@ -145,7 +145,7 @@ func (p *PerPay) request(ctx context.Context, method, target string, data any) (
 		return nil, fmt.Errorf("perpay invalid order response")
 	}
 	o := envelope.Data
-	if o.ID == "" || o.MerchantOrderNo == "" || o.Currency != "CNY" || o.Requested < 1 || o.Requested > 9999999998 || o.Payable <= o.Requested || o.Payable > 9999999999 || o.Version < 1 {
+	if o.ID == "" || o.MerchantOrderNo == "" || o.Currency != "CNY" || o.Requested < 1 || o.Requested > 9999999998 || o.Payable <= o.Requested || o.Payable-o.Requested > 99 || o.Payable > 9999999999 || o.Version < 1 {
 		return nil, fmt.Errorf("perpay invalid order identity or amounts")
 	}
 	return o, nil
@@ -180,7 +180,7 @@ func (p *PerPay) CreatePayment(ctx context.Context, req payment.CreatePaymentReq
 	if err != nil || checkout.Scheme != "https" || !strings.EqualFold(checkout.Host, base.Host) || checkout.User != nil || checkout.Fragment != "" || !o.Checkout.ExpiresAt.After(time.Now()) {
 		return nil, fmt.Errorf("perpay invalid checkout")
 	}
-	return &payment.CreatePaymentResponse{TradeNo: o.ID, PayURL: o.Checkout.URL, Currency: "CNY", ExpiresAt: o.Checkout.ExpiresAt}, nil
+	return &payment.CreatePaymentResponse{TradeNo: o.ID, PayURL: o.Checkout.URL, Currency: "CNY", ExpiresAt: o.Checkout.ExpiresAt, PayableAmountCents: o.Payable}, nil
 }
 
 // Query by merchant number, including when an initial create response was lost.
@@ -220,8 +220,8 @@ func (p *PerPay) result(o *perPayOrder) (*payment.QueryOrderResponse, error) {
 	if o.Received != nil {
 		metadata["received_amount_cents"] = strconv.FormatInt(*o.Received, 10)
 	}
-	// Credit only the requested amount. The offset is verified above and retained
-	// in audit metadata; it must never silently increase the purchased balance.
+	// Keep the requested amount for binding to legacy orders. The service checks
+	// all three amounts and credits the verified offset using stored order terms.
 	return &payment.QueryOrderResponse{TradeNo: o.ID, Status: status, Amount: payment.FenToYuan(o.Requested), Metadata: metadata}, nil
 }
 func (p *PerPay) QueryOrder(ctx context.Context, merchantNo string) (*payment.QueryOrderResponse, error) {

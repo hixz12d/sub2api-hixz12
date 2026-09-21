@@ -171,6 +171,9 @@ func (s *PaymentService) createOrderInTx(ctx context.Context, req CreateOrderReq
 		return nil, err
 	}
 	providerSnapshot := buildPaymentOrderProviderSnapshot(sel, req)
+	if sel != nil && sel.ProviderKey == payment.TypePerPay {
+		snapshotPerPayCredit(providerSnapshot, payAmount, orderAmount, cfg.BalanceRechargeMultiplier)
+	}
 	selectedInstanceID := ""
 	selectedProviderKey := ""
 	if sel != nil {
@@ -462,6 +465,13 @@ func (s *PaymentService) invokeProvider(ctx context.Context, order *dbent.Paymen
 		return nil, classifyCreatePaymentError(req, sel.ProviderKey, err)
 	}
 	sanitizeCreatePaymentResponseDetails(pr)
+	if sel.ProviderKey == payment.TypePerPay {
+		order, err = s.persistPerPayCheckoutAmount(ctx, order, pr.PayableAmountCents)
+		if err != nil {
+			return nil, fmt.Errorf("persist PerPay checkout amount: %w", err)
+		}
+		payAmount = order.PayAmount
+	}
 	if !pr.ExpiresAt.IsZero() {
 		order.ExpiresAt = pr.ExpiresAt
 	}
