@@ -86,15 +86,18 @@ COPY --from=frontend-builder /app/backend/internal/web/dist ./internal/web/dist
 # Bound Go build concurrency; production builds also need a CPU-limited parent cgroup.
 ARG GO_BUILD_MAX_PROCS=2
 ARG GO_BUILD_PARALLELISM=1
+# Opt in to /tmp/sub2api-build on disk-constrained builders; the default stays on disk.
+ARG GO_BUILD_TMPDIR=/tmp
 
 # Build the binary (BuildType=release for CI builds, embed frontend)
 # Version precedence: build arg VERSION > exact git tag > cmd/server/VERSION
 RUN --mount=type=cache,id=sub2api-gomod,target=/go/pkg/mod \
     --mount=type=cache,id=sub2api-gobuild,target=/root/.cache/go-build \
+    --mount=type=tmpfs,target=/tmp/sub2api-build,size=2147483648 \
     VERSION_VALUE="${VERSION}" && \
     if [ -z "${VERSION_VALUE}" ]; then VERSION_VALUE="$(./scripts/resolve-version.sh)"; fi && \
     DATE_VALUE="${DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" && \
-    GOMAXPROCS=${GO_BUILD_MAX_PROCS} CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -p "${GO_BUILD_PARALLELISM}" \
+    GOTMPDIR=${GO_BUILD_TMPDIR} GOMAXPROCS=${GO_BUILD_MAX_PROCS} CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -p "${GO_BUILD_PARALLELISM}" \
     -tags embed \
     -ldflags="-s -w -X main.Version=${VERSION_VALUE} -X main.Commit=${COMMIT} -X main.Date=${DATE_VALUE} -X main.BuildType=release" \
     -trimpath \
