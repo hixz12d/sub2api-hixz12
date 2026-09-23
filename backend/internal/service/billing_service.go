@@ -361,6 +361,9 @@ func NewBillingService(cfg *config.Config, pricingService *PricingService) *Bill
 // initFallbackPricing 初始化硬编码回退价格（当动态价格不可用时使用）
 // 价格单位：USD per token（与LiteLLM格式一致）
 func (s *BillingService) initFallbackPricing() {
+	s.fallbackPrices["gpt-6-sol"] = catalogFallbackBillingPricing(openAIGPT6SolFallbackPricing)
+	s.fallbackPrices["gpt-6-luna"] = catalogFallbackBillingPricing(openAIGPT6LunaFallbackPricing)
+	s.fallbackPrices["claude-opus-5-5"] = catalogFallbackBillingPricing(claudeOpus55FallbackPricing)
 	// Claude 4.5 Opus
 	s.fallbackPrices["claude-opus-4.5"] = &ModelPricing{
 		InputPricePerToken:         5e-6,    // $5 per MTok
@@ -923,6 +926,13 @@ func (s *BillingService) initFallbackPricing() {
 func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	modelLower := strings.ToLower(strings.TrimSpace(xai.StripGrokProviderPrefix(model)))
 
+	// Keep new model cards separate from older, differently priced families.
+	if base := openAIGPT6SolLunaBase(modelLower); base != "" {
+		return s.fallbackPrices[base]
+	}
+	if isClaudeOpus55Model(modelLower) {
+		return s.fallbackPrices["claude-opus-5-5"]
+	}
 	// 按模型系列匹配
 	if isClaudeFable51Model(modelLower) {
 		return s.fallbackPrices["claude-fable-5-1"]
@@ -1649,6 +1659,11 @@ func (s *BillingService) computeTokenBreakdown(
 // multiplier 用于长上下文等场景下的整体价格缩放（普通调用传 1.0 即可）。
 func (s *BillingService) computeCacheCreationCost(pricing *ModelPricing, tokens UsageTokens, price, multiplier float64) float64 {
 	if pricing.SupportsCacheBreakdown && (pricing.CacheCreation5mPrice > 0 || pricing.CacheCreation1hPrice > 0) {
+		// Explicit priority cards must scale both cache TTLs. Otherwise the
+		// selected priority write price is discarded by the 5m/1h breakdown.
+		if pricing.CacheCreationPricePerToken > 0 && price > 0 {
+			multiplier *= price / pricing.CacheCreationPricePerToken
+		}
 		cacheCreation5mTokens, cacheCreation1hTokens := normalizeCacheCreationBreakdown(tokens)
 		if cacheCreation5mTokens == 0 && cacheCreation1hTokens == 0 && tokens.CacheCreationTokens > 0 {
 			// API 未返回 ephemeral 明细，回退到全部按 5m 单价计费
@@ -1815,7 +1830,7 @@ func (s *BillingService) applyModelSpecificPricingPolicyEx(model string, pricing
 		return &cloned
 	}
 	normalized := normalizeKnownOpenAICodexModel(model)
-	isOpenAICacheWritePremiumModel := isOpenAIGPT56Model(normalized) || isOpenAIGPT6AstraModel(normalized)
+	isOpenAICacheWritePremiumModel := isOpenAIGPT56Model(normalized) || isOpenAIGPT6AstraModel(normalized) || isOpenAIGPT6SolLunaModel(normalized)
 	needsMaxReasoningEffortMultiplier := isClaudeFable51Model(model) && pricing.MaxReasoningEffortMultiplier == nil
 	fastRatio := openAIModelFastPricingRatio(normalized)
 	isGrok46 := isGrok46BillingModel(model)
@@ -1858,7 +1873,7 @@ func (s *BillingService) applyModelSpecificPricingPolicyEx(model string, pricing
 // 档的模型（如 gpt-5.5-pro、gpt-5.4-mini/nano）返回 0。
 func openAIModelFastPricingRatio(normalized string) float64 {
 	switch normalized {
-	case "gpt-6-astra", "gpt-5.4", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna":
+	case "gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.4", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna":
 		return 2.0
 	case "gpt-5.5":
 		return 2.5

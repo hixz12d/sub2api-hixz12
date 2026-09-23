@@ -37,6 +37,9 @@ func normalizeKnownOpenAICodexModel(model string) string {
 		}
 	}
 
+	if base := openAIGPT6SolLunaBase(normalized); base != "" {
+		return base
+	}
 	switch {
 	case isOpenAIGPT6AstraModel(normalized):
 		return "gpt-6-astra"

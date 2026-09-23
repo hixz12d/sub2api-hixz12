@@ -24,7 +24,11 @@ vi.mock('vue-i18n', async () => {
   return {
     ...actual,
     useI18n: () => ({
-      t: (key: string) => (key === 'common.copy' ? '复制' : key)
+      t: (key: string, params?: Record<string, unknown>) => {
+        if (key === 'common.copy') return '复制'
+        if (key === 'admin.accounts.syncUpstreamModelsError') return `同步上游模型失败：${params?.message}`
+        return key
+      }
     })
   }
 })
@@ -139,6 +143,19 @@ describe('ModelWhitelistSelector', () => {
       api_key: 'sk-test'
     })
     expect(wrapper.emitted('update:modelValue')).toEqual([[['cpa-model', 'gpt-5.6-sol']]])
+  })
+
+  it('shows the API interceptor error and allows retry without changing selection', async () => {
+    syncUpstreamModels.mockRejectedValueOnce({ status: 502, message: 'Upstream model list request failed with HTTP 403' })
+    const wrapper = mountSelector({ accountId: 46, modelValue: ['gpt-5.6-sol'] })
+    await wrapper.get('[data-testid="sync-upstream-models"]').trigger('click')
+    await flushPromises()
+    expect(showError).toHaveBeenCalledWith('同步上游模型失败：Upstream model list request failed with HTTP 403')
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    syncUpstreamModels.mockResolvedValueOnce({ models: ['gpt-6-sol'] })
+    await wrapper.get('[data-testid="sync-upstream-models"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toEqual([[['gpt-5.6-sol', 'gpt-6-sol']]])
   })
 
   it('warns when model IDs sync but capability metadata is incomplete', async () => {

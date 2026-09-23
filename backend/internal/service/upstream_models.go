@@ -737,6 +737,33 @@ func (s *AccountTestService) fetchUpstreamModelList(ctx context.Context, account
 		return models, nil, err
 	}
 
+	// Use the same OAuth discovery path as the account test picker. It resolves
+	// the account's egress and outbound identity and honors OAuth transport plugins.
+	// The generic TLS-fingerprint client can fail even while Codex discovery works.
+	if account.IsOpenAIOAuth() && s.openaiGatewayService != nil {
+		manifest, err := s.openaiGatewayService.FetchCodexModelsManifest(ctx, account, "", "")
+		if err != nil {
+			var upstreamErr *codexModelsManifestUpstreamError
+			if errors.As(err, &upstreamErr) && upstreamErr.statusCode > 0 {
+				return nil, nil, &UpstreamModelSyncError{
+					Kind:       UpstreamModelSyncErrorUpstream,
+					Message:    fmt.Sprintf("Upstream model list request failed with HTTP %d", upstreamErr.statusCode),
+					StatusCode: upstreamErr.statusCode,
+					Err:        err,
+				}
+			}
+			return nil, nil, newUpstreamModelSyncUpstreamError("Failed to request upstream model list", err)
+		}
+		models, err := extractUpstreamModelIDs(manifest.Body)
+		if err != nil {
+			return nil, nil, newUpstreamModelSyncUpstreamError("Upstream model list response was not valid JSON", err)
+		}
+		if len(models) == 0 {
+			return nil, nil, newUpstreamModelSyncUpstreamError("Upstream returned no supported models", nil)
+		}
+		return models, manifest.Body, nil
+	}
+
 	if s.httpUpstream == nil {
 		return nil, nil, newUpstreamModelSyncConfigError("Upstream HTTP client is not configured", nil)
 	}
