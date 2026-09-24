@@ -26,6 +26,9 @@ export type OrderType = 'balance' | 'subscription'
 // ==================== Configuration ====================
 
 export interface PaymentConfig {
+  purchase_entry_enabled?: boolean
+  purchase_entry_perpay_linked?: boolean
+  purchase_entry_available?: boolean
   payment_enabled: boolean
   min_amount: number
   max_amount: number

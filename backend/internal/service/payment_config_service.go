@@ -15,16 +15,18 @@ import (
 )
 
 const (
-	SettingPaymentEnabled      = "payment_enabled"
-	SettingMinRechargeAmount   = "MIN_RECHARGE_AMOUNT"
-	SettingMaxRechargeAmount   = "MAX_RECHARGE_AMOUNT"
-	SettingDailyRechargeLimit  = "DAILY_RECHARGE_LIMIT"
-	SettingOrderTimeoutMinutes = "ORDER_TIMEOUT_MINUTES"
-	SettingMaxPendingOrders    = "MAX_PENDING_ORDERS"
-	SettingEnabledPaymentTypes = "ENABLED_PAYMENT_TYPES"
-	SettingLoadBalanceStrategy = "LOAD_BALANCE_STRATEGY"
-	SettingBalancePayDisabled  = "BALANCE_PAYMENT_DISABLED"
-	SettingBalanceRechargeMult = "BALANCE_RECHARGE_MULTIPLIER"
+	SettingPaymentEnabled            = "payment_enabled"
+	SettingPurchaseEntryEnabled      = "PAYMENT_PURCHASE_ENTRY_ENABLED"
+	SettingPurchaseEntryPerPayLinked = "PAYMENT_PURCHASE_ENTRY_PERPAY_LINKED"
+	SettingMinRechargeAmount         = "MIN_RECHARGE_AMOUNT"
+	SettingMaxRechargeAmount         = "MAX_RECHARGE_AMOUNT"
+	SettingDailyRechargeLimit        = "DAILY_RECHARGE_LIMIT"
+	SettingOrderTimeoutMinutes       = "ORDER_TIMEOUT_MINUTES"
+	SettingMaxPendingOrders          = "MAX_PENDING_ORDERS"
+	SettingEnabledPaymentTypes       = "ENABLED_PAYMENT_TYPES"
+	SettingLoadBalanceStrategy       = "LOAD_BALANCE_STRATEGY"
+	SettingBalancePayDisabled        = "BALANCE_PAYMENT_DISABLED"
+	SettingBalanceRechargeMult       = "BALANCE_RECHARGE_MULTIPLIER"
 	// SettingSubscriptionUSDToCNYRate 是订阅 CNY 换算汇率（1 USD = X CNY）。
 	// 0/未配置 = 关闭换算（订阅按 price 数值直付），显式配置后 CNY 通道订阅按 price × rate 收款。
 	SettingSubscriptionUSDToCNYRate      = "SUBSCRIPTION_USD_TO_CNY_RATE"
@@ -50,6 +52,9 @@ const (
 
 // PaymentConfig holds the payment system configuration.
 type PaymentConfig struct {
+	PurchaseEntryEnabled      bool     `json:"purchase_entry_enabled"`
+	PurchaseEntryPerPayLinked bool     `json:"purchase_entry_perpay_linked"`
+	PurchaseEntryAvailable    bool     `json:"purchase_entry_available"`
 	Enabled                   bool     `json:"enabled"`
 	MinAmount                 float64  `json:"min_amount"`
 	MaxAmount                 float64  `json:"max_amount"`
@@ -84,6 +89,8 @@ type PaymentConfig struct {
 
 // UpdatePaymentConfigRequest contains fields to update payment configuration.
 type UpdatePaymentConfigRequest struct {
+	PurchaseEntryEnabled      *bool    `json:"purchase_entry_enabled"`
+	PurchaseEntryPerPayLinked *bool    `json:"purchase_entry_perpay_linked"`
 	Enabled                   *bool    `json:"enabled"`
 	MinAmount                 *float64 `json:"min_amount"`
 	MaxAmount                 *float64 `json:"max_amount"`
@@ -217,7 +224,8 @@ func (s *PaymentConfigService) IsPaymentEnabled(ctx context.Context) bool {
 // GetPaymentConfig returns the full payment configuration.
 func (s *PaymentConfigService) GetPaymentConfig(ctx context.Context) (*PaymentConfig, error) {
 	keys := []string{
-		SettingPaymentEnabled, SettingMinRechargeAmount, SettingMaxRechargeAmount,
+		SettingPaymentEnabled, SettingPurchaseEntryEnabled, SettingPurchaseEntryPerPayLinked,
+		SettingMinRechargeAmount, SettingMaxRechargeAmount,
 		SettingDailyRechargeLimit, SettingOrderTimeoutMinutes, SettingMaxPendingOrders,
 		SettingEnabledPaymentTypes, SettingBalancePayDisabled, SettingBalanceRechargeMult, SettingSubscriptionUSDToCNYRate, SettingRechargeFeeRate, SettingLoadBalanceStrategy,
 		SettingProductNamePrefix, SettingProductNameSuffix,
@@ -233,6 +241,10 @@ func (s *PaymentConfigService) GetPaymentConfig(ctx context.Context) (*PaymentCo
 		return nil, fmt.Errorf("get payment config settings: %w", err)
 	}
 	cfg := s.parsePaymentConfig(vals)
+	cfg.PurchaseEntryAvailable, err = s.purchaseEntryAvailable(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
 	// Load Stripe publishable key from the first enabled Stripe provider instance
 	cfg.StripePublishableKey = s.getStripePublishableKey(ctx)
 	return cfg, nil
@@ -240,6 +252,8 @@ func (s *PaymentConfigService) GetPaymentConfig(ctx context.Context) (*PaymentCo
 
 func (s *PaymentConfigService) parsePaymentConfig(vals map[string]string) *PaymentConfig {
 	cfg := &PaymentConfig{
+		PurchaseEntryEnabled:      vals[SettingPurchaseEntryEnabled] != "false",
+		PurchaseEntryPerPayLinked: vals[SettingPurchaseEntryPerPayLinked] == "true",
 		Enabled:                   vals[SettingPaymentEnabled] == "true",
 		MinAmount:                 pcParseFloat(vals[SettingMinRechargeAmount], 1),
 		MaxAmount:                 pcParseFloat(vals[SettingMaxRechargeAmount], 0),
@@ -346,6 +360,12 @@ func (s *PaymentConfigService) UpdatePaymentConfig(ctx context.Context, req Upda
 	m := make(map[string]string)
 	if req.Enabled != nil {
 		m[SettingPaymentEnabled] = formatBoolOrEmpty(req.Enabled)
+	}
+	if req.PurchaseEntryEnabled != nil {
+		m[SettingPurchaseEntryEnabled] = formatBoolOrEmpty(req.PurchaseEntryEnabled)
+	}
+	if req.PurchaseEntryPerPayLinked != nil {
+		m[SettingPurchaseEntryPerPayLinked] = formatBoolOrEmpty(req.PurchaseEntryPerPayLinked)
 	}
 	if req.MinAmount != nil {
 		m[SettingMinRechargeAmount] = formatPositiveFloat(req.MinAmount)

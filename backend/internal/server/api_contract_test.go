@@ -953,12 +953,17 @@ func TestAPIContracts(t *testing.T) {
 					"openai_codex_client_version":       "",
 					"openai_codex_client_version_synced": "",
 					"openai_codex_version_auto_sync_enabled": true,
+					"claude_code_client_version": "",
+					"claude_code_client_version_synced": "",
+					"claude_code_version_auto_sync_enabled": true,
 					"openai_fast_policy_settings": {
 						"rules": []
 					},
 					"custom_menu_items": [],
 					"custom_endpoints": [],
 					"payment_enabled": false,
+					"payment_purchase_entry_enabled": false,
+					"payment_purchase_entry_perpay_linked": false,
 					"payment_min_amount": 0,
 					"payment_max_amount": 0,
 					"payment_daily_limit": 0,
@@ -1277,10 +1282,15 @@ func TestAPIContracts(t *testing.T) {
 					"openai_codex_client_version":       "",
 					"openai_codex_client_version_synced": "",
 					"openai_codex_version_auto_sync_enabled": true,
+					"claude_code_client_version": "",
+					"claude_code_client_version_synced": "",
+					"claude_code_version_auto_sync_enabled": true,
 					"openai_fast_policy_settings": {
 						"rules": []
 					},
 					"payment_enabled": false,
+					"payment_purchase_entry_enabled": false,
+					"payment_purchase_entry_perpay_linked": false,
 					"payment_min_amount": 0,
 					"payment_max_amount": 0,
 					"payment_daily_limit": 0,

@@ -22,6 +22,17 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks())
 
 describe('payment configuration requests', () => {
+  it('updates purchase visibility after a provider or entry switch changes', async () => {
+    const store = usePaymentStore()
+    expect(store.purchaseEntryAvailable).toBe(true)
+    getConfig.mockResolvedValueOnce({ data: { ...config, purchase_entry_available: false } })
+    await store.fetchConfig()
+    expect(store.purchaseEntryAvailable).toBe(false)
+    getConfig.mockResolvedValueOnce({ data: { ...config, purchase_entry_available: true } })
+    await store.fetchConfig(true)
+    expect(store.purchaseEntryAvailable).toBe(true)
+  })
+
   it('waits for the same response for concurrent initial callers', async () => {
     const pending = deferred()
     getConfig.mockReturnValue(pending.promise)

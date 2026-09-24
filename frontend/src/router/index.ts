@@ -6,6 +6,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useAppStore } from '@/stores/app'
+import { usePaymentStore } from '@/stores/payment'
 import { useAdminSettingsStore } from '@/stores/adminSettings'
 import { useAdminComplianceStore } from '@/stores/adminCompliance'
 import { useNavigationLoadingState } from '@/composables/useNavigationLoading'
@@ -925,6 +926,15 @@ router.beforeEach(async (to, _from, next) => {
   ) {
     next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
     return
+  }
+
+  // Only new purchases are gated; order history and payment return routes stay accessible.
+  if (to.path === '/purchase') {
+    const config = await usePaymentStore().fetchConfig(true)
+    if (config?.purchase_entry_available === false) {
+      next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+      return
+    }
   }
 
   if (

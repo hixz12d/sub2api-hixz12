@@ -134,6 +134,8 @@ type SettingService struct {
 	clientProfileMu             sync.Mutex
 	clientProfileCache          map[string]ClientProfileUpdate
 	clientProfileExpires        time.Time
+	claudeCodeVersionCache      atomic.Value // *cachedClaudeCodeClientVersion
+	claudeCodeVersionSF         singleflight.Group
 	codexRestrictionPolicyCache atomic.Value // *cachedCodexRestrictionPolicy
 	codexRestrictionPolicySF    singleflight.Group
 

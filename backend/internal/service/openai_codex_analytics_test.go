@@ -47,7 +47,7 @@ func TestQueryCodexAnalyticsUsesBoundedUTCRangeAndSanitizesResponse(t *testing.T
 	}))
 	defer srv.Close()
 
-	svc := NewOpenAIQuotaService(repo, nil, tokenProvider, newQuotaRedirectingFactory(srv))
+	svc := NewOpenAIQuotaService(repo, nil, tokenProvider, newQuotaRedirectingFactory(srv), nil)
 	result, err := svc.QueryCodexAnalytics(context.Background(), 100)
 	require.NoError(t, err)
 	require.NotNil(t, result)
@@ -88,7 +88,7 @@ func TestQueryCodexAnalyticsDoesNotExposeUpstreamErrorBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	svc := NewOpenAIQuotaService(repo, nil, tokenProvider, newQuotaRedirectingFactory(srv))
+	svc := NewOpenAIQuotaService(repo, nil, tokenProvider, newQuotaRedirectingFactory(srv), nil)
 	result, err := svc.QueryCodexAnalytics(context.Background(), 100)
 	require.Nil(t, result)
 	require.Error(t, err)

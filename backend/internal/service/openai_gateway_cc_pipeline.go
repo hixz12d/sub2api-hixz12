@@ -230,10 +230,11 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 		}
 		applyGrokCacheHeaders(upstreamReq.Header, grokCacheIdentity)
 	}
-	// 账号级请求头覆写必须先于 OpenAI 统一身份收口。
+	// Normalize OpenCode/Command Code UA before account overrides and final identity.
+	applyOpenCodeUpstreamUserAgent(account, targetURL, upstreamReq.Header)
 	account.ApplyHeaderOverrides(upstreamReq.Header)
 	applyOpenCodeSessionHeader(c, account, targetURL, upstreamReq.Header, body)
-	if account.Platform == PlatformOpenAI {
+	if account.Platform == PlatformOpenAI && !isOfficialOpenCodeHost(targetURL) {
 		policy := openAIOutboundAPIKeyPolicy
 		if account.Type == AccountTypeOAuth {
 			policy = openAIOutboundOAuthPolicy

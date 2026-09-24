@@ -100,7 +100,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		body = sanitizedToolBody
 	}
 	if account.IsOpenAIOAuthLike() {
-		reasoningBody, reasoningChanged, reasoningErr := normalizeOpenAIResponsesReasoningMode(body)
+		reasoningBody, reasoningChanged, reasoningErr := normalizeOpenAIResponsesReasoningMode(body, account.GetMappedModel(gjson.GetBytes(body, "model").String()))
 		if reasoningErr != nil {
 			return nil, fmt.Errorf("normalize OpenAI Responses reasoning.mode: %w", reasoningErr)
 		}
@@ -1621,6 +1621,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		req.Header.Set("content-type", "application/json")
 	}
 
+	applyOpenCodeUpstreamUserAgent(account, targetURL, req.Header)
 	// Apply account overrides before the final identity stage. Protected OpenAI
 	// identity/session headers are excluded by ApplyHeaderOverrides.
 	account.ApplyHeaderOverrides(req.Header)
@@ -1629,7 +1630,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		s.finalizeCodexOAuthHeaders(ctx, c, account, req.Header, fingerprintIDs, accountIdentitySessionID)
 	} else if account.IsOpenAIOAuthLike() {
 		s.applyOpenAIOutboundIdentityPolicy(ctx, account, req.Header, openAIOutboundOAuthPolicy)
-	} else {
+	} else if !account.IsOpenCodeGo() && !isOfficialOpenCodeHost(targetURL) {
 		policy := openAIOutboundAPIKeyPolicy
 		if isOpenAIResponsesCompactPath(c) {
 			policy = openAIOutboundAPIKeyCodexVersionPolicy
@@ -1644,5 +1645,8 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		s.finalizeCodexAttemptHTTPWire(c, req, body)
 	}
 
+	if err := applyMappedGPT55LiteCompatibility(req, account, body); err != nil {
+		return nil, err
+	}
 	return req, nil
 }

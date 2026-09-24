@@ -154,3 +154,7 @@ func firstUsageBillingModel(candidates []string) string {
 	}
 	return ""
 }
+
+func isOpenAIGPT6Model(model string) bool {
+	return isOpenAIGPT6AstraModel(model) || openai.IsGPT6SolOrLunaModelSpelling(model)
+}

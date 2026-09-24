@@ -36,6 +36,9 @@ func (s *PaymentService) CreateOrder(ctx context.Context, req CreateOrderRequest
 	if !cfg.Enabled {
 		return nil, infraerrors.Forbidden("PAYMENT_DISABLED", "payment system is disabled")
 	}
+	if !cfg.PurchaseEntryAvailable {
+		return nil, infraerrors.Forbidden("PURCHASE_ENTRY_CLOSED", "new purchases are currently unavailable")
+	}
 	plan, err := s.validateOrderInput(ctx, req, cfg)
 	if err != nil {
 		return nil, err

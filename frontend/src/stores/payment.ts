@@ -4,7 +4,7 @@
  */
 
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { paymentAPI } from '@/api/payment'
 import type { PaymentConfig, PaymentOrder, SubscriptionPlan, CreateOrderRequest } from '@/types/payment'
 
@@ -20,6 +20,7 @@ export const usePaymentStore = defineStore('payment', () => {
 
   const configLoading = ref(false)
   const configLoaded = ref(false)
+  const purchaseEntryAvailable = computed(() => config.value?.purchase_entry_available !== false)
   let configPromise: Promise<PaymentConfig | null> | null = null
 
   // ==================== Actions ====================
@@ -99,6 +100,7 @@ export const usePaymentStore = defineStore('payment', () => {
     plans,
     configLoading,
     configLoaded,
+    purchaseEntryAvailable,
     fetchConfig,
     fetchPlans,
     createOrder,

@@ -51,6 +51,7 @@ func ProvideAdminHandlers(
 	auditLogHandler *admin.AuditLogHandler,
 	upstreamBillingProbe *service.UpstreamBillingProbeService,
 	ollamaCloudUsage *service.OllamaCloudUsageService,
+	opencodeGoUsage *service.OpenCodeGoUsageService,
 	questionReviews *service.QuestionReviewService,
 	detectorTasks *service.DetectorTaskService,
 	monitorPolicyControl service.MonitorPolicyControl,
@@ -61,6 +62,7 @@ func ProvideAdminHandlers(
 	accountHandler.SetQuestionReviews(questionReviews)
 	accountHandler.SetDetectorTasks(detectorTasks)
 	accountHandler.SetMonitorPolicyControl(monitorPolicyControl)
+	accountHandler.SetOpenCodeGoUsageService(opencodeGoUsage)
 	return &AdminHandlers{
 		Dashboard:              dashboardHandler,
 		User:                   userHandler,

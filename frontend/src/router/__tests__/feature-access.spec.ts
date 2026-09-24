@@ -42,6 +42,9 @@ vi.mock('vue-router', () => ({
   })),
 }))
 
+const paymentStore = vi.hoisted(() => ({ fetchConfig: vi.fn() }))
+vi.mock('@/stores/payment', () => ({ usePaymentStore: () => paymentStore }))
+
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => authStore,
 }))
@@ -118,6 +121,32 @@ describe('feature route guard', () => {
     appStore.publicSettingsLoaded = false
     appStore.cachedPublicSettings = null
     appStore.fetchPublicSettings.mockReset()
+    paymentStore.fetchConfig.mockReset().mockResolvedValue({ purchase_entry_available: true })
+  })
+
+  it.each([false, true])('blocks closed purchase entry for admin=%s while keeping order history accessible', async (isAdmin) => {
+    authStore.isAdmin = isAdmin
+    appStore.publicSettingsLoaded = true
+    appStore.cachedPublicSettings = { payment_enabled: true }
+    paymentStore.fetchConfig.mockResolvedValue({ purchase_entry_available: false })
+    const purchase = runGuard({ requiresPayment: true }, '/purchase')
+    await purchase.navigation
+    expect(paymentStore.fetchConfig).toHaveBeenCalledWith(true)
+    expect(purchase.next).toHaveBeenCalledWith(isAdmin ? '/admin/dashboard' : '/dashboard')
+    paymentStore.fetchConfig.mockClear()
+    for (const path of ['/orders', '/payment/qrcode', '/payment/result']) {
+      const order = runGuard({ requiresPayment: path !== '/payment/result' }, path)
+      await order.navigation
+      expect(order.next).toHaveBeenCalledWith()
+    }
+    expect(paymentStore.fetchConfig).not.toHaveBeenCalled()
+  })
+
+  it('does not treat a failed purchase configuration request as a confirmed closure', async () => {
+    paymentStore.fetchConfig.mockResolvedValue(null)
+    const { navigation, next } = runGuard({ requiresPayment: true }, '/purchase')
+    await navigation
+    expect(next).toHaveBeenCalledWith()
   })
 
   it('waits for the first public-settings request before deciding payment access', async () => {
