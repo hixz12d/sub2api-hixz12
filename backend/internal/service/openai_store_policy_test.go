@@ -106,7 +106,7 @@ func TestOpenAIConnectionProbeNeverStoresResponses(t *testing.T) {
 		require.Equal(t, false, payload["store"])
 		require.Equal(t, true, payload["stream"])
 		require.NotEmpty(t, payload["instructions"])
-		applyAccountQuestionPayload(payload, "hi", false, oauth)
+		applyAccountQuestionPayload(payload, "hi", false, oauth, "")
 		require.Equal(t, false, payload["store"])
 	}
 }

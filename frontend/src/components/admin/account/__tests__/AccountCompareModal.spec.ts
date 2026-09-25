@@ -45,6 +45,7 @@ describe('account comparison', () => {
     await flushPromises()
     expect(stream).toHaveBeenCalledTimes(4)
     for (const call of stream.mock.calls) expect(call.slice(1, 3)).toEqual(['gpt-5.4', 'Shared question'])
+    for (const call of stream.mock.calls) expect(call[5]).toBe('')
     expect(card(1).get('pre').text()).toBe('Answer 1')
     expect(card(2).get('pre').text()).toBe('accountCompare.empty')
     pending[1].reject(new Error('HTTP 503'))
@@ -71,7 +72,9 @@ describe('account comparison', () => {
   it('binds human reviews to the exact answer record and retries with the original question', async () => {
     open(1)
     await wrapper.get('textarea').setValue('Original question')
+    await wrapper.get('select[data-effort]').setValue('high')
     await wrapper.get('button.btn-primary').trigger('click')
+    expect(stream.mock.lastCall?.[5]).toBe('high')
     complete(0)
     await flushPromises()
     await card(1).get('select').setValue('normal')
@@ -82,7 +85,9 @@ describe('account comparison', () => {
     expect(wrapper.emitted('reviewed')).toHaveLength(1)
     await wrapper.get('textarea').setValue('A different question')
     const retry = card(1).findAll('button').find(button => button.text() === 'accountCompare.retry')!
+    await wrapper.get('select[data-effort]').setValue('low')
     await retry.trigger('click')
     expect(stream.mock.lastCall?.slice(1, 3)).toEqual(['gpt-5.4', 'Original question'])
+    expect(stream.mock.lastCall?.[5]).toBe('high')
   })
 })

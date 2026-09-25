@@ -17,6 +17,15 @@ describe('account question SSE stream', () => {
     expect(events).toEqual([{ type: 'content', text: '你好' }, { type: 'test_complete', success: true }, { type: 'question_record', saved: true, record_id: 'q-1' }])
     expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ model_id: 'gpt-5.4', prompt: 'same question', mode: 'question' })
   })
+  it('sends reasoning effort only when one is selected', async () => {
+    const done = () => Promise.resolve(responseFromChunks([new TextEncoder().encode('data: {"type":"test_complete","success":true}\n\n')]))
+    const fetcher = vi.fn().mockImplementation(done)
+    vi.stubGlobal('fetch', fetcher)
+    await streamAccountQuestion(1, 'gpt-5.4', 'q', new AbortController().signal, vi.fn(), 'xhigh')
+    await streamAccountQuestion(1, 'gpt-5.4', 'q', new AbortController().signal, vi.fn(), '')
+    expect(JSON.parse(fetcher.mock.calls[0][1].body)).toEqual({ model_id: 'gpt-5.4', prompt: 'q', mode: 'question', reasoning_effort: 'xhigh' })
+    expect(JSON.parse(fetcher.mock.calls[1][1].body)).toEqual({ model_id: 'gpt-5.4', prompt: 'q', mode: 'question' })
+  })
   it('rejects a dropped stream instead of marking a partial answer successful', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(responseFromChunks([new TextEncoder().encode('data: {"type":"content","text":"partial"}\n\n')])))
     const events = vi.fn()

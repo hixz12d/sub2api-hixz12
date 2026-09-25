@@ -1291,6 +1291,8 @@ type TestAccountRequest struct {
 	// ImageDataURL / AudioDataURL are data:<mime>;base64,... payloads.
 	ImageDataURL string `json:"image_data_url"`
 	AudioDataURL string `json:"audio_data_url"`
+	// ReasoningEffort is only honored by OpenAI question mode.
+	ReasoningEffort string `json:"reasoning_effort"`
 }
 
 type SyncFromCRSRequest struct {
@@ -1326,6 +1328,12 @@ func (h *AccountHandler) Test(c *gin.Context) {
 	}
 
 	if service.IsAccountQuestionTest(req.Mode) {
+		effort, ok := service.NormalizeAccountQuestionReasoningEffort(req.ReasoningEffort)
+		if !ok {
+			response.BadRequest(c, "Invalid reasoning effort")
+			return
+		}
+		opts.ReasoningEffort = effort
 		finish, ok := h.beginQuestionCapture(c, accountID, req)
 		if !ok {
 			return

@@ -83,3 +83,68 @@ func TestAccountQuestionRejectsUnsupportedBeforeRequest(t *testing.T) {
 	require.True(t, IsAccountQuestionTest(" QUESTION "))
 	require.False(t, IsAccountQuestionTest(AccountTestModeDefault))
 }
+
+func TestAccountQuestionReasoningEffortPayload(t *testing.T) {
+	for _, chat := range []bool{false, true} {
+		for _, effort := range []string{"", "xhigh"} {
+			name := map[bool]string{true: "chat", false: "responses"}[chat] + "/" + effort
+			t.Run(name, func(t *testing.T) {
+				body := "data: {\"type\":\"response.output_text.delta\",\"delta\":\"ok\"}\n\ndata: {\"type\":\"response.completed\"}\n\n"
+				if chat {
+					body = "data: {\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+				}
+				upstream := &queuedHTTPUpstream{responses: []*http.Response{newJSONResponse(200, body)}}
+				svc := &AccountTestService{accountRepo: &openAIAccountTestRepo{}, httpUpstream: upstream, cfg: &config.Config{}}
+				account := &Account{ID: 90, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 1, Credentials: map[string]any{"api_key": "fixture-token", "base_url": "https://fixture.invalid"}}
+				if chat {
+					account.Extra = map[string]any{"openai_responses_mode": "force_chat_completions"}
+				}
+				ctx, _ := newTestContext()
+				ctx.Request = ctx.Request.WithContext(withAccountQuestionReasoningEffort(ctx.Request.Context(), effort))
+				require.NoError(t, svc.testOpenAIAccountConnection(ctx, account, "gpt-5.4", "question", AccountTestModeQuestion))
+				require.Len(t, upstream.requests, 1)
+				raw, err := io.ReadAll(upstream.requests[0].Body)
+				require.NoError(t, err)
+				var payload map[string]any
+				require.NoError(t, json.Unmarshal(raw, &payload))
+				limitKey := "max_output_tokens"
+				if chat {
+					limitKey = "max_tokens"
+				}
+				if effort == "" {
+					require.NotContains(t, payload, "reasoning")
+					require.NotContains(t, payload, "reasoning_effort")
+					require.EqualValues(t, accountQuestionMaxOutputTokens, payload[limitKey])
+					return
+				}
+				require.EqualValues(t, accountQuestionReasoningMaxOutputTokens, payload[limitKey])
+				if chat {
+					require.Equal(t, effort, payload["reasoning_effort"])
+					require.NotContains(t, payload, "reasoning")
+				} else {
+					require.Equal(t, effort, payload["reasoning"].(map[string]any)["effort"])
+					require.NotContains(t, payload, "reasoning_effort")
+				}
+			})
+		}
+	}
+}
+
+func TestAccountQuestionOAuthReasoningHasNoOutputCap(t *testing.T) {
+	payload := createOpenAITestPayload("gpt-5.4", true)
+	applyAccountQuestionPayload(payload, "question", false, true, "high")
+	require.Equal(t, "high", payload["reasoning"].(map[string]any)["effort"])
+	require.NotContains(t, payload, "max_output_tokens")
+}
+
+func TestNormalizeAccountQuestionReasoningEffort(t *testing.T) {
+	for input, want := range map[string]string{"": "", " HIGH ": "high", "none": "none", "minimal": "minimal", "xhigh": "xhigh"} {
+		got, ok := NormalizeAccountQuestionReasoningEffort(input)
+		require.True(t, ok, input)
+		require.Equal(t, want, got)
+	}
+	for _, input := range []string{"max", "ultra", "extreme", "high\x00"} {
+		_, ok := NormalizeAccountQuestionReasoningEffort(input)
+		require.False(t, ok, input)
+	}
+}

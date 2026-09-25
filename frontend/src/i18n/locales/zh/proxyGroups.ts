@@ -14,8 +14,8 @@ export default {
     saveFailed: '保存代理分组失败', remove: '移出分组', preview: '预选出口：{name}；保存时重新检查容量',
   },
   accountCompare: {
-    title: '多账号问答对比', action: '对比测试', prompt: '统一测试问题', model: '统一文本模型',
-    hint: '沿用人工问答模式，支持直接 OpenAI API Key / OAuth 账号。所有账号使用相同问题和模型，最多同时测试 3 个；测试会消耗上游额度。',
+    title: '多账号问答对比', action: '对比测试', prompt: '统一测试问题', model: '统一文本模型', effort: '思考强度', effortDefault: '默认',
+    hint: '沿用人工问答模式，支持直接 OpenAI API Key / OAuth 账号。所有账号使用相同问题、模型和思考强度，最多同时测试 3 个；测试会消耗上游额度，较高思考强度耗时和消耗更多。',
     start: '开始全部测试', stop: '停止测试', waiting: '等待测试', running: '正在回答', success: '已完成', failed: '失败', cancelled: '已停止',
     elapsed: '{seconds} 秒', empty: '回答将在这里显示', noAccounts: '请先勾选要测试的账号',
     incomplete: '连接结束，但未收到测试完成信号', loadFailed: '读取所选账号失败，请重试', retry: '重试此账号',

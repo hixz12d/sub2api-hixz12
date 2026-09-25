@@ -75,3 +75,14 @@ func TestQuestionReviewHTTP(t *testing.T) {
 		})
 	}
 }
+
+func TestQuestionTestRejectsInvalidReasoningEffortBeforeCapture(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	// Nil services prove the request is rejected before authorization, capture or upstream work.
+	router.POST("/accounts/:id/test", (&AccountHandler{}).Test)
+	recorder := httptest.NewRecorder()
+	body := `{"model_id":"gpt-5.4","prompt":"q","mode":"question","reasoning_effort":"extreme"}`
+	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, "/accounts/1/test", strings.NewReader(body)))
+	require.Equal(t, http.StatusBadRequest, recorder.Code)
+}

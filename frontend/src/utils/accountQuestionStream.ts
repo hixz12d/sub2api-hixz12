@@ -18,6 +18,7 @@ export async function streamAccountQuestion(
   prompt: string,
   signal: AbortSignal,
   onEvent: (event: AccountQuestionEvent) => void,
+  reasoningEffort = '',
 ): Promise<void> {
   const response = await fetch(buildApiUrl(`/admin/accounts/${accountId}/test`), {
     method: 'POST',
@@ -26,7 +27,7 @@ export async function streamAccountQuestion(
       'Content-Type': 'application/json',
       [ADMIN_UI_REQUEST_HEADER]: '1',
     },
-    body: JSON.stringify({ model_id: model, prompt, mode: 'question' }),
+    body: JSON.stringify({ model_id: model, prompt, mode: 'question', ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}) }),
     signal,
   })
   if (!response.ok) {

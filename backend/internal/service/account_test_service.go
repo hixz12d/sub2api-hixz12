@@ -70,6 +70,8 @@ type TestEvent struct {
 type AccountTestOptions struct {
 	ImageDataURL string
 	AudioDataURL string
+	// ReasoningEffort only applies to OpenAI question mode; empty keeps the upstream default.
+	ReasoningEffort string
 }
 
 func firstAccountTestOptions(opts []AccountTestOptions) AccountTestOptions {
@@ -373,6 +375,11 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 		if err := validateAccountQuestion(account, modelID, prompt); err != nil {
 			return s.sendErrorAndEnd(c, err.Error())
 		}
+		effort, ok := NormalizeAccountQuestionReasoningEffort(testOpts.ReasoningEffort)
+		if !ok {
+			return s.sendErrorAndEnd(c, "unsupported reasoning effort")
+		}
+		c.Request = c.Request.WithContext(withAccountQuestionReasoningEffort(ctx, effort))
 	}
 
 	// Synthetic UI load-test accounts exercise the real SSE parsing and modal
@@ -797,8 +804,12 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 		if s.pluginManager != nil && s.pluginManager.ShouldRouteOpenAIOAuth(account) {
 			return s.sendErrorAndEnd(c, "question mode is not supported by the configured plugin transport")
 		}
+		timeout := accountQuestionTimeout
+		if accountQuestionReasoningEffort(ctx) != "" {
+			timeout = accountQuestionReasoningTimeout
+		}
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(context.WithValue(ctx, accountQuestionModeKey{}, true), 45*time.Second)
+		ctx, cancel = context.WithTimeout(context.WithValue(ctx, accountQuestionModeKey{}, true), timeout)
 		defer cancel()
 		c.Request = c.Request.WithContext(ctx)
 	}
@@ -894,7 +905,7 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 	}
 	payload := createOpenAITestPayload(upstreamTestModelID, isOAuth)
 	if accountQuestionMode(ctx) {
-		applyAccountQuestionPayload(payload, prompt, false, isOAuth)
+		applyAccountQuestionPayload(payload, prompt, false, isOAuth, accountQuestionReasoningEffort(ctx))
 	}
 	payloadBytes, _ := json.Marshal(payload)
 
@@ -2142,7 +2153,7 @@ func (s *AccountTestService) testOpenAIChatCompletionsConnection(
 
 	payload := createOpenAIChatCompletionsTestPayload(testModelID, prompt)
 	if accountQuestionMode(ctx) {
-		applyAccountQuestionPayload(payload, prompt, true, false)
+		applyAccountQuestionPayload(payload, prompt, true, false, accountQuestionReasoningEffort(ctx))
 	}
 	payloadBytes, _ := json.Marshal(payload)
 
