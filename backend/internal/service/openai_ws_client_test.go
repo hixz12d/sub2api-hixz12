@@ -1,13 +1,54 @@
 package service
 
 import (
+	"context"
+	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 )
+
+// 回归：Chrome 预设默认 ALPN 带 h2，chatgpt.com 会选 h2，导致 WS Upgrade 读到 SETTINGS 帧
+// 报 "malformed HTTP response"。WS 的指纹 transport 必须只声明 http/1.1。
+func TestOpenAIWSTLSFingerprintTransport_OffersOnlyHTTP11(t *testing.T) {
+	hello := make(chan []string, 1)
+	target := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	target.TLS = &tls.Config{GetConfigForClient: func(info *tls.ClientHelloInfo) (*tls.Config, error) {
+		select {
+		case hello <- append([]string(nil), info.SupportedProtos...):
+		default:
+		}
+		return nil, errors.New("test stops after ClientHello")
+	}}
+	target.StartTLS()
+	defer target.Close()
+
+	profile := resolveAccountTLSFingerprintProfile(&Account{Platform: PlatformOpenAI, Type: AccountTypeOAuth})
+	require.NotNil(t, profile)
+	transport, err := newOpenAIWSTLSFingerprintTransport(nil, profile)
+	require.NoError(t, err)
+	defer transport.CloseIdleConnections()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target.URL, nil)
+	require.NoError(t, err)
+	_, err = transport.RoundTrip(req)
+	require.Error(t, err, "server deliberately stops the handshake")
+
+	select {
+	case protocols := <-hello:
+		require.Equal(t, []string{"http/1.1"}, protocols)
+	case <-ctx.Done():
+		t.Fatal("no ClientHello received")
+	}
+	require.Empty(t, profile.ALPNProtocols, "do not mutate the caller's shared profile")
+}
 
 func TestCoderOpenAIWSClientDialer_ProxyHTTPClientReuse(t *testing.T) {
 	dialer := newDefaultOpenAIWSClientDialer()

@@ -248,6 +248,14 @@ func newOpenAIWSPlainTransport(proxyURL *url.URL) *http.Transport {
 }
 
 func newOpenAIWSTLSFingerprintTransport(proxyURL *url.URL, profile *tlsfingerprint.Profile) (*http.Transport, error) {
+	// WebSocket Upgrade 只能跑在 HTTP/1.1 上。Chrome 预设的 ALPN 默认带 h2，
+	// chatgpt.com 会选 h2，而本 transport 已禁用 h2，结果把 HTTP/1.1 Upgrade 写进 h2 连接，
+	// 读到 SETTINGS 帧报 "malformed HTTP response"。复制一份再改，避免修改调用方共享的 profile。
+	if profile != nil {
+		h1Profile := *profile
+		h1Profile.ALPNProtocols = []string{"http/1.1"}
+		profile = &h1Profile
+	}
 	transport := &http.Transport{
 		MaxIdleConns:        openAIWSProxyTransportMaxIdleConns,
 		MaxIdleConnsPerHost: openAIWSProxyTransportMaxIdleConnsPerHost,
