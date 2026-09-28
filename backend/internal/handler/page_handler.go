@@ -216,12 +216,16 @@ func (h *PageHandler) findSlugVisibility(c *gin.Context, slug string) (string, b
 		URL        string `json:"url"`
 		PageSlug   string `json:"page_slug"`
 		Visibility string `json:"visibility"`
+		Enabled    *bool  `json:"enabled"`
 	}
 	if err := json.Unmarshal([]byte(raw), &items); err != nil {
 		return "", false
 	}
 
 	for _, item := range items {
+		if item.Enabled != nil && !*item.Enabled {
+			continue
+		}
 		itemSlug := item.PageSlug
 		if itemSlug == "" && strings.HasPrefix(item.URL, "md:") {
 			itemSlug = strings.TrimPrefix(item.URL, "md:")

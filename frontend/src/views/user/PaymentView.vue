@@ -45,10 +45,11 @@
               <p class="mt-1 text-base font-semibold text-gray-900 dark:text-white">{{ user?.username || '' }}</p>
               <p class="mt-0.5 text-sm font-medium text-green-600 dark:text-green-400">{{ t('payment.currentBalance') }}: {{ user?.balance?.toFixed(2) || '0.00' }}</p>
             </div>
-            <div v-if="enabledMethods.length === 0" class="card py-16 text-center">
+            <ExternalRechargeMethods :entries="externalRechargeEntries" />
+            <div v-if="enabledMethods.length === 0 && externalRechargeEntries.length === 0" class="card py-16 text-center">
               <p class="text-gray-500 dark:text-gray-400">{{ t('payment.notAvailable') }}</p>
             </div>
-            <template v-else>
+            <template v-if="enabledMethods.length > 0 && !checkout.balance_disabled">
             <div class="card p-6">
               <AmountInput
                 v-model="amount"
@@ -278,6 +279,8 @@ import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel, type PeakRateFi
 import type { SubscriptionPlan, CheckoutInfoResponse, CreateOrderResult, OrderType } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import AmountInput from '@/components/payment/AmountInput.vue'
+import ExternalRechargeMethods from '@/components/payment/ExternalRechargeMethods.vue'
+import { getExternalRechargeEntries } from '@/utils/externalRecharge'
 import PaymentMethodSelector from '@/components/payment/PaymentMethodSelector.vue'
 import { METHOD_ORDER, getPaymentPopupFeatures, isBuiltInAlipayMethod, isBuiltInWxpayMethod } from '@/components/payment/providerConfig'
 import {
@@ -519,11 +522,13 @@ const renderedHelpText = computed(() => DOMPurify.sanitize(
 
 // 订阅功能开关（public settings 的 subscription_enabled，opt-out）。关闭后购买页只保留充值：
 // 不再渲染「订阅」tab，只剩单个 tab 时顶部切换器也随之隐藏。
-const subscriptionEnabled = computed(() => resolveFeatureFlag(appStore.cachedPublicSettings, FeatureFlags.subscription))
+const externalRechargeEntries = computed(() => getExternalRechargeEntries(appStore.cachedPublicSettings?.custom_menu_items))
+const nativePaymentsAvailable = computed(() => appStore.cachedPublicSettings?.payment_enabled !== false && paymentStore.purchaseEntryAvailable !== false)
+const subscriptionEnabled = computed(() => nativePaymentsAvailable.value && resolveFeatureFlag(appStore.cachedPublicSettings, FeatureFlags.subscription))
 
 const tabs = computed(() => {
   const result: { key: 'recharge' | 'subscription'; label: string }[] = []
-  if (!checkout.value.balance_disabled) result.push({ key: 'recharge', label: t('payment.tabTopUp') })
+  if (externalRechargeEntries.value.length > 0 || (nativePaymentsAvailable.value && !checkout.value.balance_disabled)) result.push({ key: 'recharge', label: t('payment.tabTopUp') })
   if (subscriptionEnabled.value) result.push({ key: 'subscription', label: t('payment.tabSubscribe') })
   return result
 })
@@ -537,7 +542,7 @@ watch(tabs, (available) => {
   if (leavingSubscription) selectedPlan.value = null
 })
 
-const visibleMethods = computed(() => getVisibleMethods(checkout.value.methods))
+const visibleMethods = computed(() => nativePaymentsAvailable.value ? getVisibleMethods(checkout.value.methods) : {})
 const enabledMethods = computed(() => Object.keys(visibleMethods.value))
 const validAmount = computed(() => amount.value ?? 0)
 const balanceRechargeMultiplier = computed(() => {
@@ -1123,6 +1128,7 @@ async function resumeWechatPaymentFromQuery() {
 
 onMounted(async () => {
   try {
+    if (!nativePaymentsAvailable.value) return
     const res = await paymentAPI.getCheckoutInfo()
     checkout.value = res.data
     if (enabledMethods.value.length) {

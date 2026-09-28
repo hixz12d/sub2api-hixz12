@@ -405,6 +405,11 @@ export default {
     currentBalance: '当前余额',
     groupFallback: '分组 #{id}',
     rechargeAccount: '充值账户',
+    externalRecharge: {
+      title: '小铺充值',
+      description: '选择小铺，在小铺页面选择金额并完成充值。',
+      open: '进入充值',
+    },
     activeSubscription: '当前订阅',
     noActiveSubscription: '暂无有效订阅',
     tabTopUp: '充值',

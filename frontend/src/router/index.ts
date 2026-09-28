@@ -14,6 +14,7 @@ import { useRoutePrefetch } from '@/composables/useRoutePrefetch'
 import { getSetupStatus } from '@/api/setup'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
 import { resolveRouteDocumentTitle } from './title'
+import { getExternalRechargeEntries } from '@/utils/externalRecharge'
 
 /**
  * Route definitions with lazy loading
@@ -917,10 +918,13 @@ router.beforeEach(async (to, _from, next) => {
     }
   }
 
+  const hasExternalRecharge = getExternalRechargeEntries(appStore.cachedPublicSettings?.custom_menu_items).length > 0
+
   // Only an explicit value from successfully loaded settings can disable a route.
   // A transient settings failure is unknown state, not a confirmed feature toggle.
   if (
     to.meta.requiresPayment &&
+    !(to.path === '/purchase' && hasExternalRecharge) &&
     appStore.publicSettingsLoaded &&
     appStore.cachedPublicSettings?.payment_enabled === false
   ) {
@@ -931,7 +935,7 @@ router.beforeEach(async (to, _from, next) => {
   // Only new purchases are gated; order history and payment return routes stay accessible.
   if (to.path === '/purchase') {
     const config = await usePaymentStore().fetchConfig(true)
-    if (config?.purchase_entry_available === false) {
+    if (config?.purchase_entry_available === false && !hasExternalRecharge) {
       next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
       return
     }

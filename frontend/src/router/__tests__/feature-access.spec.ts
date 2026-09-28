@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { CustomMenuItem } from '@/types'
 
 type NavigationGuard = (
   to: Record<string, any>,
@@ -26,7 +27,7 @@ const appStore = vi.hoisted(() => ({
     payment_enabled?: boolean
     risk_control_enabled?: boolean
     subscription_enabled?: boolean
-    custom_menu_items?: []
+    custom_menu_items?: CustomMenuItem[]
   },
   fetchPublicSettings: vi.fn(),
 }))
@@ -122,6 +123,22 @@ describe('feature route guard', () => {
     appStore.cachedPublicSettings = null
     appStore.fetchPublicSettings.mockReset()
     paymentStore.fetchConfig.mockReset().mockResolvedValue({ purchase_entry_available: true })
+  })
+
+  it.each([true, false])('keeps external recharge independent of online payment enabled=%s', async (paymentEnabled) => {
+    appStore.publicSettingsLoaded = true
+    appStore.cachedPublicSettings = {
+      payment_enabled: paymentEnabled,
+      custom_menu_items: [{ id: 'ldxp-recharge', label: 'Shop', url: 'https://example.com/shop', icon_svg: '', visibility: 'user', sort_order: 0 }],
+    }
+    paymentStore.fetchConfig.mockResolvedValue({ purchase_entry_available: false })
+    const purchase = runGuard({ requiresPayment: true }, '/purchase')
+    await purchase.navigation
+    expect(purchase.next).toHaveBeenCalledWith()
+    appStore.cachedPublicSettings.custom_menu_items![0].enabled = false
+    const disabled = runGuard({ requiresPayment: true }, '/purchase')
+    await disabled.navigation
+    expect(disabled.next).toHaveBeenCalledWith('/dashboard')
   })
 
   it.each([false, true])('blocks closed purchase entry for admin=%s while keeping order history accessible', async (isAdmin) => {

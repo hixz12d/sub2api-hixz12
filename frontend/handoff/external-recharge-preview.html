@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh" class="dark">
+<head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>外部充值方式 · 本地验证</title></head>
+<body><div id="app"></div>
+<script type="module">
+import { createApp, computed, h, ref } from 'vue'
+import { createRouter, createMemoryHistory } from 'vue-router'
+import ExternalRechargeSettings from '/src/components/payment/ExternalRechargeSettings.vue'
+import ExternalRechargeMethods from '/src/components/payment/ExternalRechargeMethods.vue'
+import { getExternalRechargeEntries } from '/src/utils/externalRecharge.ts'
+import i18n, { loadLocaleMessages } from '/src/i18n/index.ts'
+import '/src/style.css'
+await loadLocaleMessages('zh')
+i18n.global.locale.value = 'zh'
+const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { render: () => null } }] })
+const app = createApp({ setup() {
+  const items = ref([{ id: 'ldxp-recharge', label: '链动小铺充值', url: 'https://example.com/shop-recharge/', icon_svg: '', visibility: 'user', sort_order: 0 }])
+  const entries = computed(() => getExternalRechargeEntries(items.value))
+  return () => h('main', { class: 'mx-auto max-w-4xl space-y-6 p-4 sm:p-6' }, [
+    h('h1', { class: 'text-2xl font-semibold text-gray-900 dark:text-white' }, '支付设置'),
+    h(ExternalRechargeSettings, { modelValue: items.value, 'onUpdate:modelValue': value => { items.value = value } }),
+    h('h2', { class: 'text-lg font-semibold text-gray-900 dark:text-white' }, '用户充值页预览'),
+    h(ExternalRechargeMethods, { entries: entries.value }),
+    h('div', { class: 'card p-5 text-gray-900 dark:text-white', 'data-testid': 'perpay-fixture' }, 'PerPay 支付宝 · 不受外部充值开关影响'),
+  ])
+}})
+app.use(router).use(i18n).mount('#app')
+</script></body></html>

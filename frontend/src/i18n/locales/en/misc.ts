@@ -381,6 +381,11 @@ export default {
     currentBalance: 'Current Balance',
     groupFallback: 'Group #{id}',
     rechargeAccount: 'Recharge Account',
+    externalRecharge: {
+      title: 'Shop recharge',
+      description: 'Choose a shop, then select an amount and complete your recharge on its page.',
+      open: 'Open recharge',
+    },
     activeSubscription: 'Active Subscription',
     noActiveSubscription: 'No active subscription',
     tabTopUp: 'Top Up',

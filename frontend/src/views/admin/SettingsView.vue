@@ -6768,7 +6768,7 @@
             <div class="space-y-4 p-6">
               <!-- Existing menu items -->
               <div
-                v-for="(item, index) in form.custom_menu_items"
+                v-for="({ item, index }, menuIndex) in sidebarMenuEntries"
                 :key="item.id || index"
                 class="rounded-lg border border-gray-200 p-4 dark:border-dark-600"
               >
@@ -6783,7 +6783,7 @@
                   <div class="flex items-center gap-2">
                     <!-- Move up -->
                     <button
-                      v-if="index > 0"
+                      v-if="menuIndex > 0"
                       type="button"
                       class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-dark-700"
                       :title="t('admin.settings.customMenu.moveUp')"
@@ -6805,7 +6805,7 @@
                     </button>
                     <!-- Move down -->
                     <button
-                      v-if="index < form.custom_menu_items.length - 1"
+                      v-if="menuIndex < sidebarMenuEntries.length - 1"
                       type="button"
                       class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-dark-700"
                       :title="t('admin.settings.customMenu.moveDown')"
@@ -7906,6 +7906,7 @@
         <!-- Tab: Email -->
         <!-- Tab: Payment -->
         <div v-show="activeTab === 'payment'" class="space-y-6">
+          <ExternalRechargeSettings v-model="form.custom_menu_items" />
           <!-- Payment System Settings -->
           <div class="card">
             <div
@@ -9018,6 +9019,8 @@ import {
 } from "@/utils/siteBillingMode";
 import ConfirmDialog from "@/components/common/ConfirmDialog.vue";
 import PaymentProviderList from "@/components/payment/PaymentProviderList.vue";
+import ExternalRechargeSettings from "@/components/payment/ExternalRechargeSettings.vue";
+import { isExternalRechargeEntry } from "@/utils/externalRecharge";
 import PaymentProviderDialog from "@/components/payment/PaymentProviderDialog.vue";
 import GroupBadge from "@/components/common/GroupBadge.vue";
 import GroupOptionItem from "@/components/common/GroupOptionItem.vue";
@@ -9833,6 +9836,8 @@ const form = reactive<SettingsForm>({
     visibility: "user" | "admin";
     sort_order: number;
     hide_open_button?: boolean;
+    enabled?: boolean;
+    placement?: 'sidebar' | 'recharge';
   }>,
   custom_endpoints: [] as Array<{
     name: string;
@@ -10805,6 +10810,10 @@ async function setAndCopyOIDCRedirectUrl() {
 }
 
 // Custom menu item management
+const sidebarMenuEntries = computed(() => form.custom_menu_items
+  .map((item, index) => ({ item, index }))
+  .filter(({ item }) => !isExternalRechargeEntry(item)));
+
 function addMenuItem() {
   form.custom_menu_items.push({
     id: "",
@@ -10825,8 +10834,10 @@ function removeMenuItem(index: number) {
 }
 
 function moveMenuItem(index: number, direction: -1 | 1) {
-  const targetIndex = index + direction;
-  if (targetIndex < 0 || targetIndex >= form.custom_menu_items.length) return;
+  const visibleIndex = sidebarMenuEntries.value.findIndex(entry => entry.index === index);
+  const target = sidebarMenuEntries.value[visibleIndex + direction];
+  if (!target) return;
+  const targetIndex = target.index;
   const items = form.custom_menu_items;
   const temp = items[index];
   items[index] = items[targetIndex];

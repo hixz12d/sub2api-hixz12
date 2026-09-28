@@ -17,6 +17,8 @@ type CustomMenuItem struct {
 	Visibility     string `json:"visibility"` // "user" or "admin"
 	SortOrder      int    `json:"sort_order"`
 	HideOpenButton bool   `json:"hide_open_button,omitempty"`
+	Enabled        *bool  `json:"enabled,omitempty"`   // nil preserves legacy enabled entries
+	Placement      string `json:"placement,omitempty"` // "sidebar" or "recharge"
 }
 
 // CustomEndpoint represents an admin-configured API endpoint for quick copy.
@@ -619,7 +621,7 @@ func ParseUserVisibleMenuItems(raw string) []CustomMenuItem {
 	items := ParseCustomMenuItems(raw)
 	filtered := make([]CustomMenuItem, 0, len(items))
 	for _, item := range items {
-		if item.Visibility != "admin" {
+		if item.Visibility != "admin" && (item.Enabled == nil || *item.Enabled) {
 			filtered = append(filtered, item)
 		}
 	}

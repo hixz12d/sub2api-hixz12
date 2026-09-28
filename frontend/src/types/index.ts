@@ -192,6 +192,8 @@ export interface CustomMenuItem {
   url: string
   page_slug?: string
   hide_open_button?: boolean
+  enabled?: boolean
+  placement?: 'sidebar' | 'recharge'
   visibility: 'user' | 'admin'
   sort_order: number
 }

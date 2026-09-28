@@ -754,6 +754,7 @@ func filterUserVisibleMenuItems(raw string) json.RawMessage {
 	}
 	var items []struct {
 		Visibility string `json:"visibility"`
+		Enabled    *bool  `json:"enabled"`
 	}
 	if err := json.Unmarshal([]byte(raw), &items); err != nil {
 		return json.RawMessage("[]")
@@ -767,7 +768,7 @@ func filterUserVisibleMenuItems(raw string) json.RawMessage {
 
 	var filtered []json.RawMessage
 	for i, item := range items {
-		if item.Visibility != "admin" {
+		if item.Visibility != "admin" && (item.Enabled == nil || *item.Enabled) {
 			filtered = append(filtered, fullItems[i])
 		}
 	}

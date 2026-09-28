@@ -820,6 +820,35 @@ describe('PaymentView WeChat JSAPI flow', () => {
   })
 })
 
+describe('PaymentView external recharge', () => {
+  afterEach(() => appStoreState.setPublicSettings(undefined))
+
+  it('keeps the shop available with online payments off without creating an online order', async () => {
+    const shop = { id: 'ldxp-recharge', label: 'Shop', url: 'https://example.com/shop', icon_svg: '', visibility: 'user', sort_order: 0 }
+    appStoreState.setPublicSettings({ payment_enabled: false, custom_menu_items: [shop] })
+    const wrapper = await mountSubscriptionConfirm()
+    expect(getCheckoutInfo).not.toHaveBeenCalled()
+    expect(createOrder).not.toHaveBeenCalled()
+    expect(wrapper.findComponent({ name: 'ExternalRechargeMethods' }).props('entries')).toEqual([shop])
+    expect(wrapper.findComponent(AmountInput).exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('payment.billingUnavailable')
+    appStoreState.setPublicSettings({ payment_enabled: false, custom_menu_items: [{ ...shop, enabled: false }] })
+    await flushPromises()
+    expect(wrapper.text()).toContain('payment.billingUnavailable')
+    wrapper.unmount()
+  })
+
+  it('retains the online checkout alongside the shop', async () => {
+    const shop = { id: 'ldxp-recharge', label: 'Shop', url: 'https://example.com/shop', icon_svg: '', visibility: 'user', sort_order: 0 }
+    appStoreState.setPublicSettings({ payment_enabled: true, subscription_enabled: false, custom_menu_items: [shop] })
+    const wrapper = await mountSubscriptionConfirm()
+    expect(getCheckoutInfo).toHaveBeenCalledOnce()
+    expect(wrapper.findComponent(AmountInput).exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'ExternalRechargeMethods' }).props('entries')).toEqual([shop])
+    wrapper.unmount()
+  })
+})
+
 describe('PaymentView subscription feature flag', () => {
   afterEach(() => {
     appStoreState.setPublicSettings(undefined)

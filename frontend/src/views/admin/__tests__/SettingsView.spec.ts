@@ -748,6 +748,27 @@ describe("admin SettingsView payment visible method controls", () => {
     wrapper.unmount();
   });
 
+  it("saves the shop display switch separately from PerPay and preserves its URL", async () => {
+    const shop = { id: "ldxp-recharge", label: "链动小铺充值", url: "https://example.com/shop", icon_svg: "", visibility: "user", sort_order: 0 };
+    const docs = { ...shop, id: "docs", label: "Docs", sort_order: 1 };
+    getSettings.mockResolvedValue({ ...baseSettingsResponse, payment_enabled: false, custom_menu_items: [shop, docs] });
+    const wrapper = mountView();
+    await flushPromises();
+    await openPaymentTab(wrapper);
+    const toggle = wrapper.get<HTMLInputElement>('[data-testid="external-recharge-enabled"]');
+    expect(toggle.element.checked).toBe(true);
+    expect(wrapper.findAll('[data-testid="custom-menu-hide-open-button"]')).toHaveLength(1);
+    await toggle.setValue(false);
+    await wrapper.find('form').trigger('submit.prevent');
+    await flushPromises();
+    expect(updateSettings).toHaveBeenCalledWith(expect.objectContaining({
+      payment_enabled: false,
+      custom_menu_items: [{ ...shop, enabled: false, placement: "recharge" }, docs],
+    }));
+    expect(fetchPublicSettings).toHaveBeenCalledWith(true);
+    wrapper.unmount();
+  });
+
   it("loads and saves the open button visibility for each custom menu", async () => {
     const menuItems = [
       { id: "docs", label: "Docs", url: "https://example.com/docs", icon_svg: "", visibility: "user", sort_order: 0 },

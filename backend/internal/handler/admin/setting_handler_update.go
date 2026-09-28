@@ -1319,6 +1319,14 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 					return
 				}
 			}
+			if item.Placement != "" && item.Placement != "sidebar" && item.Placement != "recharge" {
+				response.BadRequest(c, "Custom menu item placement must be 'sidebar' or 'recharge'")
+				return
+			}
+			if item.Placement == "recharge" && (item.Visibility != "user" || strings.HasPrefix(urlTrimmed, "md:")) {
+				response.BadRequest(c, "External recharge entries require user visibility and an absolute http(s) URL")
+				return
+			}
 			if item.Visibility != "user" && item.Visibility != "admin" {
 				response.BadRequest(c, "Custom menu item visibility must be 'user' or 'admin'")
 				return
