@@ -137,6 +137,7 @@ vite.config.js
 docs/*
 !docs/channel-monitor-implementation-progress.md
 !docs/model-catalog-2026-09-22.md
+!docs/upstream-v029-integration.md
 !docs/audit/
 docs/audit/*
 !docs/audit/runtime-egress-map.md

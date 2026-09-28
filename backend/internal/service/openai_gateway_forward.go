@@ -1589,6 +1589,8 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		if compatMessagesBridge {
 			req.Header.Del("OpenAI-Beta")
 			req.Header.Del("originator")
+		} else {
+			stripOpenAILegacyResponsesBeta(req.Header)
 		}
 		apiKeyID := getAPIKeyIDFromContext(c)
 		outboundSessionID := ""
