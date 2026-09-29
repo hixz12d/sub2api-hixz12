@@ -19,6 +19,7 @@ type Model struct {
 // DefaultModels OpenAI models list
 var DefaultModels = []Model{
 	{ID: "gpt-5.6-sol", Object: "model", Created: 1780876800, OwnedBy: "openai", Type: "model", DisplayName: "GPT-5.6 Sol"},
+	{ID: "gpt-6.1-sol", Object: "model", Created: 1790640000, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6.1 Sol"},
 	{ID: "gpt-6-sol", Object: "model", Created: 1790035200, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6 Sol"},
 	{ID: "gpt-6-luna", Object: "model", Created: 1790035200, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6 Luna"},
 	{ID: "gpt-6", Object: "model", Created: 1788480000, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6 (Astra)"},
@@ -163,7 +164,7 @@ func CodexBaseInstructionsForModel(model string) string {
 // IsGPT6SolOrLunaModelSpelling recognizes official IDs and existing local effort/compact suffixes.
 func IsGPT6SolOrLunaModelSpelling(model string) bool {
 	canonical := CanonicalizeOpenAIModelAliasSpelling(model)
-	for _, base := range []string{"gpt-6-sol", "gpt-6-luna"} {
+	for _, base := range []string{"gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"} {
 		if canonical == base {
 			return true
 		}
@@ -176,4 +177,11 @@ func IsGPT6SolOrLunaModelSpelling(model string) bool {
 		}
 	}
 	return false
+}
+
+// IsGPT61SolModelSpelling reports GPT-6.1 Sol, which drops the none effort and
+// Chat Completions tool calling that GPT-6 Sol/Luna support.
+func IsGPT61SolModelSpelling(model string) bool {
+	canonical := CanonicalizeOpenAIModelAliasSpelling(model)
+	return canonical == "gpt-6.1-sol" || (strings.HasPrefix(canonical, "gpt-6.1-sol-") && IsGPT6SolOrLunaModelSpelling(canonical))
 }

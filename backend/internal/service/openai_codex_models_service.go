@@ -486,7 +486,7 @@ func newConfiguredCodexModelDescriptor(modelID string) configuredCodexModelDescr
 	}
 
 	if isClaudeCodexModel(modelID) {
-		if claude.IsOpus55(modelID) {
+		if claude.IsOpus55(modelID) || claude.IsSonnet55(modelID) {
 			descriptor.ContextWindow = 1_000_000
 			descriptor.MaxContextWindow = 1_000_000
 		}
@@ -499,6 +499,9 @@ func newConfiguredCodexModelDescriptor(modelID string) configuredCodexModelDescr
 		}
 		if levels := configuredCodexClaudeReasoningLevels(modelID); len(levels) > 0 {
 			defaultReasoningLevel := claudeCodexDefaultReasoningLevel(levels)
+			if claude.IsSonnet55(modelID) {
+				defaultReasoningLevel = "high"
+			}
 			descriptor.DefaultReasoningLevel = &defaultReasoningLevel
 			descriptor.SupportedReasoningLevels = levels
 		}
@@ -568,7 +571,7 @@ func configuredCodexServiceTiersForModel(modelID string) []configuredCodexServic
 
 func configuredCodexSupportsPriorityServiceTier(modelID string) bool {
 	normalized := canonicalizeOpenAIModelAliasSpelling(modelID)
-	for _, family := range []string{"gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.4", "gpt-5.5", "gpt-5.6"} {
+	for _, family := range []string{"gpt-6-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna", "gpt-5.4", "gpt-5.5", "gpt-5.6"} {
 		if normalized == family || strings.HasPrefix(normalized, family+"-") {
 			return true
 		}
@@ -649,7 +652,8 @@ func configuredCodexGPTReasoningLevels(modelID string) []configuredCodexReasonin
 			Description: "Maximum reasoning with automatic task delegation",
 		})
 	}
-	if isOpenAIGPT6SolLunaModel(modelID) {
+	// GPT-6.1 Sol does not accept reasoning.effort=none.
+	if isOpenAIGPT6SolLunaModel(modelID) && !openai.IsGPT61SolModelSpelling(modelID) {
 		levels = append([]configuredCodexReasoningLevel{{Effort: "none", Description: "Respond without reasoning"}}, levels...)
 	}
 	return levels
@@ -2055,6 +2059,7 @@ func CodexModelsManifestETag(body []byte) string {
 
 var apiKeyCodexModelsWithoutResponsesLite = map[string]struct{}{
 	"gpt-6-astra":   {},
+	"gpt-6.1-sol":   {},
 	"gpt-6-sol":     {},
 	"gpt-6-luna":    {},
 	"gpt-5.6-sol":   {},

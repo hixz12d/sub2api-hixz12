@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/claude"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 	"github.com/Wei-Shaw/sub2api/internal/util/urlvalidator"
@@ -72,6 +73,12 @@ var (
 		LiteLLMProvider:                     "openai",
 		Mode:                                "chat",
 		SupportsPromptCaching:               true,
+	}
+	claudeSonnet55FallbackPricing = &LiteLLMModelPricing{
+		InputCostPerToken: 2e-6, OutputCostPerToken: 10e-6,
+		CacheCreationInputTokenCost: 2.5e-6, CacheCreationInputTokenCostAbove1hr: 4e-6,
+		CacheReadInputTokenCost: 0.2e-6,
+		LiteLLMProvider:         "anthropic", Mode: "chat", SupportsPromptCaching: true,
 	}
 	openAIGPT56SolFallbackPricing = &LiteLLMModelPricing{
 		InputCostPerToken:                   5e-06,
@@ -1337,6 +1344,12 @@ func (s *PricingService) matchByModelFamily(model string) *LiteLLMModelPricing {
 		}
 		return claudeOpus55FallbackPricing
 	}
+	if claude.IsSonnet55(model) {
+		if pricing, ok := s.pricingData["claude-sonnet-5-5"]; ok {
+			return pricing
+		}
+		return claudeSonnet55FallbackPricing
+	}
 	// modelFamily 定义一个模型系列的匹配和定价查找规则。
 	type modelFamily struct {
 		name    string   // 系列名称
@@ -1464,10 +1477,7 @@ func (s *PricingService) matchOpenAIModel(model string) *LiteLLMModelPricing {
 		if pricing, ok := s.pricingData[base]; ok {
 			return pricing
 		}
-		if base == "gpt-6-sol" {
-			return openAIGPT6SolFallbackPricing
-		}
-		return openAIGPT6LunaFallbackPricing
+		return openAIGPT6SolLunaFallbackPricing(base)
 	}
 	if strings.HasPrefix(model, "gpt-5.3-codex-spark") {
 		if pricing, ok := s.pricingData["gpt-5.1-codex"]; ok {
@@ -1482,10 +1492,7 @@ func (s *PricingService) matchOpenAIModel(model string) *LiteLLMModelPricing {
 		if pricing, ok := s.pricingData[normalizeKnownOpenAICodexModel(model)]; ok {
 			return pricing
 		}
-		if strings.HasPrefix(model, "gpt-6-sol") {
-			return openAIGPT6SolFallbackPricing
-		}
-		return openAIGPT6LunaFallbackPricing
+		return openAIGPT6SolLunaFallbackPricing(openAIGPT6SolLunaBase(model))
 	}
 
 	// 尝试的回退变体

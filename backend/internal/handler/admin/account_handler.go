@@ -53,6 +53,7 @@ type AccountHandler struct {
 	monitorPolicyControl    service.MonitorPolicyControl
 	detectorTasks           *service.DetectorTaskService
 	questionReviews         *service.QuestionReviewService
+	claudeResetCredits      claudeResetReader
 	adminService            service.AdminService
 	oauthService            *service.OAuthService
 	openaiOAuthService      *service.OpenAIOAuthService
