@@ -138,6 +138,21 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthIdentity(
 	clientHeaders http.Header,
 	promptCacheKey string,
 ) (*CodexIdentitySnapshot, error) {
+	identity, err := s.finalizeCodexOAuthIdentityAttempt(account, c, clientHeaders, promptCacheKey)
+	if err == nil || !restartCodexHTTPConversation(c, account, err) {
+		return identity, err
+	}
+	// Identity preparation has not dispatched upstream. Retry it once against a
+	// fresh conversation on the already selected account, without replaying I/O.
+	return s.finalizeCodexOAuthIdentityAttempt(account, c, clientHeaders, "")
+}
+
+func (s *OpenAIGatewayService) finalizeCodexOAuthIdentityAttempt(
+	account *Account,
+	c *gin.Context,
+	clientHeaders http.Header,
+	promptCacheKey string,
+) (*CodexIdentitySnapshot, error) {
 	if account == nil || strings.ToLower(strings.TrimSpace(account.GetExtraString(CodexRelayModeExtraKey))) != string(CodexRelayModeKernel) {
 		legacy, err := finalizeCodexOAuthIdentity(account, c, clientHeaders, promptCacheKey)
 		if err == nil {
@@ -361,7 +376,15 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthBody(
 ) ([]byte, error) {
 	if c != nil && c.Request != nil {
 		if plan, ok := CodexRequestPlanFromContext(c.Request.Context()); ok && plan.rebuildFromLocalHistory {
-			body = SanitizeCodexBodyForCrossAccountRecovery(body)
+			if plan.restartFromLocalInput {
+				var err error
+				body, err = sanitizeCodexFreshContextBody(body)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				body = SanitizeCodexBodyForCrossAccountRecovery(body)
+			}
 		}
 	}
 	updated, err := applyCodexFingerprintToRawBody(body, snapshot)

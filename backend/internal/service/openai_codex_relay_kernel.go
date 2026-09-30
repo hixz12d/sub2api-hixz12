@@ -184,6 +184,7 @@ type CodexRequestPlanInput struct {
 type CodexRequestPlan struct {
 	requireExistingConversation bool
 	rebuildFromLocalHistory     bool
+	restartFromLocalInput       bool
 	logicalRequestID            string
 	conversationDigest          string
 	clientRequestID             string

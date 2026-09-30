@@ -90,11 +90,23 @@ can CAS-refresh transport scope while retaining identity and profile. Already
 in-flight requests can commit without reverting the new configuration. Actual
 proxy/route/account changes retain the original stateful recovery restrictions.
 
-Client messages now distinguish ownership, missing identity, account mismatch,
-account unavailability, route changes and OAuth refresh failure; terminal 409 and
-no-cross-account-retry semantics remain. Automatic full-history replay and durable
-snapshot storage are not implemented in this fix. Truly untracked chains still
-need warming or explicit context recovery, not a fabricated legacy identity.
+Client messages distinguish ownership, missing identity, account mismatch,
+account unavailability, route changes and OAuth refresh failure.
+
+For HTTP Responses, an account mismatch during identity preparation now starts
+one fresh conversation on the selected account when local input is available.
+This deliberately accepts partial context: local messages and paired tool calls
+are retained, orphan tool results become historical text, and old response/turn
+pointers, encrypted context and account-bound file IDs are removed. History held
+only by the original account is lost. The new pin is separate; the original pin,
+response ownership and request retry budget are preserved.
+
+The restart runs before upstream dispatch and does not replay completed output.
+It is blocked after semantic output, response ownership commitment, unsafe retry
+acceptance or cancellation. Authentication failures, corrupt snapshots, native
+WebSocket continuations and requests containing only opaque references retain
+their existing error behavior. Full-context recovery remains preferred when it
+is possible; this fallback does not fabricate missing conversation history.
 
 ## Production Preflight (Not Yet Executed)
 

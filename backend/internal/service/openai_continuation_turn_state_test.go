@@ -113,17 +113,11 @@ func TestCodexHTTPTurnStateRecoveryReachesWireAndPreservesOriginal(t *testing.T)
 }
 
 func TestCodexHTTPTurnStateRecoveryRejectsUnsafeRequests(t *testing.T) {
-	for _, kind := range []string{"latest-message", "uncovered-tool-output", "unresolved-reference", "semantic-output", "owned-response", "unknown-acceptance", "websocket", "missing-owner"} {
+	for _, kind := range []string{"semantic-output", "owned-response", "unknown-acceptance", "websocket", "missing-owner"} {
 		t.Run(kind, func(t *testing.T) {
 			svc, account, c, registry := codexTurnStateRecoveryFixture(t, false, false)
 			plan, _ := CodexRequestPlanFromContext(c.Request.Context())
 			switch kind {
-			case "latest-message":
-				plan.body = []byte(`{"input":[{"role":"user","content":"continue"}]}`)
-			case "uncovered-tool-output":
-				plan.body = []byte(`{"input":[{"role":"user","content":"test"},{"role":"assistant","content":"running"},{"type":"function_call_output","call_id":"missing","output":"ok"}]}`)
-			case "unresolved-reference":
-				plan.body = []byte(`{"input":[{"role":"user","content":"test"},{"role":"assistant","content":"running"},{"type":"item_reference","id":"missing"}]}`)
 			case "semantic-output":
 				MarkOpenAISemanticOutputStarted(c)
 			case "owned-response":
