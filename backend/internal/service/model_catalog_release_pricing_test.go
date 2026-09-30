@@ -118,11 +118,17 @@ func TestNewModelCatalogCapabilities(t *testing.T) {
 			require.True(t, isOpenAICodexImageInputModel(alias))
 		}
 		d := newConfiguredCodexModelDescriptor(model)
-		require.Equal(t, int64(1050000), d.ContextWindow)
-		require.Equal(t, int64(1050000), d.MaxContextWindow)
-		require.Equal(t, "medium", *d.DefaultReasoningLevel)
 		efforts := []string{"low", "medium", "high", "xhigh", "max"}
-		if model != "gpt-6.1-sol" {
+		if model == "gpt-6.1-sol" {
+			// Codex uses the bundled official client descriptor, separate from API context limits.
+			require.Equal(t, int64(272000), d.ContextWindow)
+			require.Equal(t, int64(872000), d.MaxContextWindow)
+			require.Equal(t, "low", *d.DefaultReasoningLevel)
+			efforts = append(efforts, "ultra")
+		} else {
+			require.Equal(t, int64(1050000), d.ContextWindow)
+			require.Equal(t, int64(1050000), d.MaxContextWindow)
+			require.Equal(t, "medium", *d.DefaultReasoningLevel)
 			efforts = append([]string{"none"}, efforts...)
 		}
 		for _, alias := range []string{model, "openai/" + model, model + "-max", model + "-20260929"} {

@@ -1945,6 +1945,10 @@ func TestGPT6ChatSamplingAndCacheFields(t *testing.T) {
 	for _, model := range []string{"gpt-6.1-sol", "openai/gpt-6.1-sol-max", "gpt-6-sol", "gpt-6-luna"} {
 		for _, effort := range []string{"", "none", "medium", "max"} {
 			out, err := ChatCompletionsToResponses(&ChatCompletionsRequest{Model: model, ReasoningEffort: effort, Temperature: &temperature, TopP: &temperature, PromptCacheOptions: json.RawMessage(`{"mode":"explicit","ttl":"30m"}`), Messages: []ChatMessage{{Role: "user", Content: json.RawMessage(`[{"type":"text","text":"hello","prompt_cache_breakpoint":{"mode":"explicit"}}]`)}}})
+			if effort == "none" && (model == "gpt-6.1-sol" || model == "openai/gpt-6.1-sol-max") {
+				require.ErrorContains(t, err, "does not support reasoning effort")
+				continue
+			}
 			require.NoError(t, err)
 			if effort == "none" && (model == "gpt-6-sol" || model == "gpt-6-luna") {
 				require.NotNil(t, out.Temperature)
@@ -1978,4 +1982,17 @@ func TestMessageStartSSE_StopReasonIsJSONNull(t *testing.T) {
 	// Official Anthropic wire: "stop_reason":null
 	require.Contains(t, sse, `"stop_reason":null`)
 	require.NotContains(t, sse, `"stop_reason":""`)
+}
+
+func TestGPT61SolCacheOptionsAndBreakpointsSurviveChatBridge(t *testing.T) {
+	sampling := 0.7
+	for _, effort := range []string{"low", "medium", "high", "xhigh", "max"} {
+		out, err := ChatCompletionsToResponses(&ChatCompletionsRequest{Model: "gpt-6.1-sol", ReasoningEffort: effort, Temperature: &sampling, TopP: &sampling, PromptCacheOptions: json.RawMessage(`{"ttl":"30m","mode":"explicit"}`), Messages: []ChatMessage{{Role: "user", Content: json.RawMessage(`[{"type":"text","text":"prefix","prompt_cache_breakpoint":{"mode":"explicit"}}]`)}}})
+		require.NoError(t, err)
+		require.Nil(t, out.Temperature)
+		require.Nil(t, out.TopP)
+		require.Equal(t, effort, out.Reasoning.Effort)
+		require.JSONEq(t, `{"ttl":"30m","mode":"explicit"}`, string(out.PromptCacheOptions))
+		require.Contains(t, string(out.Input), "prompt_cache_breakpoint")
+	}
 }
