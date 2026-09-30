@@ -20,6 +20,7 @@ func TestNewModelCatalogPricingAndFallbacks(t *testing.T) {
 		model                      string
 		input, output, read, write float64
 	}{
+		{"gpt-6.1-sol", 2e-6, 10e-6, 0.1e-6, 2.5e-6},
 		{"gpt-6-sol", 2e-6, 10e-6, 0.2e-6, 2.5e-6},
 		{"gpt-6-luna", 0.1e-6, 0.5e-6, 0.01e-6, 0.125e-6},
 		{"claude-opus-5-5", 4e-6, 20e-6, 0.2e-6, 5e-6},
@@ -52,7 +53,8 @@ func TestNewModelCatalogPricingAndFallbacks(t *testing.T) {
 	require.NoError(t, err)
 	require.InDelta(t, 5e-6, old.InputPricePerToken, 1e-14)
 	// Exact operator overrides still win over the release fallbacks.
-	custom := &PricingService{pricingData: map[string]*LiteLLMModelPricing{"gpt-6-sol": {InputCostPerToken: 7e-6}, "claude-opus-5-5": {InputCostPerToken: 9e-6}}}
+	custom := &PricingService{pricingData: map[string]*LiteLLMModelPricing{"gpt-6.1-sol": {InputCostPerToken: 8e-6}, "gpt-6-sol": {InputCostPerToken: 7e-6}, "claude-opus-5-5": {InputCostPerToken: 9e-6}}}
+	require.InDelta(t, 8e-6, custom.GetModelPricing("gpt-6.1-sol-max").InputCostPerToken, 1e-14)
 	require.InDelta(t, 7e-6, custom.GetModelPricing("gpt-6-sol-20260922").InputCostPerToken, 1e-14)
 	require.InDelta(t, 9e-6, custom.GetModelPricing("claude-opus-5.5").InputCostPerToken, 1e-14)
 }
@@ -61,7 +63,7 @@ func TestGPT6SolLunaBillingTiersAndLongContext(t *testing.T) {
 	billing, resolver := loadGPT6AstraPricingForTest(t)
 	group := &Group{ID: 1, Platform: PlatformOpenAI, LongContextPricingEnabled: true}
 	enabled := true
-	for _, model := range []string{"gpt-6-sol", "gpt-6-luna"} {
+	for _, model := range []string{"gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"} {
 		t.Run(model, func(t *testing.T) {
 			calculate := func(cached int, tier string) *CostBreakdown {
 				cost, err := billing.CalculateCostUnified(CostInput{Ctx: context.Background(), Model: model, GroupID: &group.ID, Group: group,
@@ -108,7 +110,7 @@ func TestNewModelCatalogOpus55CacheTTLPricing(t *testing.T) {
 }
 
 func TestNewModelCatalogCapabilities(t *testing.T) {
-	for _, model := range []string{"gpt-6-sol", "gpt-6-luna"} {
+	for _, model := range []string{"gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"} {
 		require.Contains(t, openai.DefaultModelIDs(), model)
 		for _, alias := range []string{model, "openai/" + model, model + "-max", model + "-20260922"} {
 			require.Equal(t, model, normalizeKnownOpenAICodexModel(alias))
@@ -119,7 +121,13 @@ func TestNewModelCatalogCapabilities(t *testing.T) {
 		require.Equal(t, int64(1050000), d.ContextWindow)
 		require.Equal(t, int64(1050000), d.MaxContextWindow)
 		require.Equal(t, "medium", *d.DefaultReasoningLevel)
-		require.Equal(t, []string{"none", "low", "medium", "high", "xhigh", "max"}, effortsFromConfiguredCodexLevels(d.SupportedReasoningLevels))
+		efforts := []string{"low", "medium", "high", "xhigh", "max"}
+		if model != "gpt-6.1-sol" {
+			efforts = append([]string{"none"}, efforts...)
+		}
+		for _, alias := range []string{model, "openai/" + model, model + "-max", model + "-20260929"} {
+			require.Equal(t, efforts, effortsFromConfiguredCodexLevels(newConfiguredCodexModelDescriptor(alias).SupportedReasoningLevels), alias)
+		}
 		require.True(t, configuredCodexSupportsPriorityServiceTier(model))
 	}
 	require.Contains(t, claude.DefaultModelIDs(), "claude-opus-5-5")

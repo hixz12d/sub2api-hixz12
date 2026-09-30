@@ -653,7 +653,7 @@ func configuredCodexGPTReasoningLevels(modelID string) []configuredCodexReasonin
 		})
 	}
 	// GPT-6.1 Sol does not accept reasoning.effort=none.
-	if isOpenAIGPT6SolLunaModel(modelID) && !openai.IsGPT61SolModelSpelling(modelID) {
+	if isOpenAIGPT6SolLunaModel(modelID) && openAIGPT6SolLunaBase(modelID) != "gpt-6.1-sol" {
 		levels = append([]configuredCodexReasoningLevel{{Effort: "none", Description: "Respond without reasoning"}}, levels...)
 	}
 	return levels

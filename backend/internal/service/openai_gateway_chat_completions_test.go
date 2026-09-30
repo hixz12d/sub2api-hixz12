@@ -1213,6 +1213,37 @@ func TestGPT6ReasoningModeUsesMappedUpstream(t *testing.T) {
 	require.False(t, gjson.GetBytes(out, "temperature").Exists())
 }
 
+func TestGPT61SolSamplingNeverUsesNoneExemption(t *testing.T) {
+	for _, model := range []string{"gpt-6.1-sol", "openai/gpt-6.1-sol-max"} {
+		for _, effort := range []string{"none", "minimal", "low", "medium", "high", "xhigh", "max"} {
+			body := []byte(`{"model":"public-model","reasoning":{"effort":"` + effort + `"},"temperature":0.7,"top_p":0.9,"logprobs":true,"top_logprobs":2,"include":["message.output_text.logprobs","reasoning.encrypted_content"]}`)
+			out, changed, err := normalizeOpenAIResponsesReasoningMode(body, model)
+			require.NoError(t, err)
+			require.True(t, changed)
+			// Do not silently replace an unsupported effort with a billable one.
+			require.Equal(t, effort, gjson.GetBytes(out, "reasoning.effort").String())
+			for _, key := range []string{"temperature", "top_p", "logprobs", "top_logprobs"} {
+				require.False(t, gjson.GetBytes(out, key).Exists(), key)
+			}
+			require.Equal(t, "reasoning.encrypted_content", gjson.GetBytes(out, "include.0").String())
+		}
+	}
+}
+
+func TestGPT61SolRawChatToolsRequireResponsesEvenWithNone(t *testing.T) {
+	for _, effort := range []string{"none", "low", "max"} {
+		rec := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(rec)
+		c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+		account := &Account{ID: 1, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Credentials: map[string]any{"model_mapping": map[string]any{"public": "gpt-6.1-sol"}}}
+		svc := &OpenAIGatewayService{}
+		_, err := svc.forwardAsRawChatCompletions(context.Background(), c, account, []byte(`{"model":"public","reasoning_effort":"`+effort+`","messages":[{"role":"user","content":"hello"}],"tools":[{"type":"function","function":{"name":"lookup"}}]}`), "")
+		require.ErrorContains(t, err, "requires Responses")
+		require.NotContains(t, err.Error(), "Use reasoning_effort=none")
+		require.Equal(t, 400, rec.Code)
+	}
+}
+
 func TestGPT6MappedCompatibilityBridgesKeepReasoningAndTools(t *testing.T) {
 	for _, model := range []string{"gpt-6-sol", "gpt-6-luna"} {
 		for _, messages := range []bool{false, true} {

@@ -1942,11 +1942,11 @@ func TestSonnet55SignedThinkingResponsesRoundTrip(t *testing.T) {
 
 func TestGPT6ChatSamplingAndCacheFields(t *testing.T) {
 	temperature := 0.7
-	for _, model := range []string{"gpt-6-sol", "gpt-6-luna"} {
+	for _, model := range []string{"gpt-6.1-sol", "openai/gpt-6.1-sol-max", "gpt-6-sol", "gpt-6-luna"} {
 		for _, effort := range []string{"", "none", "medium", "max"} {
 			out, err := ChatCompletionsToResponses(&ChatCompletionsRequest{Model: model, ReasoningEffort: effort, Temperature: &temperature, TopP: &temperature, PromptCacheOptions: json.RawMessage(`{"mode":"explicit","ttl":"30m"}`), Messages: []ChatMessage{{Role: "user", Content: json.RawMessage(`[{"type":"text","text":"hello","prompt_cache_breakpoint":{"mode":"explicit"}}]`)}}})
 			require.NoError(t, err)
-			if effort == "none" {
+			if effort == "none" && (model == "gpt-6-sol" || model == "gpt-6-luna") {
 				require.NotNil(t, out.Temperature)
 			} else {
 				require.Nil(t, out.Temperature)
