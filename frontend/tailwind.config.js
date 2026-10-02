@@ -1,60 +1,81 @@
 /** @type {import('tailwindcss').Config} */
+
+// 颜色来自 style.css 里的 CSS 变量（亮/暗两套），规范见仓库根目录 DESIGN.md
+const scale = (name) =>
+  Object.fromEntries(
+    [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950].map((step) => [
+      step,
+      `rgb(var(--c-${name}-${step}) / <alpha-value>)`
+    ])
+  )
+const token = (name) => `rgb(var(--c-${name}) / <alpha-value>)`
+
 export default {
   content: ['./index.html', './src/**/*.{vue,js,ts,jsx,tsx}'],
   darkMode: 'class',
   theme: {
+    // 全站直角；full 保留给圆点、开关、加载圈
+    borderRadius: {
+      none: '0px',
+      sm: '2px',
+      DEFAULT: '0px',
+      md: '0px',
+      lg: '0px',
+      xl: '0px',
+      '2xl': '0px',
+      '3xl': '0px',
+      '4xl': '0px',
+      full: '9999px'
+    },
+    // 平面设计：小阴影取消，浮层改为 1px 细线外框
+    boxShadow: {
+      none: 'none',
+      sm: 'none',
+      DEFAULT: 'none',
+      md: 'none',
+      lg: '0 0 0 1px rgb(var(--c-rule))',
+      xl: '0 0 0 1px rgb(var(--c-rule))',
+      '2xl': '0 0 0 1px rgb(var(--c-rule))',
+      inner: 'none'
+    },
     extend: {
       colors: {
-        // 主色调 - Teal/Cyan 青色系
-        primary: {
-          50: '#f0fdfa',
-          100: '#ccfbf1',
-          200: '#99f6e4',
-          300: '#5eead4',
-          400: '#2dd4bf',
-          500: '#14b8a6',
-          600: '#0d9488',
-          700: '#0f766e',
-          800: '#115e59',
-          900: '#134e4a',
-          950: '#042f2e'
+        // 主色：钱绿
+        primary: scale('primary'),
+        // 中性色：亮色界面用 gray，暗色界面用 dark
+        gray: scale('gray'),
+        dark: scale('dark'),
+        accent: scale('gray'),
+        // 语义色：随主题自动切换，新页面优先用这些
+        surface: { DEFAULT: token('bg'), tile: token('tile'), 'tile-2': token('tile-2') },
+        ink: { DEFAULT: token('ink'), 2: token('ink-2'), 3: token('ink-3') },
+        rule: token('rule'),
+        money: {
+          DEFAULT: token('money'),
+          hover: token('money-hover'),
+          ink: token('money-ink'),
+          dim: token('money-dim'),
+          text: token('money-text')
         },
-        // 辅助色 - 深蓝灰
-        accent: {
-          50: '#f8fafc',
-          100: '#f1f5f9',
-          200: '#e2e8f0',
-          300: '#cbd5e1',
-          400: '#94a3b8',
-          500: '#64748b',
-          600: '#475569',
-          700: '#334155',
-          800: '#1e293b',
-          900: '#0f172a',
-          950: '#020617'
+        ok: token('ok'),
+        warn: token('warn'),
+        bad: token('bad'),
+        series: {
+          1: token('series-1'),
+          2: token('series-2'),
+          3: token('series-3'),
+          4: token('series-4'),
+          5: token('series-5')
         },
-        // 深色模式背景
-        dark: {
-          50: '#f8fafc',
-          100: '#f1f5f9',
-          200: '#e2e8f0',
-          300: '#cbd5e1',
-          400: '#94a3b8',
-          500: '#64748b',
-          600: '#475569',
-          700: '#334155',
-          800: '#1e293b',
-          900: '#0f172a',
-          950: '#020617'
-        }
+        chart: { bar: token('chart-bar'), line: token('chart-line') }
       },
       fontFamily: {
         sans: [
+          'Anthropic Sans',
+          'Segoe UI',
           'system-ui',
           '-apple-system',
           'BlinkMacSystemFont',
-          'Segoe UI',
-          'Roboto',
           'Helvetica Neue',
           'Arial',
           'PingFang SC',
@@ -62,25 +83,29 @@ export default {
           'Microsoft YaHei',
           'sans-serif'
         ],
-        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace']
+        mono: ['Anthropic Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace']
       },
       boxShadow: {
-        glass: '0 8px 32px rgba(0, 0, 0, 0.08)',
-        'glass-sm': '0 4px 16px rgba(0, 0, 0, 0.06)',
-        glow: '0 0 20px rgba(20, 184, 166, 0.25)',
-        'glow-lg': '0 0 40px rgba(20, 184, 166, 0.35)',
-        card: '0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.06)',
-        'card-hover': '0 10px 40px rgba(0, 0, 0, 0.08)',
-        'inner-glow': 'inset 0 1px 0 rgba(255, 255, 255, 0.1)'
+        glass: 'none',
+        'glass-sm': 'none',
+        glow: 'none',
+        'glow-lg': 'none',
+        card: 'none',
+        'card-hover': 'none',
+        'inner-glow': 'none'
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
-        'gradient-primary': 'linear-gradient(135deg, #14b8a6 0%, #0d9488 100%)',
-        'gradient-dark': 'linear-gradient(135deg, #1e293b 0%, #0f172a 100%)',
-        'gradient-glass':
-          'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%)',
-        'mesh-gradient':
-          'radial-gradient(at 40% 20%, rgba(20, 184, 166, 0.12) 0px, transparent 50%), radial-gradient(at 80% 0%, rgba(6, 182, 212, 0.08) 0px, transparent 50%), radial-gradient(at 0% 50%, rgba(20, 184, 166, 0.08) 0px, transparent 50%)'
+        'gradient-primary': 'linear-gradient(rgb(var(--c-money)), rgb(var(--c-money)))',
+        'gradient-dark': 'linear-gradient(rgb(var(--c-tile)), rgb(var(--c-tile)))',
+        'gradient-glass': 'none',
+        'mesh-gradient': 'none'
+      },
+      spacing: {
+        'tile-gap': '8px'
+      },
+      transitionTimingFunction: {
+        glide: 'cubic-bezier(.2,.9,.2,1)'
       },
       animation: {
         'fade-in': 'fadeIn 0.3s ease-out',
@@ -90,7 +115,8 @@ export default {
         'scale-in': 'scaleIn 0.2s ease-out',
         'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
         shimmer: 'shimmer 2s linear infinite',
-        glow: 'glow 2s ease-in-out infinite alternate'
+        glow: 'none',
+        glide: 'glide 0.5s cubic-bezier(.2,.9,.2,1) both'
       },
       keyframes: {
         fadeIn: {
@@ -117,16 +143,13 @@ export default {
           '0%': { backgroundPosition: '-200% 0' },
           '100%': { backgroundPosition: '200% 0' }
         },
-        glow: {
-          '0%': { boxShadow: '0 0 20px rgba(20, 184, 166, 0.25)' },
-          '100%': { boxShadow: '0 0 30px rgba(20, 184, 166, 0.4)' }
+        glide: {
+          '0%': { opacity: '0', transform: 'translateX(28px)' },
+          '100%': { opacity: '1', transform: 'translateX(0)' }
         }
       },
       backdropBlur: {
         xs: '2px'
-      },
-      borderRadius: {
-        '4xl': '2rem'
       }
     }
   },

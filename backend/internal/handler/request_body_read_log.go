@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"syscall"
 
 	"go.uber.org/zap"
@@ -76,4 +77,30 @@ func requestBodyReadErrorKind(err error) string {
 		return "transport"
 	}
 	return "io_read"
+}
+
+// isRequestBodyClientAbort reports whether a body read failed because the
+// client went away mid-upload rather than because the payload was invalid.
+func isRequestBodyClientAbort(err error) bool {
+	switch requestBodyReadErrorKind(err) {
+	case "client_disconnect", "truncated_body":
+		return true
+	}
+	return false
+}
+
+// opsBodyReadTracker wraps the request body so the ops middleware can tell a
+// mid-upload client disconnect apart from a genuine bad request, whichever
+// handler or middleware performed the read.
+type opsBodyReadTracker struct {
+	io.ReadCloser
+	clientAborted atomic.Bool
+}
+
+func (t *opsBodyReadTracker) Read(p []byte) (int, error) {
+	n, err := t.ReadCloser.Read(p)
+	if err != nil && err != io.EOF && isRequestBodyClientAbort(err) {
+		t.clientAborted.Store(true)
+	}
+	return n, err
 }

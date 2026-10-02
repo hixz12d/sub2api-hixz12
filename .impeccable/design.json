@@ -1,0 +1,119 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-01T00:00:00-07:00",
+  "title": "Design System: Sub2API",
+  "extensions": {
+    "colorMeta": {
+      "light-money": { "role": "primary", "displayName": "钱绿（亮色）", "canonical": "#00703c", "tonalRamp": ["#002213", "#003b20", "#005c31", "#00703c", "#2ea866", "#5ec289", "#97d8b2", "#e8f6ee"] },
+      "dark-money": { "role": "primary", "displayName": "钱绿（暗色）", "canonical": "#00873f", "tonalRamp": ["#002213", "#004a28", "#00703c", "#00873f", "#00a14c", "#5ec289", "#97d8b2", "#e8f6ee"] },
+      "light-tile": { "role": "neutral", "displayName": "磁贴灰（亮色）", "canonical": "#f1f2f0", "tonalRamp": ["#141514", "#1d1f1d", "#464a46", "#6a6f6a", "#a3a8a2", "#d2d5d0", "#e6e8e4", "#f7f8f6"] },
+      "dark-tile": { "role": "neutral", "displayName": "磁贴黑（暗色）", "canonical": "#141514", "tonalRamp": ["#000000", "#141514", "#1d1f1d", "#262826", "#464a46", "#6a6f6a", "#8d938d", "#b9beb9"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "仪表盘问候语、登录注册页大标题。" },
+      "headline": { "displayName": "Headline", "purpose": "页面内分区标题。" },
+      "metric": { "displayName": "Metric", "purpose": "数据磁贴大数字，等宽。" },
+      "code": { "displayName": "Code", "purpose": "模型名、API Key、接口地址。" }
+    },
+    "shadows": [],
+    "motion": [
+      { "name": "ease-glide", "value": "cubic-bezier(.2,.9,.2,1)", "purpose": "首屏磁贴从右侧滑入，0.5s，错开 55ms。" },
+      { "name": "state", "value": "150ms ease-out", "purpose": "悬停换底色。" },
+      { "name": "press-tilt", "value": "perspective(700px) rotateX/Y ≤8deg scale(.985)", "purpose": "按下磁贴时朝指针方向倾斜；减少动画时关闭。" }
+    ],
+    "breakpoints": [
+      { "name": "tablet", "value": "1180px" },
+      { "name": "mobile", "value": "860px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "钱绿实心主操作，每个区域最多一个。",
+      "html": "<button class=\"ds-btn-primary\">充值</button>",
+      "css": ".ds-btn-primary { background: #00703c; color: #fff; height: 40px; padding: 0 16px; border: 0; border-radius: 0; font-weight: 600; font-size: 15px; transition: background .15s; cursor: pointer; } .ds-btn-primary:hover { background: #005c31; } .ds-btn-primary:focus-visible { outline: 3px solid #005c31; outline-offset: 2px; }"
+    },
+    {
+      "name": "Solid Button",
+      "kind": "button",
+      "refersTo": "button-solid",
+      "description": "反色实心，第二重要的操作。",
+      "html": "<button class=\"ds-btn-solid\">创建 Key</button>",
+      "css": ".ds-btn-solid { background: #0a0b0a; color: #fff; height: 40px; padding: 0 16px; border: 0; border-radius: 0; font-weight: 600; font-size: 15px; cursor: pointer; } .ds-btn-solid:hover { background: #1d1f1d; } .ds-btn-solid:focus-visible { outline: 3px solid #005c31; outline-offset: 2px; }"
+    },
+    {
+      "name": "Tile Button",
+      "kind": "button",
+      "refersTo": "button-tile",
+      "description": "中性磁贴按钮，其余所有操作。",
+      "html": "<button class=\"ds-btn-tile\">取消</button>",
+      "css": ".ds-btn-tile { background: #f1f2f0; color: #0a0b0a; height: 40px; padding: 0 16px; border: 0; border-radius: 0; font-weight: 600; font-size: 15px; transition: background .15s; cursor: pointer; } .ds-btn-tile:hover { background: #e6e8e4; } .ds-btn-tile:focus-visible { outline: 3px solid #005c31; outline-offset: 2px; }"
+    },
+    {
+      "name": "Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "直角输入框，聚焦时边框变钱绿。",
+      "html": "<input class=\"ds-input\" placeholder=\"输入兑换码\">",
+      "css": ".ds-input { height: 40px; padding: 0 12px; border: 2px solid #d2d5d0; border-radius: 0; background: #fff; color: #0a0b0a; font-size: 15px; outline: none; caret-color: #00703c; } .ds-input::placeholder { color: #6a6f6a; } .ds-input:focus { border-color: #00703c; }"
+    },
+    {
+      "name": "Segmented Control",
+      "kind": "chip",
+      "refersTo": "segment-active",
+      "description": "每项一块中性小磁贴，选中项被钱绿灌满。",
+      "html": "<div class=\"ds-seg\"><button aria-pressed=\"true\">今天</button><button>7 天</button><button>30 天</button></div>",
+      "css": ".ds-seg { display: inline-flex; gap: 4px; } .ds-seg button { height: 36px; padding: 0 16px; border: 0; border-radius: 0; background: #f1f2f0; color: #464a46; font-weight: 600; font-size: 14px; cursor: pointer; } .ds-seg button:hover { background: #e6e8e4; color: #0a0b0a; } .ds-seg button[aria-pressed='true'] { background: #00703c; color: #fff; }"
+    },
+    {
+      "name": "Wallet Tile",
+      "kind": "card",
+      "refersTo": "tile-money",
+      "description": "钱绿磁贴：余额大字占左，今日花费和剩余天数在右侧上下两格。",
+      "html": "<a class=\"ds-wallet\" href=\"#\"><div class=\"b\"><span>余额</span><strong>¥128.40</strong></div><div class=\"s\"><span>今日花费</span><strong>¥6.82</strong></div><div class=\"d\"><span>预计还能用</span><strong>约 19 天</strong></div></a>",
+      "css": ".ds-wallet { display: grid; grid-template-columns: 1.45fr 1fr; grid-template-rows: 1fr 1fr; width: 440px; height: 172px; background: #00703c; color: #fff; text-decoration: none; font-variant-numeric: tabular-nums; transition: background .15s; } .ds-wallet:hover { background: #005c31; } .ds-wallet > div { padding: 12px 22px; display: flex; flex-direction: column; justify-content: center; gap: 4px; } .ds-wallet .b { grid-row: span 2; justify-content: space-between; padding: 18px 22px; } .ds-wallet .s, .ds-wallet .d { border-left: 1px solid rgba(255,255,255,.28); } .ds-wallet .d { border-top: 1px solid rgba(255,255,255,.28); } .ds-wallet span { font-size: 14px; color: #bfe6cf; font-weight: 500; } .ds-wallet .b strong { font-size: 60px; font-weight: 400; letter-spacing: -.035em; line-height: 1; } .ds-wallet .s strong { font-size: 32px; font-weight: 500; line-height: 1; } .ds-wallet .d strong { font-size: 20px; font-weight: 400; line-height: 1; }"
+    },
+    {
+      "name": "Sidebar Nav",
+      "kind": "nav",
+      "description": "无框侧栏，当前项钱绿加粗并带 8px 实心方块。",
+      "html": "<nav class=\"ds-nav\"><h6>常用</h6><a aria-current=\"page\" href=\"#\">仪表盘</a><a href=\"#\">API 密钥</a><h6>钱</h6><a href=\"#\">钱包</a></nav>",
+      "css": ".ds-nav { display: flex; flex-direction: column; width: 200px; } .ds-nav h6 { margin: 16px 0 6px; font-size: 13px; font-weight: 400; color: #6a6f6a; } .ds-nav a { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 16px; color: #464a46; text-decoration: none; } .ds-nav a::before { content: ''; width: 8px; height: 8px; } .ds-nav a:hover { color: #0a0b0a; } .ds-nav a[aria-current] { color: #00703c; font-weight: 700; } .ds-nav a[aria-current]::before { background: currentColor; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "钱是那块颜色（The Money Tile）",
+    "overview": "界面源自 Metro 设计语言的平涂磁贴，按本产品改造：颜色本身就是信息。全站只有一块真正饱和的颜色，深绿，它只出现在和钱有关、或者“现在就该点这里”的地方。其余区域都是中性的。字就是界面，大标题用轻字重、超大字号；没有渐变、斜面、玻璃和投影，容器就是一块平涂色块，之间用 8px 缝隙分开。",
+    "keyCharacteristics": [
+      "一块饱和绿（钱）+ 中性灰阶，零渐变、零投影、零圆角",
+      "磁贴网格：平涂色块，8px 缝隙，左对齐",
+      "轻字重大字号做标题，数字一律等宽（tabular-nums）",
+      "分组有固定识别色，用小方块标在名称前，图表系列同色",
+      "状态同时用颜色和图标区分"
+    ],
+    "rules": [
+      { "name": "The One Saturated Color Rule", "body": "一屏之内，大面积的饱和色只能是钱绿。分组识别色只能出现在 14px 以内的小方块、细条和图表线上。", "section": "colors" },
+      { "name": "The Money Tile Rule", "body": "余额永远在一块钱绿实心磁贴上，白字。其他数据磁贴一律中性。", "section": "colors" },
+      { "name": "The Tabular Rule", "body": "所有数字都开 tabular-nums，表格里的数字列右对齐。金额统一写 ¥，大数缩写为 1.2K / 3.4M。", "section": "typography" },
+      { "name": "The Light Display Rule", "body": "大字用轻字重（300），重点靠字号；粗体只留给 17px 以下的标题和强调。", "section": "typography" },
+      { "name": "The Flat Rule", "body": "不用 box-shadow 表达层级，也不用玻璃和模糊。需要“浮起”时改底色明度，或换成反色块。", "section": "elevation" }
+    ],
+    "dos": [
+      "Do 让余额和今日花费永远同时出现在钱绿实心磁贴上，并在手机端放在最上方。",
+      "Do 所有数字开等宽数字，金额统一写 ¥，大数缩写为 1.2K / 3.4M。",
+      "Do 状态同时用颜色和图标表达；“请求太少”显示“—”，并给出悬停说明。",
+      "Do 亮色和暗色都检查一遍：正文对比 ≥4.5:1，暗色下的绿色文字用 dark-money-hover。",
+      "Do 浏览器自带的部分也按主题处理：文字选中底色用钱绿、caret 用钱绿、细滚动条、3px 钱绿焦点环。"
+    ],
+    "donts": [
+      "Don't 用渐变、玻璃模糊、投影、发光，也不要沿用旧版的 mesh 背景。",
+      "Don't 给容器加圆角或描边，也不要把磁贴嵌进磁贴。",
+      "Don't 在标题上方加小号“眉题”标签，也不要用渐变文字。",
+      "Don't 把分组识别色或状态色铺成大面积底色；大面积饱和色只能是钱绿。",
+      "Don't 用彩色图标方块加大数字的模板化统计卡，也不要用进度环。",
+      "Don't 用 emoji 或 Unicode 符号代替图标，也不要在用户可见处显示分组的数字 ID。"
+    ]
+  }
+}

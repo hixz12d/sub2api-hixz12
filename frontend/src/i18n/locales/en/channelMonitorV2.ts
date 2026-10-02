@@ -43,10 +43,10 @@ export default {
     metrics: {
       rpm: 'RPM',
       tpm: 'TPM',
-      tps: 'Aggregate tok/s',
+      tps: 'Total tokens/s',
       rpmDetail: 'Requests per minute',
       tpmDetail: 'Tokens per minute',
-      tpsDetail: 'Derived as TPM ÷ 60',
+      tpsDetail: 'Sum across all requests, derived as TPM ÷ 60',
       errorRate: 'Error rate',
       ttft: 'First token',
       ttftP50: 'First token P50',

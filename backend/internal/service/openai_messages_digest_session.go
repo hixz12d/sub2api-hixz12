@@ -88,6 +88,23 @@ func (s *OpenAIGatewayService) bindOpenAICompatAnthropicDigestPromptCacheKey(acc
 	if oldDigestChain != "" && oldDigestChain != digestChain {
 		s.openaiCompatAnthropicDigestSessions.Delete(ns + oldDigestChain)
 	}
+	s.sweepOpenAICompatAnthropicDigestSessions()
+}
+
+// sweepOpenAICompatAnthropicDigestSessions bounds stale digest bindings with an
+// opportunistic sweep every 256 writes.
+func (s *OpenAIGatewayService) sweepOpenAICompatAnthropicDigestSessions() {
+	if s.openaiCompatAnthropicDigestSessionWrites.Add(1)%256 != 0 {
+		return
+	}
+	now := time.Now()
+	s.openaiCompatAnthropicDigestSessions.Range(func(key, value any) bool {
+		binding, ok := value.(openAICompatAnthropicDigestBinding)
+		if !ok || (!binding.ExpiresAt.IsZero() && now.After(binding.ExpiresAt)) {
+			s.openaiCompatAnthropicDigestSessions.Delete(key)
+		}
+		return true
+	})
 }
 
 func promptCacheKeyFromAnthropicDigest(digestChain string) string {

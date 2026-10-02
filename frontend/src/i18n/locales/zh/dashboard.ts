@@ -455,7 +455,7 @@ export default {
     latency: '延迟',
     latencyFirstToken: '首字',
     latencyDuration: '总耗时',
-    tpsHint: '输出 Token/秒 = 输出 Token 数 ÷（总耗时 − 首字时间）；未记录首字时间时使用总耗时。输出包含上游计入的推理 Token，图片请求或数据不足时不计算。',
+    tpsHint: '单次请求的输出 Token/秒：优先使用网关实测的可见输出速度；否则仅对流式请求按 输出 Token 数 ÷（总耗时 − 首字时间）计算，且要求生成时间 ≥ 500ms、输出 ≥ 20 Token。非流式、图片请求或数据不足时显示“—”。',
     time: '时间',
     ws: 'WS',
     stream: '流式',

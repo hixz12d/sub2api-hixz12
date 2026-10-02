@@ -43,10 +43,10 @@ export default {
     metrics: {
       rpm: 'RPM',
       tpm: 'TPM',
-      tps: '聚合吞吐 tok/s',
+      tps: '总 Token/秒',
       rpmDetail: '每分钟请求数',
       tpmDetail: '每分钟 Token 数',
-      tpsDetail: '由 TPM ÷ 60 换算',
+      tpsDetail: '所有请求合计，由 TPM ÷ 60 换算',
       errorRate: '错误率',
       ttft: '首 Token',
       ttftP50: '首 Token P50',

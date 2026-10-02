@@ -63,6 +63,9 @@ type User struct {
 	// nil = 该 API Key 对应的 (user, group) 无 override；非 nil 时 checkRPM 直接使用，
 	// 避免每请求查 DB。字段不持久化到数据库。
 	UserGroupRPMOverride *int
+	// UserGroupRPMOverrideGroupID 来自 auth cache snapshot：已查询过 override 的分组 ID（0 = 未查询）。
+	// 与 UserGroupRPMOverride=nil 组合表示该分组确认无 override，checkRPM 不再回查 DB。字段不持久化。
+	UserGroupRPMOverrideGroupID int64
 
 	APIKeys       []APIKey
 	Subscriptions []UserSubscription

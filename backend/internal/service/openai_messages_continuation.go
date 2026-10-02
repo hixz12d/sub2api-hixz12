@@ -210,12 +210,14 @@ func (s *OpenAIGatewayService) bindOpenAICompatSessionResponseID(_ context.Conte
 				existing.ResponseID = ""
 				existing.ExpiresAt = time.Now().Add(s.openAIWSResponseStickyTTL())
 				s.openaiCompatSessionResponses.Store(key, existing)
+				s.sweepOpenAICompatSessionResponses()
 				return
 			}
 			binding.TurnState = existing.TurnState
 		}
 	}
 	s.openaiCompatSessionResponses.Store(key, binding)
+	s.sweepOpenAICompatSessionResponses()
 }
 
 func (s *OpenAIGatewayService) deleteOpenAICompatSessionResponseID(_ context.Context, c *gin.Context, account *Account, promptCacheKey string) {
@@ -242,6 +244,7 @@ func (s *OpenAIGatewayService) deleteOpenAICompatSessionResponseID(_ context.Con
 	}
 	binding.ExpiresAt = time.Now().Add(s.openAIWSResponseStickyTTL())
 	s.openaiCompatSessionResponses.Store(key, binding)
+	s.sweepOpenAICompatSessionResponses()
 }
 
 func (s *OpenAIGatewayService) disableOpenAICompatSessionContinuation(_ context.Context, c *gin.Context, account *Account, promptCacheKey string) {
@@ -262,6 +265,7 @@ func (s *OpenAIGatewayService) disableOpenAICompatSessionContinuation(_ context.
 		}
 	}
 	s.openaiCompatSessionResponses.Store(key, binding)
+	s.sweepOpenAICompatSessionResponses()
 }
 
 func (s *OpenAIGatewayService) isOpenAICompatSessionContinuationDisabled(_ context.Context, c *gin.Context, account *Account, promptCacheKey string) bool {
@@ -331,4 +335,21 @@ func (s *OpenAIGatewayService) bindOpenAICompatSessionTurnState(_ context.Contex
 		}
 	}
 	s.openaiCompatSessionResponses.Store(key, binding)
+	s.sweepOpenAICompatSessionResponses()
+}
+
+// sweepOpenAICompatSessionResponses bounds stale session bindings with an
+// opportunistic sweep every 256 writes.
+func (s *OpenAIGatewayService) sweepOpenAICompatSessionResponses() {
+	if s.openaiCompatSessionResponseWrites.Add(1)%256 != 0 {
+		return
+	}
+	now := time.Now()
+	s.openaiCompatSessionResponses.Range(func(key, value any) bool {
+		binding, ok := value.(openAICompatSessionResponseBinding)
+		if !ok || (!binding.ExpiresAt.IsZero() && now.After(binding.ExpiresAt)) {
+			s.openaiCompatSessionResponses.Delete(key)
+		}
+		return true
+	})
 }

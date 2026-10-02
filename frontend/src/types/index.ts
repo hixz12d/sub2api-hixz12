@@ -1805,6 +1805,7 @@ export interface UsageLog {
   native_compaction_v2: boolean
   duration_ms: number | null
   first_token_ms: number | null
+  monitor_output_tps_milli?: number | null
 
   // 图片生成字段
   image_count: number
@@ -2044,6 +2045,9 @@ export interface GroupStat {
   group_id: number
   group_name: string
   requests: number
+  input_tokens?: number // 普通输入（不含缓存）
+  cache_creation_tokens?: number // 写缓存
+  cache_read_tokens?: number // 读缓存
   total_tokens: number
   cost: number // 标准计费
   actual_cost: number // 实际扣除

@@ -1088,6 +1088,11 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 			releaseOpsCaptureWriter(w)
 		}()
 		c.Writer = w
+		var bodyTracker *opsBodyReadTracker
+		if c.Request.Body != nil && c.Request.Body != http.NoBody {
+			bodyTracker = &opsBodyReadTracker{ReadCloser: c.Request.Body}
+			c.Request.Body = bodyTracker
+		}
 		c.Next()
 		w.finalizeCapture()
 
@@ -1147,6 +1152,9 @@ func OpsErrorLoggerMiddleware(ops *service.OpsService) gin.HandlerFunc {
 			return
 		}
 		if shouldSkipOpsClientClosed(c, ops, status) {
+			return
+		}
+		if shouldSkipOpsBodyClientAbort(bodyTracker, ops) {
 			return
 		}
 
@@ -2514,6 +2522,17 @@ func shouldSkipOpsClientClosed(c *gin.Context, ops *service.OpsService, status i
 		return false
 	}
 	return !hasOpsUpstreamErrorContext(c)
+}
+
+// shouldSkipOpsBodyClientAbort 按 IgnoreContextCanceled 过滤请求体上传中途断开
+// （truncated_body / client_disconnect）。客户端已离开，handler 写出的 400
+// "Failed to read request body" 实际收不到，属于客户端取消而非参数错误；
+// 应用日志里的 "read request body failed" 警告仍保留。
+func shouldSkipOpsBodyClientAbort(tracker *opsBodyReadTracker, ops *service.OpsService) bool {
+	if tracker == nil || ops == nil || !tracker.clientAborted.Load() {
+		return false
+	}
+	return ops.OpsAdvancedSettingsSnapshot().IgnoreContextCanceled
 }
 
 // shouldSkipOpsErrorLogForCyber：cyber_policy 命中的请求由 recordCyberPolicyIfMarked

@@ -6,6 +6,10 @@ import batchImage from './batchImage'
 import admin from './admin'
 import misc from './misc'
 import proxyGroups from './proxyGroups'
+import userHome from './userHome'
+import wallet from './wallet'
+import appShell from './appShell'
+import authPages from './authPages'
 
 export default {
   ...landing,
@@ -16,4 +20,8 @@ export default {
   admin,
   ...misc,
   ...proxyGroups,
+  ...userHome,
+  ...wallet,
+  ...appShell,
+  ...authPages,
 }

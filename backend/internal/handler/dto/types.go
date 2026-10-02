@@ -637,6 +637,8 @@ type UsageLog struct {
 	NativeCompactionV2 bool `json:"native_compaction_v2"`
 	DurationMs         *int `json:"duration_ms"`
 	FirstTokenMs       *int `json:"first_token_ms"`
+	// MonitorOutputTPSMilli 是网关按可见流式输出测得的 Token/秒 ×1000，未测得时省略。
+	MonitorOutputTPSMilli *int64 `json:"monitor_output_tps_milli,omitempty"`
 
 	// 图片生成字段
 	ImageCount         int            `json:"image_count"`

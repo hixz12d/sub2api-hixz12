@@ -196,7 +196,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/dashboard',
     name: 'Dashboard',
-    component: () => import('@/views/user/DashboardView.vue'),
+    component: () => import('@/views/user/UserDashboardView.vue'),
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
@@ -242,29 +242,14 @@ const routes: RouteRecordRaw[] = [
       descriptionKey: 'usage.description'
     }
   },
+  // 旧地址跳到钱包对应页签，保留查询参数（PaymentView 要用 tab、group、resume_token）
   {
     path: '/redeem',
-    name: 'Redeem',
-    component: () => import('@/views/user/RedeemView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: false,
-      title: 'Redeem Code',
-      titleKey: 'redeem.title',
-      descriptionKey: 'redeem.description'
-    }
+    redirect: (to) => ({ path: '/wallet/redeem', query: to.query, hash: to.hash })
   },
   {
     path: '/affiliate',
-    name: 'Affiliate',
-    component: () => import('@/views/user/AffiliateView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: false,
-      title: 'Affiliate',
-      titleKey: 'affiliate.title',
-      descriptionKey: 'affiliate.description'
-    }
+    redirect: (to) => ({ path: '/wallet/invite', query: to.query, hash: to.hash })
   },
   {
     path: '/available-channels',
@@ -303,30 +288,77 @@ const routes: RouteRecordRaw[] = [
       requiresSubscription: true
     }
   },
+  // 钱包：充值、兑换码、订单、邀请返利集中在一个页面，子页面直接复用旧页面。
+  // 旧路由名（PurchaseSubscription 等）挂在子路由上，按名称跳转的代码不用改。
   {
-    path: '/purchase',
-    name: 'PurchaseSubscription',
-    component: () => import('@/views/user/PaymentView.vue'),
+    path: '/wallet',
+    component: () => import('@/views/user/WalletView.vue'),
     meta: {
       requiresAuth: true,
       requiresAdmin: false,
-      title: 'Purchase Subscription',
-      titleKey: 'nav.buySubscription',
-      descriptionKey: 'purchase.description',
-      requiresPayment: true
-    }
+      title: 'Wallet',
+      titleKey: 'wallet.title'
+    },
+    redirect: '/wallet/recharge',
+    children: [
+      {
+        path: 'recharge',
+        name: 'PurchaseSubscription',
+        component: () => import('@/views/user/PaymentView.vue'),
+        meta: {
+          requiresAuth: true,
+          requiresAdmin: false,
+          title: 'Purchase Subscription',
+          titleKey: 'nav.buySubscription',
+          descriptionKey: 'purchase.description',
+          requiresPayment: true
+        }
+      },
+      {
+        path: 'redeem',
+        name: 'Redeem',
+        component: () => import('@/views/user/RedeemView.vue'),
+        meta: {
+          requiresAuth: true,
+          requiresAdmin: false,
+          title: 'Redeem Code',
+          titleKey: 'redeem.title',
+          descriptionKey: 'redeem.description'
+        }
+      },
+      {
+        path: 'orders',
+        name: 'OrderList',
+        component: () => import('@/views/user/UserOrdersView.vue'),
+        meta: {
+          requiresAuth: true,
+          requiresAdmin: false,
+          title: 'My Orders',
+          titleKey: 'nav.myOrders',
+          requiresPayment: true
+        }
+      },
+      {
+        path: 'invite',
+        name: 'Affiliate',
+        component: () => import('@/views/user/AffiliateView.vue'),
+        meta: {
+          requiresAuth: true,
+          requiresAdmin: false,
+          title: 'Affiliate',
+          titleKey: 'affiliate.title',
+          descriptionKey: 'affiliate.description'
+        }
+      }
+    ]
+  },
+  {
+    path: '/purchase',
+    redirect: (to) => ({ path: '/wallet/recharge', query: to.query, hash: to.hash })
   },
   {
     path: '/orders',
-    name: 'OrderList',
-    component: () => import('@/views/user/UserOrdersView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: false,
-      title: 'My Orders',
-      titleKey: 'nav.myOrders',
-      requiresPayment: true
-    }
+    redirect: (to) => ({ path: '/wallet/orders', query: to.query, hash: to.hash })
   },
   {
     path: '/payment/qrcode',
@@ -919,24 +951,29 @@ router.beforeEach(async (to, _from, next) => {
   }
 
   const hasExternalRecharge = getExternalRechargeEntries(appStore.cachedPublicSettings?.custom_menu_items).length > 0
+  const isRechargeRoute = to.name === 'PurchaseSubscription'
+  // 钱包里被关掉的页签退回兑换码页签，其他页面退回仪表盘
+  const blockedRedirect = to.path.startsWith('/wallet/') && to.path !== '/wallet/redeem'
+    ? '/wallet/redeem'
+    : authStore.isAdmin ? '/admin/dashboard' : '/dashboard'
 
   // Only an explicit value from successfully loaded settings can disable a route.
   // A transient settings failure is unknown state, not a confirmed feature toggle.
   if (
     to.meta.requiresPayment &&
-    !(to.path === '/purchase' && hasExternalRecharge) &&
+    !(isRechargeRoute && hasExternalRecharge) &&
     appStore.publicSettingsLoaded &&
     appStore.cachedPublicSettings?.payment_enabled === false
   ) {
-    next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+    next(blockedRedirect)
     return
   }
 
   // Only new purchases are gated; order history and payment return routes stay accessible.
-  if (to.path === '/purchase') {
+  if (isRechargeRoute) {
     const config = await usePaymentStore().fetchConfig(true)
     if (config?.purchase_entry_available === false && !hasExternalRecharge) {
-      next(authStore.isAdmin ? '/admin/dashboard' : '/dashboard')
+      next(blockedRedirect)
       return
     }
   }
@@ -966,7 +1003,8 @@ router.beforeEach(async (to, _from, next) => {
       '/admin/subscriptions',
       '/admin/redeem',
       '/subscriptions',
-      '/redeem'
+      '/redeem',
+      '/wallet/redeem'
     ]
 
     if (restrictedPaths.some((path) => to.path.startsWith(path))) {

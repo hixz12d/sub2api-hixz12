@@ -86,8 +86,10 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       vue(),
+      // build 脚本已先执行 vue-tsc -b，打包阶段不再重复类型检查
       checker({
-        vueTsc: true
+        vueTsc: true,
+        enableBuild: false
       }),
       injectPublicSettings(backendUrl)
     ],
@@ -124,8 +126,13 @@ export default defineConfig(({ mode }) => {
               return 'vendor-vue'
             }
 
-            // UI 工具库（较大，单独分离）
-            if (id.includes('/@vueuse/') || id.includes('/xlsx/')) {
+            // xlsx 仅在导出时动态加载，交给 Rollup 自动独立分包，避免被普通页面连带下载
+            if (id.includes('/xlsx/')) {
+              return
+            }
+
+            // UI 工具库
+            if (id.includes('/@vueuse/')) {
               return 'vendor-ui'
             }
 

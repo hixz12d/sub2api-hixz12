@@ -450,7 +450,7 @@ export default {
     latency: 'Latency',
     latencyFirstToken: 'First',
     latencyDuration: 'Total',
-    tpsHint: 'Output tokens/second = output tokens ÷ (total duration − time to first token). Uses total duration when first-token time is unavailable. Includes upstream-reported reasoning tokens; unavailable for images or insufficient data.',
+    tpsHint: 'Per-request output tokens/second: uses the gateway-measured visible output rate when available; otherwise computed only for streaming requests as output tokens ÷ (total duration − time to first token), requiring ≥ 500 ms of generation and ≥ 20 output tokens. Shows "—" for non-streaming, image or insufficient-data requests.',
     time: 'Time',
     ws: 'WS',
     stream: 'Stream',

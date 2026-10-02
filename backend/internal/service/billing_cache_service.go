@@ -825,11 +825,12 @@ func (s *BillingCacheService) checkRPM(ctx context.Context, user *User, group *G
 
 	// ── 第一层：分组级检查（override 或 group.rpm_limit） ──
 	if group != nil {
-		// 解析 override：优先从 auth cache snapshot，nil 时回退 DB。
+		// 解析 override：优先从 auth cache snapshot；snapshot 未针对该分组查询过时回退 DB
+		// （已确认该分组无 override 时跳过 DB，例如 fallback 分组则仍需回查）。
 		var override *int
 		if user.UserGroupRPMOverride != nil {
 			override = user.UserGroupRPMOverride
-		} else if s.userGroupRateRepo != nil {
+		} else if user.UserGroupRPMOverrideGroupID != group.ID && s.userGroupRateRepo != nil {
 			dbOverride, err := s.userGroupRateRepo.GetRPMOverrideByUserAndGroup(ctx, user.ID, group.ID)
 			if err != nil {
 				logger.LegacyPrintf(

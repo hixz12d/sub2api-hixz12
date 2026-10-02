@@ -521,6 +521,9 @@ type OpenAIGatewayService struct {
 	// Downstream session seed -> account that minted its latest turn-state token.
 	openaiCodexTurnStateOrigins sync.Map
 	openaiCodexTurnStateWrites  atomic.Uint64
+	// Write counters that drive opportunistic expiry sweeps of the compat session maps above.
+	openaiCompatSessionResponseWrites        atomic.Uint64
+	openaiCompatAnthropicDigestSessionWrites atomic.Uint64
 }
 
 // NewOpenAIGatewayService creates a new OpenAIGatewayService

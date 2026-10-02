@@ -125,13 +125,16 @@ type GroupUsageSummary struct {
 
 // GroupStat represents usage statistics for a single group
 type GroupStat struct {
-	GroupID     int64   `json:"group_id"`
-	GroupName   string  `json:"group_name"`
-	Requests    int64   `json:"requests"`
-	TotalTokens int64   `json:"total_tokens"`
-	Cost        float64 `json:"cost"`         // 标准计费
-	ActualCost  float64 `json:"actual_cost"`  // 实际扣除
-	AccountCost float64 `json:"account_cost"` // 账号成本
+	GroupID             int64   `json:"group_id"`
+	GroupName           string  `json:"group_name"`
+	Requests            int64   `json:"requests"`
+	InputTokens         int64   `json:"input_tokens"`
+	CacheCreationTokens int64   `json:"cache_creation_tokens"`
+	CacheReadTokens     int64   `json:"cache_read_tokens"`
+	TotalTokens         int64   `json:"total_tokens"`
+	Cost                float64 `json:"cost"`         // 标准计费
+	ActualCost          float64 `json:"actual_cost"`  // 实际扣除
+	AccountCost         float64 `json:"account_cost"` // 账号成本
 }
 
 // UserUsageTrendPoint represents user usage trend data point

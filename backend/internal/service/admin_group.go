@@ -1319,7 +1319,14 @@ func (s *adminServiceImpl) ClearGroupRateMultipliers(ctx context.Context, groupI
 	if s.userGroupRateRepo == nil {
 		return nil
 	}
-	return s.userGroupRateRepo.DeleteByGroupID(ctx, groupID)
+	// DeleteByGroupID 整行删除，会连带清掉 rpm_override（已嵌入 auth cache snapshot），需同步失效。
+	if err := s.userGroupRateRepo.DeleteByGroupID(ctx, groupID); err != nil {
+		return err
+	}
+	if s.authCacheInvalidator != nil {
+		s.authCacheInvalidator.InvalidateAuthCacheByGroupID(ctx, groupID)
+	}
+	return nil
 }
 
 func (s *adminServiceImpl) BatchSetGroupRateMultipliers(ctx context.Context, groupID int64, entries []GroupRateMultiplierInput) error {

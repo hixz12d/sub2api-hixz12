@@ -1,8 +1,7 @@
 <template>
-  <div class="min-h-screen bg-gray-50 dark:bg-dark-950">
-    <!-- Background Decoration -->
-    <div class="pointer-events-none fixed inset-0 bg-mesh-gradient"></div>
-
+  <!-- 嵌入模式：上层页面 provide('appLayoutEmbedded', true) 时只渲染内容，不再套侧栏和顶栏 -->
+  <slot v-if="embedded" />
+  <div v-else class="min-h-screen bg-surface">
     <!-- Sidebar -->
     <AppSidebar />
 
@@ -24,7 +23,7 @@
 
 <script setup lang="ts">
 import '@/styles/onboarding.css'
-import { computed, onMounted } from 'vue'
+import { computed, inject, onMounted } from 'vue'
 import { useAppStore } from '@/stores'
 import { useAuthStore } from '@/stores/auth'
 import { useOnboardingTour } from '@/composables/useOnboardingTour'
@@ -32,20 +31,23 @@ import { useOnboardingStore } from '@/stores/onboarding'
 import AppSidebar from './AppSidebar.vue'
 import AppHeader from './AppHeader.vue'
 
+const embedded = inject<boolean>('appLayoutEmbedded', false)
+
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const sidebarCollapsed = computed(() => appStore.sidebarCollapsed)
 const isAdmin = computed(() => authStore.user?.role === 'admin')
 
+// 嵌入时外层 AppLayout 已经启动了引导，这里不再重复启动
 const { replayTour } = useOnboardingTour({
   storageKey: isAdmin.value ? 'admin_guide' : 'user_guide',
-  autoStart: true
+  autoStart: !embedded
 })
 
 const onboardingStore = useOnboardingStore()
 
 onMounted(() => {
-  onboardingStore.setReplayCallback(replayTour)
+  if (!embedded) onboardingStore.setReplayCallback(replayTour)
 })
 
 defineExpose({ replayTour })
