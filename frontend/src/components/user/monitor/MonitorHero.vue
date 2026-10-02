@@ -1,46 +1,37 @@
 <template>
-  <section class="py-3 md:py-4">
-    <div class="flex items-center justify-end gap-3 flex-wrap">
-      <div
-        role="tablist"
-        class="inline-flex p-0.5 rounded-xl bg-gray-100 dark:bg-dark-800 border border-gray-200/60 dark:border-dark-700/60 text-xs"
+  <section class="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-4 lg:mb-8">
+    <div class="min-w-0">
+      <h1
+        v-if="overallStatus"
+        class="flex items-center gap-3 text-[26px] font-light leading-none tracking-[-0.02em] text-ink lg:text-[30px]"
       >
+        <Icon
+          :name="overallStatus === 'operational' ? 'checkCircle' : 'exclamationTriangle'"
+          size="lg"
+          :stroke-width="1.6"
+          :class="overallStatus === 'operational' ? 'text-ok' : 'text-warn'"
+        />
+        {{ t(`channelStatus.board.overall.${overallStatus}`) }}
+      </h1>
+      <p class="mt-2.5 text-[13px] tabular-nums text-ink-3">
+        {{ checkedText }}
+      </p>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-3">
+      <div class="flex gap-1" role="group" :aria-label="t('channelStatus.board.windowLabel')">
         <button
           v-for="opt in windowOptions"
           :key="opt.value"
           type="button"
-          role="tab"
-          :aria-selected="window === opt.value"
-          class="px-3 py-1 rounded-lg transition-colors"
-          :class="window === opt.value
-            ? 'bg-white dark:bg-dark-700 shadow-sm text-gray-900 dark:text-white font-semibold'
-            : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
+          class="h-9 px-4 text-sm font-semibold tabular-nums transition-colors"
+          :class="window === opt.value ? 'bg-money text-money-ink' : 'bg-surface-tile text-ink-2 hover:bg-surface-tile-2 hover:text-ink'"
+          :aria-pressed="window === opt.value"
           @click="emit('update:window', opt.value)"
         >
           {{ opt.label }}
         </button>
       </div>
-
-      <span
-        class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold tracking-wider uppercase"
-        :class="overallChipClass"
-      >
-        <span
-          class="w-1.5 h-1.5 rounded-full mr-1.5"
-          :class="overallDotClass"
-        ></span>
-        {{ overallLabel }}
-      </span>
-
-      <button
-        type="button"
-        class="h-8 w-8 rounded-lg flex items-center justify-center text-gray-500 hover:text-gray-700 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-200 dark:hover:bg-dark-700 transition-colors disabled:opacity-50"
-        :disabled="loading"
-        :title="t('common.refresh')"
-        @click="emit('refresh')"
-      >
-        <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
-      </button>
 
       <AutoRefreshButton
         v-if="autoRefresh"
@@ -56,7 +47,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import AutoRefreshButton from '@/components/common/AutoRefreshButton.vue'
@@ -64,10 +55,11 @@ export type MonitorWindow = '7d' | '15d' | '30d'
 export type OverallStatus = 'operational' | 'degraded'
 
 const props = defineProps<{
-  overallStatus: OverallStatus
-  intervalSeconds: number
+  /** 没有渠道时为 null，不显示总状态 */
+  overallStatus: OverallStatus | null
+  /** 所有渠道里最近一次检测的时间（ISO） */
+  lastCheckedAt: string | null
   window: MonitorWindow
-  loading: boolean
   autoRefresh?: {
     enabled: { value: boolean }
     intervalSeconds: { value: number }
@@ -80,7 +72,6 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'update:window', value: MonitorWindow): void
-  (e: 'refresh'): void
 }>()
 
 const { t } = useI18n()
@@ -91,26 +82,21 @@ const windowOptions = computed<{ value: MonitorWindow; label: string }[]>(() => 
   { value: '30d', label: t('channelStatus.windowTab.30d') },
 ])
 
-const overallLabel = computed(() => t(`channelStatus.overall.${props.overallStatus}`))
+// “xx 秒前检测”每秒走一次
+const now = ref(Date.now())
+let timer: number | undefined
+onMounted(() => { timer = window.setInterval(() => { now.value = Date.now() }, 1000) })
+onBeforeUnmount(() => window.clearInterval(timer))
 
-const overallChipClass = computed(() => {
-  switch (props.overallStatus) {
-    case 'operational':
-      return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300'
-    case 'degraded':
-    default:
-      return 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
-  }
+const checkedText = computed(() => {
+  const ts = props.lastCheckedAt ? Date.parse(props.lastCheckedAt) : NaN
+  if (Number.isNaN(ts)) return t('channelStatus.board.neverChecked')
+  const sec = Math.max(0, Math.floor((now.value - ts) / 1000))
+  if (sec < 60) return t('channelStatus.board.checkedSecondsAgo', { n: sec })
+  const min = Math.floor(sec / 60)
+  if (min < 60) return t('channelStatus.board.checkedMinutesAgo', { n: min })
+  const hour = Math.floor(min / 60)
+  if (hour < 24) return t('channelStatus.board.checkedHoursAgo', { n: hour })
+  return t('channelStatus.board.checkedDaysAgo', { n: Math.floor(hour / 24) })
 })
-
-const overallDotClass = computed(() => {
-  switch (props.overallStatus) {
-    case 'operational':
-      return 'bg-emerald-500 animate-pulse'
-    case 'degraded':
-    default:
-      return 'bg-amber-500 animate-pulse'
-  }
-})
-
 </script>

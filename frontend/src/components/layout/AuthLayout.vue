@@ -4,7 +4,7 @@
     <aside class="relative hidden w-[44%] max-w-[640px] flex-col justify-between bg-money p-12 text-money-ink lg:flex xl:p-16">
       <router-link to="/home" class="flex items-center gap-3">
         <span v-if="settingsLoaded" class="flex h-10 w-10 items-center justify-center overflow-hidden bg-white/10">
-          <img :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
+          <img :src="siteLogo || '/logo-animated.svg'" alt="Logo" class="h-full w-full object-contain" />
         </span>
         <span class="text-lg font-semibold tracking-tight">{{ siteName }}</span>
       </router-link>
@@ -30,7 +30,7 @@
       <div class="flex items-center justify-between px-5 py-5 lg:px-10">
         <router-link to="/home" class="flex items-center gap-2.5 lg:invisible">
           <span v-if="settingsLoaded" class="flex h-8 w-8 items-center justify-center overflow-hidden">
-            <img :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
+            <img :src="siteLogo || '/logo-animated.svg'" alt="Logo" class="h-full w-full object-contain" />
           </span>
           <span class="text-base font-semibold tracking-tight text-ink">{{ siteName }}</span>
         </router-link>

@@ -655,6 +655,31 @@ export default {
       degraded: 'DEGRADED',
       unavailable: 'UNAVAILABLE'
     },
+    board: {
+      overall: {
+        operational: 'All systems normal',
+        degraded: 'Partial outage'
+      },
+      checkedSecondsAgo: 'Checked {n}s ago',
+      checkedMinutesAgo: 'Checked {n}m ago',
+      checkedHoursAgo: 'Checked {n}h ago',
+      checkedDaysAgo: 'Checked {n}d ago',
+      neverChecked: 'No checks yet',
+      windowLabel: 'Availability window',
+      state: {
+        ok: 'Normal',
+        degraded: 'Degraded',
+        down: 'Down',
+        none: 'Not checked'
+      },
+      columns: {
+        channel: 'Channel',
+        status: 'Status',
+        latency: 'Latency',
+        availability: '{window} uptime',
+        timeline: 'Last {n} checks'
+      }
+    },
     columns: {
       name: 'Name',
       provider: 'Provider',

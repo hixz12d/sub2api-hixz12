@@ -13,8 +13,10 @@
         :to="homePath"
         class="sidebar-logo flex h-9 w-9 items-center justify-center overflow-hidden transition-opacity hover:opacity-80"
         @click="handleMenuItemClick(homePath)"
+        @mouseenter="logoHovered = true"
+        @mouseleave="logoHovered = false"
       >
-        <img v-if="settingsLoaded" :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
+        <img v-if="settingsLoaded" :src="logoSrc" alt="Logo" class="h-full w-full object-contain" />
       </router-link>
       <div class="sidebar-brand" :class="{ 'sidebar-brand-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
         <router-link
@@ -274,6 +276,9 @@ const groupExpandOverrides = ref<Map<string, boolean>>(new Map())
 // Site settings from appStore (cached, no flicker)
 const siteName = computed(() => appStore.siteName)
 const siteLogo = computed(() => sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
+// Default logo plays its animated variant on hover; a custom site logo never swaps
+const logoHovered = ref(false)
+const logoSrc = computed(() => siteLogo.value || (logoHovered.value ? '/logo-animated.svg' : '/logo.svg'))
 const siteVersion = computed(() => appStore.siteVersion)
 const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
 

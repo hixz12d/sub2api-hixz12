@@ -660,6 +660,31 @@ export default {
       degraded: 'DEGRADED',
       unavailable: 'UNAVAILABLE'
     },
+    board: {
+      overall: {
+        operational: '全部正常',
+        degraded: '部分异常'
+      },
+      checkedSecondsAgo: '{n} 秒前检测',
+      checkedMinutesAgo: '{n} 分钟前检测',
+      checkedHoursAgo: '{n} 小时前检测',
+      checkedDaysAgo: '{n} 天前检测',
+      neverChecked: '暂无检测记录',
+      windowLabel: '可用率统计范围',
+      state: {
+        ok: '正常',
+        degraded: '降级',
+        down: '异常',
+        none: '未检测'
+      },
+      columns: {
+        channel: '渠道',
+        status: '状态',
+        latency: '响应延迟',
+        availability: '{window}可用率',
+        timeline: '最近 {n} 次检测'
+      }
+    },
     columns: {
       name: '名称',
       provider: '供应商',

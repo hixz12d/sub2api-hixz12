@@ -1,30 +1,21 @@
 <template>
   <AppLayout>
-    <MonitorHero
-      :overall-status="overallStatus"
-      :interval-seconds="DEFAULT_INTERVAL_SECONDS"
-      :window="currentWindow"
-      :loading="loading"
-      :auto-refresh="autoRefresh"
-      @update:window="handleWindowChange"
-      @refresh="manualReload"
-    />
+    <div class="mx-auto max-w-[1320px]">
+      <MonitorHero
+        :overall-status="overallStatus"
+        :last-checked-at="lastCheckedAt"
+        :window="currentWindow"
+        :auto-refresh="autoRefresh"
+        @update:window="handleWindowChange"
+      />
 
-    <MonitorCardGrid
-      :items="items"
-      :window="currentWindow"
-      :countdown-seconds="countdown"
-      :loading="loading"
-      :detail-cache="detailCache"
-      @card-click="openDetail"
-    />
-
-    <MonitorDetailDialog
-      :show="showDetail"
-      :monitor-id="detailTarget?.id ?? null"
-      :title="detailTitle"
-      @close="closeDetail"
-    />
+      <MonitorCardGrid
+        :items="items"
+        :window="currentWindow"
+        :loading="loading"
+        :detail-cache="detailCache"
+      />
+    </div>
   </AppLayout>
 </template>
 
@@ -45,7 +36,6 @@ import MonitorHero, {
   type OverallStatus,
 } from '@/components/user/monitor/MonitorHero.vue'
 import MonitorCardGrid from '@/components/user/monitor/MonitorCardGrid.vue'
-import MonitorDetailDialog from '@/components/user/MonitorDetailDialog.vue'
 import { DEFAULT_INTERVAL_SECONDS, STATUS_OPERATIONAL } from '@/constants/channelMonitor'
 import { useAutoRefresh } from '@/composables/useAutoRefresh'
 
@@ -57,8 +47,6 @@ const items = ref<UserMonitorView[]>([])
 const loading = ref(false)
 const currentWindow = ref<MonitorWindow>('7d')
 const detailCache = reactive<Record<number, UserMonitorDetail>>({})
-const showDetail = ref(false)
-const detailTarget = ref<UserMonitorView | null>(null)
 
 let abortController: AbortController | null = null
 
@@ -67,23 +55,30 @@ const autoRefresh = useAutoRefresh({
   intervals: [30, 60, 120] as const,
   defaultInterval: DEFAULT_INTERVAL_SECONDS,
   defaultEnabled: true,
-  onRefresh: () => reload(true),
+  onRefresh: () => autoReload(),
   shouldPause: () => document.hidden || loading.value,
 })
-const countdown = autoRefresh.countdown
 
 // ── Computed ──
-const overallStatus = computed<OverallStatus>(() => {
-  if (items.value.length === 0) return 'operational'
-  for (const it of items.value) {
-    if (it.primary_status === 'failed' || it.primary_status === 'error') return 'degraded'
-    if (it.primary_status !== STATUS_OPERATIONAL) return 'degraded'
-  }
-  return 'operational'
+const overallStatus = computed<OverallStatus | null>(() => {
+  const checked = items.value.filter(it => it.primary_status)
+  if (checked.length === 0) return null
+  return checked.every(it => it.primary_status === STATUS_OPERATIONAL) ? 'operational' : 'degraded'
 })
 
-const detailTitle = computed(() => {
-  return detailTarget.value?.name || t('channelStatus.detailTitle')
+// 时间轴按新到旧排列，取各渠道第一条里最新的那次
+const lastCheckedAt = computed<string | null>(() => {
+  let latest: string | null = null
+  let latestTs = -Infinity
+  for (const it of items.value) {
+    const at = it.timeline?.[0]?.checked_at
+    const ts = at ? Date.parse(at) : NaN
+    if (!Number.isNaN(ts) && ts > latestTs) {
+      latestTs = ts
+      latest = at
+    }
+  }
+  return latest
 })
 
 // ── Loaders ──
@@ -109,21 +104,20 @@ async function reload(silent = false) {
   }
 }
 
-async function manualReload() {
-  await reload(false)
-  // After base reload, refresh any cached detail records so non-7d availability
-  // values stay in sync without forcing the user to switch tabs again.
+// 自动刷新时 15/30 天可用率也一起更新（来自详情接口），失败不弹错误
+async function autoReload() {
+  await reload(true)
   if (currentWindow.value !== '7d') {
-    await Promise.all(items.value.map(it => loadDetail(it.id, true)))
+    await Promise.all(items.value.map(it => loadDetail(it.id, true, true)))
   }
 }
 
-async function loadDetail(id: number, force = false) {
+async function loadDetail(id: number, force = false, silent = false) {
   if (!force && detailCache[id]) return
   try {
     detailCache[id] = await fetchChannelMonitorDetail(id)
   } catch (err: unknown) {
-    appStore.showError(extractApiErrorMessage(err, t('channelStatus.detailLoadError')))
+    if (!silent) appStore.showError(extractApiErrorMessage(err, t('channelStatus.detailLoadError')))
   }
 }
 
@@ -136,16 +130,6 @@ async function ensureDetailsForWindow() {
 async function handleWindowChange(value: MonitorWindow) {
   currentWindow.value = value
   await ensureDetailsForWindow()
-}
-
-function openDetail(row: UserMonitorView) {
-  detailTarget.value = row
-  showDetail.value = true
-}
-
-function closeDetail() {
-  showDetail.value = false
-  detailTarget.value = null
 }
 
 watch(items, () => {

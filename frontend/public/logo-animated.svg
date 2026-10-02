@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="crispEdges"><title>小破车</title>
+<style>
+.car{animation:bob .3s steps(1) infinite}
+.s{opacity:0;animation:spin .3s steps(1) infinite}
+.road{animation:road .4s steps(4) infinite}
+.w1{animation:wind .6s steps(3) infinite}
+.w2{animation:wind .6s steps(3) infinite -.3s}
+@keyframes bob{0%{transform:translateY(0)}50%{transform:translateY(-1px)}}
+@keyframes spin{0%{opacity:1}25%{opacity:0}}
+@keyframes road{to{transform:translateX(-4px)}}
+@keyframes wind{0%{transform:translateX(0);opacity:1}100%{transform:translateX(-3px);opacity:0}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}.s{opacity:0}}
+</style>
+<defs><clipPath id="r"><rect x="1" y="13" width="14" height="1"/></clipPath></defs>
+<rect x="1" y="0" width="14" height="1" fill="#00873F"/><rect x="0" y="1" width="16" height="1" fill="#00873F"/><rect x="0" y="2" width="16" height="1" fill="#00873F"/><rect x="0" y="3" width="16" height="1" fill="#00873F"/><rect x="0" y="4" width="16" height="1" fill="#00873F"/><rect x="0" y="5" width="16" height="1" fill="#00873F"/><rect x="0" y="6" width="16" height="1" fill="#00873F"/><rect x="0" y="7" width="16" height="1" fill="#00873F"/><rect x="0" y="8" width="16" height="1" fill="#00873F"/><rect x="0" y="9" width="16" height="1" fill="#00873F"/><rect x="0" y="10" width="16" height="1" fill="#00873F"/><rect x="0" y="11" width="16" height="1" fill="#00873F"/><rect x="0" y="12" width="16" height="1" fill="#00873F"/><rect x="0" y="13" width="16" height="1" fill="#00873F"/><rect x="0" y="14" width="16" height="1" fill="#00873F"/><rect x="1" y="15" width="14" height="1" fill="#00873F"/>
+<g clip-path="url(#r)"><g class="road"><rect x="1" y="13" width="2" height="1" fill="#5CC48A"/><rect x="5" y="13" width="2" height="1" fill="#5CC48A"/><rect x="9" y="13" width="2" height="1" fill="#5CC48A"/><rect x="13" y="13" width="2" height="1" fill="#5CC48A"/><rect x="17" y="13" width="2" height="1" fill="#5CC48A"/></g></g>
+<g class="w1"><rect x="1" y="6" width="2" height="1" fill="#5CC48A"/></g>
+<g class="w2"><rect x="0" y="9" width="2" height="1" fill="#5CC48A"/></g>
+<g class="car"><rect x="6" y="4" width="5" height="1" fill="#FFFFFF"/><rect x="5" y="5" width="1" height="1" fill="#FFFFFF"/><rect x="8" y="5" width="1" height="1" fill="#FFFFFF"/><rect x="11" y="5" width="1" height="1" fill="#FFFFFF"/><rect x="4" y="6" width="1" height="1" fill="#FFFFFF"/><rect x="8" y="6" width="1" height="1" fill="#FFFFFF"/><rect x="12" y="6" width="1" height="1" fill="#FFFFFF"/><rect x="2" y="7" width="11" height="1" fill="#FFFFFF"/><rect x="2" y="8" width="12" height="1" fill="#FFFFFF"/><rect x="2" y="9" width="12" height="1" fill="#FFFFFF"/><rect x="2" y="10" width="2" height="1" fill="#FFFFFF"/><rect x="7" y="10" width="3" height="1" fill="#FFFFFF"/><rect x="13" y="10" width="1" height="1" fill="#FFFFFF"/></g>
+<rect x="4" y="10" width="3" height="1" fill="#262626"/><rect x="10" y="10" width="3" height="1" fill="#262626"/><rect x="4" y="11" width="1" height="1" fill="#262626"/><rect x="5" y="11" width="1" height="1" fill="#D4D4D4"/><rect x="6" y="11" width="1" height="1" fill="#262626"/><rect x="10" y="11" width="1" height="1" fill="#262626"/><rect x="11" y="11" width="1" height="1" fill="#D4D4D4"/><rect x="12" y="11" width="1" height="1" fill="#262626"/><rect x="4" y="12" width="3" height="1" fill="#262626"/><rect x="10" y="12" width="3" height="1" fill="#262626"/><g class="s" style="animation-delay:-0.3s"><rect x="4" y="10" width="1" height="1" fill="#D4D4D4"/><rect x="10" y="10" width="1" height="1" fill="#D4D4D4"/></g><g class="s" style="animation-delay:-0.22499999999999998s"><rect x="6" y="10" width="1" height="1" fill="#D4D4D4"/><rect x="12" y="10" width="1" height="1" fill="#D4D4D4"/></g><g class="s" style="animation-delay:-0.15s"><rect x="6" y="12" width="1" height="1" fill="#D4D4D4"/><rect x="12" y="12" width="1" height="1" fill="#D4D4D4"/></g><g class="s" style="animation-delay:-0.075s"><rect x="4" y="12" width="1" height="1" fill="#D4D4D4"/><rect x="10" y="12" width="1" height="1" fill="#D4D4D4"/></g>
+</svg>
