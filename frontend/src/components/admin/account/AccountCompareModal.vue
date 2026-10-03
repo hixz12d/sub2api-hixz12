@@ -163,14 +163,10 @@ async function runBatch(targets: Card[], requestModel: string, requestPrompt: st
   if (running.value || !validInput.value || targets.some(c => c.saving)) return
   const run = ++generation
   running.value = true
-  let next = 0
   now.value = Date.now()
   clock = setInterval(() => { now.value = Date.now() }, 200)
   for (const card of targets) Object.assign(card, newCard(card.id), { name: card.name, requestModel, requestPrompt, requestEffort })
-  const worker = async () => {
-    while (generation === run && next < targets.length) await runCard(targets[next++], run, requestModel, requestPrompt, requestEffort)
-  }
-  try { await Promise.all(Array.from({ length: Math.min(3, targets.length) }, worker)) }
+  try { await Promise.all(targets.map(card => runCard(card, run, requestModel, requestPrompt, requestEffort))) }
   finally { if (generation === run) { running.value = false; clearInterval(clock) } }
 }
 function startAll() { void runBatch(cards.value, model.value.trim(), prompt.value, effort.value) }

@@ -15,7 +15,7 @@ export default {
   },
   accountCompare: {
     title: 'Compare account answers', action: 'Compare answers', prompt: 'Shared test question', model: 'Shared text model', effort: 'Reasoning effort', effortDefault: 'Default',
-    hint: 'Uses human question mode for direct OpenAI API key / OAuth accounts. All accounts receive the same question, model and reasoning effort. Up to 3 run at once. Tests consume upstream quota; higher effort takes longer and costs more.',
+    hint: 'Uses human question mode for direct OpenAI API key / OAuth accounts. All accounts receive the same question, model and reasoning effort and run at the same time. Tests consume upstream quota; higher effort takes longer and costs more.',
     start: 'Test all accounts', stop: 'Stop tests', waiting: 'Queued', running: 'Answering', success: 'Completed', failed: 'Failed', cancelled: 'Stopped',
     elapsed: '{seconds}s', empty: 'The answer will appear here', noAccounts: 'Select accounts to test first',
     incomplete: 'Connection ended without a test completion event', loadFailed: 'Could not load the selected accounts. Please retry.', retry: 'Retry this account',
