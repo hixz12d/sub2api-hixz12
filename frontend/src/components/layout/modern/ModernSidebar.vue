@@ -11,16 +11,17 @@
       <!-- Custom Logo or Default Logo -->
       <router-link
         :to="homePath"
-        class="sidebar-logo flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl shadow-glow transition-opacity hover:opacity-80"
+        class="sidebar-logo flex h-9 w-9 items-center justify-center overflow-hidden transition-opacity hover:opacity-80"
         @click="handleMenuItemClick(homePath)"
+        @mouseenter="logoHovered = true"
+        @mouseleave="logoHovered = false"
       >
-        <!-- 本地定制（经典风格）：默认 Logo 用上游原版 logo-classic.svg -->
-        <img v-if="settingsLoaded" :src="siteLogo || '/logo-classic.svg'" alt="Logo" class="h-full w-full object-contain" />
+        <img v-if="settingsLoaded" :src="logoSrc" alt="Logo" class="h-full w-full object-contain" />
       </router-link>
       <div class="sidebar-brand" :class="{ 'sidebar-brand-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
         <router-link
           :to="homePath"
-          class="sidebar-brand-title text-lg font-bold text-gray-900 transition-colors hover:text-primary-600 dark:text-white dark:hover:text-primary-400"
+          class="sidebar-brand-title text-lg font-semibold tracking-tight text-ink transition-colors hover:text-money-text"
           @click="handleMenuItemClick(homePath)"
         >
           {{ siteName }}
@@ -63,7 +64,7 @@
                 </span>
               </button>
               <!-- Children -->
-              <div v-if="!sidebarCollapsed && isGroupExpanded(item)" class="mb-1 ml-4 border-l border-gray-200 pl-2 dark:border-dark-600">
+              <div v-if="!sidebarCollapsed && isGroupExpanded(item)" class="mb-1 ml-4 border-l border-rule pl-2">
                 <router-link
                   v-for="child in item.children"
                   :key="child.path"
@@ -113,9 +114,9 @@
           <router-link
             v-for="item in personalNavItems"
             :key="item.path"
-            :to="item.path"
+            :to="item.to ?? item.path"
             class="sidebar-link mb-1"
-            :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
+            :class="{ 'sidebar-link-active': isActive(item.activePath ?? item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
             :title="sidebarCollapsed ? item.label : undefined"
             :data-tour="item.path === '/keys' ? 'sidebar-my-keys' : undefined"
             @click="handleMenuItemClick(item.path)"
@@ -127,15 +128,20 @@
         </div>
       </template>
 
-      <!-- Regular User View -->
+      <!-- Regular User View：按“常用 / 钱 / 查看 / 账户”分组 -->
       <template v-else-if="!appStore.backendModeEnabled">
-        <div class="sidebar-section">
+        <div v-for="section in userNavSections" :key="section.key" class="sidebar-section">
+          <div class="sidebar-section-title" :class="{ 'sidebar-section-title-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
+            <span class="sidebar-section-title-text" :class="{ 'sidebar-section-title-text-collapsed': sidebarCollapsed }">
+              {{ section.label }}
+            </span>
+          </div>
           <router-link
-            v-for="item in userNavItems"
+            v-for="item in section.items"
             :key="item.path"
-            :to="item.path"
-            class="sidebar-link mb-1"
-            :class="{ 'sidebar-link-active': isActive(item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
+            :to="item.to ?? item.path"
+            class="sidebar-link mb-0.5"
+            :class="{ 'sidebar-link-active': isActive(item.activePath ?? item.path), 'sidebar-link-collapsed': sidebarCollapsed }"
             :title="sidebarCollapsed ? item.label : undefined"
             :data-tour="item.path === '/keys' ? 'sidebar-my-keys' : undefined"
             @click="handleMenuItemClick(item.path)"
@@ -149,31 +155,31 @@
     </nav>
 
     <!-- Bottom Section -->
-    <div class="mt-auto border-t border-gray-100 p-3 dark:border-dark-800">
+    <div class="mt-auto p-3">
       <!-- Theme Toggle -->
       <button
         @click="toggleTheme"
-        class="sidebar-link mb-2 w-full"
+        class="sidebar-link mb-1 w-full"
         :class="{ 'sidebar-link-collapsed': sidebarCollapsed }"
         :title="sidebarCollapsed ? (isDark ? t('nav.lightMode') : t('nav.darkMode')) : undefined"
       >
-        <SunIcon v-if="isDark" class="h-5 w-5 flex-shrink-0 text-amber-500" />
+        <SunIcon v-if="isDark" class="h-5 w-5 flex-shrink-0" />
         <MoonIcon v-else class="h-5 w-5 flex-shrink-0" />
         <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{
           isDark ? t('nav.lightMode') : t('nav.darkMode')
         }}</span>
       </button>
 
-      <!-- 本地定制（经典风格）：切换到新版风格，点击后整页刷新 -->
+      <!-- 风格切换：切到经典风格，点击后整页刷新 -->
       <button
-        @click="setUiStyle('modern')"
-        class="sidebar-link mb-2 w-full"
+        @click="setUiStyle('classic')"
+        class="sidebar-link mb-1 w-full"
         :class="{ 'sidebar-link-collapsed': sidebarCollapsed }"
-        :title="sidebarCollapsed ? t('nav.modernStyle') : undefined"
+        :title="sidebarCollapsed ? t('nav.classicStyle') : undefined"
       >
         <Icon name="sparkles" size="md" class="flex-shrink-0" />
         <span class="sidebar-label" :class="{ 'sidebar-label-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">{{
-          t('nav.modernStyle')
+          t('nav.classicStyle')
         }}</span>
       </button>
 
@@ -213,9 +219,7 @@ import { sanitizeSvg } from '@/utils/sanitize'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { getExternalRechargeEntries, isExternalRechargeEntry } from '@/utils/externalRecharge'
-import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
 import { useBatchImageAccess } from '@/composables/useBatchImageAccess'
-// 本地定制（经典风格）：风格切换按钮
 import { setUiStyle } from '@/utils/uiStyle'
 
 interface NavItem {
@@ -223,6 +227,10 @@ interface NavItem {
   label: string
   icon: unknown
   iconSvg?: string
+  /** 实际跳转目标；不填时用 path（如模型广场需要带 ?embedded=1） */
+  to?: string | { path: string; query?: Record<string, string> }
+  /** 高亮判断用的路径前缀；不填时用 path（如钱包要覆盖 /wallet/*） */
+  activePath?: string
   hideInSimpleMode?: boolean
   children?: NavItem[]
   /**
@@ -282,6 +290,9 @@ const groupExpandOverrides = ref<Map<string, boolean>>(new Map())
 // Site settings from appStore (cached, no flicker)
 const siteName = computed(() => appStore.siteName)
 const siteLogo = computed(() => sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
+// Default logo plays its animated variant on hover; a custom site logo never swaps
+const logoHovered = ref(false)
+const logoSrc = computed(() => siteLogo.value || (logoHovered.value ? '/logo-animated.svg' : '/logo.svg'))
 const siteVersion = computed(() => appStore.siteVersion)
 const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
 
@@ -441,26 +452,31 @@ const CreditCardIcon = {
     )
 }
 
-const RechargeSubscriptionIcon = {
+const WalletIcon = {
   render: () =>
     h(
       'svg',
-      { fill: 'currentColor', viewBox: '0 0 1024 1024' },
+      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
       [
         h('path', {
-          d: 'M512 992C247.3 992 32 776.7 32 512S247.3 32 512 32s480 215.3 480 480c0 84.4-22.2 167.4-64.2 240-8.9 15.3-28.4 20.6-43.7 11.7-15.3-8.8-20.5-28.4-11.7-43.7 36.4-62.9 55.6-134.8 55.6-208 0-229.4-186.6-416-416-416S96 282.6 96 512s186.6 416 416 416c17.7 0 32 14.3 32 32s-14.3 32-32 32z'
-        }),
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3'
+        })
+      ]
+    )
+}
+
+const GridIcon = {
+  render: () =>
+    h(
+      'svg',
+      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
+      [
         h('path', {
-          d: 'M640 512H384c-17.7 0-32-14.3-32-32s14.3-32 32-32h256c17.7 0 32 14.3 32 32s-14.3 32-32 32zM640 640H384c-17.7 0-32-14.3-32-32s14.3-32 32-32h256c17.7 0 32 14.3 32 32s-14.3 32-32 32z'
-        }),
-        h('path', {
-          d: 'M512 480c-8.2 0-16.4-3.1-22.6-9.4l-128-128c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l128 128c12.5 12.5 12.5 32.8 0 45.3-6.3 6.3-14.5 9.4-22.7 9.4z'
-        }),
-        h('path', {
-          d: 'M512 480c-8.2 0-16.4-3.1-22.6-9.4-12.5-12.5-12.5-32.8 0-45.3l128-128c12.5-12.5 32.8-12.5 45.3 0s12.5 32.8 0 45.3l-128 128c-6.3 6.3-14.5 9.4-22.7 9.4z'
-        }),
-        h('path', {
-          d: 'M512 736c-17.7 0-32-14.3-32-32V448c0-17.7 14.3-32 32-32s32 14.3 32 32v256c0 17.7-14.3 32-32 32zM896 992H512c-17.7 0-32-14.3-32-32s14.3-32 32-32h306.8l-73.4-73.4c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l128 128c9.2 9.2 11.9 22.9 6.9 34.9S908.9 992 896 992z'
+          'stroke-linecap': 'round',
+          'stroke-linejoin': 'round',
+          d: 'M6 6.878V6a2.25 2.25 0 012.25-2.25h7.5A2.25 2.25 0 0118 6v.878m-12 0c.235-.083.487-.128.75-.128h10.5c.263 0 .515.045.75.128m-12 0A2.25 2.25 0 004.5 9v.878m13.5-3A2.25 2.25 0 0119.5 9v.878m0 0a2.246 2.246 0 00-.75-.128H5.25c-.263 0-.515.045-.75.128m15 0A2.25 2.25 0 0121 12v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6c0-.98.626-1.813 1.5-2.122'
         })
       ]
     )
@@ -610,21 +626,6 @@ const OrderIcon = {
     )
 }
 
-const OrderListIcon = {
-  render: () =>
-    h(
-      'svg',
-      { fill: 'none', viewBox: '0 0 24 24', stroke: 'currentColor', 'stroke-width': '1.5' },
-      [
-        h('path', {
-          'stroke-linecap': 'round',
-          'stroke-linejoin': 'round',
-          d: 'M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z'
-        })
-      ]
-    )
-}
-
 const ChevronDoubleRightIcon = {
   render: () =>
     h(
@@ -715,47 +716,49 @@ const flagPurchaseEntry = () => (flagPayment() !== false && paymentStore.purchas
 const flagAvailableChannels = makeSidebarFlag(FeatureFlags.availableChannels)
 const flagSubscription = makeSidebarFlag(FeatureFlags.subscription)
 
-// 购买入口文案随站点计费模式切换：仅充值 → 「充值」，仅订阅 → 「订阅」，否则「充值/订阅」。
-const purchaseNavLabel = computed(() => {
-  switch (resolveSiteBillingMode(appStore.cachedPublicSettings)) {
-    case 'recharge_only':
-      return t('nav.recharge')
-    case 'subscription_only':
-      return t('nav.subscribe')
-    default:
-      return t('nav.buySubscription')
-  }
-})
 const flagAffiliate = makeSidebarFlag(FeatureFlags.affiliate)
 const flagRiskControl = makeSidebarFlag(FeatureFlags.riskControl)
 const flagPluginManagement = makeSidebarFlag(FeatureFlags.pluginManagement)
 const flagOpsMonitoring = () => adminSettingsStore.opsMonitoringEnabled
 const flagAdminPayment = () => adminSettingsStore.paymentEnabled
 const flagBatchImageAccess = () => canUseBatchImage.value
+const flagModelPlaza = makeSidebarFlag(FeatureFlags.modelPlaza)
+const hasExternalRecharge = () => getExternalRechargeEntries(appStore.cachedPublicSettings?.custom_menu_items).length > 0
+
+// 钱包合并了充值、兑换、订单、返利 4 项，判断沿用原来各项的开关：
+// 充值 flagPurchaseEntry、订单 flagPayment、兑换始终可见、返利 flagAffiliate。
+// 兑换始终可见，所以标准模式下钱包总会显示；简易模式下只有外部充值时才显示。
+const flagWallet = () => {
+  if (!authStore.isSimpleMode) return true
+  return hasExternalRecharge() && flagPurchaseEntry() !== false
+}
+
+type NavSectionKey = 'daily' | 'money' | 'explore' | 'account'
+interface SectionedNavItem extends NavItem {
+  section: NavSectionKey
+}
 
 // buildSelfNavItems 构造用户自己的导航项（用户端主菜单和管理员的"我的账户"子菜单共享这组声明）。
 // withDashboard=true 时包含仪表盘（用户端），false 时不含（管理员的个人区已经有独立仪表盘入口）。
 //
-// 条目顺序：密钥 → 用量 → 可用渠道 → 渠道状态 → 订阅/支付 → 兑换/资料。
-// 可用渠道紧挨渠道状态之上，让用户"先看自己能用什么、再看对应状态"。
-function buildSelfNavItems(withDashboard: boolean): NavItem[] {
-  const items: NavItem[] = []
+// 分组：常用（仪表盘、密钥、使用记录）→ 钱（钱包、我的订阅）→ 查看（模型广场、可用渠道、渠道状态、批量图片）→ 账户（资料、自定义菜单）。
+function buildSelfNavItems(withDashboard: boolean): SectionedNavItem[] {
+  const items: SectionedNavItem[] = []
   if (withDashboard) {
-    items.push({ path: '/dashboard', label: t('nav.dashboard'), icon: DashboardIcon })
+    items.push({ section: 'daily', path: '/dashboard', label: t('nav.dashboard'), icon: DashboardIcon })
   }
   items.push(
-    { path: '/keys', label: t('nav.apiKeys'), icon: KeyIcon },
-    { path: '/batch-image', label: t('nav.batchImage'), icon: BatchImageIcon, hideInSimpleMode: true, featureFlag: flagBatchImageAccess },
-    { path: '/usage', label: t('nav.usage'), icon: ChartIcon, hideInSimpleMode: true },
-    { path: '/available-channels', label: t('nav.availableChannels'), icon: ChannelIcon, hideInSimpleMode: true, featureFlag: flagAvailableChannels },
-    { path: '/monitor', label: t('nav.channelStatus'), icon: SignalIcon, featureFlag: flagChannelMonitor },
-    { path: '/subscriptions', label: t('nav.mySubscriptions'), icon: CreditCardIcon, hideInSimpleMode: true, featureFlag: flagSubscription },
-    { path: '/purchase', label: purchaseNavLabel.value, icon: RechargeSubscriptionIcon, hideInSimpleMode: getExternalRechargeEntries(appStore.cachedPublicSettings?.custom_menu_items).length === 0, featureFlag: flagPurchaseEntry },
-    { path: '/orders', label: t('nav.myOrders'), icon: OrderListIcon, hideInSimpleMode: true, featureFlag: flagPayment },
-    { path: '/redeem', label: t('nav.redeem'), icon: GiftIcon, hideInSimpleMode: true },
-    { path: '/affiliate', label: t('nav.affiliate'), icon: UsersIcon, hideInSimpleMode: true, featureFlag: flagAffiliate },
-    { path: '/profile', label: t('nav.profile'), icon: UserIcon },
-    ...customMenuItemsForUser.value.map((item): NavItem => ({
+    { section: 'daily', path: '/keys', label: t('nav.apiKeys'), icon: KeyIcon },
+    { section: 'daily', path: '/usage', label: t('nav.usage'), icon: ChartIcon, hideInSimpleMode: true },
+    { section: 'money', path: '/wallet', label: t('appShell.wallet'), icon: WalletIcon, to: walletEntryPath.value, activePath: '/wallet', featureFlag: flagWallet },
+    { section: 'money', path: '/subscriptions', label: t('nav.mySubscriptions'), icon: CreditCardIcon, hideInSimpleMode: true, featureFlag: flagSubscription },
+    { section: 'explore', path: '/model-plaza', label: t('nav.modelPlaza'), icon: GridIcon, to: { path: '/model-plaza', query: { embedded: '1' } }, hideInSimpleMode: true, featureFlag: flagModelPlaza },
+    { section: 'explore', path: '/available-channels', label: t('nav.availableChannels'), icon: ChannelIcon, hideInSimpleMode: true, featureFlag: flagAvailableChannels },
+    { section: 'explore', path: '/monitor', label: t('nav.channelStatus'), icon: SignalIcon, featureFlag: flagChannelMonitor },
+    { section: 'explore', path: '/batch-image', label: t('nav.batchImage'), icon: BatchImageIcon, hideInSimpleMode: true, featureFlag: flagBatchImageAccess },
+    { section: 'account', path: '/profile', label: t('nav.profile'), icon: UserIcon },
+    ...customMenuItemsForUser.value.map((item): SectionedNavItem => ({
+      section: 'account',
       path: `/custom/${item.id}`,
       label: item.label,
       icon: null,
@@ -765,14 +768,29 @@ function buildSelfNavItems(withDashboard: boolean): NavItem[] {
   return items
 }
 
+// 钱包入口：充值可用时直接进充值页签，否则进 /wallet 由钱包页挑默认页签
+const walletEntryPath = computed(() => (flagPurchaseEntry() !== false ? '/wallet/recharge' : '/wallet'))
+
 // finalizeNav 合并三重过滤：featureFlag 过滤 + simple 模式过滤。
-function finalizeNav(items: NavItem[]): NavItem[] {
-  const visible = applyFeatureFlags(items)
+function finalizeNav<T extends NavItem>(items: T[]): T[] {
+  const visible = applyFeatureFlags(items) as T[]
   return authStore.isSimpleMode ? visible.filter(item => !item.hideInSimpleMode) : visible
 }
 
-// User navigation items (for regular users)
-const userNavItems = computed((): NavItem[] => finalizeNav(buildSelfNavItems(true)))
+const sectionLabels = computed((): Record<NavSectionKey, string> => ({
+  daily: t('appShell.groups.daily'),
+  money: t('appShell.groups.money'),
+  explore: t('appShell.groups.explore'),
+  account: t('appShell.groups.account'),
+}))
+
+// User navigation sections (for regular users)，空分组不显示
+const userNavSections = computed(() => {
+  const items = finalizeNav(buildSelfNavItems(true))
+  return (['daily', 'money', 'explore', 'account'] as NavSectionKey[])
+    .map((key) => ({ key, label: sectionLabels.value[key], items: items.filter((item) => item.section === key) }))
+    .filter((section) => section.items.length > 0)
+})
 
 // Personal navigation items (for admin's "My Account" section, without Dashboard).
 // Admins access 可用渠道 from this section just like regular users — there is no
@@ -1067,14 +1085,10 @@ onBeforeUnmount(() => {
   right: 0.75rem;
   top: 50%;
   height: 1px;
-  background: rgb(229 231 235);
+  background: rgb(var(--c-rule));
   opacity: 0;
   transform: translateY(-50%);
   transition: opacity 0.18s ease;
-}
-
-.dark .sidebar-section-title::after {
-  background: rgb(55 65 81);
 }
 
 .sidebar-section-title-text-collapsed {

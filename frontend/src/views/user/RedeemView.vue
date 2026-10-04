@@ -1,8 +1,25 @@
 <template>
   <AppLayout>
     <div class="mx-auto max-w-2xl space-y-6">
-      <!-- Current Balance Card（余额已在钱包顶部显示，这里只留并发数） -->
-      <div class="tile flex items-center gap-3 text-sm text-ink-2">
+      <!-- Current Balance Card（经典风格：渐变大余额卡） -->
+      <div v-if="classicUi" class="card overflow-hidden">
+        <div class="bg-gradient-to-br from-primary-500 to-primary-600 px-6 py-8 text-center">
+          <div
+            class="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm"
+          >
+            <Icon name="creditCard" size="xl" class="text-white" />
+          </div>
+          <p class="text-sm font-medium text-primary-100">{{ t('redeem.currentBalance') }}</p>
+          <p class="mt-2 text-4xl font-bold text-white">
+            ${{ user?.balance?.toFixed(2) || '0.00' }}
+          </p>
+          <p class="mt-2 text-sm text-primary-100">
+            {{ t('redeem.concurrency') }}: {{ user?.concurrency || 0 }} {{ t('redeem.requests') }}
+          </p>
+        </div>
+      </div>
+      <!-- Current Balance Card（新版：余额已在钱包顶部显示，这里只留并发数） -->
+      <div v-else class="tile flex items-center gap-3 text-sm text-ink-2">
         <Icon name="creditCard" size="md" class="text-ink-3" />
         <span>{{ t('redeem.concurrency') }}:</span>
         <span class="font-semibold tabular-nums text-ink">{{ user?.concurrency || 0 }} {{ t('redeem.requests') }}</span>
@@ -364,12 +381,14 @@ import { redeemAPI, authAPI, type RedeemHistoryItem } from '@/api'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { formatDateTime } from '@/utils/format'
+import { isClassicUi } from '@/utils/uiStyle'
 
 const { t } = useI18n()
 const authStore = useAuthStore()
 const appStore = useAppStore()
 const subscriptionStore = useSubscriptionStore()
 
+const classicUi = isClassicUi()
 const user = computed(() => authStore.user)
 
 const redeemCode = ref('')

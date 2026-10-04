@@ -15,6 +15,196 @@ import { getSetupStatus } from '@/api/setup'
 import { resolveCompletedSetupRedirectPath } from './setupRedirect'
 import { resolveRouteDocumentTitle } from './title'
 import { getExternalRechargeEntries } from '@/utils/externalRecharge'
+import { isClassicUi } from '@/utils/uiStyle'
+
+/**
+ * 按界面风格二选一的用户路由（风格在页面加载时就定了，切换风格会整页刷新）。
+ * 两套都有 Dashboard / PurchaseSubscription / Redeem / OrderList / Affiliate 这几个路由名，
+ * 按名称跳转的代码两种风格下都能解析；对方风格的地址会重定向过来，查询参数和 # 都保留。
+ */
+
+// 经典风格（上游原版，内容以 fork 提交 42232875f 为准）：旧仪表盘 + 4 个独立页面
+const classicUserRoutes: RouteRecordRaw[] = [
+  {
+    path: '/dashboard',
+    name: 'Dashboard',
+    component: () => import('@/views/user/DashboardView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Dashboard',
+      titleKey: 'dashboard.title',
+      descriptionKey: 'dashboard.welcomeMessage'
+    }
+  },
+  {
+    path: '/redeem',
+    name: 'Redeem',
+    component: () => import('@/views/user/RedeemView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Redeem Code',
+      titleKey: 'redeem.title',
+      descriptionKey: 'redeem.description'
+    }
+  },
+  {
+    path: '/affiliate',
+    name: 'Affiliate',
+    component: () => import('@/views/user/AffiliateView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Affiliate',
+      titleKey: 'affiliate.title',
+      descriptionKey: 'affiliate.description'
+    }
+  },
+  {
+    path: '/purchase',
+    name: 'PurchaseSubscription',
+    component: () => import('@/views/user/PaymentView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Purchase Subscription',
+      titleKey: 'nav.buySubscription',
+      descriptionKey: 'purchase.description',
+      requiresPayment: true
+    }
+  },
+  {
+    path: '/orders',
+    name: 'OrderList',
+    component: () => import('@/views/user/UserOrdersView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'My Orders',
+      titleKey: 'nav.myOrders',
+      requiresPayment: true
+    }
+  },
+  // 新版钱包地址跳到对应的经典页面
+  {
+    path: '/wallet',
+    redirect: (to) => ({ path: '/purchase', query: to.query, hash: to.hash })
+  },
+  {
+    path: '/wallet/recharge',
+    redirect: (to) => ({ path: '/purchase', query: to.query, hash: to.hash })
+  },
+  {
+    path: '/wallet/redeem',
+    redirect: (to) => ({ path: '/redeem', query: to.query, hash: to.hash })
+  },
+  {
+    path: '/wallet/orders',
+    redirect: (to) => ({ path: '/orders', query: to.query, hash: to.hash })
+  },
+  {
+    path: '/wallet/invite',
+    redirect: (to) => ({ path: '/affiliate', query: to.query, hash: to.hash })
+  }
+]
+
+// 新版风格：新仪表盘 + 钱包页签
+const modernUserRoutes: RouteRecordRaw[] = [
+  {
+    path: '/dashboard',
+    name: 'Dashboard',
+    component: () => import('@/views/user/UserDashboardView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Dashboard',
+      titleKey: 'dashboard.title',
+      descriptionKey: 'dashboard.welcomeMessage'
+    }
+  },
+  // 旧地址跳到钱包对应页签，保留查询参数（PaymentView 要用 tab、group、resume_token）
+  {
+    path: '/redeem',
+    redirect: (to) => ({ path: '/wallet/redeem', query: to.query, hash: to.hash })
+  },
+  {
+    path: '/affiliate',
+    redirect: (to) => ({ path: '/wallet/invite', query: to.query, hash: to.hash })
+  },
+  // 钱包：充值、兑换码、订单、邀请返利集中在一个页面，子页面直接复用旧页面。
+  // 旧路由名（PurchaseSubscription 等）挂在子路由上，按名称跳转的代码不用改。
+  {
+    path: '/wallet',
+    component: () => import('@/views/user/WalletView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Wallet',
+      titleKey: 'wallet.title'
+    },
+    redirect: '/wallet/recharge',
+    children: [
+      {
+        path: 'recharge',
+        name: 'PurchaseSubscription',
+        component: () => import('@/views/user/PaymentView.vue'),
+        meta: {
+          requiresAuth: true,
+          requiresAdmin: false,
+          title: 'Purchase Subscription',
+          titleKey: 'nav.buySubscription',
+          descriptionKey: 'purchase.description',
+          requiresPayment: true
+        }
+      },
+      {
+        path: 'redeem',
+        name: 'Redeem',
+        component: () => import('@/views/user/RedeemView.vue'),
+        meta: {
+          requiresAuth: true,
+          requiresAdmin: false,
+          title: 'Redeem Code',
+          titleKey: 'redeem.title',
+          descriptionKey: 'redeem.description'
+        }
+      },
+      {
+        path: 'orders',
+        name: 'OrderList',
+        component: () => import('@/views/user/UserOrdersView.vue'),
+        meta: {
+          requiresAuth: true,
+          requiresAdmin: false,
+          title: 'My Orders',
+          titleKey: 'nav.myOrders',
+          requiresPayment: true
+        }
+      },
+      {
+        path: 'invite',
+        name: 'Affiliate',
+        component: () => import('@/views/user/AffiliateView.vue'),
+        meta: {
+          requiresAuth: true,
+          requiresAdmin: false,
+          title: 'Affiliate',
+          titleKey: 'affiliate.title',
+          descriptionKey: 'affiliate.description'
+        }
+      }
+    ]
+  },
+  {
+    path: '/purchase',
+    redirect: (to) => ({ path: '/wallet/recharge', query: to.query, hash: to.hash })
+  },
+  {
+    path: '/orders',
+    redirect: (to) => ({ path: '/wallet/orders', query: to.query, hash: to.hash })
+  }
+]
 
 /**
  * Route definitions with lazy loading
@@ -193,18 +383,8 @@ const routes: RouteRecordRaw[] = [
     path: '/',
     redirect: '/home'
   },
-  {
-    path: '/dashboard',
-    name: 'Dashboard',
-    component: () => import('@/views/user/UserDashboardView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: false,
-      title: 'Dashboard',
-      titleKey: 'dashboard.title',
-      descriptionKey: 'dashboard.welcomeMessage'
-    }
-  },
+  // 仪表盘与充值/兑换/订单/邀请返利按界面风格二选一（见上方 classicUserRoutes / modernUserRoutes）
+  ...(isClassicUi() ? classicUserRoutes : modernUserRoutes),
   {
     path: '/keys',
     name: 'Keys',
@@ -242,15 +422,6 @@ const routes: RouteRecordRaw[] = [
       descriptionKey: 'usage.description'
     }
   },
-  // 旧地址跳到钱包对应页签，保留查询参数（PaymentView 要用 tab、group、resume_token）
-  {
-    path: '/redeem',
-    redirect: (to) => ({ path: '/wallet/redeem', query: to.query, hash: to.hash })
-  },
-  {
-    path: '/affiliate',
-    redirect: (to) => ({ path: '/wallet/invite', query: to.query, hash: to.hash })
-  },
   {
     path: '/available-channels',
     name: 'UserAvailableChannels',
@@ -287,78 +458,6 @@ const routes: RouteRecordRaw[] = [
       descriptionKey: 'userSubscriptions.description',
       requiresSubscription: true
     }
-  },
-  // 钱包：充值、兑换码、订单、邀请返利集中在一个页面，子页面直接复用旧页面。
-  // 旧路由名（PurchaseSubscription 等）挂在子路由上，按名称跳转的代码不用改。
-  {
-    path: '/wallet',
-    component: () => import('@/views/user/WalletView.vue'),
-    meta: {
-      requiresAuth: true,
-      requiresAdmin: false,
-      title: 'Wallet',
-      titleKey: 'wallet.title'
-    },
-    redirect: '/wallet/recharge',
-    children: [
-      {
-        path: 'recharge',
-        name: 'PurchaseSubscription',
-        component: () => import('@/views/user/PaymentView.vue'),
-        meta: {
-          requiresAuth: true,
-          requiresAdmin: false,
-          title: 'Purchase Subscription',
-          titleKey: 'nav.buySubscription',
-          descriptionKey: 'purchase.description',
-          requiresPayment: true
-        }
-      },
-      {
-        path: 'redeem',
-        name: 'Redeem',
-        component: () => import('@/views/user/RedeemView.vue'),
-        meta: {
-          requiresAuth: true,
-          requiresAdmin: false,
-          title: 'Redeem Code',
-          titleKey: 'redeem.title',
-          descriptionKey: 'redeem.description'
-        }
-      },
-      {
-        path: 'orders',
-        name: 'OrderList',
-        component: () => import('@/views/user/UserOrdersView.vue'),
-        meta: {
-          requiresAuth: true,
-          requiresAdmin: false,
-          title: 'My Orders',
-          titleKey: 'nav.myOrders',
-          requiresPayment: true
-        }
-      },
-      {
-        path: 'invite',
-        name: 'Affiliate',
-        component: () => import('@/views/user/AffiliateView.vue'),
-        meta: {
-          requiresAuth: true,
-          requiresAdmin: false,
-          title: 'Affiliate',
-          titleKey: 'affiliate.title',
-          descriptionKey: 'affiliate.description'
-        }
-      }
-    ]
-  },
-  {
-    path: '/purchase',
-    redirect: (to) => ({ path: '/wallet/recharge', query: to.query, hash: to.hash })
-  },
-  {
-    path: '/orders',
-    redirect: (to) => ({ path: '/wallet/orders', query: to.query, hash: to.hash })
   },
   {
     path: '/payment/qrcode',

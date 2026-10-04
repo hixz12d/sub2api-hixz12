@@ -1,12 +1,12 @@
 <template>
   <AuthLayout>
-    <div class="space-y-8">
+    <div :class="ui.wrapper">
       <!-- Title -->
-      <div>
-        <h2 class="text-[40px] font-light leading-[1.08] tracking-[-0.035em] text-ink">
+      <div :class="ui.titleBox">
+        <h2 :class="ui.title">
           {{ t('auth.createAccount') }}
         </h2>
-        <p class="mt-3 text-[15px] text-ink-2">
+        <p :class="ui.subtitle">
           {{ t('auth.signUpToStart', { siteName }) }}
         </p>
       </div>
@@ -270,7 +270,7 @@
         <button
           type="submit"
           :disabled="registrationActionDisabled || (turnstileEnabled && !turnstileToken)"
-          class="btn btn-primary h-12 w-full text-[15px]"
+          :class="ui.submit"
         >
           <svg
             v-if="isLoading"
@@ -306,11 +306,11 @@
 
       <div v-if="showOAuthLogin" class="space-y-3 pt-1">
         <div class="flex items-center gap-3">
-          <div class="h-px flex-1 bg-rule"></div>
-          <span class="text-xs text-ink-3">
+          <div :class="ui.dividerLine"></div>
+          <span :class="ui.dividerText">
             {{ t('auth.oauthOrContinue') }}
           </span>
-          <div class="h-px flex-1 bg-rule"></div>
+          <div :class="ui.dividerLine"></div>
         </div>
 
         <EmailOAuthButtons
@@ -351,11 +351,11 @@
 
     <!-- Footer -->
     <template #footer>
-      <p class="text-ink-2">
+      <p :class="ui.footerText">
         {{ t('auth.alreadyHaveAccount') }}
         <router-link
           to="/login"
-          class="font-semibold text-money-text transition-colors hover:underline"
+          :class="ui.footerLink"
         >
           {{ t('auth.signIn') }}
         </router-link>
@@ -399,8 +399,35 @@ import {
   resolveAffiliateReferralCode
 } from '@/utils/oauthAffiliate'
 import type { LoginAgreementDocument } from '@/types'
+import { isClassicUi } from '@/utils/uiStyle'
 
 const { t, locale } = useI18n()
+
+// 界面风格：经典版 class 取自改版前 42232875f，新版为改版后的样式；表单逻辑两边共用。
+// 风格在页面加载时就定了（切换时整页刷新），用普通常量即可
+const ui = isClassicUi()
+  ? {
+      wrapper: 'space-y-6',
+      titleBox: 'text-center',
+      title: 'text-2xl font-bold text-gray-900 dark:text-white',
+      subtitle: 'mt-2 text-sm text-gray-500 dark:text-dark-400',
+      submit: 'btn btn-primary w-full',
+      dividerLine: 'h-px flex-1 bg-gray-200 dark:bg-dark-700',
+      dividerText: 'text-xs text-gray-500 dark:text-dark-400',
+      footerText: 'text-gray-500 dark:text-dark-400',
+      footerLink: 'font-medium text-primary-600 transition-colors hover:text-primary-500 dark:text-primary-400 dark:hover:text-primary-300'
+    }
+  : {
+      wrapper: 'space-y-8',
+      titleBox: '',
+      title: 'text-[40px] font-light leading-[1.08] tracking-[-0.035em] text-ink',
+      subtitle: 'mt-3 text-[15px] text-ink-2',
+      submit: 'btn btn-primary h-12 w-full text-[15px]',
+      dividerLine: 'h-px flex-1 bg-rule',
+      dividerText: 'text-xs text-ink-3',
+      footerText: 'text-ink-2',
+      footerLink: 'font-semibold text-money-text transition-colors hover:underline'
+    }
 const LOGIN_AGREEMENT_STORAGE_KEY = 'sub2api_login_agreement_consent'
 
 // ==================== Router & Stores ====================

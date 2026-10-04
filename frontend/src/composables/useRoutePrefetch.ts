@@ -9,6 +9,7 @@
  */
 import { ref, readonly } from 'vue'
 import type { RouteLocationNormalized, Router } from 'vue-router'
+import { isClassicUi } from '@/utils/uiStyle'
 
 /**
  * 组件导入函数类型
@@ -18,6 +19,7 @@ type ComponentImportFn = () => Promise<unknown>
 /**
  * 预加载邻接表：定义每个路由应该预加载哪些相邻路由
  * 只存储路由路径，不存储 import 函数，避免打包问题
+ * 用户路由按界面风格二选一：经典版是独立的 /redeem 页，新版是 /wallet 钱包
  */
 const PREFETCH_ADJACENCY: Record<string, string[]> = {
   // Admin routes - 预加载最常访问的相邻页面
@@ -29,8 +31,15 @@ const PREFETCH_ADJACENCY: Record<string, string[]> = {
   // User routes
   '/dashboard': ['/keys', '/usage'],
   '/keys': ['/dashboard', '/usage'],
-  '/usage': ['/keys', '/wallet'],
-  '/wallet': ['/usage', '/profile'],
+  ...(isClassicUi()
+    ? {
+        '/usage': ['/keys', '/redeem'],
+        '/redeem': ['/usage', '/profile']
+      }
+    : {
+        '/usage': ['/keys', '/wallet'],
+        '/wallet': ['/usage', '/profile']
+      }),
   '/profile': ['/dashboard', '/keys']
 }
 

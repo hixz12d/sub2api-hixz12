@@ -1,7 +1,28 @@
 <template>
   <div>
-    <div v-if="loading && items.length === 0" class="flex flex-col gap-2 md:gap-1">
-      <div v-for="i in 5" :key="i" class="h-[118px] animate-pulse bg-surface-tile md:h-[52px]"></div>
+    <div
+      v-if="loading && items.length === 0"
+      class="grid gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+    >
+      <div
+        v-for="i in 6"
+        :key="i"
+        class="p-5 rounded-2xl min-h-[280px] bg-white/70 dark:bg-dark-800/60 border border-gray-200/80 dark:border-dark-700/70 animate-pulse"
+      >
+        <div class="flex items-start gap-3">
+          <div class="w-9 h-9 rounded-xl bg-gray-200 dark:bg-dark-700"></div>
+          <div class="flex-1 space-y-2">
+            <div class="h-4 w-2/3 rounded bg-gray-200 dark:bg-dark-700"></div>
+            <div class="h-3 w-1/2 rounded bg-gray-200 dark:bg-dark-700"></div>
+          </div>
+          <div class="h-6 w-16 rounded-full bg-gray-200 dark:bg-dark-700"></div>
+        </div>
+        <div class="mt-5 grid grid-cols-2 gap-2">
+          <div class="h-16 rounded-xl bg-gray-100 dark:bg-dark-900/40"></div>
+          <div class="h-16 rounded-xl bg-gray-100 dark:bg-dark-900/40"></div>
+        </div>
+        <div class="mt-6 h-5 w-full rounded bg-gray-100 dark:bg-dark-900/40"></div>
+      </div>
     </div>
 
     <EmptyState
@@ -10,64 +31,42 @@
       :description="t('channelStatus.empty.description')"
     />
 
-    <div v-else>
-      <!-- 表头只在桌面端显示，列宽与渠道行一致 -->
-      <div
-        class="hidden items-end gap-x-5 px-5 pb-1.5 text-[13px] text-ink-3 md:grid"
-        :class="MONITOR_ROW_GRID"
-      >
-        <span></span>
-        <span>{{ t('channelStatus.board.columns.channel') }}</span>
-        <span>{{ t('channelStatus.board.columns.status') }}</span>
-        <span class="text-right">{{ t('channelStatus.board.columns.latency') }}</span>
-        <span class="text-right">{{ t('channelStatus.board.columns.availability', { window: windowLabel }) }}</span>
-        <span class="flex justify-between">
-          <span>{{ t('channelStatus.board.columns.timeline', { n: 60 }) }}</span>
-          <span class="flex items-center gap-3">
-            <span v-for="l in legend" :key="l.key" class="inline-flex items-center gap-1.5">
-              <i class="inline-block h-2.5 w-1.5" :class="l.colorClass"></i>{{ t(`channelStatus.board.state.${l.key}`) }}
-            </span>
-          </span>
-        </span>
-      </div>
-
-      <div class="flex flex-col gap-2 md:gap-1">
-        <MonitorCard
-          v-for="item in items"
-          :key="item.id"
-          :item="item"
-          :window="window"
-          :availability-value="resolveAvailability(item)"
-        />
-      </div>
+    <div
+      v-else
+      class="grid gap-5 grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+    >
+      <MonitorCard
+        v-for="item in items"
+        :key="item.id"
+        :item="item"
+        :window="window"
+        :availability-value="resolveAvailability(item)"
+        :countdown-seconds="countdownSeconds"
+        @click="emit('cardClick', item)"
+      />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { UserMonitorView, UserMonitorDetail } from '@/api/channelMonitor'
 import EmptyState from '@/components/common/EmptyState.vue'
 import MonitorCard from './MonitorCard.vue'
-import { MONITOR_ROW_GRID } from './monitorLayout'
 
 const props = defineProps<{
   items: UserMonitorView[]
   window: '7d' | '15d' | '30d'
+  countdownSeconds: number
   loading: boolean
   detailCache: Record<number, UserMonitorDetail>
 }>()
 
+const emit = defineEmits<{
+  (e: 'cardClick', item: UserMonitorView): void
+}>()
+
 const { t } = useI18n()
-
-const windowLabel = computed(() => t(`channelStatus.windowTab.${props.window}`))
-
-const legend = [
-  { key: 'ok', colorClass: 'bg-ok' },
-  { key: 'degraded', colorClass: 'bg-warn' },
-  { key: 'down', colorClass: 'bg-bad' },
-]
 
 function resolveAvailability(item: UserMonitorView): number | null {
   if (props.window === '7d') {

@@ -192,6 +192,8 @@ export default {
     myAccount: 'My Account',
     lightMode: 'Light Mode',
     darkMode: 'Dark Mode',
+    classicStyle: 'Classic style',
+    modernStyle: 'New style',
     collapse: 'Collapse',
     expand: 'Expand',
     logout: 'Logout',

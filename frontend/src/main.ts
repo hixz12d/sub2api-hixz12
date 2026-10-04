@@ -6,6 +6,7 @@ import i18n, { initI18n } from './i18n'
 import { useAppStore } from '@/stores/app'
 import { updateFavicon } from '@/utils/branding'
 import { isIOSDevice } from '@/utils/device'
+import { applyUiStyleAttr } from '@/utils/uiStyle'
 import './style.css'
 
 function initIOSViewportZoomFix() {
@@ -33,6 +34,7 @@ function initThemeClass() {
 async function bootstrap() {
   // Apply theme class globally before app mount to keep all routes consistent.
   initThemeClass()
+  applyUiStyleAttr()
   initIOSViewportZoomFix()
 
   const app = createApp(App)

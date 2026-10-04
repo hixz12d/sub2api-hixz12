@@ -1,105 +1,115 @@
 <template>
-  <div class="relative" @pointerleave="active = null">
-    <div class="flex h-6 w-full gap-[2px]">
+  <div class="mt-4 pt-3 border-t border-gray-100 dark:border-dark-700/60">
+    <div
+      class="flex justify-between text-[10px] font-semibold uppercase tracking-widest text-gray-400 mb-2"
+    >
+      <span>{{ t('monitorCommon.history60pts', { n: length }) }}</span>
+      <span class="tabular-nums">{{ t('monitorCommon.nextUpdateIn', { n: countdownSeconds }) }}</span>
+    </div>
+
+    <div
+      v-if="maintenance"
+      class="flex h-5 w-full items-center justify-center rounded border border-dashed border-gray-300 dark:border-dark-600 text-[10px] uppercase tracking-widest text-gray-400"
+    >
+      {{ t('monitorCommon.maintenancePaused') }}
+    </div>
+    <div v-else class="flex items-end gap-[2px] h-5 w-full">
       <div
-        v-for="(bar, idx) in bars"
+        v-for="(bar, idx) in displayBars"
         :key="idx"
-        class="min-w-0 flex-1 transition-opacity"
-        :class="[bar.colorClass, active === idx ? 'opacity-70' : '']"
-        :aria-label="bar.tip || undefined"
-        @pointerenter="active = bar.tip ? idx : null"
-        @click="active = bar.tip ? idx : null"
+        class="flex-1 min-w-0 rounded-sm"
+        :class="bar.colorClass"
+        :style="{ height: bar.heightPct + '%' }"
+        :title="bar.title"
       ></div>
     </div>
 
-    <!-- 悬停提示：反色实心块，靠边时贴边对齐，避免被裁掉 -->
     <div
-      v-if="tip"
-      class="pointer-events-none absolute bottom-full z-10 mb-2 whitespace-nowrap bg-ink px-2.5 py-1.5 text-xs tabular-nums text-surface"
-      :style="tip.style"
-      role="tooltip"
+      class="mt-1 flex justify-between text-[9px] uppercase tracking-widest text-gray-400"
     >
-      {{ tip.text }}
+      <span>{{ t('monitorCommon.past') }}</span>
+      <span>{{ t('monitorCommon.now') }}</span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { MonitorTimelinePoint } from '@/api/channelMonitor'
 import { useChannelMonitorFormat } from '@/composables/useChannelMonitorFormat'
 
 const props = withDefaults(defineProps<{
   buckets?: MonitorTimelinePoint[]
-  /** 纯配额模式没有对话延迟，提示里显示“—” */
-  hideLatency?: boolean
+  countdownSeconds: number
   length?: number
+  maintenance?: boolean
 }>(), {
   buckets: () => [],
-  hideLatency: false,
   length: 60,
+  maintenance: false,
 })
 
 const { t } = useI18n()
-const { formatRelativeTime } = useChannelMonitorFormat()
-
-const active = ref<number | null>(null)
-
-// 等高柱，只用颜色区分：绿正常 / 黄降级 / 红异常，无数据淡灰
-const STATUS_COLOR: Record<string, string> = {
-  operational: 'bg-ok',
-  degraded: 'bg-warn',
-  failed: 'bg-bad',
-  error: 'bg-bad',
-}
-const EMPTY_COLOR = 'bg-gray-300 dark:bg-dark-600'
-
-const STATUS_KEY: Record<string, string> = {
-  operational: 'ok',
-  degraded: 'degraded',
-  failed: 'down',
-  error: 'down',
-}
+const { statusLabel, formatLatency, formatRelativeTime } = useChannelMonitorFormat()
 
 interface Bar {
   colorClass: string
-  tip: string
+  heightPct: number
+  title: string
 }
 
-const bars = computed<Bar[]>(() => {
-  // 接口按新到旧返回，翻转成旧到新，最右边是最近一次；左侧不足的补灰柱
-  const real = [...props.buckets].slice(0, props.length).reverse()
-  const result: Bar[] = Array.from(
-    { length: Math.max(0, props.length - real.length) },
-    () => ({ colorClass: EMPTY_COLOR, tip: '' })
-  )
-  for (const point of real) {
-    const key = STATUS_KEY[point.status]
-    if (!key) {
-      result.push({ colorClass: EMPTY_COLOR, tip: '' })
-      continue
-    }
-    const latency = props.hideLatency || point.latency_ms == null
-      ? '—'
-      : `${Math.round(point.latency_ms)} ms`
-    result.push({
-      colorClass: STATUS_COLOR[point.status],
-      tip: `${formatRelativeTime(point.checked_at)} · ${t(`channelStatus.board.state.${key}`)} · ${latency}`,
+// 4 级高度 + 颜色双重编码：高=好+绿，短=坏+红，灰=未测试。
+// 长绿(正常) > 中黄(降级) > 短红(失败/系统错误) > 很短灰(未测试)。
+const STATUS_HEIGHT: Record<string, number> = {
+  operational: 100,
+  degraded: 65,
+  failed: 35,
+  error: 35,
+  empty: 15,
+}
+
+const STATUS_COLOR: Record<string, string> = {
+  operational: 'bg-emerald-500',
+  degraded: 'bg-amber-500',
+  failed: 'bg-red-500',
+  error: 'bg-red-500',
+  empty: 'bg-gray-300 dark:bg-dark-600',
+}
+
+const displayBars = computed<Bar[]>(() => {
+  // Real points come newest-first; convert to oldest-first so the rightmost
+  // bar represents "now". Pad the left with empty placeholders to keep the
+  // bar count stable at `length`.
+  const real = [...(props.buckets ?? [])]
+    .slice(0, props.length)
+    .reverse()
+
+  const padCount = Math.max(0, props.length - real.length)
+  const bars: Bar[] = []
+
+  for (let i = 0; i < padCount; i += 1) {
+    bars.push({
+      colorClass: STATUS_COLOR.empty,
+      heightPct: STATUS_HEIGHT.empty,
+      title: '',
     })
   }
-  return result
-})
 
-const tip = computed(() => {
-  if (active.value === null) return null
-  const bar = bars.value[active.value]
-  if (!bar?.tip) return null
-  const center = ((active.value + 0.5) / props.length) * 100
-  let style: Record<string, string>
-  if (center < 15) style = { left: '0' }
-  else if (center > 85) style = { right: '0' }
-  else style = { left: `${center}%`, transform: 'translateX(-50%)' }
-  return { text: bar.tip, style }
+  for (const point of real) {
+    const status = point.status as keyof typeof STATUS_HEIGHT
+    const colorClass = STATUS_COLOR[status] ?? STATUS_COLOR.empty
+    const heightPct = STATUS_HEIGHT[status] ?? STATUS_HEIGHT.empty
+    const latency = formatLatency(point.latency_ms)
+    const relative = formatRelativeTime(point.checked_at)
+    const label = statusLabel(point.status)
+    bars.push({
+      colorClass,
+      heightPct,
+      title: `${relative} · ${label} · ${latency}ms`,
+    })
+  }
+
+  return bars
 })
 </script>
