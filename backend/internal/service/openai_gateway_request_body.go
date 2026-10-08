@@ -1442,7 +1442,8 @@ func normalizeOpenAIResponsesCompatibilityBodyWithToolPolicy(body []byte, accoun
 	if account == nil || !account.IsOpenAI() {
 		return body, false, nil
 	}
-	normalized, err := applyOpenAIStorePolicy(body, account, len(compact) > 0 && compact[0])
+	isCompact := len(compact) > 0 && compact[0]
+	normalized, err := applyOpenAIStorePolicy(body, account, isCompact)
 	if err != nil {
 		return body, false, err
 	}
@@ -1506,12 +1507,14 @@ func normalizeOpenAIResponsesCompatibilityBodyWithToolPolicy(body []byte, accoun
 			normalized = next
 			changed = true
 		}
-		webSearchBody, webSearchChanged, err := ensureOpenAIOAuthWebSearchToolForHistoryBody(normalized)
-		if err != nil {
-			return body, false, fmt.Errorf("normalize websocket body: %w", err)
+		if !isCompact {
+			webSearchBody, webSearchChanged, err := ensureOpenAIOAuthWebSearchToolForHistoryBody(normalized, responsesLite)
+			if err != nil {
+				return body, false, fmt.Errorf("normalize websocket body: %w", err)
+			}
+			normalized = webSearchBody
+			changed = changed || webSearchChanged
 		}
-		normalized = webSearchBody
-		changed = changed || webSearchChanged
 	}
 	needsOrphanCleanup := !preserveToolOutputs && account != nil && account.IsOpenAIOAuthLike() &&
 		gjson.GetBytes(normalized, "input").IsArray()
@@ -1644,15 +1647,6 @@ func normalizeOpenAIPassthroughOAuthBody(body []byte, compact bool) ([]byte, boo
 			normalized = next
 			changed = true
 		}
-	}
-
-	if !compact {
-		webSearchBody, webSearchChanged, err := ensureOpenAIOAuthWebSearchToolForHistoryBody(normalized)
-		if err != nil {
-			return body, false, fmt.Errorf("normalize passthrough body: %w", err)
-		}
-		normalized = webSearchBody
-		changed = changed || webSearchChanged
 	}
 
 	if compact {
