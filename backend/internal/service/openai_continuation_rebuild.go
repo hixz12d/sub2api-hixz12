@@ -45,14 +45,17 @@ func CanRebuildOpenAIContinuation(body []byte, headers http.Header) bool {
 			}
 			continue
 		case "reasoning":
-			continue // Account-bound reasoning is omitted by the existing recovery sanitizer.
-		case "tool_search_output", "mcp_approval_response":
+			continue // Only account-bound encryption is removed; readable summaries survive.
+		case "mcp_approval_response":
 			return false
 		}
 		if item.Get("encrypted_content").Exists() || item.Get("encrypted_reasoning").Exists() {
 			return false
 		}
-		if strings.HasSuffix(kind, "_call_output") {
+		if kind == "additional_tools" {
+			continue // Tool declarations are portable, but not evidence of a transcript.
+		}
+		if strings.HasSuffix(kind, "_call_output") || kind == "tool_search_output" {
 			if _, ok := covered[item.Get("call_id").String()]; !ok {
 				return false
 			}

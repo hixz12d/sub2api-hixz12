@@ -249,6 +249,17 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthIdentityAttempt(
 	if err != nil {
 		return nil, err
 	}
+	if state.recoveredCrossAccount {
+		// Request builders finalize their normalized body, not state.finalHTTPBody.
+		// Carry recovery to that wire boundary or it would restore foreign state.
+		clone := *plan
+		clone.rebuildFromLocalHistory = true
+		clone.body = SanitizeCodexBodyForCrossAccountRecovery(plan.body)
+		clone.inboundHeaders = plan.InboundHeaders()
+		deleteOpenAIHeaderEqualFold(clone.inboundHeaders, openAIWSTurnStateHeader)
+		clone.previousResponseID, clone.promptCacheKey = "", ""
+		c.Request = c.Request.WithContext(ContextWithCodexRequestPlan(c.Request.Context(), &clone))
+	}
 	c.Request = c.Request.WithContext(ContextWithCodexAttemptState(c.Request.Context(), state))
 	return state.Identity(), nil
 }

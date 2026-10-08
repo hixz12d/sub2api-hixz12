@@ -3221,6 +3221,8 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 		// openAIWSTurnPricing 的注释；透传模式回退到 ingress 报告的 turn 开始时刻。
 		var turnPricing openAIWSTurnPricing
 		var turnStartedAt openAIWSTurnPricing
+		var attemptTurn atomic.Int64
+		attemptTurn.Store(1)
 		// Passthrough ingress does not invoke BeforeTurn for the first frame.
 		if err := checkSimpleModeTurnBilling(); err != nil {
 			closeOpenAIClientWS(wsConn, coderws.StatusPolicyViolation, "billing check failed")
@@ -3237,6 +3239,7 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 				turnStartedAt.freeze(startedAt)
 			},
 			BeforeRequest: func(turn int, payload []byte, originalModel string) error {
+				attemptTurn.Store(int64(turn))
 				c.Set(securityAuditWSTurnContextKey, turn)
 				service.BeginOpsStreamTurn(c, turn)
 				setCyberTurnBody(turn, payload)
@@ -3540,6 +3543,18 @@ func (h *OpenAIGatewayHandler) ResponsesWebSocket(c *gin.Context) {
 					continue
 				}
 				if handleWSFailover(account, failoverErr) {
+					if turn := attemptTurn.Load(); !retryCurrentTurn && turn > 1 {
+						// Diagnostic only: ctx_pool can reach this branch without a
+						// current-turn payload, so the next account reuses the first
+						// message of this attempt instead of the failed turn.
+						reqLog.Warn("openai.websocket_failover_replays_attempt_first_message",
+							zap.String("logical_request_id", requestPlan.LogicalRequestID()),
+							zap.Int64("account_id", account.ID),
+							zap.Int64("turn", turn),
+							zap.Int("replayed_attempt_turn", 1),
+							zap.Int("switch_count", switchCount),
+						)
+					}
 					break
 				}
 				return

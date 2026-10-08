@@ -16,6 +16,24 @@ const (
 	codexRecoveryRefreshFailed      = "The original conversation account's OAuth refresh failed. Retry after its credentials recover, or restore the full conversation context."
 )
 
+// Carry the account observed at the mismatch site; a second registry lookup
+// could race with another recovery and report a different original account.
+type codexAccountMismatchError struct {
+	*UpstreamFailoverError
+	previousAccountID int64
+}
+
+func (e *codexAccountMismatchError) Unwrap() error {
+	return e.UpstreamFailoverError
+}
+
+func codexAccountMismatchFailure(previousAccountID int64) error {
+	return &codexAccountMismatchError{
+		UpstreamFailoverError: codexRecoveryFailure(codexRecoveryAccountMismatch),
+		previousAccountID:     previousAccountID,
+	}
+}
+
 func codexRecoveryFailure(message string) *UpstreamFailoverError {
 	failure := openAIConversationRecoveryError()
 	failure.ClientMessage = conversationRecoveryClientMessage(message)
@@ -57,7 +75,7 @@ func (s *OpenAIGatewayService) validateCodexLegacyContinuation(c *gin.Context, r
 		return codexRecoveryFailure(codexRecoveryOwnerMissing)
 	}
 	if accountID != account.ID {
-		return codexRecoveryFailure(codexRecoveryAccountMismatch)
+		return codexAccountMismatchFailure(accountID)
 	}
 	plan, ok := CodexRequestPlanFromContext(ctx)
 	if !ok {
@@ -75,7 +93,7 @@ func (s *OpenAIGatewayService) validateCodexLegacyContinuation(c *gin.Context, r
 		return err
 	}
 	if state.AccountID != account.ID {
-		return codexRecoveryFailure(codexRecoveryAccountMismatch)
+		return codexAccountMismatchFailure(state.AccountID)
 	}
 	if err := state.Validate(); err != nil {
 		return err

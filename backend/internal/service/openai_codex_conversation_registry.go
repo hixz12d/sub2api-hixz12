@@ -3,11 +3,11 @@ package service
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/tidwall/gjson"
-	"github.com/tidwall/sjson"
 )
 
 var ErrCodexConversationNotFound = errors.New("codex conversation not found")
@@ -226,14 +226,14 @@ func (s *OpenAIGatewayService) resolveCodexConversationAttempt(
 		// A CAS loser must not replace a healthy winner still preparing output.
 		recoveringCommitted = recoveringCommitted || resolved.Committed
 		if retries > 0 && resolved.AccountID != recoveryAccountID && resolved.AccountID != candidate.AccountID {
-			return nil, codexRecoveryFailure(codexRecoveryAccountMismatch)
+			return nil, codexAccountMismatchFailure(resolved.AccountID)
 		}
 		refreshTransport := codexConversationTransportRefreshAllowed(resolved, candidate)
 		if recoveringCommitted && !refreshTransport && !s.canRecoverUnavailableCodexConversation(ctx, plan, resolved, candidate, replaySafe) {
 			if resolved.AccountID == candidate.AccountID {
 				return nil, codexRecoveryFailure(codexRecoveryRouteChanged)
 			}
-			return nil, codexRecoveryFailure(codexRecoveryAccountMismatch)
+			return nil, codexAccountMismatchFailure(resolved.AccountID)
 		}
 		if recoveringCommitted && !refreshTransport && resolved.AccountID != candidate.AccountID {
 			didRecover = true
@@ -280,10 +280,26 @@ func (s *OpenAIGatewayService) resolveCodexConversationAttempt(
 	resolvedAttempt.finalHeaders = buildCodexAttemptIdentityHeaders(resolvedAttempt.profile, resolvedAttempt.identity, plan.inboundHeaders)
 	body := plan.body
 	if didRecover {
-		// Full-context recovery rewrote the conversation onto a different account; drop
-		// foreign chain crumbs (previous_response_id / item_reference / encrypted blobs)
-		// so the new upstream only sees the local rebuildable transcript.
-		body = SanitizeCodexBodyForCrossAccountRecovery(body)
+		// Share the HTTP restart's preservation rules and report only counts,
+		// never tool definitions, arguments, outputs or encrypted payloads.
+		var stats codexContextSanitizeStats
+		body, stats, err = sanitizeCodexCrossAccountBody(body)
+		if err != nil {
+			return nil, err
+		}
+		resolvedAttempt.recoveredCrossAccount = true
+		recoveryHeaders := plan.InboundHeaders()
+		deleteOpenAIHeaderEqualFold(recoveryHeaders, openAIWSTurnStateHeader)
+		resolvedAttempt.finalHeaders = buildCodexAttemptIdentityHeaders(resolvedAttempt.profile, resolvedAttempt.identity, recoveryHeaders)
+		owner, _ := openAIWSStateOwnerFromContext(ctx)
+		slog.WarnContext(ctx, "openai.conversation_recovered_cross_account",
+			"request_id", plan.logicalRequestID,
+			"user_id", owner.UserID,
+			"previous_account_id", recoveryAccountID,
+			"account_id", resolved.AccountID,
+			"dropped", stats.dropped,
+			"stripped", stats.stripped,
+		)
 	}
 	resolvedAttempt.finalHTTPBody, err = applyCodexFingerprintToRawBody(body, resolvedAttempt.identity)
 	if err != nil {
@@ -407,8 +423,8 @@ func codexInputItemIsLocalContext(item gjson.Result) bool {
 	}
 }
 
-// SanitizeCodexBodyForCrossAccountRecovery drops foreign-chain state so a full
-// local transcript can be sent to a different upstream account.
+// codexCoveredToolCallIDs recognizes local call/output pairs without a fixed
+// allowlist of tool call types. Coverage gates replay, not history preservation.
 
 func codexCoveredToolCallIDs(body []byte) map[string]struct{} {
 	covered := make(map[string]struct{})
@@ -427,13 +443,9 @@ func codexCoveredToolCallIDs(body []byte) map[string]struct{} {
 		if callID == "" {
 			return
 		}
-		if strings.HasSuffix(itemType, "_call_output") {
+		if strings.HasSuffix(itemType, "_call_output") || itemType == "tool_search_output" {
 			outputIDs[callID] = struct{}{}
-			return
-		}
-		switch itemType {
-		case "function_call", "custom_tool_call", "computer_call", "local_shell_call", "shell_call",
-			"apply_patch_call", "web_search_call", "file_search_call", "code_interpreter_call", "image_generation_call":
+		} else if strings.HasSuffix(itemType, "_call") {
 			contextIDs[callID] = struct{}{}
 		}
 	}
@@ -450,73 +462,13 @@ func codexCoveredToolCallIDs(body []byte) map[string]struct{} {
 	return covered
 }
 
+// SanitizeCodexBodyForCrossAccountRecovery uses the same preservation rules as
+// an HTTP account-mismatch restart. Invalid JSON is left to the caller's normal
+// validation, preserving this helper's existing no-error API.
 func SanitizeCodexBodyForCrossAccountRecovery(body []byte) []byte {
-	if len(body) == 0 || !gjson.ValidBytes(body) || !gjson.ParseBytes(body).IsObject() {
+	out, _, err := sanitizeCodexCrossAccountBody(body)
+	if err != nil {
 		return body
-	}
-	out := RemovePreviousResponseIDFromBody(body)
-	// Build call_id coverage once so mixed covered/uncovered tool outputs can keep
-	// the rebuildable subset instead of dropping every _call_output.
-	coveredCallIDs := codexCoveredToolCallIDs(out)
-
-	// Drop top-level foreign chain fields when present.
-	for _, key := range []string{"conversation", "conversation_id", "prompt_cache_key"} {
-		if gjson.GetBytes(out, key).Exists() {
-			if next, err := sjson.DeleteBytes(out, key); err == nil {
-				out = next
-			}
-		}
-	}
-
-	input := gjson.GetBytes(out, "input")
-	if !input.IsArray() {
-		// Single-object input: if it is only a foreign reference, clear it.
-		if input.IsObject() && !codexInputItemIsLocalContext(input) {
-			if next, err := sjson.SetBytes(out, "input", []any{}); err == nil {
-				out = next
-			}
-		}
-		return out
-	}
-
-	kept := make([]any, 0, len(input.Array()))
-	input.ForEach(func(_, item gjson.Result) bool {
-		if !item.IsObject() {
-			if item.Type == gjson.String && strings.TrimSpace(item.String()) != "" {
-				kept = append(kept, item.Value())
-			}
-			return true
-		}
-		itemType := item.Get("type").String()
-		switch itemType {
-		case "item_reference", "tool_search_output", "mcp_approval_response":
-			return true
-		default:
-			if strings.HasSuffix(itemType, "_call_output") {
-				callID := strings.TrimSpace(item.Get("call_id").String())
-				if callID == "" {
-					return true
-				}
-				if _, ok := coveredCallIDs[callID]; !ok {
-					return true
-				}
-			}
-		}
-		// Drop encrypted reasoning blobs that cannot move across accounts.
-		if item.Get("encrypted_content").Exists() || item.Get("encrypted_reasoning").Exists() {
-			return true
-		}
-		clean := item.Value()
-		if m, ok := clean.(map[string]any); ok {
-			delete(m, "encrypted_content")
-			delete(m, "encrypted_reasoning")
-			clean = m
-		}
-		kept = append(kept, clean)
-		return true
-	})
-	if next, err := sjson.SetBytes(out, "input", kept); err == nil {
-		out = next
 	}
 	return out
 }

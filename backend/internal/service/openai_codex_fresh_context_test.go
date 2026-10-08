@@ -70,7 +70,10 @@ func TestCodexFreshContextAccountMismatchReachesWire(t *testing.T) {
 					require.Contains(t, string(wire), tc.wantText)
 					require.NotContains(t, string(wire), "old-account-secret")
 					require.NotContains(t, string(wire), "old_item")
-					require.NotContains(t, string(wire), "old_call")
+					if tc.name == "tool-result" {
+						require.Equal(t, "function_call_output", gjson.GetBytes(wire, "input.0.type").String())
+						require.Equal(t, "old_call", gjson.GetBytes(wire, "input.0.call_id").String())
+					}
 					require.Same(t, budget, openAIRetryBudgetFromContextRaw(c))
 					require.Equal(t, budgetBefore, budget.Snapshot())
 					// The fresh pin is additional; all old committed pins remain intact.
@@ -95,11 +98,12 @@ func TestCodexFreshContextKeepsToolPairsAndDropsAccountReferences(t *testing.T) 
 	body := []byte(`{"previous_response_id":"resp_old","conversation_id":"old","prompt_cache_key":"old","input":[{"role":"user","id":"msg_old","content":[{"type":"input_text","text":"check result"},{"type":"input_file","file_id":"file_old"}]},{"type":"function_call","id":"fc_old","call_id":"paired","name":"test","arguments":"{}"},{"type":"function_call_output","call_id":"paired","output":"passed"},{"type":"function_call","call_id":"pending","name":"test","arguments":"{}"}]}`)
 	cleaned, err := sanitizeCodexFreshContextBody(body)
 	require.NoError(t, err)
-	require.Len(t, gjson.GetBytes(cleaned, "input").Array(), 3)
+	require.Len(t, gjson.GetBytes(cleaned, "input").Array(), 4)
 	require.Len(t, gjson.GetBytes(cleaned, "input.0.content").Array(), 1)
 	require.Equal(t, "paired", gjson.GetBytes(cleaned, "input.1.call_id").String())
 	require.Equal(t, "paired", gjson.GetBytes(cleaned, "input.2.call_id").String())
-	for _, old := range []string{"resp_old", "file_old", "msg_old", "fc_old", "pending", "conversation_id", "prompt_cache_key"} {
+	require.Equal(t, "pending", gjson.GetBytes(cleaned, "input.3.call_id").String())
+	for _, old := range []string{"resp_old", "file_old", "conversation_id", "prompt_cache_key"} {
 		require.NotContains(t, string(cleaned), old)
 	}
 }

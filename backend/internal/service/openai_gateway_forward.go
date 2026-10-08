@@ -714,7 +714,9 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		markPatchSet("service_tier", OpenAIFastTierPriority)
 	}
 
-	if account.UsesOpenAICodexProtocol() {
+	// Relay-kernel recovery must see the original tool history. Defer any
+	// orphan fallback until the selected upstream explicitly rejects it.
+	if account.UsesOpenAICodexProtocol() && !usesCodexRelayKernel(account) {
 		decoded, decodeErr := ensureReqBody()
 		if decodeErr != nil {
 			return nil, decodeErr
@@ -1069,6 +1071,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 
 	httpInvalidEncryptedContentRetryTried := false
+	orphanToolOutputRetryTried := false
 	compactModelFallbackRetried := false
 	agentTaskRecoveryTried := false
 	rejectedFieldRetryState := openAIResponsesRejectedFieldRetryStateForRequest(c, body)
@@ -1177,6 +1180,15 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 			upstreamMsg := strings.TrimSpace(extractUpstreamErrorMessage(respBody))
 			upstreamMsg = sanitizeUpstreamErrorMessage(upstreamMsg)
 			upstreamCode := extractUpstreamErrorCode(respBody)
+			if !orphanToolOutputRetryTried {
+				if retryBody, changed := prepareCodexRejectedToolOutputRetry(c, account, body, resp.StatusCode, respBody); changed {
+					orphanToolOutputRetryTried = true
+					body = retryBody
+					requestView = newOpenAIRequestView(body)
+					reqBody = nil
+					continue
+				}
+			}
 			if resp.StatusCode == http.StatusUnauthorized && account.IsOpenAIOAuth() {
 				// token_revoked / token_invalidated cannot be healed by refresh. Mark the
 				// account immediately and hand control to the multi-account failover path.

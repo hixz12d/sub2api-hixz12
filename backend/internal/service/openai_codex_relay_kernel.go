@@ -351,6 +351,7 @@ type CodexAttemptState struct {
 	installationPolicy    string
 	deriver               *CodexIdentityDeriver
 	conversationBinding   *CodexConversationState
+	recoveredCrossAccount bool
 }
 
 func FinalizeCodexAttempt(plan *CodexRequestPlan, input CodexAttemptInput, derivationSecret string) (*CodexAttemptState, error) {

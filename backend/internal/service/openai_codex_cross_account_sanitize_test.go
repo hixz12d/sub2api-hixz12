@@ -19,7 +19,7 @@ func TestSanitizeCodexBodyForCrossAccountRecovery(t *testing.T) {
 		types = append(types, item.Get("type").String())
 		require.False(t, item.Get("encrypted_content").Exists())
 	}
-	require.Equal(t, []string{"message", "function_call", "function_call_output"}, types)
+	require.Equal(t, []string{"message", "function_call", "function_call_output", "function_call_output"}, types)
 }
 
 func TestCodexPlanHasRecoverableFullContextWithForeignCrumbs(t *testing.T) {

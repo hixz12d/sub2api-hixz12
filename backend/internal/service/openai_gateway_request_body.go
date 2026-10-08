@@ -1435,6 +1435,10 @@ func normalizeOpenAIResponseFormatSchemasBody(body []byte) ([]byte, bool, error)
 }
 
 func normalizeOpenAIResponsesWebSocketCompatibilityBody(body []byte, account *Account, responsesLite bool, compact ...bool) ([]byte, bool, error) {
+	return normalizeOpenAIResponsesCompatibilityBodyWithToolPolicy(body, account, responsesLite, false, compact...)
+}
+
+func normalizeOpenAIResponsesCompatibilityBodyWithToolPolicy(body []byte, account *Account, responsesLite, preserveToolOutputs bool, compact ...bool) ([]byte, bool, error) {
 	if account == nil || !account.IsOpenAI() {
 		return body, false, nil
 	}
@@ -1503,7 +1507,7 @@ func normalizeOpenAIResponsesWebSocketCompatibilityBody(body []byte, account *Ac
 			changed = true
 		}
 	}
-	needsOrphanCleanup := account != nil && account.IsOpenAIOAuthLike() &&
+	needsOrphanCleanup := !preserveToolOutputs && account != nil && account.IsOpenAIOAuthLike() &&
 		gjson.GetBytes(normalized, "input").IsArray()
 	if needsOrphanCleanup || openAIResponsesInputMayNeedTruncation(normalized) {
 		var reqBody map[string]any

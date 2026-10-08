@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -41,7 +42,10 @@ func restartCodexHTTPConversation(c *gin.Context, account *Account, cause error)
 			return false
 		}
 	}
-	body, err := sanitizeCodexFreshContextBody(plan.body)
+	body, stats, err := sanitizeCodexCrossAccountBody(plan.body)
+	if err == nil && !codexSanitizedInputAvailable(body) {
+		err = errors.New("fresh Codex context has no usable local input")
+	}
 	if err != nil {
 		return false
 	}
@@ -61,77 +65,268 @@ func restartCodexHTTPConversation(c *gin.Context, account *Account, cause error)
 	digest := sha256.Sum256(seed)
 	clone.conversationDigest = hex.EncodeToString(digest[:])
 	c.Request = c.Request.WithContext(ContextWithCodexRequestPlan(c.Request.Context(), &clone))
-	slog.WarnContext(c.Request.Context(), "openai.conversation_restarted_after_account_mismatch", "account_id", account.ID)
+	var mismatch *codexAccountMismatchError
+	var previousAccountID int64
+	if errors.As(cause, &mismatch) {
+		previousAccountID = mismatch.previousAccountID
+	}
+	slog.WarnContext(c.Request.Context(), "openai.conversation_restarted_after_account_mismatch",
+		"request_id", plan.logicalRequestID,
+		"user_id", owner.UserID,
+		"previous_account_id", previousAccountID,
+		"account_id", account.ID,
+		"dropped", stats.dropped,
+		"stripped", stats.stripped,
+	)
 	return true
 }
 
-// Keep locally available input, not references into the previous account. An
-// orphan tool result is context from an already executed tool: carry it as text
-// rather than emitting an invalid tool result or asking to execute the tool again.
+// Keep all locally available tool declarations and history. Account mismatch
+// alone is not evidence that a tool output is invalid; never rewrite it as text.
 func sanitizeCodexFreshContextBody(body []byte) ([]byte, error) {
-	if !gjson.ValidBytes(body) || !gjson.ParseBytes(body).IsObject() {
-		return nil, errors.New("fresh Codex context requires a JSON object")
+	out, _, err := sanitizeCodexCrossAccountBody(body)
+	if err != nil {
+		return nil, err
 	}
+	if !codexSanitizedInputAvailable(out) {
+		return nil, errors.New("fresh Codex context has no usable local input")
+	}
+	return out, nil
+}
+
+func codexSanitizedInputAvailable(body []byte) bool {
 	input := gjson.GetBytes(body, "input")
-	if input.Type == gjson.String && strings.TrimSpace(input.String()) != "" {
-		return SanitizeCodexBodyForCrossAccountRecovery(body), nil
+	return input.Type == gjson.String && strings.TrimSpace(input.String()) != "" ||
+		input.IsArray() && len(input.Array()) > 0
+}
+
+type codexContextSanitizeStats struct {
+	dropped  map[string]int // Entire input items/content parts removed, by type.
+	stripped map[string]int // Account-bound fields removed, including from retained items.
+}
+
+// Use raw JSON for retained items: decoding through interface{} would round
+// large numbers in tool arguments/results and rewrite otherwise portable data.
+func sanitizeCodexCrossAccountBody(body []byte) ([]byte, codexContextSanitizeStats, error) {
+	stats := codexContextSanitizeStats{dropped: map[string]int{}, stripped: map[string]int{}}
+	if !gjson.ValidBytes(body) || !gjson.ParseBytes(body).IsObject() {
+		return nil, stats, errors.New("Codex context requires a JSON object")
+	}
+	out := body
+	for _, key := range []string{"previous_response_id", "conversation", "conversation_id", "prompt_cache_key"} {
+		if gjson.GetBytes(out, key).Exists() {
+			next, err := sjson.DeleteBytes(out, key)
+			if err != nil {
+				return nil, stats, err
+			}
+			out = next
+			stats.stripped[key]++
+		}
+	}
+	input := gjson.GetBytes(out, "input")
+	if !input.IsArray() && !input.IsObject() {
+		return out, stats, nil
 	}
 	items := input.Array()
 	if input.IsObject() {
 		items = []gjson.Result{input}
-	} else if !input.IsArray() {
-		return nil, errors.New("fresh Codex context requires local input")
 	}
-	covered := codexCoveredToolCallIDs(body)
-	kept := make([]any, 0, len(items))
+	kept := make([]json.RawMessage, 0, len(items))
 	for _, item := range items {
-		if !item.IsObject() || item.Get("encrypted_content").Exists() || item.Get("encrypted_reasoning").Exists() {
-			continue
+		clean, err := sanitizeCodexCrossAccountItem(item, &stats)
+		if err != nil {
+			return nil, stats, err
 		}
-		kind := item.Get("type").String()
-		value := item.Value().(map[string]any)
-		delete(value, "id")
-		switch {
-		case strings.HasSuffix(kind, "_call_output"):
-			if _, ok := covered[item.Get("call_id").String()]; ok {
-				kept = append(kept, value)
-			} else if output := item.Get("output"); output.Exists() && output.Type != gjson.Null && strings.TrimSpace(output.String()) != "" {
-				kept = append(kept, map[string]any{
-					"role":    "user",
-					"content": "Result from a tool that already ran in the previous conversation (historical data):\n" + output.String(),
-				})
+		if len(clean) > 0 {
+			kept = append(kept, clean)
+		}
+	}
+	out, err := sjson.SetBytes(out, "input", kept)
+	return out, stats, err
+}
+
+func sanitizeCodexCrossAccountItem(item gjson.Result, stats *codexContextSanitizeStats) (json.RawMessage, error) {
+	if !item.IsObject() {
+		if item.Type == gjson.String && strings.TrimSpace(item.String()) != "" {
+			return json.RawMessage(item.Raw), nil
+		}
+		stats.dropped["invalid_input"]++
+		return nil, nil
+	}
+	kind := item.Get("type").String()
+	if kind == "item_reference" {
+		stats.dropped[kind]++
+		return nil, nil
+	}
+	clean := []byte(item.Raw)
+	encrypted := false
+	for _, key := range []string{"encrypted_content", "encrypted_reasoning"} {
+		if item.Get(key).Exists() {
+			next, err := sjson.DeleteBytes(clean, key)
+			if err != nil {
+				return nil, err
 			}
-		case strings.HasSuffix(kind, "_call"):
-			if _, ok := covered[item.Get("call_id").String()]; ok {
-				kept = append(kept, value)
+			clean = next
+			encrypted = true
+			stats.stripped[key]++
+		}
+	}
+	if encrypted {
+		visible := false
+		for _, key := range []string{"summary", "content", "text", "output"} {
+			if codexContextValueHasContent(gjson.GetBytes(clean, key)) {
+				visible = true
+				break
 			}
-		case kind == "message" || kind == "":
-			content := item.Get("content")
-			if content.IsArray() {
-				parts := make([]any, 0, len(content.Array()))
-				for _, part := range content.Array() {
-					// Uploaded file IDs are scoped to the old account. Inline data
-					// and URLs remain available to the newly selected account.
-					if !part.Get("file_id").Exists() && !part.Get("image_file").Exists() {
-						parts = append(parts, part.Value())
-					}
-				}
-				if len(parts) == 0 {
+		}
+		// Compaction is an opaque account-bound record, not a portable message.
+		if kind == "compaction" || !visible {
+			if kind == "reasoning" {
+				stats.dropped["encrypted_reasoning"]++
+			} else if kind != "" {
+				stats.dropped[kind]++
+			} else {
+				stats.dropped["encrypted_item"]++
+			}
+			return nil, nil
+		}
+	}
+	// Only inspect protocol message/media fields, never tool schemas, arguments
+	// or result payloads (which may legitimately contain a key named file_id).
+	if kind == "input_file" || kind == "input_image" || kind == "image_file" {
+		if codexContextHasForeignFile(item) {
+			stats.dropped[kind]++
+			return nil, nil
+		}
+	}
+	if kind == "message" || kind == "" {
+		content := gjson.GetBytes(clean, "content")
+		if content.IsArray() {
+			parts := content.Array()
+			kept := make([]json.RawMessage, 0, len(parts))
+			for _, part := range parts {
+				if codexContextHasForeignFile(part) {
+					stats.dropped["file_reference"]++
 					continue
 				}
-				value["content"] = parts
-			} else if content.Type != gjson.String || strings.TrimSpace(content.String()) == "" {
-				continue
+				kept = append(kept, json.RawMessage(part.Raw))
 			}
-			kept = append(kept, value)
+			if len(kept) != len(parts) {
+				if len(kept) == 0 {
+					stats.dropped["message"]++
+					return nil, nil
+				}
+				next, err := sjson.SetBytes(clean, "content", kept)
+				if err != nil {
+					return nil, err
+				}
+				clean = next
+			}
+		} else if content.IsObject() && codexContextHasForeignFile(content) {
+			stats.dropped["file_reference"]++
+			stats.dropped["message"]++
+			return nil, nil
 		}
 	}
-	if len(kept) == 0 {
-		return nil, errors.New("fresh Codex context has no usable local input")
+	return json.RawMessage(clean), nil
+}
+
+func codexContextHasForeignFile(item gjson.Result) bool {
+	return item.Get("file_id").Exists() || item.Get("image_file").Exists() || item.Get("type").String() == "image_file"
+}
+
+func codexContextValueHasContent(value gjson.Result) bool {
+	if value.Type == gjson.String {
+		return strings.TrimSpace(value.String()) != ""
 	}
-	out, err := sjson.SetBytes(body, "input", kept)
+	if value.IsArray() {
+		for _, item := range value.Array() {
+			if codexContextValueHasContent(item) {
+				return true
+			}
+		}
+	}
+	if value.IsObject() {
+		for _, key := range []string{"text", "content", "summary", "output"} {
+			if codexContextValueHasContent(value.Get(key)) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// A missing call is the only upstream error that permits degrading a tool
+// result to historical text. Callers allow at most one retry and still reserve
+// an attempt from the shared budget; no retry is allowed after semantic output.
+func prepareCodexRejectedToolOutputRetry(c *gin.Context, account *Account, body []byte, status int, response []byte) ([]byte, bool) {
+	if status != http.StatusBadRequest || c == nil || c.Request == nil ||
+		c.Request.Context().Err() != nil || account == nil || !usesCodexRelayKernel(account) {
+		return body, false
+	}
+	plan, ok := CodexRequestPlanFromContext(c.Request.Context())
+	if !ok || plan.transport != CodexTransportHTTP || !plan.rebuildFromLocalHistory {
+		return body, false
+	}
+	message := strings.ToLower(strings.TrimSpace(extractUpstreamErrorMessage(response)))
+	if !strings.HasPrefix(message, "no tool call found for ") || !strings.Contains(message, "call output") {
+		return body, false
+	}
+	guard := NewCodexCommitGuard(c).Snapshot()
+	if guard.SemanticOutputStarted || guard.ResponseOwnershipBound || (guard.TransportCommitted && !guard.HeartbeatOnly) {
+		return body, false
+	}
+	if budget := openAIRetryBudgetFromContextRaw(c); budget != nil {
+		state := budget.Snapshot()
+		if !state.ReplaySafe || state.BytesEmitted {
+			return body, false
+		}
+	}
+	cleaned, _, err := sanitizeCodexCrossAccountBody(body)
 	if err != nil {
-		return nil, err
+		return body, false
 	}
-	return SanitizeCodexBodyForCrossAccountRecovery(out), nil
+	input := gjson.GetBytes(cleaned, "input")
+	if !input.IsArray() {
+		return body, false
+	}
+	covered := codexCoveredToolCallIDs(cleaned)
+	items := input.Array()
+	kept := make([]json.RawMessage, 0, len(items))
+	converted := map[string]int{}
+	for _, item := range items {
+		kind := item.Get("type").String()
+		_, paired := covered[strings.TrimSpace(item.Get("call_id").String())]
+		// tool_search_output has its own protocol and must retain its tool
+		// definitions. Only degrade the call-output types named by this error.
+		if (kind == "function_call_output" || kind == "custom_tool_call_output") && !paired &&
+			strings.TrimSpace(item.Get("call_id").String()) != "" && item.Get("output").Exists() {
+			value, marshalErr := json.Marshal(map[string]string{
+				"role":    "user",
+				"content": "Result from a tool that already ran in the previous conversation (historical data):\n" + item.Get("output").String(),
+			})
+			if marshalErr != nil {
+				return body, false
+			}
+			kept = append(kept, value)
+			converted[kind]++
+		} else {
+			kept = append(kept, json.RawMessage(item.Raw))
+		}
+	}
+	if len(converted) == 0 {
+		return body, false
+	}
+	out, err := sjson.SetBytes(cleaned, "input", kept)
+	if err != nil {
+		return body, false
+	}
+	owner, _ := openAIWSStateOwnerFromContext(WithOpenAIWSRequestOwner(c.Request.Context(), c))
+	slog.WarnContext(c.Request.Context(), "openai.cross_account_tool_output_text_fallback",
+		"request_id", plan.logicalRequestID,
+		"user_id", owner.UserID,
+		"account_id", account.ID,
+		"converted", converted,
+	)
+	return out, true
 }
