@@ -36,7 +36,7 @@ func TestOAuthWebSearchHistoryToolAcrossPaths(t *testing.T) {
 			return normalizeOpenAIResponsesWebSocketCompatibilityBody(b, oauth, false)
 		}, true},
 		{"OAuth passthrough compact", func(b []byte) ([]byte, bool, error) {
-			return normalizeOpenAIResponsesCompatibilityBodyWithOptions(b, oauth, openAIResponsesCompatibilityOptions{Compact: true})
+			return normalizeOpenAIResponsesCompatibilityBodyWithToolPolicy(b, oauth, false, false, true)
 		}, false},
 		{"API key websocket", func(b []byte) ([]byte, bool, error) {
 			return normalizeOpenAIResponsesWebSocketCompatibilityBody(b, &Account{Platform: PlatformOpenAI, Type: AccountTypeAPIKey}, false)
