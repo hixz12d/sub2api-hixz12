@@ -363,6 +363,7 @@ func createTestPayload(modelID string) (map[string]any, error) {
 // mode is optional - "compact" routes OpenAI accounts to the /responses/compact probe path
 // opts is optional media (image/audio data URLs for real generation / STT).
 func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int64, modelID string, prompt string, mode string, opts ...AccountTestOptions) error {
+	initAccountTestLogger(c, accountID, modelID, mode)
 	ctx := c.Request.Context()
 	testOpts := firstAccountTestOptions(opts)
 
@@ -371,6 +372,7 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	if err != nil {
 		return s.sendErrorAndEnd(c, "Account not found")
 	}
+	bindAccountTestPlatform(c, account)
 	if IsAccountQuestionTest(mode) {
 		if err := validateAccountQuestion(account, modelID, prompt); err != nil {
 			return s.sendErrorAndEnd(c, err.Error())
@@ -379,7 +381,7 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 		if !ok {
 			return s.sendErrorAndEnd(c, "unsupported reasoning effort")
 		}
-		c.Request = c.Request.WithContext(withAccountQuestionReasoningEffort(ctx, effort))
+		c.Request = c.Request.WithContext(withAccountQuestionReasoningEffort(c.Request.Context(), effort))
 	}
 
 	// Synthetic UI load-test accounts exercise the real SSE parsing and modal
@@ -397,7 +399,8 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	}
 
 	// Route to platform-specific test method
-	if account.IsCNProvider() {
+	// 按入站协议分流的多协议供应商（国产厂商等）：按账号协议选测试路径。
+	if account.RoutesProtocolByInbound() {
 		switch account.GetAPIProtocol() {
 		case APIProtocolAdaptive:
 			return s.testCNProviderAdaptiveConnection(c, account, modelID, prompt)
@@ -426,8 +429,9 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 		return s.routeAntigravityTest(c, account, modelID, prompt)
 	}
 
-	if account.IsOpenCodeGo() {
-		return s.testOpenCodeGoAccountConnection(c, account, modelID, prompt)
+	// 按模型分流的多模型聚合平台（OpenCode、Command Code 等）。
+	if account.routesByModel() {
+		return s.testModelRoutedAccountConnection(c, account, modelID, prompt)
 	}
 
 	if account.IsTypeSafe() {
@@ -437,36 +441,42 @@ func (s *AccountTestService) TestAccountConnection(c *gin.Context, accountID int
 	return s.testClaudeAccountConnection(c, account, modelID)
 }
 
-// testOpenCodeGoAccountConnection probes the native endpoint for the selected
-// model. Adaptive accounts (the default) follow OpenCodeGoModelProtocol:
+// testModelRoutedAccountConnection probes the native endpoint for the selected
+// model on providers that route by model (see ProviderRoutingByModel). Adaptive
+// accounts (the default) follow the provider's protocol rules, e.g. OpenCode Go:
 // grok/gpt/muse-spark → Responses, minimax/qwen → Anthropic, everything else
 // (including deepseek-v4-flash) → Chat Completions. A pinned api_protocol
 // overrides that catalog. Falling through to the generic Claude tester used
 // credentials.base_url + /v1/messages?beta=true, which 404s as HTML on
 // https://opencode.ai/zen/go/v1/v1/messages.
-func (s *AccountTestService) testOpenCodeGoAccountConnection(c *gin.Context, account *Account, modelID string, prompt string) error {
+func (s *AccountTestService) testModelRoutedAccountConnection(c *gin.Context, account *Account, modelID string, prompt string) error {
 	testModelID := strings.TrimSpace(modelID)
 	if testModelID == "" {
-		testModelID = DefaultOpenCodeGoTestModel
+		testModelID = account.providerDefaultTestModel()
+	}
+	if testModelID == "" {
+		testModelID = openai.DefaultTestModel
 	}
 	testModelID = account.GetMappedModel(testModelID)
-	proto := account.GetAPIProtocol()
-	switch proto {
-	case APIProtocolChatCompletions, APIProtocolAnthropic, APIProtocolResponses:
-	default:
-		proto = openCodeGoNativeProtocol(account, testModelID)
+	if account.IsOpenCodeGo() && IsOpenCodeUnsupportedModel(testModelID) {
+		return fmt.Errorf("model %q is not supported on OpenCode standard gateway (gemini models require Google SDK endpoint, jev models require System One endpoint)", testModelID)
 	}
-	switch proto {
+	// 与网关同一判定（含上游模型目录）；测试没有入站协议，取模型的首选协议。
+	protocol := account.resolveModelRoutedProtocol(testModelID)
+	if s.openaiGatewayService != nil {
+		protocol = s.openaiGatewayService.resolveUpstreamProtocolFor(c.Request.Context(), account, "", testModelID)
+	}
+	switch protocol {
 	case APIProtocolAnthropic:
 		return s.testCNProviderAnthropicConnection(c, account, testModelID)
 	case APIProtocolResponses:
-		return s.testOpenCodeGoResponsesConnection(c, account, testModelID)
+		return s.testModelRoutedResponsesConnection(c, account, testModelID)
 	default:
 		return s.testCNProviderChatCompletionsConnection(c, account, testModelID, prompt)
 	}
 }
 
-func (s *AccountTestService) testOpenCodeGoResponsesConnection(c *gin.Context, account *Account, testModelID string) error {
+func (s *AccountTestService) testModelRoutedResponsesConnection(c *gin.Context, account *Account, testModelID string) error {
 	authToken := strings.TrimSpace(account.GetOpenAIProtocolAPIKey())
 	if authToken == "" {
 		return s.sendErrorAndEnd(c, "No API key available")
@@ -482,6 +492,9 @@ func (s *AccountTestService) testOpenCodeGoResponsesConnection(c *gin.Context, a
 
 func (s *AccountTestService) testCNProviderChatCompletionsConnection(c *gin.Context, account *Account, modelID string, prompt string) error {
 	testModelID := strings.TrimSpace(modelID)
+	if testModelID == "" {
+		testModelID = account.providerDefaultTestModel()
+	}
 	if testModelID == "" {
 		testModelID = openai.DefaultTestModel
 	}
@@ -3324,7 +3337,7 @@ func (s *AccountTestService) sendEvent(c *gin.Context, event TestEvent) {
 
 // sendErrorAndEnd sends an error event and ends the stream
 func (s *AccountTestService) sendErrorAndEnd(c *gin.Context, errorMsg string) error {
-	log.Printf("Account test error: %s", errorMsg)
+	logAccountTestError(c, errorMsg)
 	s.sendEvent(c, TestEvent{Type: "error", Error: errorMsg})
 	return fmt.Errorf("%s", errorMsg)
 }
@@ -3337,6 +3350,7 @@ func (s *AccountTestService) RunTestBackground(ctx context.Context, accountID in
 	w := httptest.NewRecorder()
 	ginCtx, _ := gin.CreateTestContext(w)
 	ginCtx.Request = (&http.Request{}).WithContext(ctx)
+	ginCtx.Set(accountTestBackgroundKey, true)
 
 	testErr := s.TestAccountConnection(ginCtx, accountID, modelID, "", AccountTestModeDefault)
 

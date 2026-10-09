@@ -192,7 +192,11 @@ func (s *OpenAIGatewayService) forwardOpenAIPassthrough(
 	}
 	if account != nil && account.IsOpenAI() {
 		responsesLite := isOpenAIResponsesLiteHeader(c.GetHeader(responsesLiteHeader)) || isOpenAIResponsesLiteWebSocketPayload(body)
-		normalizedBody, normalized, normalizeErr := normalizeOpenAIResponsesCompatibilityBodyWithToolPolicy(body, account, responsesLite, usesCodexRelayKernel(account), isOpenAIResponsesCompactPath(c))
+		normalizedBody, normalized, normalizeErr := normalizeOpenAIResponsesCompatibilityBodyWithOptions(body, account, openAIResponsesCompatibilityOptions{
+			ResponsesLite:       responsesLite,
+			Compact:             isOpenAIResponsesCompactPath(c),
+			PreserveToolOutputs: usesCodexRelayKernel(account),
+		})
 		if normalizeErr != nil {
 			return nil, fmt.Errorf("normalize passthrough Responses compatibility: %w", normalizeErr)
 		}
