@@ -24,6 +24,7 @@ const (
 	openAIAccountScheduleLayerGuardianParent   = "guardian_parent"
 	openAIAccountScheduleLayerSessionSticky    = "session_hash"
 	openAIAccountScheduleLayerLoadBalance      = "load_balance"
+	openAIAccountScheduleLayerCapacityReroute  = "capacity_reroute"
 	openAIAdvancedSchedulerSettingKey          = "openai_advanced_scheduler_enabled"
 )
 
@@ -2685,7 +2686,70 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 	if !selectedFromPool && errors.Is(err, ErrNoAvailableAccounts) {
 		return next()
 	}
-	return selection, decision, err
+	if err != nil {
+		return selection, decision, err
+	}
+	return s.rerouteSaturatedOpenAISelection(ctx, req, useUpstreamTokenCost, selection, decision)
+}
+
+// rerouteSaturatedOpenAISelection 处理“选中的号没有空闲槽位”的情况：会话粘性和
+// 溢出租约都可能把请求指到已满的号上排队，队列满时直接 429，即使同组其他号
+// （例如 API Key 上游）正空闲。这里先按纯负载均衡找一个能立即拿到槽位的号；
+// 找到就本次改用它且不改写粘性绑定，下一请求仍优先回原号以保住上下文缓存；
+// 找不到再回到原来的排队方案。
+//
+// 必须留在原号的请求不改道：带 previous_response_id 的续写、携带未覆盖工具输出
+// （previousResponseCanMove=false，与 handler 禁止换号的口径一致）、强亲和或不可
+// 重放的有状态请求，以及已绑定 WebSocket 连接的请求。
+func (s *OpenAIGatewayService) rerouteSaturatedOpenAISelection(
+	ctx context.Context,
+	req openAIStickySpilloverRequest,
+	useUpstreamTokenCost bool,
+	selection *AccountSelectionResult,
+	decision OpenAIAccountScheduleDecision,
+) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	if selection == nil || selection.Account == nil || selection.Acquired || selection.WaitPlan == nil {
+		return selection, decision, nil
+	}
+	if strings.TrimSpace(req.previousResponseID) != "" || !req.previousResponseCanMove ||
+		decision.Layer == openAIAccountScheduleLayerGuardianParent {
+		return selection, decision, nil
+	}
+	if affinity, ok := openAIAffinityFromContext(ctx); ok &&
+		(affinity.Identity.Strength == AffinityStrong || (affinity.Identity.Stateful && !affinity.Identity.ReplaySafe)) {
+		return selection, decision, nil
+	}
+	if owner, ok := openAIWSStateOwnerFromContext(ctx); ok && owner.AccountID > 0 {
+		return selection, decision, nil
+	}
+
+	excluded := cloneExcludedAccountIDs(req.excludedIDs)
+	if excluded == nil {
+		excluded = make(map[int64]struct{})
+	}
+	excluded[selection.Account.ID] = struct{}{}
+	// 空 sessionHash：只做负载均衡，不会读取或写入任何粘性绑定。
+	alt, altDecision, altErr := s.selectAccountWithSchedulerBase(
+		ctx, req.groupID, "", "", req.requestedModel, excluded,
+		req.requiredTransport, req.requiredCapability, req.requiredImageCapability, req.requireCompact,
+		req.platform, false, useUpstreamTokenCost,
+	)
+	if altErr != nil || alt == nil || alt.Account == nil || !alt.Acquired {
+		releaseSpilloverSelection(alt)
+		return selection, decision, nil
+	}
+	alt.PreserveStickyBinding = true
+	slog.Info("openai_capacity_reroute",
+		"from_account_id", selection.Account.ID,
+		"to_account_id", alt.Account.ID,
+		"from_layer", decision.Layer,
+	)
+	altDecision.Layer = openAIAccountScheduleLayerCapacityReroute
+	altDecision.StickySessionHit = false
+	altDecision.StickyPreviousHit = false
+	altDecision.SelectedAccountID = alt.Account.ID
+	altDecision.SelectedAccountType = alt.Account.Type
+	return alt, altDecision, nil
 }
 
 // selectAccountWithSchedulerBase wraps selectAccountWithSchedulerOnce with a
