@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 
 	"github.com/klauspost/compress/zstd"
 )
@@ -17,10 +18,26 @@ const (
 	requestBodyReadInitCap    = 512
 	requestBodyReadMaxInitCap = 1 << 20
 	jsonUTF8BOMLen            = 3
-	// maxDecompressedBodySize limits the decompressed request body to 64 MB
-	// to prevent decompression bomb attacks.
-	maxDecompressedBodySize = 64 << 20
+	// defaultMaxDecompressedBodySize limits the decompressed request body to
+	// 64 MB until SetMaxDecompressedBodySize applies the gateway body limit.
+	defaultMaxDecompressedBodySize = 64 << 20
 )
+
+// maxDecompressedBodySize guards against decompression bombs. Bodies that
+// expand beyond it fail with *http.MaxBytesError (413) instead of being cut.
+var maxDecompressedBodySize atomic.Int64
+
+func init() {
+	maxDecompressedBodySize.Store(defaultMaxDecompressedBodySize)
+}
+
+// SetMaxDecompressedBodySize aligns the decompressed limit with the gateway
+// body limit so compressed and plain requests accept the same payload size.
+func SetMaxDecompressedBodySize(limit int64) {
+	if limit > 0 {
+		maxDecompressedBodySize.Store(limit)
+	}
+}
 
 // PrereadBody 回填已读取完成的请求体：作为 io.ReadCloser 可被再次顺序消费
 // （multipart 流式解析），同时暴露 Bytes() 让 ReadRequestBodyWithPrealloc
@@ -173,31 +190,45 @@ func decompressRequestBody(encoding string, raw []byte) ([]byte, error) {
 			return nil, err
 		}
 		defer dec.Close()
-		return io.ReadAll(io.LimitReader(dec, maxDecompressedBodySize))
+		return readDecompressedBody(dec)
 	case "gzip", "x-gzip":
 		gr, err := gzip.NewReader(bytes.NewReader(raw))
 		if err != nil {
 			return nil, err
 		}
 		defer func() { _ = gr.Close() }()
-		return io.ReadAll(io.LimitReader(gr, maxDecompressedBodySize))
+		return readDecompressedBody(gr)
 	case "deflate":
 		zr, err := zlib.NewReader(bytes.NewReader(raw))
 		if err != nil {
 			return nil, err
 		}
 		defer func() { _ = zr.Close() }()
-		return io.ReadAll(io.LimitReader(zr, maxDecompressedBodySize))
+		return readDecompressedBody(zr)
 	default:
 		return nil, errors.New("unsupported Content-Encoding")
 	}
+}
+
+// readDecompressedBody reads one byte past the limit so an oversized body is
+// rejected rather than silently truncated into invalid JSON.
+func readDecompressedBody(r io.Reader) ([]byte, error) {
+	limit := maxDecompressedBodySize.Load()
+	body, err := io.ReadAll(io.LimitReader(r, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(body)) > limit {
+		return nil, &http.MaxBytesError{Limit: limit}
+	}
+	return body, nil
 }
 
 // NormalizeLenientJSONRequestBody escapes raw control bytes that broken
 // OpenAI-compatible clients sometimes place inside JSON strings.
 func NormalizeLenientJSONRequestBody(body []byte, maxNormalizedBytes int64) ([]byte, error) {
 	if maxNormalizedBytes <= 0 {
-		maxNormalizedBytes = maxDecompressedBodySize
+		maxNormalizedBytes = maxDecompressedBodySize.Load()
 	}
 
 	body = trimUTF8BOM(body)
