@@ -679,6 +679,8 @@ export default {
         longContextBilling: 'API long-context pricing',
         longContextBillingDesc:
           'Disabled by default. Enable only when this account\'s upstream charges OpenAI API long-context rates above the model threshold.',
+        codexRelayFastBilling: 'Codex relay Fast billing',
+        codexRelayFastBillingDesc: 'Off by default. Use only for a Codex relay confirmed to forward Fast (such as codex-proxy-rs). Outbound fast/priority requests keep Fast pricing even if the response echoes default; ordinary requests are unchanged. This does not enable or guarantee acceleration. Turn it off if the relay disables Fast.',
         responsesWebsocketsV2: 'Responses WebSocket v2',
         responsesWebsocketsV2Desc:
           'Disabled by default. Enable to allow responses_websockets_v2 capability (still gated by global and account-type switches).',

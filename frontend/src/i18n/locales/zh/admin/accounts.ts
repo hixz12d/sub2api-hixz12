@@ -800,6 +800,8 @@ export default {
           '默认关闭：/responses 上的 namespace 工具声明原样转发，这正是 ChatGPT Codex 后端期望的形态。仅当该 OAuth 账号指向不认识 namespace 的兼容上游时才开启——摊平会把工具改名为 namespace__tool，使按 functions.<命名空间>.<工具> 寻址的模型（如 gpt-5.6 多智能体）无法调用。压缩（compact）请求不受该开关影响，始终摊平。',
         longContextBilling: 'API 长上下文计费',
         longContextBillingDesc: '默认关闭。仅当该账号的上游会按模型阈值收取 OpenAI API 长上下文费率时开启。',
+        codexRelayFastBilling: 'Codex 中转 Fast 计费',
+        codexRelayFastBillingDesc: '默认关闭，仅用于已确认透传 Fast 的 Codex 中转（如 codex-proxy-rs）。开启后，发出的 fast/priority 请求即使回显 default，仍按 Fast 价格计费；普通请求不加价。此开关不启用或保证加速；中转禁用 Fast 时请同步关闭。',
         responsesWebsocketsV2: 'Responses WebSocket v2',
         responsesWebsocketsV2Desc:
           '默认关闭。开启后可启用 responses_websockets_v2 协议能力（受网关全局开关与账号类型开关约束）。',

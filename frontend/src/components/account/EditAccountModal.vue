@@ -2302,6 +2302,25 @@
         />
       </div>
 
+      <!-- 仅显式确认透传 Fast 的 Codex API Key 中转可启用 -->
+      <div
+        v-if="account?.platform === 'openai' && account?.type === 'apikey' && !isSparkShadow"
+        class="flex items-center justify-between gap-4 border-t border-gray-200 pt-4 dark:border-dark-600"
+      >
+        <div class="min-w-0">
+          <label id="codex-relay-fast-billing-label" class="input-label mb-0">{{ t('admin.accounts.openai.codexRelayFastBilling') }}</label>
+          <p id="codex-relay-fast-billing-desc" class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            {{ t('admin.accounts.openai.codexRelayFastBillingDesc') }}
+          </p>
+        </div>
+        <Toggle
+          v-model="openAICodexRelayFastBillingEnabled"
+          aria-labelledby="codex-relay-fast-billing-label"
+          aria-describedby="codex-relay-fast-billing-desc"
+          data-testid="openai-codex-relay-fast-billing-toggle"
+        />
+      </div>
+
       <!-- OpenAI API 长上下文计费开关 -->
       <div
         v-if="account?.platform === 'openai' && !isSparkShadow && !hideAccountLongContextBilling && (account?.type === 'oauth' || account?.type === 'setup-token' || account?.type === 'apikey')"
@@ -3833,6 +3852,7 @@ const openaiForceStoreFalseEnabled = ref(false)
 // OpenAI Codex namespace 工具摊平兼容开关（仅 OAuth），缺省关闭即原样保留
 const openaiFlattenNamespacesEnabled = ref(false)
 const openAILongContextBillingEnabled = ref(false)
+const openAICodexRelayFastBillingEnabled = ref(false)
 // OpenAI 订阅档位（Plus / Pro 20x / Pro 5x / Business Standard / Business Premium / Free）手动覆盖值,
 // 存于 credentials.plan_type;'' 表示清空/自动识别
 const editPlanType = ref<string>('')
@@ -4394,6 +4414,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   openaiForceStoreFalseEnabled.value = false
   openaiFlattenNamespacesEnabled.value = false
   openAILongContextBillingEnabled.value = false
+  openAICodexRelayFastBillingEnabled.value = false
   editPlanType.value = ''
   openAICompactMode.value = 'auto'
   openAIResponsesMode.value = 'auto'
@@ -4416,6 +4437,8 @@ const syncFormFromAccount = (newAccount: Account | null) => {
       newAccount.type === 'oauth' && extra?.openai_responses_flatten_namespaces === true
     const longContextBillingValue = extra?.openai_long_context_billing_enabled
     openAILongContextBillingEnabled.value = longContextBillingValue === true
+    openAICodexRelayFastBillingEnabled.value =
+      newAccount.type === 'apikey' && !isSparkShadow.value && extra?.openai_codex_relay_fast_billing === true
     // plan_type 手动覆盖仅 OAuth 有实际调度语义(IsOpenAIChatGPTSubscription 要求 oauth),故只对 oauth 回填
     editPlanType.value = newAccount.type === 'oauth'
       ? readPlanType(newAccount.credentials as Record<string, unknown> | undefined)
@@ -5972,6 +5995,12 @@ const handleSubmit = async () => {
         newExtra.openai_responses_flatten_namespaces = true
       } else {
         delete newExtra.openai_responses_flatten_namespaces
+      }
+      // 账号专属计费口径不加入创建模板，避免批量套用到普通 API 上游。
+      if (props.account.type === 'apikey' && !isSparkShadow.value) {
+        newExtra.openai_codex_relay_fast_billing = openAICodexRelayFastBillingEnabled.value
+      } else {
+        delete newExtra.openai_codex_relay_fast_billing
       }
       if (isSparkShadow.value) {
         delete newExtra.openai_long_context_billing_enabled

@@ -66,7 +66,10 @@ func serviceTierCostRank(tier string) (rank int, known bool) {
 // reports default for effective Fast turns, so OAuth-like credentials retain
 // the final outbound tier while still exposing the observed value.
 func ResolveOpenAIServiceTierBilling(account *Account, requested, observed string) ServiceTierBillingResolution {
-	if account != nil && account.IsOpenAIOAuthLike() && codexOAuthResponseTierIsNonAuthoritative(observed) {
+	// API Key 中转只能显式选择 Fast 兼容，不扩大到 ultrafast 或其他响应降档。
+	requestedTier := normalizeBillingServiceTier(requested)
+	codexRelayFast := account.IsOpenAICodexRelayFastBillingEnabled() && (requestedTier == "priority" || requestedTier == "fast")
+	if account != nil && (account.IsOpenAIOAuthLike() || codexRelayFast) && codexOAuthResponseTierIsNonAuthoritative(observed) {
 		return ServiceTierBillingResolution{
 			Requested: normalizeBillingServiceTier(requested),
 			Observed:  normalizeBillingServiceTier(observed),

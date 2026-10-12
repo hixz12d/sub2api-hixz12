@@ -412,6 +412,9 @@ func normalizeOpenAILongContextBillingUpdateExtra(account *Account, input *Updat
 // Grok media eligibility helpers live in account_grok_media_eligibility.go.
 
 func buildAccountForCreate(input *CreateAccountInput, accountExtra map[string]any) (*Account, error) {
+	if err := validateOpenAICodexRelayFastBillingExtra(input.Platform, input.Type, accountExtra); err != nil {
+		return nil, err
+	}
 	if input.Platform == PlatformTypeSafe && input.Type != AccountTypeAPIKey {
 		return nil, errors.New("typesafe accounts only support apikey credentials")
 	}
@@ -613,6 +616,19 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		account.Proxy = nil
 	}
 	var normalizedExtra map[string]any
+	// 只改类型或其他 extra 字段时也校验并保留计费口径；关闭必须显式提交 false。
+	effectiveBillingType := account.Type
+	if input.Type != "" {
+		effectiveBillingType = input.Type
+	}
+	billingExtra := maps.Clone(account.Extra)
+	if billingExtra == nil {
+		billingExtra = make(map[string]any)
+	}
+	maps.Copy(billingExtra, input.Extra)
+	if err := validateOpenAICodexRelayFastBillingExtra(account.Platform, effectiveBillingType, billingExtra); err != nil {
+		return nil, err
+	}
 	if input.Extra != nil {
 		normalizedExtra, err = normalizeOpenAILongContextBillingUpdateExtra(account, input)
 		if err != nil {
@@ -621,6 +637,12 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 		normalizedExtra, err = normalizeGrokMediaEligibilityUpdateExtra(account, input, normalizedExtra)
 		if err != nil {
 			return nil, err
+		}
+		if value, present := billingExtra[openAICodexRelayFastBillingKey]; present {
+			if normalizedExtra == nil {
+				normalizedExtra = make(map[string]any)
+			}
+			normalizedExtra[openAICodexRelayFastBillingKey] = value
 		}
 		effectiveType := account.Type
 		if input.Type != "" {
@@ -967,6 +989,15 @@ func (s *adminServiceImpl) UpdateAccount(ctx context.Context, id int64, input *U
 // UpdateAccountExtra 仅对 Extra JSONB 做 key 级合并，避免覆盖其它运行态键
 // （如 model_rate_limits / passive_usage_* 等）。
 func (s *adminServiceImpl) UpdateAccountExtra(ctx context.Context, id int64, updates map[string]any) error {
+	if _, present := updates[openAICodexRelayFastBillingKey]; present {
+		account, err := s.accountRepo.GetByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		if err := validateOpenAICodexRelayFastBillingExtra(account.Platform, account.Type, updates); err != nil {
+			return err
+		}
+	}
 	var presetErr error
 	updates, presetErr = NormalizeCodexClientPresetExtra(updates)
 	if presetErr != nil {
@@ -1067,10 +1098,11 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		return nil, err
 	}
 	hasCodexRelayUpdate := hasCodexRelayAccountExtraUpdate(input.Extra)
+	_, hasCodexRelayFastBillingUpdate := input.Extra[openAICodexRelayFastBillingKey]
 
 	// 预取所有目标账号，供凭据守卫/代理守卫/混合渠道检查共用，避免多次 DB 查询。
 	var cachedTargets []*Account
-	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || openAISettings.any() || hasCodexRelayUpdate || input.ProbeEnabled != nil || input.RateMultiplier != nil {
+	if len(input.Credentials) > 0 || input.ProxyID != nil || needMixedChannelCheck || openAISettings.any() || hasCodexRelayUpdate || hasCodexRelayFastBillingUpdate || input.ProbeEnabled != nil || input.RateMultiplier != nil {
 		loaded, err := s.accountRepo.GetByIDs(ctx, input.AccountIDs)
 		if err != nil {
 			return nil, err
@@ -1106,6 +1138,16 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 			return nil, err
 		}
 		result.LongContextInheritedCount = inheritedCount
+	}
+	if hasCodexRelayFastBillingUpdate {
+		for _, account := range cachedTargets {
+			if account == nil {
+				return nil, ErrAccountNotFound
+			}
+			if err := validateOpenAICodexRelayFastBillingExtra(account.Platform, account.Type, input.Extra); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if hasCodexRelayUpdate {
 		for _, account := range cachedTargets {
