@@ -214,7 +214,8 @@ func (s *httpUpstreamService) Do(req *http.Request, proxyURL string, accountID i
 
 	// 获取或创建对应的客户端，并标记请求占用
 	poolScope := service.HTTPUpstreamPoolScopeFromContext(req.Context())
-	entry, err := s.acquireClientWithProfileAndScope(proxyURL, accountID, accountConcurrency, profile, poolScope)
+	headerTimeout := service.HTTPUpstreamResponseHeaderTimeoutFromContext(req.Context())
+	entry, err := s.acquireClientWithProfileAndScope(proxyURL, accountID, accountConcurrency, profile, poolScope, headerTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -293,7 +294,8 @@ func (s *httpUpstreamService) DoWithTLS(req *http.Request, proxyURL string, acco
 		return nil, err
 	}
 
-	entry, err := s.acquireClientWithTLS(proxyURL, accountID, accountConcurrency, profile, upstreamProfile)
+	headerTimeout := service.HTTPUpstreamResponseHeaderTimeoutFromContext(req.Context())
+	entry, err := s.acquireClientWithTLS(proxyURL, accountID, accountConcurrency, profile, upstreamProfile, headerTimeout)
 	if err != nil {
 		slog.Debug("tls_fingerprint_acquire_client_failed", "account_id", accountID, "error", err)
 		return nil, err
@@ -575,13 +577,13 @@ func isSupportedGrokCLIVersion(version string) bool {
 }
 
 // acquireClientWithTLS 获取或创建带 TLS 指纹的客户端
-func (s *httpUpstreamService) acquireClientWithTLS(proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile, upstreamProfile service.HTTPUpstreamProfile) (*upstreamClientEntry, error) {
-	return s.getClientEntryWithTLS(proxyURL, accountID, accountConcurrency, profile, upstreamProfile, true, true)
+func (s *httpUpstreamService) acquireClientWithTLS(proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile, upstreamProfile service.HTTPUpstreamProfile, headerTimeout ...time.Duration) (*upstreamClientEntry, error) {
+	return s.getClientEntryWithTLS(proxyURL, accountID, accountConcurrency, profile, upstreamProfile, true, true, headerTimeout...)
 }
 
 // getClientEntryWithTLS 获取或创建带 TLS 指纹的客户端条目
 // TLS 指纹客户端使用独立的缓存键，与普通客户端隔离
-func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile, upstreamProfile service.HTTPUpstreamProfile, markInFlight bool, enforceLimit bool) (*upstreamClientEntry, error) {
+func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID int64, accountConcurrency int, profile *tlsfingerprint.Profile, upstreamProfile service.HTTPUpstreamProfile, markInFlight bool, enforceLimit bool, headerTimeout ...time.Duration) (*upstreamClientEntry, error) {
 	isolation := s.getIsolationMode()
 	if upstreamProfile == service.HTTPUpstreamProfileOpenAI && accountID > 0 {
 		isolation = config.ConnectionPoolIsolationAccountProxy
@@ -592,10 +594,15 @@ func (s *httpUpstreamService) getClientEntryWithTLS(proxyURL string, accountID i
 	}
 	settings := s.resolvePoolSettings(isolation, accountConcurrency)
 	settings = s.applyProfilePoolSettings(settings, upstreamProfile)
+	headerTimeoutScope := ""
+	if len(headerTimeout) > 0 && headerTimeout[0] > 0 {
+		settings.responseHeaderTimeout = headerTimeout[0]
+		headerTimeoutScope = ":header_timeout:" + headerTimeout[0].String()
+	}
 	protocolMode := tlsFingerprintProtocolMode(upstreamProfile, profile, s.resolveProtocolMode(upstreamProfile, proxyKey, parsedProxy))
 	profileID := profile.CacheID()
 	// TLS 指纹客户端使用独立的缓存键，并按协议/预设隔离，避免 Chrome H2 与 Node H1 复用同一连接。
-	cacheKey := "tls:" + buildCacheKey(isolation, proxyKey, accountID, protocolMode) + ":" + profileID
+	cacheKey := "tls:" + buildCacheKey(isolation, proxyKey, accountID, protocolMode) + ":" + profileID + headerTimeoutScope
 	poolKey := buildPoolKey(settings, protocolMode) + ":tls:" + profileID
 
 	now := time.Now()
@@ -724,8 +731,8 @@ func (s *httpUpstreamService) acquireClientWithProfile(proxyURL string, accountI
 	return s.getClientEntry(proxyURL, accountID, accountConcurrency, profile, true, true)
 }
 
-func (s *httpUpstreamService) acquireClientWithProfileAndScope(proxyURL string, accountID int64, accountConcurrency int, profile service.HTTPUpstreamProfile, poolScope string) (*upstreamClientEntry, error) {
-	return s.getClientEntryWithScope(proxyURL, accountID, accountConcurrency, profile, poolScope, true, true)
+func (s *httpUpstreamService) acquireClientWithProfileAndScope(proxyURL string, accountID int64, accountConcurrency int, profile service.HTTPUpstreamProfile, poolScope string, headerTimeout ...time.Duration) (*upstreamClientEntry, error) {
+	return s.getClientEntryWithScope(proxyURL, accountID, accountConcurrency, profile, poolScope, true, true, headerTimeout...)
 }
 
 // getOrCreateClient 获取或创建客户端
@@ -754,7 +761,7 @@ func (s *httpUpstreamService) getClientEntry(proxyURL string, accountID int64, a
 	return s.getClientEntryWithScope(proxyURL, accountID, accountConcurrency, profile, "", markInFlight, enforceLimit)
 }
 
-func (s *httpUpstreamService) getClientEntryWithScope(proxyURL string, accountID int64, accountConcurrency int, profile service.HTTPUpstreamProfile, poolScope string, markInFlight bool, enforceLimit bool) (*upstreamClientEntry, error) {
+func (s *httpUpstreamService) getClientEntryWithScope(proxyURL string, accountID int64, accountConcurrency int, profile service.HTTPUpstreamProfile, poolScope string, markInFlight bool, enforceLimit bool, headerTimeout ...time.Duration) (*upstreamClientEntry, error) {
 	// 获取隔离模式
 	isolation := s.getIsolationMode()
 	if profile == service.HTTPUpstreamProfileOpenAI && accountID > 0 {
@@ -769,8 +776,15 @@ func (s *httpUpstreamService) getClientEntryWithScope(proxyURL string, accountID
 	protocolMode := s.resolveProtocolMode(profile, proxyKey, parsedProxy)
 	settings := s.resolvePoolSettings(isolation, accountConcurrency)
 	settings = s.applyProfilePoolSettings(settings, profile)
+	// Keep overridden transports in a separate cache entry. Never mutate or
+	// repeatedly evict a shared ordinary-request transport to change a timeout.
+	headerTimeoutScope := ""
+	if len(headerTimeout) > 0 && headerTimeout[0] > 0 {
+		settings.responseHeaderTimeout = headerTimeout[0]
+		headerTimeoutScope = ":header_timeout:" + headerTimeout[0].String()
+	}
 	// 构建缓存键（根据隔离策略不同）
-	cacheKey := buildCacheKey(isolation, proxyKey, accountID, protocolMode)
+	cacheKey := buildCacheKey(isolation, proxyKey, accountID, protocolMode) + headerTimeoutScope
 	// 构建连接池配置键（用于检测配置变更）
 	poolKey := buildPoolKey(settings, protocolMode)
 	if poolScope = strings.TrimSpace(poolScope); poolScope != "" {

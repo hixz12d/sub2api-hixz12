@@ -132,7 +132,10 @@ func (s *OpenAIGatewayService) beginOpenAIHTTPOutputPhase(ctx context.Context, c
 	now := time.Now()
 	deadline := time.Time{}
 	cause := error(ErrOpenAIFirstOutputTimeout)
-	if first := s.openAIFirstOutputTimeout(effort); first > 0 {
+	compactionTimeout := s.openAICompactionFirstOutputTimeout(c)
+	if compactionTimeout > 0 {
+		deadline = openAICompactionOutputDeadline(c, compactionTimeout, now)
+	} else if first := s.openAIFirstOutputTimeout(effort); first > 0 {
 		deadline = now.Add(first)
 	}
 	if budget := OpenAIRetryBudgetFromContext(c); budget != nil {
@@ -170,6 +173,11 @@ func (s *OpenAIGatewayService) beginOpenAIHTTPOutputPhase(ctx context.Context, c
 		return ctx, nil, cause
 	}
 	phaseCtx, guard := newOpenAIPhaseWatchdog(ctx, func() {}, deadline, cause)
+	if compactionTimeout > 0 {
+		// Codex relays may withhold HTTP headers until compaction completes.
+		// Keep the ordinary header limit unchanged for every other request.
+		phaseCtx = withHTTPUpstreamResponseHeaderTimeout(phaseCtx, compactionTimeout)
+	}
 	return context.WithValue(phaseCtx, openAIPhaseWatchdogContextKey{}, guard), guard, nil
 }
 

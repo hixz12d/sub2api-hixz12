@@ -1027,6 +1027,9 @@ type GatewayConfig struct {
 	// OpenAIHighEffortFirstOutputTimeoutSeconds: high/xhigh/max 推理的首个语义输出超时（秒）。
 	// 0 表示回退到 OpenAIFirstOutputTimeoutSeconds。
 	OpenAIHighEffortFirstOutputTimeoutSeconds int `mapstructure:"openai_high_effort_first_output_timeout_seconds"`
+	// OpenAICompactionFirstOutputTimeoutSeconds bounds native HTTP compaction
+	// before semantic output, across headers and retries. 0 keeps effort-based limits.
+	OpenAICompactionFirstOutputTimeoutSeconds int `mapstructure:"openai_compaction_first_output_timeout_seconds"`
 	// OpenAIPreoutputRecoveryMode selects pre-output recovery budget policy.
 	// empty/legacy: historical defaults; bounded_preoutput: wall-clock total budget
 	// independent of the per-dispatch first-output timeout.
@@ -2490,6 +2493,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.grok_response_header_timeout", 120)
 	viper.SetDefault("gateway.openai_first_output_timeout_seconds", 0)
 	viper.SetDefault("gateway.openai_high_effort_first_output_timeout_seconds", 0)
+	viper.SetDefault("gateway.openai_compaction_first_output_timeout_seconds", 300)
 	viper.SetDefault("gateway.openai_preoutput_recovery_mode", "legacy")
 	viper.SetDefault("gateway.openai_preoutput_recovery_max_elapsed_seconds", 0)
 	viper.SetDefault("gateway.openai_preoutput_recovery_high_effort_max_elapsed_seconds", 0)
@@ -3474,6 +3478,10 @@ func (c *Config) Validate() error {
 	if c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds < 0 || c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds > 1800 ||
 		(c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds > 0 && c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds < 30) {
 		return fmt.Errorf("gateway.openai_high_effort_first_output_timeout_seconds must be 0 or between 30-1800 seconds")
+	}
+	if c.Gateway.OpenAICompactionFirstOutputTimeoutSeconds < 0 || c.Gateway.OpenAICompactionFirstOutputTimeoutSeconds > 600 ||
+		(c.Gateway.OpenAICompactionFirstOutputTimeoutSeconds > 0 && c.Gateway.OpenAICompactionFirstOutputTimeoutSeconds < 30) {
+		return fmt.Errorf("gateway.openai_compaction_first_output_timeout_seconds must be 0 or between 30-600 seconds")
 	}
 	switch strings.ToLower(strings.TrimSpace(c.Gateway.OpenAIPreoutputRecoveryMode)) {
 	case "", "legacy", "bounded_preoutput":

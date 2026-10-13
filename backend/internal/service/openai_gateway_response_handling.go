@@ -62,8 +62,13 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	}
 	observationDelivered := false
 	firstOutputTimeout := time.Duration(0)
+	compactionTimeout := time.Duration(0)
 	if account != nil && account.Platform == PlatformOpenAI {
 		firstOutputTimeout = s.openAIFirstOutputTimeout(reasoningEffort)
+		compactionTimeout = s.openAICompactionFirstOutputTimeout(c)
+		if compactionTimeout > 0 {
+			firstOutputTimeout = compactionTimeout
+		}
 	}
 	phaseGuard := openAIPhaseWatchdogFromContext(ctx)
 	guardFirstOutput := firstOutputTimeout > 0 || phaseGuard != nil
@@ -232,7 +237,11 @@ func (s *OpenAIGatewayService) handleStreamingResponseWithReasoning(ctx context.
 	if phaseGuard != nil {
 		firstOutputCh = phaseGuard.done
 	} else if firstOutputTimeout > 0 {
-		remaining := time.Until(startTime.Add(firstOutputTimeout))
+		deadline := startTime.Add(firstOutputTimeout)
+		if compactionTimeout > 0 {
+			deadline = openAICompactionOutputDeadline(c, compactionTimeout, startTime)
+		}
+		remaining := time.Until(deadline)
 		if remaining <= 0 {
 			remaining = time.Nanosecond
 		}

@@ -274,6 +274,17 @@ func PrepareOpenAIRetryBudgetWithConfig(c *gin.Context, body []byte, cfg *config
 		budget.highElapsed = time.Duration(cfg.Gateway.OpenAIPreoutputRecoveryHighEffortMaxElapsedSeconds) * time.Second
 		budget.firstOutputLimit = time.Duration(cfg.Gateway.OpenAIFirstOutputTimeoutSeconds) * time.Second
 		budget.highFirstOutputLimit = time.Duration(cfg.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds) * time.Second
+		if budget.boundedHTTP && budget.streamingHTTP && isOpenAINativeCompactionV2(c) && cfg.Gateway.OpenAICompactionFirstOutputTimeoutSeconds > 0 {
+			// A compaction turn has one total window, regardless of effort or
+			// account retries. Freeze it before preparation can apply the
+			// shorter ordinary/high-effort recovery ceiling.
+			compactionLimit := time.Duration(cfg.Gateway.OpenAICompactionFirstOutputTimeoutSeconds) * time.Second
+			budget.maxElapsed = compactionLimit
+			budget.highElapsed = compactionLimit
+			budget.firstOutputLimit = compactionLimit
+			budget.highFirstOutputLimit = compactionLimit
+			budget.deadlineFrozen = true
+		}
 	}
 	// Only bounded recovery uses an ingress-relative deadline. Legacy
 	// retries start at preparation: counting a slow body upload against their

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"strings"
+	"time"
 )
 
 // HTTPUpstreamProfile marks HTTP upstream requests that need provider-specific
@@ -17,6 +18,7 @@ const (
 )
 
 type httpUpstreamProfileContextKey struct{}
+type httpUpstreamResponseHeaderTimeoutContextKey struct{}
 type httpUpstreamPoolScopeContextKey struct{}
 type httpUpstreamDisableRedirectsContextKey struct{}
 type httpUpstreamPublicHostsOnlyContextKey struct{}
@@ -94,4 +96,20 @@ func WithHTTPUpstreamPublicHostsOnly(ctx context.Context) context.Context {
 
 func HTTPUpstreamPublicHostsOnly(ctx context.Context) bool {
 	return ctx != nil && ctx.Value(httpUpstreamPublicHostsOnlyContextKey{}) == true
+}
+
+// withHTTPUpstreamResponseHeaderTimeout is used only with an active phase
+// watchdog. The transport must not preempt a longer, request-local deadline.
+func withHTTPUpstreamResponseHeaderTimeout(ctx context.Context, timeout time.Duration) context.Context {
+	return context.WithValue(ctx, httpUpstreamResponseHeaderTimeoutContextKey{}, timeout)
+}
+
+// HTTPUpstreamResponseHeaderTimeoutFromContext returns a request-local transport
+// timeout override. Zero means use the existing provider profile unchanged.
+func HTTPUpstreamResponseHeaderTimeoutFromContext(ctx context.Context) time.Duration {
+	if ctx == nil {
+		return 0
+	}
+	timeout, _ := ctx.Value(httpUpstreamResponseHeaderTimeoutContextKey{}).(time.Duration)
+	return timeout
 }
