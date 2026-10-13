@@ -941,6 +941,87 @@ func (_u *UsageLogUpdate) ClearFirstTokenMs() *UsageLogUpdate {
 	return _u
 }
 
+// SetRequestReceiveMs sets the "request_receive_ms" field.
+func (_u *UsageLogUpdate) SetRequestReceiveMs(v int) *UsageLogUpdate {
+	_u.mutation.ResetRequestReceiveMs()
+	_u.mutation.SetRequestReceiveMs(v)
+	return _u
+}
+
+// SetNillableRequestReceiveMs sets the "request_receive_ms" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableRequestReceiveMs(v *int) *UsageLogUpdate {
+	if v != nil {
+		_u.SetRequestReceiveMs(*v)
+	}
+	return _u
+}
+
+// AddRequestReceiveMs adds value to the "request_receive_ms" field.
+func (_u *UsageLogUpdate) AddRequestReceiveMs(v int) *UsageLogUpdate {
+	_u.mutation.AddRequestReceiveMs(v)
+	return _u
+}
+
+// ClearRequestReceiveMs clears the value of the "request_receive_ms" field.
+func (_u *UsageLogUpdate) ClearRequestReceiveMs() *UsageLogUpdate {
+	_u.mutation.ClearRequestReceiveMs()
+	return _u
+}
+
+// SetGatewayMs sets the "gateway_ms" field.
+func (_u *UsageLogUpdate) SetGatewayMs(v int) *UsageLogUpdate {
+	_u.mutation.ResetGatewayMs()
+	_u.mutation.SetGatewayMs(v)
+	return _u
+}
+
+// SetNillableGatewayMs sets the "gateway_ms" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableGatewayMs(v *int) *UsageLogUpdate {
+	if v != nil {
+		_u.SetGatewayMs(*v)
+	}
+	return _u
+}
+
+// AddGatewayMs adds value to the "gateway_ms" field.
+func (_u *UsageLogUpdate) AddGatewayMs(v int) *UsageLogUpdate {
+	_u.mutation.AddGatewayMs(v)
+	return _u
+}
+
+// ClearGatewayMs clears the value of the "gateway_ms" field.
+func (_u *UsageLogUpdate) ClearGatewayMs() *UsageLogUpdate {
+	_u.mutation.ClearGatewayMs()
+	return _u
+}
+
+// SetUpstreamWaitMs sets the "upstream_wait_ms" field.
+func (_u *UsageLogUpdate) SetUpstreamWaitMs(v int) *UsageLogUpdate {
+	_u.mutation.ResetUpstreamWaitMs()
+	_u.mutation.SetUpstreamWaitMs(v)
+	return _u
+}
+
+// SetNillableUpstreamWaitMs sets the "upstream_wait_ms" field if the given value is not nil.
+func (_u *UsageLogUpdate) SetNillableUpstreamWaitMs(v *int) *UsageLogUpdate {
+	if v != nil {
+		_u.SetUpstreamWaitMs(*v)
+	}
+	return _u
+}
+
+// AddUpstreamWaitMs adds value to the "upstream_wait_ms" field.
+func (_u *UsageLogUpdate) AddUpstreamWaitMs(v int) *UsageLogUpdate {
+	_u.mutation.AddUpstreamWaitMs(v)
+	return _u
+}
+
+// ClearUpstreamWaitMs clears the value of the "upstream_wait_ms" field.
+func (_u *UsageLogUpdate) ClearUpstreamWaitMs() *UsageLogUpdate {
+	_u.mutation.ClearUpstreamWaitMs()
+	return _u
+}
+
 // SetUserAgent sets the "user_agent" field.
 func (_u *UsageLogUpdate) SetUserAgent(v string) *UsageLogUpdate {
 	_u.mutation.SetUserAgent(v)
@@ -1622,6 +1703,33 @@ func (_u *UsageLogUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.FirstTokenMsCleared() {
 		_spec.ClearField(usagelog.FieldFirstTokenMs, field.TypeInt)
+	}
+	if value, ok := _u.mutation.RequestReceiveMs(); ok {
+		_spec.SetField(usagelog.FieldRequestReceiveMs, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedRequestReceiveMs(); ok {
+		_spec.AddField(usagelog.FieldRequestReceiveMs, field.TypeInt, value)
+	}
+	if _u.mutation.RequestReceiveMsCleared() {
+		_spec.ClearField(usagelog.FieldRequestReceiveMs, field.TypeInt)
+	}
+	if value, ok := _u.mutation.GatewayMs(); ok {
+		_spec.SetField(usagelog.FieldGatewayMs, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedGatewayMs(); ok {
+		_spec.AddField(usagelog.FieldGatewayMs, field.TypeInt, value)
+	}
+	if _u.mutation.GatewayMsCleared() {
+		_spec.ClearField(usagelog.FieldGatewayMs, field.TypeInt)
+	}
+	if value, ok := _u.mutation.UpstreamWaitMs(); ok {
+		_spec.SetField(usagelog.FieldUpstreamWaitMs, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedUpstreamWaitMs(); ok {
+		_spec.AddField(usagelog.FieldUpstreamWaitMs, field.TypeInt, value)
+	}
+	if _u.mutation.UpstreamWaitMsCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamWaitMs, field.TypeInt)
 	}
 	if value, ok := _u.mutation.UserAgent(); ok {
 		_spec.SetField(usagelog.FieldUserAgent, field.TypeString, value)
@@ -2769,6 +2877,87 @@ func (_u *UsageLogUpdateOne) ClearFirstTokenMs() *UsageLogUpdateOne {
 	return _u
 }
 
+// SetRequestReceiveMs sets the "request_receive_ms" field.
+func (_u *UsageLogUpdateOne) SetRequestReceiveMs(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetRequestReceiveMs()
+	_u.mutation.SetRequestReceiveMs(v)
+	return _u
+}
+
+// SetNillableRequestReceiveMs sets the "request_receive_ms" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableRequestReceiveMs(v *int) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetRequestReceiveMs(*v)
+	}
+	return _u
+}
+
+// AddRequestReceiveMs adds value to the "request_receive_ms" field.
+func (_u *UsageLogUpdateOne) AddRequestReceiveMs(v int) *UsageLogUpdateOne {
+	_u.mutation.AddRequestReceiveMs(v)
+	return _u
+}
+
+// ClearRequestReceiveMs clears the value of the "request_receive_ms" field.
+func (_u *UsageLogUpdateOne) ClearRequestReceiveMs() *UsageLogUpdateOne {
+	_u.mutation.ClearRequestReceiveMs()
+	return _u
+}
+
+// SetGatewayMs sets the "gateway_ms" field.
+func (_u *UsageLogUpdateOne) SetGatewayMs(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetGatewayMs()
+	_u.mutation.SetGatewayMs(v)
+	return _u
+}
+
+// SetNillableGatewayMs sets the "gateway_ms" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableGatewayMs(v *int) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetGatewayMs(*v)
+	}
+	return _u
+}
+
+// AddGatewayMs adds value to the "gateway_ms" field.
+func (_u *UsageLogUpdateOne) AddGatewayMs(v int) *UsageLogUpdateOne {
+	_u.mutation.AddGatewayMs(v)
+	return _u
+}
+
+// ClearGatewayMs clears the value of the "gateway_ms" field.
+func (_u *UsageLogUpdateOne) ClearGatewayMs() *UsageLogUpdateOne {
+	_u.mutation.ClearGatewayMs()
+	return _u
+}
+
+// SetUpstreamWaitMs sets the "upstream_wait_ms" field.
+func (_u *UsageLogUpdateOne) SetUpstreamWaitMs(v int) *UsageLogUpdateOne {
+	_u.mutation.ResetUpstreamWaitMs()
+	_u.mutation.SetUpstreamWaitMs(v)
+	return _u
+}
+
+// SetNillableUpstreamWaitMs sets the "upstream_wait_ms" field if the given value is not nil.
+func (_u *UsageLogUpdateOne) SetNillableUpstreamWaitMs(v *int) *UsageLogUpdateOne {
+	if v != nil {
+		_u.SetUpstreamWaitMs(*v)
+	}
+	return _u
+}
+
+// AddUpstreamWaitMs adds value to the "upstream_wait_ms" field.
+func (_u *UsageLogUpdateOne) AddUpstreamWaitMs(v int) *UsageLogUpdateOne {
+	_u.mutation.AddUpstreamWaitMs(v)
+	return _u
+}
+
+// ClearUpstreamWaitMs clears the value of the "upstream_wait_ms" field.
+func (_u *UsageLogUpdateOne) ClearUpstreamWaitMs() *UsageLogUpdateOne {
+	_u.mutation.ClearUpstreamWaitMs()
+	return _u
+}
+
 // SetUserAgent sets the "user_agent" field.
 func (_u *UsageLogUpdateOne) SetUserAgent(v string) *UsageLogUpdateOne {
 	_u.mutation.SetUserAgent(v)
@@ -3480,6 +3669,33 @@ func (_u *UsageLogUpdateOne) sqlSave(ctx context.Context) (_node *UsageLog, err 
 	}
 	if _u.mutation.FirstTokenMsCleared() {
 		_spec.ClearField(usagelog.FieldFirstTokenMs, field.TypeInt)
+	}
+	if value, ok := _u.mutation.RequestReceiveMs(); ok {
+		_spec.SetField(usagelog.FieldRequestReceiveMs, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedRequestReceiveMs(); ok {
+		_spec.AddField(usagelog.FieldRequestReceiveMs, field.TypeInt, value)
+	}
+	if _u.mutation.RequestReceiveMsCleared() {
+		_spec.ClearField(usagelog.FieldRequestReceiveMs, field.TypeInt)
+	}
+	if value, ok := _u.mutation.GatewayMs(); ok {
+		_spec.SetField(usagelog.FieldGatewayMs, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedGatewayMs(); ok {
+		_spec.AddField(usagelog.FieldGatewayMs, field.TypeInt, value)
+	}
+	if _u.mutation.GatewayMsCleared() {
+		_spec.ClearField(usagelog.FieldGatewayMs, field.TypeInt)
+	}
+	if value, ok := _u.mutation.UpstreamWaitMs(); ok {
+		_spec.SetField(usagelog.FieldUpstreamWaitMs, field.TypeInt, value)
+	}
+	if value, ok := _u.mutation.AddedUpstreamWaitMs(); ok {
+		_spec.AddField(usagelog.FieldUpstreamWaitMs, field.TypeInt, value)
+	}
+	if _u.mutation.UpstreamWaitMsCleared() {
+		_spec.ClearField(usagelog.FieldUpstreamWaitMs, field.TypeInt)
 	}
 	if value, ok := _u.mutation.UserAgent(); ok {
 		_spec.SetField(usagelog.FieldUserAgent, field.TypeString, value)

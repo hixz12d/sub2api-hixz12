@@ -17,6 +17,7 @@ func (s *OpenAIGatewayService) doOpenAIUpstream(request *http.Request, proxyURL 
 	if request == nil || account == nil {
 		return nil, errors.New("upstream request and account are required")
 	}
+	MarkUpstreamSend(request.Context())
 	state, hasState := CodexAttemptStateFromContext(request.Context())
 	tlsEnabled := account.IsTLSFingerprintEnabled()
 	if hasState && state.tlsFingerprintEnabled != nil {

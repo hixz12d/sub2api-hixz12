@@ -157,6 +157,7 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 	SetActualOpenAIUpstreamEndpoint(c, openAIResponsesUpstreamEndpoint)
 
 	startTime := time.Now()
+	MarkOpenAIForwardStart(c, startTime)
 
 	// 1. Parse Chat Completions request
 	var chatReq apicompat.ChatCompletionsRequest

@@ -589,6 +589,48 @@ func (_c *UsageLogCreate) SetNillableFirstTokenMs(v *int) *UsageLogCreate {
 	return _c
 }
 
+// SetRequestReceiveMs sets the "request_receive_ms" field.
+func (_c *UsageLogCreate) SetRequestReceiveMs(v int) *UsageLogCreate {
+	_c.mutation.SetRequestReceiveMs(v)
+	return _c
+}
+
+// SetNillableRequestReceiveMs sets the "request_receive_ms" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableRequestReceiveMs(v *int) *UsageLogCreate {
+	if v != nil {
+		_c.SetRequestReceiveMs(*v)
+	}
+	return _c
+}
+
+// SetGatewayMs sets the "gateway_ms" field.
+func (_c *UsageLogCreate) SetGatewayMs(v int) *UsageLogCreate {
+	_c.mutation.SetGatewayMs(v)
+	return _c
+}
+
+// SetNillableGatewayMs sets the "gateway_ms" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableGatewayMs(v *int) *UsageLogCreate {
+	if v != nil {
+		_c.SetGatewayMs(*v)
+	}
+	return _c
+}
+
+// SetUpstreamWaitMs sets the "upstream_wait_ms" field.
+func (_c *UsageLogCreate) SetUpstreamWaitMs(v int) *UsageLogCreate {
+	_c.mutation.SetUpstreamWaitMs(v)
+	return _c
+}
+
+// SetNillableUpstreamWaitMs sets the "upstream_wait_ms" field if the given value is not nil.
+func (_c *UsageLogCreate) SetNillableUpstreamWaitMs(v *int) *UsageLogCreate {
+	if v != nil {
+		_c.SetUpstreamWaitMs(*v)
+	}
+	return _c
+}
+
 // SetUserAgent sets the "user_agent" field.
 func (_c *UsageLogCreate) SetUserAgent(v string) *UsageLogCreate {
 	_c.mutation.SetUserAgent(v)
@@ -1254,6 +1296,18 @@ func (_c *UsageLogCreate) createSpec() (*UsageLog, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.FirstTokenMs(); ok {
 		_spec.SetField(usagelog.FieldFirstTokenMs, field.TypeInt, value)
 		_node.FirstTokenMs = &value
+	}
+	if value, ok := _c.mutation.RequestReceiveMs(); ok {
+		_spec.SetField(usagelog.FieldRequestReceiveMs, field.TypeInt, value)
+		_node.RequestReceiveMs = &value
+	}
+	if value, ok := _c.mutation.GatewayMs(); ok {
+		_spec.SetField(usagelog.FieldGatewayMs, field.TypeInt, value)
+		_node.GatewayMs = &value
+	}
+	if value, ok := _c.mutation.UpstreamWaitMs(); ok {
+		_spec.SetField(usagelog.FieldUpstreamWaitMs, field.TypeInt, value)
+		_node.UpstreamWaitMs = &value
 	}
 	if value, ok := _c.mutation.UserAgent(); ok {
 		_spec.SetField(usagelog.FieldUserAgent, field.TypeString, value)
@@ -2239,6 +2293,78 @@ func (u *UsageLogUpsert) AddFirstTokenMs(v int) *UsageLogUpsert {
 // ClearFirstTokenMs clears the value of the "first_token_ms" field.
 func (u *UsageLogUpsert) ClearFirstTokenMs() *UsageLogUpsert {
 	u.SetNull(usagelog.FieldFirstTokenMs)
+	return u
+}
+
+// SetRequestReceiveMs sets the "request_receive_ms" field.
+func (u *UsageLogUpsert) SetRequestReceiveMs(v int) *UsageLogUpsert {
+	u.Set(usagelog.FieldRequestReceiveMs, v)
+	return u
+}
+
+// UpdateRequestReceiveMs sets the "request_receive_ms" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateRequestReceiveMs() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldRequestReceiveMs)
+	return u
+}
+
+// AddRequestReceiveMs adds v to the "request_receive_ms" field.
+func (u *UsageLogUpsert) AddRequestReceiveMs(v int) *UsageLogUpsert {
+	u.Add(usagelog.FieldRequestReceiveMs, v)
+	return u
+}
+
+// ClearRequestReceiveMs clears the value of the "request_receive_ms" field.
+func (u *UsageLogUpsert) ClearRequestReceiveMs() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldRequestReceiveMs)
+	return u
+}
+
+// SetGatewayMs sets the "gateway_ms" field.
+func (u *UsageLogUpsert) SetGatewayMs(v int) *UsageLogUpsert {
+	u.Set(usagelog.FieldGatewayMs, v)
+	return u
+}
+
+// UpdateGatewayMs sets the "gateway_ms" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateGatewayMs() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldGatewayMs)
+	return u
+}
+
+// AddGatewayMs adds v to the "gateway_ms" field.
+func (u *UsageLogUpsert) AddGatewayMs(v int) *UsageLogUpsert {
+	u.Add(usagelog.FieldGatewayMs, v)
+	return u
+}
+
+// ClearGatewayMs clears the value of the "gateway_ms" field.
+func (u *UsageLogUpsert) ClearGatewayMs() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldGatewayMs)
+	return u
+}
+
+// SetUpstreamWaitMs sets the "upstream_wait_ms" field.
+func (u *UsageLogUpsert) SetUpstreamWaitMs(v int) *UsageLogUpsert {
+	u.Set(usagelog.FieldUpstreamWaitMs, v)
+	return u
+}
+
+// UpdateUpstreamWaitMs sets the "upstream_wait_ms" field to the value that was provided on create.
+func (u *UsageLogUpsert) UpdateUpstreamWaitMs() *UsageLogUpsert {
+	u.SetExcluded(usagelog.FieldUpstreamWaitMs)
+	return u
+}
+
+// AddUpstreamWaitMs adds v to the "upstream_wait_ms" field.
+func (u *UsageLogUpsert) AddUpstreamWaitMs(v int) *UsageLogUpsert {
+	u.Add(usagelog.FieldUpstreamWaitMs, v)
+	return u
+}
+
+// ClearUpstreamWaitMs clears the value of the "upstream_wait_ms" field.
+func (u *UsageLogUpsert) ClearUpstreamWaitMs() *UsageLogUpsert {
+	u.SetNull(usagelog.FieldUpstreamWaitMs)
 	return u
 }
 
@@ -3431,6 +3557,90 @@ func (u *UsageLogUpsertOne) UpdateFirstTokenMs() *UsageLogUpsertOne {
 func (u *UsageLogUpsertOne) ClearFirstTokenMs() *UsageLogUpsertOne {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearFirstTokenMs()
+	})
+}
+
+// SetRequestReceiveMs sets the "request_receive_ms" field.
+func (u *UsageLogUpsertOne) SetRequestReceiveMs(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetRequestReceiveMs(v)
+	})
+}
+
+// AddRequestReceiveMs adds v to the "request_receive_ms" field.
+func (u *UsageLogUpsertOne) AddRequestReceiveMs(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddRequestReceiveMs(v)
+	})
+}
+
+// UpdateRequestReceiveMs sets the "request_receive_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateRequestReceiveMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateRequestReceiveMs()
+	})
+}
+
+// ClearRequestReceiveMs clears the value of the "request_receive_ms" field.
+func (u *UsageLogUpsertOne) ClearRequestReceiveMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearRequestReceiveMs()
+	})
+}
+
+// SetGatewayMs sets the "gateway_ms" field.
+func (u *UsageLogUpsertOne) SetGatewayMs(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetGatewayMs(v)
+	})
+}
+
+// AddGatewayMs adds v to the "gateway_ms" field.
+func (u *UsageLogUpsertOne) AddGatewayMs(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddGatewayMs(v)
+	})
+}
+
+// UpdateGatewayMs sets the "gateway_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateGatewayMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateGatewayMs()
+	})
+}
+
+// ClearGatewayMs clears the value of the "gateway_ms" field.
+func (u *UsageLogUpsertOne) ClearGatewayMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearGatewayMs()
+	})
+}
+
+// SetUpstreamWaitMs sets the "upstream_wait_ms" field.
+func (u *UsageLogUpsertOne) SetUpstreamWaitMs(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamWaitMs(v)
+	})
+}
+
+// AddUpstreamWaitMs adds v to the "upstream_wait_ms" field.
+func (u *UsageLogUpsertOne) AddUpstreamWaitMs(v int) *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddUpstreamWaitMs(v)
+	})
+}
+
+// UpdateUpstreamWaitMs sets the "upstream_wait_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertOne) UpdateUpstreamWaitMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamWaitMs()
+	})
+}
+
+// ClearUpstreamWaitMs clears the value of the "upstream_wait_ms" field.
+func (u *UsageLogUpsertOne) ClearUpstreamWaitMs() *UsageLogUpsertOne {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamWaitMs()
 	})
 }
 
@@ -4825,6 +5035,90 @@ func (u *UsageLogUpsertBulk) UpdateFirstTokenMs() *UsageLogUpsertBulk {
 func (u *UsageLogUpsertBulk) ClearFirstTokenMs() *UsageLogUpsertBulk {
 	return u.Update(func(s *UsageLogUpsert) {
 		s.ClearFirstTokenMs()
+	})
+}
+
+// SetRequestReceiveMs sets the "request_receive_ms" field.
+func (u *UsageLogUpsertBulk) SetRequestReceiveMs(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetRequestReceiveMs(v)
+	})
+}
+
+// AddRequestReceiveMs adds v to the "request_receive_ms" field.
+func (u *UsageLogUpsertBulk) AddRequestReceiveMs(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddRequestReceiveMs(v)
+	})
+}
+
+// UpdateRequestReceiveMs sets the "request_receive_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateRequestReceiveMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateRequestReceiveMs()
+	})
+}
+
+// ClearRequestReceiveMs clears the value of the "request_receive_ms" field.
+func (u *UsageLogUpsertBulk) ClearRequestReceiveMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearRequestReceiveMs()
+	})
+}
+
+// SetGatewayMs sets the "gateway_ms" field.
+func (u *UsageLogUpsertBulk) SetGatewayMs(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetGatewayMs(v)
+	})
+}
+
+// AddGatewayMs adds v to the "gateway_ms" field.
+func (u *UsageLogUpsertBulk) AddGatewayMs(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddGatewayMs(v)
+	})
+}
+
+// UpdateGatewayMs sets the "gateway_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateGatewayMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateGatewayMs()
+	})
+}
+
+// ClearGatewayMs clears the value of the "gateway_ms" field.
+func (u *UsageLogUpsertBulk) ClearGatewayMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearGatewayMs()
+	})
+}
+
+// SetUpstreamWaitMs sets the "upstream_wait_ms" field.
+func (u *UsageLogUpsertBulk) SetUpstreamWaitMs(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.SetUpstreamWaitMs(v)
+	})
+}
+
+// AddUpstreamWaitMs adds v to the "upstream_wait_ms" field.
+func (u *UsageLogUpsertBulk) AddUpstreamWaitMs(v int) *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.AddUpstreamWaitMs(v)
+	})
+}
+
+// UpdateUpstreamWaitMs sets the "upstream_wait_ms" field to the value that was provided on create.
+func (u *UsageLogUpsertBulk) UpdateUpstreamWaitMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.UpdateUpstreamWaitMs()
+	})
+}
+
+// ClearUpstreamWaitMs clears the value of the "upstream_wait_ms" field.
+func (u *UsageLogUpsertBulk) ClearUpstreamWaitMs() *UsageLogUpsertBulk {
+	return u.Update(func(s *UsageLogUpsert) {
+		s.ClearUpstreamWaitMs()
 	})
 }
 

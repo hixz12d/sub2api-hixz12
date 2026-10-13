@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/domain"
@@ -585,6 +586,7 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 			return
 		}
 
+		readStart := time.Now()
 		body, err := pkghttputil.ReadRequestBodyWithPrealloc(c.Request)
 		if err != nil {
 			status := http.StatusBadRequest
@@ -598,6 +600,7 @@ func compositeTargetPlatformMiddleware(resolver *service.CompositeRouteResolver)
 			c.Abort()
 			return
 		}
+		service.MarkRequestBodyRead(c, readStart, time.Now())
 
 		// Live 入口按 session.model 分发并改写（与白名单准入、Live handler 的
 		// 解析保持一致），避免顶层 model 别名与 session 模型不一致时改错对象。

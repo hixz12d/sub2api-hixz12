@@ -144,6 +144,18 @@ func (UsageLog) Fields() []ent.Field {
 		field.Int("first_token_ms").
 			Optional().
 			Nillable(),
+		// 接收：读取客户端请求体耗时（毫秒）
+		field.Int("request_receive_ms").
+			Optional().
+			Nillable(),
+		// 网关处理：请求体读完到最后一次发出上游请求（毫秒）
+		field.Int("gateway_ms").
+			Optional().
+			Nillable(),
+		// 上游等待：最后一次发出上游请求到首字（毫秒）
+		field.Int("upstream_wait_ms").
+			Optional().
+			Nillable(),
 		field.String("user_agent").
 			MaxLen(512).
 			Optional().

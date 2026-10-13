@@ -1341,6 +1341,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 					ClientDisconnect:              clientDisconnected,
 					Duration:                      time.Since(turnStart),
 					FirstTokenMs:                  firstTokenMs,
+					// WebSocket 入站没有上传请求体这一步，turnStart 紧挨着写上游，首字耗时即上游等待。
+					UpstreamWaitMs: firstTokenMs,
 				}
 				if replayInput := replayCollector.Items(); len(replayInput) > 0 {
 					result.wsReplayInput = replayInput

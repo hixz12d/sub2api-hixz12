@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/httputil"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/requestmodel"
@@ -111,6 +112,7 @@ func isResponsesWebSocketRoute(c *gin.Context) bool {
 // 不敏感）与 multipart 表单（首/末字段）三类解析器，这里返回「任一解析器可能
 // 绑定到的全部模型值」，调用方必须逐一校验，任一未命中即拒绝。
 func groupModelAllowlistModelsFromBody(c *gin.Context) ([]string, bool) {
+	readStart := time.Now()
 	body, err := httputil.ReadRequestBodyWithPrealloc(c.Request)
 	if err != nil {
 		status := http.StatusBadRequest
@@ -124,6 +126,7 @@ func groupModelAllowlistModelsFromBody(c *gin.Context) ([]string, bool) {
 		c.Abort()
 		return nil, false
 	}
+	service.MarkRequestBodyRead(c, readStart, time.Now())
 	requestmodel.ResetRequestBody(c.Request, body)
 	return requestmodel.FromBodyCandidates(c.FullPath(), c.GetHeader("Content-Type"), body), true
 }

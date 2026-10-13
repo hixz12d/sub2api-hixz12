@@ -100,6 +100,12 @@ const (
 	FieldDurationMs = "duration_ms"
 	// FieldFirstTokenMs holds the string denoting the first_token_ms field in the database.
 	FieldFirstTokenMs = "first_token_ms"
+	// FieldRequestReceiveMs holds the string denoting the request_receive_ms field in the database.
+	FieldRequestReceiveMs = "request_receive_ms"
+	// FieldGatewayMs holds the string denoting the gateway_ms field in the database.
+	FieldGatewayMs = "gateway_ms"
+	// FieldUpstreamWaitMs holds the string denoting the upstream_wait_ms field in the database.
+	FieldUpstreamWaitMs = "upstream_wait_ms"
 	// FieldUserAgent holds the string denoting the user_agent field in the database.
 	FieldUserAgent = "user_agent"
 	// FieldIPAddress holds the string denoting the ip_address field in the database.
@@ -221,6 +227,9 @@ var Columns = []string{
 	FieldStream,
 	FieldDurationMs,
 	FieldFirstTokenMs,
+	FieldRequestReceiveMs,
+	FieldGatewayMs,
+	FieldUpstreamWaitMs,
 	FieldUserAgent,
 	FieldIPAddress,
 	FieldImageCount,
@@ -544,6 +553,21 @@ func ByDurationMs(opts ...sql.OrderTermOption) OrderOption {
 // ByFirstTokenMs orders the results by the first_token_ms field.
 func ByFirstTokenMs(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldFirstTokenMs, opts...).ToFunc()
+}
+
+// ByRequestReceiveMs orders the results by the request_receive_ms field.
+func ByRequestReceiveMs(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldRequestReceiveMs, opts...).ToFunc()
+}
+
+// ByGatewayMs orders the results by the gateway_ms field.
+func ByGatewayMs(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldGatewayMs, opts...).ToFunc()
+}
+
+// ByUpstreamWaitMs orders the results by the upstream_wait_ms field.
+func ByUpstreamWaitMs(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldUpstreamWaitMs, opts...).ToFunc()
 }
 
 // ByUserAgent orders the results by the user_agent field.

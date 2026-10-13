@@ -252,15 +252,34 @@
           <div class="flex items-stretch gap-2">
             <span
               class="w-1 shrink-0 rounded-full"
-              :class="row.first_token_ms != null
-                ? ['bg-gradient-to-b from-40% to-60%', LATENCY_BAR_FROM_CLASSES[firstTokenSeverity(row.first_token_ms)], LATENCY_BAR_TO_CLASSES[durationSeverity(row.duration_ms ?? 0)]]
+              :class="firstTokenDisplayMs(row) != null
+                ? ['bg-gradient-to-b from-40% to-60%', LATENCY_BAR_FROM_CLASSES[firstTokenSeverity(firstTokenDisplayMs(row) ?? 0)], LATENCY_BAR_TO_CLASSES[durationSeverity(row.duration_ms ?? 0)]]
                 : LATENCY_BAR_CLASSES[durationSeverity(row.duration_ms ?? 0)]"
               aria-hidden="true"
             ></span>
             <div class="grid grid-cols-[max-content_max-content] items-baseline gap-x-2 gap-y-0.5 text-xs">
-              <span class="text-gray-400 dark:text-gray-500">{{ t('usage.latencyFirstToken') }}</span>
-              <span v-if="row.first_token_ms != null" class="font-medium tabular-nums" :class="LATENCY_TEXT_CLASSES[firstTokenSeverity(row.first_token_ms)]">{{ formatDuration(row.first_token_ms) }}</span>
+              <span class="text-gray-400 dark:text-gray-500" :title="t('usage.latencyReceiveHint')">{{ t('usage.latencyReceive') }}</span>
+              <span v-if="row.request_receive_ms != null" class="font-medium tabular-nums text-gray-700 dark:text-gray-300">{{ formatDuration(row.request_receive_ms) }}</span>
               <span v-else class="text-gray-400 dark:text-gray-500">-</span>
+              <button
+                v-if="hasFirstTokenSplit(row)"
+                type="button"
+                class="inline-flex cursor-pointer items-center gap-0.5 text-left text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+                :title="t('usage.latencyFirstTokenHint')"
+                :aria-expanded="expandedLatencyRows.has(row.id)"
+                @click.stop="toggleLatencyRow(row.id)"
+              >
+                {{ t('usage.latencyFirstToken') }}<span class="text-[9px] leading-none">{{ expandedLatencyRows.has(row.id) ? '▾' : '▸' }}</span>
+              </button>
+              <span v-else class="text-gray-400 dark:text-gray-500">{{ t('usage.latencyFirstToken') }}</span>
+              <span v-if="firstTokenDisplayMs(row) != null" class="font-medium tabular-nums" :class="LATENCY_TEXT_CLASSES[firstTokenSeverity(firstTokenDisplayMs(row) ?? 0)]">{{ formatDuration(firstTokenDisplayMs(row)) }}</span>
+              <span v-else class="text-gray-400 dark:text-gray-500">-</span>
+              <template v-if="hasFirstTokenSplit(row) && expandedLatencyRows.has(row.id)">
+                <span class="pl-2 text-[11px] text-gray-400 dark:text-gray-500">{{ t('usage.latencyGateway') }}</span>
+                <span class="text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ row.gateway_ms }}ms</span>
+                <span class="pl-2 text-[11px] text-gray-400 dark:text-gray-500">{{ t('usage.latencyUpstreamWait') }}</span>
+                <span class="text-[11px] tabular-nums text-gray-500 dark:text-gray-400">{{ row.upstream_wait_ms }}ms</span>
+              </template>
               <span class="text-gray-400 dark:text-gray-500">{{ t('usage.latencyDuration') }}</span>
               <span class="font-medium tabular-nums" :class="LATENCY_TEXT_CLASSES[durationSeverity(row.duration_ms ?? 0)]">{{ formatDuration(row.duration_ms) }}</span>
               <span class="text-gray-400 dark:text-gray-500" :title="t('usage.outputTpsHint')">{{ t('usage.outputTps') }}</span>
@@ -768,6 +787,26 @@ const formatDuration = (ms: number | null | undefined): string => {
   const totalSec = Math.round(ms / 1000)
   if (totalSec < 3600) return `${Math.floor(totalSec / 60)}m ${totalSec % 60}s`
   return `${Math.floor(totalSec / 3600)}h ${Math.floor((totalSec % 3600) / 60)}m`
+}
+
+// 首字拆分：网关处理 + 上游等待都有值时可展开明细
+const hasFirstTokenSplit = (row: AdminUsageLog): boolean =>
+  row.gateway_ms != null && row.upstream_wait_ms != null
+
+// 首字显示值：有两段时用两段之和，否则回退到 first_token_ms（旧记录、其他平台）
+const firstTokenDisplayMs = (row: AdminUsageLog): number | null => {
+  if (row.gateway_ms != null && row.upstream_wait_ms != null) return row.gateway_ms + row.upstream_wait_ms
+  return row.first_token_ms ?? null
+}
+
+// 首字明细展开状态，按行 id 记录，默认全部收起
+const expandedLatencyRows = ref<Set<number>>(new Set())
+
+const toggleLatencyRow = (id: number) => {
+  const next = new Set(expandedLatencyRows.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  expandedLatencyRows.value = next
 }
 
 // Cost tooltip functions

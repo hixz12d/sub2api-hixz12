@@ -1869,6 +1869,11 @@ export interface AdminUsageLog extends UsageLog {
   channel_id?: number | null
   billing_tier?: string | null
 
+  // 耗时拆分（仅管理员可见，毫秒）：接收 / 网关处理 / 上游等待
+  request_receive_ms?: number | null
+  gateway_ms?: number | null
+  upstream_wait_ms?: number | null
+
   // 最小账号信息（仅管理员接口返回）
   account?: UsageLogAccountSummary
 }

@@ -707,6 +707,13 @@ type AdminUsageLog struct {
 	// IPAddress 用户请求 IP
 	IPAddress *string `json:"ip_address,omitempty"`
 
+	// RequestReceiveMs 接收：读取客户端请求体耗时（毫秒）
+	RequestReceiveMs *int `json:"request_receive_ms,omitempty"`
+	// GatewayMs 网关处理：请求体读完到最后一次发出上游请求（毫秒）
+	GatewayMs *int `json:"gateway_ms,omitempty"`
+	// UpstreamWaitMs 上游等待：最后一次发出上游请求到首字（毫秒）
+	UpstreamWaitMs *int `json:"upstream_wait_ms,omitempty"`
+
 	// Account 最小账号信息（避免泄露敏感字段）
 	Account *AccountSummary `json:"account,omitempty"`
 }

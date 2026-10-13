@@ -42,6 +42,7 @@ func (s *OpenAIGatewayService) forwardChatCompletionsViaNativeAnthropic(
 	defaultMappedModel string,
 ) (*OpenAIForwardResult, error) {
 	startTime := time.Now()
+	MarkOpenAIForwardStart(c, startTime)
 
 	// 1. Parse Chat Completions request
 	var ccReq apicompat.ChatCompletionsRequest

@@ -95,6 +95,9 @@ var usageLogInsertArgTypes = [...]string{
 	"bigint",      // monitor_output_tps_milli
 	"text",        // monitor_tps_method
 	"bigint",      // monitor_first_visible_ms
+	"integer",     // request_receive_ms
+	"integer",     // gateway_ms
+	"integer",     // upstream_wait_ms
 }
 
 const (
@@ -298,14 +301,15 @@ func (r *usageLogRepository) createSingle(ctx context.Context, sqlq sqlExecutor,
 			created_at,
 			request_origin, monitor_observation_version, monitor_input_tokens_total,
 			monitor_cache_read_tokens, monitor_visible_output_tokens, monitor_generation_ms,
-			monitor_output_tps_milli, monitor_tps_method, monitor_first_visible_ms
+			monitor_output_tps_milli, monitor_tps_method, monitor_first_visible_ms,
+			request_receive_ms, gateway_ms, upstream_wait_ms
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9,
 			$10, $11,
 			$12, $13, $14, $15,
 			$16, $17, $18, $19,
 			$20, $21, $22, $23, $24, $25,
-			$26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71
+			$26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71, $72, $73, $74
 		)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 		RETURNING id, created_at
@@ -761,7 +765,8 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 			created_at,
 			request_origin, monitor_observation_version, monitor_input_tokens_total,
 			monitor_cache_read_tokens, monitor_visible_output_tokens, monitor_generation_ms,
-			monitor_output_tps_milli, monitor_tps_method, monitor_first_visible_ms
+			monitor_output_tps_milli, monitor_tps_method, monitor_first_visible_ms,
+			request_receive_ms, gateway_ms, upstream_wait_ms
 		) AS (VALUES `)
 
 	// Each batch row prepends the synthetic input_index before the usage-log column values.
@@ -858,7 +863,8 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				created_at,
 				request_origin, monitor_observation_version, monitor_input_tokens_total,
 				monitor_cache_read_tokens, monitor_visible_output_tokens, monitor_generation_ms,
-				monitor_output_tps_milli, monitor_tps_method, monitor_first_visible_ms
+				monitor_output_tps_milli, monitor_tps_method, monitor_first_visible_ms,
+				request_receive_ms, gateway_ms, upstream_wait_ms
 			)
 			SELECT
 				user_id,
@@ -925,7 +931,8 @@ func buildUsageLogBatchInsertQuery(keys []string, preparedByKey map[string]usage
 				created_at,
 				request_origin, monitor_observation_version, monitor_input_tokens_total,
 				monitor_cache_read_tokens, monitor_visible_output_tokens, monitor_generation_ms,
-				monitor_output_tps_milli, monitor_tps_method, monitor_first_visible_ms
+				monitor_output_tps_milli, monitor_tps_method, monitor_first_visible_ms,
+				request_receive_ms, gateway_ms, upstream_wait_ms
 			FROM input
 			ON CONFLICT (request_id, api_key_id) DO NOTHING
 			RETURNING request_id, api_key_id, id, created_at
@@ -1032,7 +1039,8 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			created_at,
 			request_origin, monitor_observation_version, monitor_input_tokens_total,
 			monitor_cache_read_tokens, monitor_visible_output_tokens, monitor_generation_ms,
-			monitor_output_tps_milli, monitor_tps_method, monitor_first_visible_ms
+			monitor_output_tps_milli, monitor_tps_method, monitor_first_visible_ms,
+			request_receive_ms, gateway_ms, upstream_wait_ms
 		) AS (VALUES `)
 
 	args := make([]any, 0, len(preparedList)*len(usageLogInsertArgTypes))
@@ -1125,7 +1133,8 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			created_at,
 			request_origin, monitor_observation_version, monitor_input_tokens_total,
 			monitor_cache_read_tokens, monitor_visible_output_tokens, monitor_generation_ms,
-			monitor_output_tps_milli, monitor_tps_method, monitor_first_visible_ms
+			monitor_output_tps_milli, monitor_tps_method, monitor_first_visible_ms,
+			request_receive_ms, gateway_ms, upstream_wait_ms
 		)
 		SELECT
 			user_id,
@@ -1192,7 +1201,8 @@ func buildUsageLogBestEffortInsertQuery(preparedList []usageLogInsertPrepared) (
 			created_at,
 			request_origin, monitor_observation_version, monitor_input_tokens_total,
 			monitor_cache_read_tokens, monitor_visible_output_tokens, monitor_generation_ms,
-			monitor_output_tps_milli, monitor_tps_method, monitor_first_visible_ms
+			monitor_output_tps_milli, monitor_tps_method, monitor_first_visible_ms,
+			request_receive_ms, gateway_ms, upstream_wait_ms
 		FROM input
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 	`)
@@ -1267,14 +1277,15 @@ func execUsageLogInsertNoResult(ctx context.Context, sqlq sqlExecutor, prepared 
 			created_at,
 			request_origin, monitor_observation_version, monitor_input_tokens_total,
 			monitor_cache_read_tokens, monitor_visible_output_tokens, monitor_generation_ms,
-			monitor_output_tps_milli, monitor_tps_method, monitor_first_visible_ms
+			monitor_output_tps_milli, monitor_tps_method, monitor_first_visible_ms,
+			request_receive_ms, gateway_ms, upstream_wait_ms
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9,
 			$10, $11,
 			$12, $13, $14, $15,
 			$16, $17, $18, $19,
 			$20, $21, $22, $23, $24, $25,
-			$26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71
+			$26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55, $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70, $71, $72, $73, $74
 		)
 		ON CONFLICT (request_id, api_key_id) DO NOTHING
 	`, prepared.args...)
@@ -1408,6 +1419,9 @@ func prepareUsageLogInsert(log *service.UsageLog) usageLogInsertPrepared {
 			nullInt64(log.MonitorOutputTPSMilli),
 			nullString(log.MonitorTPSMethod),
 			nullInt64(log.MonitorFirstVisibleMs),
+			nullInt(log.RequestReceiveMs),
+			nullInt(log.GatewayMs),
+			nullInt(log.UpstreamWaitMs),
 		},
 	}
 }

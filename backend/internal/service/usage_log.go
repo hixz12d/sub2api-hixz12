@@ -180,6 +180,9 @@ type UsageLog struct {
 	NativeCompactionV2 bool
 	DurationMs         *int
 	FirstTokenMs       *int
+	RequestReceiveMs   *int // 接收：读取客户端请求体耗时（毫秒），基本等于用户上传耗时
+	GatewayMs          *int // 网关处理：请求体读完到最后一次发出上游请求（毫秒），含鉴权、排队、选号、换号重试
+	UpstreamWaitMs     *int // 上游等待：最后一次发出上游请求到首字（毫秒）
 	UserAgent          *string
 	IPAddress          *string
 	// SessionID is the explicit client-provided request correlation identifier
