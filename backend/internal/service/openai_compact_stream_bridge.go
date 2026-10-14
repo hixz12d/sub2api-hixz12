@@ -104,6 +104,17 @@ func writeOpenAICompactSSEFailure(c *gin.Context, statusCode int, errorBody []by
 	writeOpenAICompactSSEFailureMessage(c, statusCode, "upstream_error", message)
 }
 
+// writeOpenAICompactCommittedFailure 供 JSON 错误写回点调用：压缩心跳已把响应头
+// 提交为 200 SSE 时改写 response.failed 终止事件并返回 true；未提交时只停拍，
+// 返回 false，调用方照常写 JSON+状态码。
+func writeOpenAICompactCommittedFailure(c *gin.Context, statusCode int, errType, message string) bool {
+	if !StopOpenAICompactSSEKeepaliveCommitted(c) {
+		return false
+	}
+	writeOpenAICompactSSEFailureMessage(c, statusCode, errType, message)
+	return true
+}
+
 // writeOpenAICompactSSEFailureMessage 写出 response.failed 终止事件。Codex 对
 // 流式 Responses 请求把 response.failed 作为合法终止事件处理（普通 error 帧
 // 不被识别，会退化为 "stream closed before response.completed" 盲重连）。

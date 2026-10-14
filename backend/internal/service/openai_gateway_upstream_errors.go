@@ -627,6 +627,9 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 			UpstreamStatus: resp.StatusCode,
 		})
 		setOpsUpstreamError(c, resp.StatusCode, cyberMsg, truncateString(string(body), 2048))
+		if writeOpenAICompactCommittedFailure(c, resp.StatusCode, "invalid_request_error", firstNonEmpty(cyberMsg, "Upstream rejected the request")) {
+			return nil, fmt.Errorf("openai cyber_policy: %d", resp.StatusCode)
+		}
 		writeOpenAIPassthroughResponseHeaders(c.Writer.Header(), resp.Header, s.responseHeaderFilter)
 		contentType := resp.Header.Get("Content-Type")
 		if contentType == "" {
@@ -709,12 +712,14 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		"Upstream request failed",
 	); matched {
 		MarkResponseCommitted(c)
-		c.JSON(status, gin.H{
-			"error": gin.H{
-				"type":    errType,
-				"message": errMsg,
-			},
-		})
+		if !writeOpenAICompactCommittedFailure(c, status, errType, errMsg) {
+			c.JSON(status, gin.H{
+				"error": gin.H{
+					"type":    errType,
+					"message": errMsg,
+				},
+			})
+		}
 		if upstreamMsg == "" {
 			upstreamMsg = errMsg
 		}
@@ -739,12 +744,14 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 			Detail:             upstreamDetail,
 		})
 		MarkResponseCommitted(c)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": gin.H{
-				"type":    "upstream_error",
-				"message": "Upstream gateway error",
-			},
-		})
+		if !writeOpenAICompactCommittedFailure(c, http.StatusInternalServerError, "upstream_error", "Upstream gateway error") {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": gin.H{
+					"type":    "upstream_error",
+					"message": "Upstream gateway error",
+				},
+			})
+		}
 		if upstreamMsg == "" {
 			return nil, fmt.Errorf("upstream error: %d (not in custom error codes)", resp.StatusCode)
 		}
@@ -835,12 +842,14 @@ func (s *OpenAIGatewayService) handleErrorResponse(
 		errMsg = upstreamMsg
 	}
 
-	c.JSON(statusCode, gin.H{
-		"error": gin.H{
-			"type":    errType,
-			"message": errMsg,
-		},
-	})
+	if !writeOpenAICompactCommittedFailure(c, statusCode, errType, errMsg) {
+		c.JSON(statusCode, gin.H{
+			"error": gin.H{
+				"type":    errType,
+				"message": errMsg,
+			},
+		})
+	}
 
 	if upstreamMsg == "" {
 		return nil, fmt.Errorf("upstream error: %d", resp.StatusCode)

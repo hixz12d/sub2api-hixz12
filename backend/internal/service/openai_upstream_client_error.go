@@ -53,6 +53,9 @@ func writeOpenAIUpstreamClientError(c *gin.Context, statusCode int, body []byte,
 	}
 	errorPayload["message"] = message
 
+	if writeOpenAICompactCommittedFailure(c, statusCode, errorPayload["type"].(string), message) {
+		return
+	}
 	c.JSON(statusCode, gin.H{"error": errorPayload})
 }
 

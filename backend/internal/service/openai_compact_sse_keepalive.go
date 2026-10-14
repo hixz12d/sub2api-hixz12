@@ -37,13 +37,16 @@ type openAICompactSSEKeepalive struct {
 }
 
 // StartOpenAICompactSSEKeepalive 为已标记 body-signal 客户端流式的 compact
-// 请求启动下游心跳，返回幂等的停止函数。interval<=0 或请求未标记时为 no-op。
+// 请求、以及 Codex 原生压缩（remote compaction v2，必为流式）请求启动下游
+// 心跳，返回幂等的停止函数。interval<=0 或请求未标记时为 no-op。原生压缩
+// 走流式 /responses，但上游（如 codex-proxy-rs）可能在产出压缩结果前连
+// 响应头都不发，客户端静默等待数分钟会判定断线重连并从头重做压缩。
 //
 // 同时把 c.Writer 替换为 openAICompactKeepaliveWriter：请求 goroutine 的任何
 // 响应构造都会先在心跳互斥锁下停拍，未被显式拦截的写回路径（如 Forward
 // 内部的本地拒绝）也不会与心跳 goroutine 产生数据竞争或字节交错。
 func StartOpenAICompactSSEKeepalive(c *gin.Context, interval time.Duration) func() {
-	if !openAICompactClientWantsStream(c) {
+	if !openAICompactClientWantsStream(c) && !isOpenAINativeCompactionV2(c) {
 		return func() {}
 	}
 	return startOpenAISSEKeepalive(c, interval)
@@ -63,6 +66,18 @@ func startOpenAISSEKeepalive(c *gin.Context, interval time.Duration) func() {
 	k := &openAICompactSSEKeepalive{
 		writer: originalWriter,
 		stop:   make(chan struct{}),
+	}
+	// 原生压缩请求可能先有转发前心跳、再进入透传流式心跳。Writer.Size 是累计
+	// 值，新心跳必须继承前一个的字节数和响应头提交状态，否则前面的心跳字节会
+	// 被当成语义输出（放弃换号），已提交的 200 也会被误判为未提交而补写 JSON。
+	if value, ok := c.Get(openAICompactSSEKeepaliveKey); ok {
+		if prev, valid := value.(*openAICompactSSEKeepalive); valid && prev != nil {
+			prev.mu.Lock()
+			prev.markStoppedLocked()
+			k.bytes = prev.bytes
+			k.started = prev.started
+			prev.mu.Unlock()
+		}
 	}
 	c.Set(openAICompactSSEKeepaliveKey, k)
 	wrappedWriter := &openAICompactKeepaliveWriter{ResponseWriter: originalWriter, k: k}
