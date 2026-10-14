@@ -1148,10 +1148,13 @@ func openAIStreamClientOutputStarted(c *gin.Context, localStarted bool, attemptS
 	return adjustedSize > baseline+nonSemanticWrittenBytes
 }
 
-// Lifecycle metadata and transport heartbeats are not model output.
+// Lifecycle metadata and transport heartbeats are not model output. Codex
+// rate-limit and response-metadata events precede response.created on Codex
+// upstreams (e.g. codex-proxy-rs) and must not block pre-output failover.
 func openAIStreamEventIsMetadata(eventType string) bool {
 	switch strings.TrimSpace(eventType) {
-	case "response.created", "response.in_progress", "keepalive":
+	case "response.created", "response.in_progress", "keepalive",
+		"codex.rate_limits", "codex.response.metadata", "response.metadata":
 		return true
 	default:
 		return false
@@ -1766,6 +1769,10 @@ func (s *OpenAIGatewayService) handleOpenAIStreamTerminalAccountSideEffects(
 	}
 }
 
+// openAIStreamTransientSameAccountRetryMax caps same-account retries for
+// streamed OpenAI transient failures on pool-mode accounts.
+const openAIStreamTransientSameAccountRetryMax = 2
+
 func openAIStreamFailedEventRetryableOnSameAccount(account *Account, payload []byte, message string) bool {
 	if account == nil {
 		return false
@@ -1781,8 +1788,11 @@ func openAIStreamFailedEventRetryableOnSameAccount(account *Account, payload []b
 		return false
 	}
 	semanticStatus := openAIStreamFailedEventSemanticStatus(payload, message)
+	// 池模式账号背后是一组上游号：OpenAI 临时故障（如流内 server_error/503）
+	// 在同一账号重试即可让上游换号，与 HTTP 错误路径的同号重试判定一致。
 	return account.IsPoolModeRetryableStatus(semanticStatus) ||
-		openAIStreamFailureIsCapacity(semanticStatus, payload, message)
+		openAIStreamFailureIsCapacity(semanticStatus, payload, message) ||
+		isOpenAITransientProcessingError(http.StatusBadRequest, message, payload)
 }
 
 func (s *OpenAIGatewayService) recordOpenAIStreamUpstreamError(
@@ -1887,6 +1897,13 @@ func (s *OpenAIGatewayService) newOpenAIStreamFailoverErrorWithModel(
 		// A streamed terminal failure may already have consumed the full prompt.
 		// Permit one alternate account, not the handler's broader generic budget.
 		failoverErr.MaxAccountSwitches = 1
+	}
+	if failoverErr.RetryableOnSameAccount && failoverErr.SameAccountRetryMax == 0 &&
+		isOpenAITransientProcessingError(http.StatusBadRequest, message, payload) {
+		// 流内 OpenAI 临时故障在池模式账号上同号重试：上限 2 次并按请求级退避，
+		// 避免上游大面积故障时按账号配置（最多 10 次）放大请求量。
+		failoverErr.SameAccountRetryMax = openAIStreamTransientSameAccountRetryMax
+		failoverErr.RequestScopedTransient = true
 	}
 	if IsOpenAIOAuthAuthorizedAPIKeyGroupsError(message, payload) {
 		failoverErr.Reason = openAIOAuthAuthorizedAPIKeyGroupsReason
