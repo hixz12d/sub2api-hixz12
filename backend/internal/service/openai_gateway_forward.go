@@ -1643,6 +1643,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	// identity/session headers are excluded by ApplyHeaderOverrides.
 	account.ApplyHeaderOverrides(req.Header)
 	applyOpenCodeSessionHeader(c, account, targetURL, req.Header, body, openCodeSessionHintBody(promptCacheKey))
+	applyOpenAIPoolSessionFallbackHeader(c, account, req.Header, promptCacheKey)
 	if account.Type == AccountTypeOAuth || usesCodexRelayKernel(account) {
 		s.finalizeCodexOAuthHeaders(ctx, c, account, req.Header, fingerprintIDs, accountIdentitySessionID)
 	} else if account.IsOpenAIOAuthLike() {
@@ -1666,4 +1667,18 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 		return nil, err
 	}
 	return req, nil
+}
+
+// applyOpenAIPoolSessionFallbackHeader 池模式上游（如 codex-proxy-rs）按 session-id
+// 把同一对话固定在同一个号上；客户端没带会话头时用 prompt_cache_key 补一个，
+// 按 API Key 隔离，避免每轮随机换号导致缓存失效。
+func applyOpenAIPoolSessionFallbackHeader(c *gin.Context, account *Account, headers http.Header, promptCacheKey string) {
+	if account == nil || account.Type != AccountTypeAPIKey || !account.IsPoolMode() || headers == nil {
+		return
+	}
+	promptCacheKey = strings.TrimSpace(promptCacheKey)
+	if promptCacheKey == "" || resolveCodexSessionHeader(headers) != "" {
+		return
+	}
+	headers.Set(codexSessionHeader, generateSessionUUID(isolateOpenAISessionID(getAPIKeyIDFromContext(c), promptCacheKey)))
 }
