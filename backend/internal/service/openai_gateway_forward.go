@@ -1670,15 +1670,22 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 }
 
 // applyOpenAIPoolSessionFallbackHeader 池模式上游（如 codex-proxy-rs）按 session-id
-// 把同一对话固定在同一个号上；客户端没带会话头时用 prompt_cache_key 补一个，
+// 把同一对话固定在同一个号上；上游请求没有会话头时，先用 prompt_cache_key，
+// 再用客户端不在透传白名单里的会话头（如 ZCode/OpenCode 的 X-Session-Id）补一个，
 // 按 API Key 隔离，避免每轮随机换号导致缓存失效。
 func applyOpenAIPoolSessionFallbackHeader(c *gin.Context, account *Account, headers http.Header, promptCacheKey string) {
 	if account == nil || account.Type != AccountTypeAPIKey || !account.IsPoolMode() || headers == nil {
 		return
 	}
-	promptCacheKey = strings.TrimSpace(promptCacheKey)
-	if promptCacheKey == "" || resolveCodexSessionHeader(headers) != "" {
+	if resolveCodexSessionHeader(headers) != "" {
 		return
 	}
-	headers.Set(codexSessionHeader, generateSessionUUID(isolateOpenAISessionID(getAPIKeyIDFromContext(c), promptCacheKey)))
+	seed := strings.TrimSpace(promptCacheKey)
+	if seed == "" {
+		seed = explicitOpenAIHeaderSessionID(c)
+	}
+	if seed == "" {
+		return
+	}
+	headers.Set(codexSessionHeader, generateSessionUUID(isolateOpenAISessionID(getAPIKeyIDFromContext(c), seed)))
 }
