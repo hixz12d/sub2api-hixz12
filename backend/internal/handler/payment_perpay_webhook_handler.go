@@ -34,10 +34,10 @@ func (h *PaymentWebhookHandler) PerPayNotify(c *gin.Context) {
 	for k := range c.Request.Header {
 		headers[strings.ToLower(k)] = c.GetHeader(k)
 	}
-	resolvedKey, notification, err := verifyNotificationWithProviders(c.Request.Context(), providers, string(body), headers)
+	verifiedProvider, notification, err := verifyNotificationWithProviders(c.Request.Context(), providers, string(body), headers)
 	// Verification also queries PerPay. Use a retryable status for temporary
 	// network errors instead of permanently dead-lettering legitimate callbacks.
-	if err != nil || notification == nil || resolvedKey != payment.TypePerPay {
+	if err != nil || notification == nil || verifiedProvider.ProviderKey() != payment.TypePerPay {
 		c.Status(http.StatusServiceUnavailable)
 		return
 	}

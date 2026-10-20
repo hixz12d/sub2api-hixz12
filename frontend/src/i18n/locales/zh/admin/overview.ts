@@ -1016,6 +1016,12 @@ export default {
         binding: '按本分组绑定优先级',
         hint: '绑定模式会先耗尽较小优先级层，再进入下一层；现有分组默认保持全局模式。'
       },
+      i18nField: {
+        default: '默认',
+        add: '新增 {language} 版',
+        edit: '编辑 {language} 版',
+        placeholder: '{language} 版，留空则显示默认内容'
+      },
       enterGroupName: '请输入分组名称',
       optionalDescription: '可选描述',
       platformHint: '选择此分组关联的平台',
