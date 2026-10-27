@@ -9,11 +9,13 @@
 | 模型 | 输入 | 输出 | 缓存读取 | 缓存写入 | 1 小时缓存写入 |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | GPT-6.1 Sol | 2 | 10 | 0.1 | 2.5 | — |
+| GPT-6.1 Terra | 1 | 5 | 0.05 | 1.25 | — |
 | GPT-6 Sol | 2 | 10 | 0.2 | 2.5 | — |
 | GPT-6 Luna | 0.1 | 0.5 | 0.01 | 0.125 | — |
 | Claude Opus 5.5 | 4 | 20 | 0.2 | 5（5 分钟） | 8 |
 
 - GPT-6.1 Sol：输入/输出/缓存写入同 GPT-6 Sol，缓存读取减半；推理档位仅 `low/medium/high/xhigh/max`（不支持 `none`），默认 `medium`；Chat Completions 不支持工具调用，工具请求在仅支持 Chat Completions 的账号上直接拒绝。长上下文、Fast、Flex、Batch 规则同 Sol。
+- GPT-6.1 Terra：推理档位 `none/low/medium/high/xhigh/max`，默认 `medium`。长上下文、Fast、Flex、Batch 规则同 Sol，订阅账号不享受 GPT-6.1 Sol 的长上下文豁免。
 - Sol/Luna：上下文 1,050,000，最大输出 128,000；推理档位 `none/low/medium/high/xhigh/max`，默认 `medium`。
 - Sol/Luna：总输入（含缓存）**超过** 272,000 时，整笔请求输入及缓存价格 ×2、输出 ×1.5。仍遵循既有账号和分组长上下文计费开关。
 - Sol/Luna：Fast/priority ×2，Flex ×0.5；价表保存 Batch 半价字段，Batch 执行能力仍由既有接口决定。
@@ -26,6 +28,7 @@
 官方资料：
 
 - https://developers.openai.com/api/docs/models/gpt-6.1-sol
+- https://developers.openai.com/api/docs/models/gpt-6.1-terra
 - https://developers.openai.com/api/docs/models/gpt-6-sol
 - https://developers.openai.com/api/docs/models/gpt-6-luna
 - https://platform.claude.com/docs/en/models/opus-5-5/overview
