@@ -14,6 +14,13 @@ type openAICompatAnthropicDigestBinding struct {
 	ExpiresAt      time.Time
 }
 
+func (b openAICompatAnthropicDigestBinding) sessionExpiresAt() time.Time { return b.ExpiresAt }
+func (b openAICompatAnthropicDigestBinding) sessionCost() int            { return len(b.PromptCacheKey) }
+func (b openAICompatAnthropicDigestBinding) cloneSessionValue() sessionMemoryValue {
+	b.PromptCacheKey = strings.Clone(b.PromptCacheKey)
+	return b
+}
+
 func buildOpenAICompatAnthropicDigestChain(req *apicompat.AnthropicRequest) string {
 	if req == nil {
 		return ""
@@ -52,24 +59,12 @@ func (s *OpenAIGatewayService) findOpenAICompatAnthropicDigestPromptCacheKey(acc
 	if ns == "" {
 		return "", ""
 	}
-	chain := digestChain
-	for {
-		if raw, ok := s.openaiCompatAnthropicDigestSessions.Load(ns + chain); ok {
-			if binding, ok := raw.(openAICompatAnthropicDigestBinding); ok {
-				if binding.ExpiresAt.IsZero() || time.Now().Before(binding.ExpiresAt) {
-					if key := strings.TrimSpace(binding.PromptCacheKey); key != "" {
-						return key, chain
-					}
-				}
-			}
-			s.openaiCompatAnthropicDigestSessions.Delete(ns + chain)
+	if raw, chain, ok := s.openaiCompatAnthropicDigestSessions.longestDigestPrefix(ns, digestChain); ok {
+		if binding, ok := raw.(openAICompatAnthropicDigestBinding); ok {
+			return binding.PromptCacheKey, chain
 		}
-		i := strings.LastIndex(chain, "-")
-		if i < 0 {
-			return "", ""
-		}
-		chain = chain[:i]
 	}
+	return "", ""
 }
 
 func (s *OpenAIGatewayService) bindOpenAICompatAnthropicDigestPromptCacheKey(account *Account, cAPIKeyID int64, digestChain, promptCacheKey, oldDigestChain string) {
@@ -91,21 +86,10 @@ func (s *OpenAIGatewayService) bindOpenAICompatAnthropicDigestPromptCacheKey(acc
 	s.sweepOpenAICompatAnthropicDigestSessions()
 }
 
-// sweepOpenAICompatAnthropicDigestSessions bounds stale digest bindings with an
-// opportunistic sweep every 256 writes.
-func (s *OpenAIGatewayService) sweepOpenAICompatAnthropicDigestSessions() {
-	if s.openaiCompatAnthropicDigestSessionWrites.Add(1)%256 != 0 {
-		return
-	}
-	now := time.Now()
-	s.openaiCompatAnthropicDigestSessions.Range(func(key, value any) bool {
-		binding, ok := value.(openAICompatAnthropicDigestBinding)
-		if !ok || (!binding.ExpiresAt.IsZero() && now.After(binding.ExpiresAt)) {
-			s.openaiCompatAnthropicDigestSessions.Delete(key)
-		}
-		return true
-	})
-}
+// sweepOpenAICompatAnthropicDigestSessions is kept for call-site compatibility.
+// sessionMemoryCache already expires entries on its own timer and bounds
+// entry count and bytes, so no opportunistic sweep is needed.
+func (s *OpenAIGatewayService) sweepOpenAICompatAnthropicDigestSessions() {}
 
 func promptCacheKeyFromAnthropicDigest(digestChain string) string {
 	if strings.TrimSpace(digestChain) == "" {

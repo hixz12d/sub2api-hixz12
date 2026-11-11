@@ -20,6 +20,16 @@ type openAICompatSessionResponseBinding struct {
 	ExpiresAt            time.Time
 }
 
+func (b openAICompatSessionResponseBinding) sessionExpiresAt() time.Time { return b.ExpiresAt }
+func (b openAICompatSessionResponseBinding) sessionCost() int {
+	return len(b.ResponseID) + len(b.TurnState)
+}
+func (b openAICompatSessionResponseBinding) cloneSessionValue() sessionMemoryValue {
+	b.ResponseID = strings.Clone(b.ResponseID)
+	b.TurnState = strings.Clone(b.TurnState)
+	return b
+}
+
 func openAICompatContinuationEnabled(account *Account, model string) bool {
 	if account == nil || account.Type != AccountTypeAPIKey {
 		return false
@@ -338,18 +348,7 @@ func (s *OpenAIGatewayService) bindOpenAICompatSessionTurnState(_ context.Contex
 	s.sweepOpenAICompatSessionResponses()
 }
 
-// sweepOpenAICompatSessionResponses bounds stale session bindings with an
-// opportunistic sweep every 256 writes.
-func (s *OpenAIGatewayService) sweepOpenAICompatSessionResponses() {
-	if s.openaiCompatSessionResponseWrites.Add(1)%256 != 0 {
-		return
-	}
-	now := time.Now()
-	s.openaiCompatSessionResponses.Range(func(key, value any) bool {
-		binding, ok := value.(openAICompatSessionResponseBinding)
-		if !ok || (!binding.ExpiresAt.IsZero() && now.After(binding.ExpiresAt)) {
-			s.openaiCompatSessionResponses.Delete(key)
-		}
-		return true
-	})
-}
+// sweepOpenAICompatSessionResponses is kept for call-site compatibility.
+// sessionMemoryCache already expires entries on its own timer and bounds
+// entry count and bytes, so no opportunistic sweep is needed.
+func (s *OpenAIGatewayService) sweepOpenAICompatSessionResponses() {}
