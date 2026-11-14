@@ -1,29 +1,48 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-10-01T00:00:00-07:00",
+  "generatedAt": "2026-11-04T00:00:00-08:00",
   "title": "Design System: Sub2API",
   "extensions": {
     "colorMeta": {
       "light-money": { "role": "primary", "displayName": "钱绿（亮色）", "canonical": "#00703c", "tonalRamp": ["#002213", "#003b20", "#005c31", "#00703c", "#2ea866", "#5ec289", "#97d8b2", "#e8f6ee"] },
       "dark-money": { "role": "primary", "displayName": "钱绿（暗色）", "canonical": "#00873f", "tonalRamp": ["#002213", "#004a28", "#00703c", "#00873f", "#00a14c", "#5ec289", "#97d8b2", "#e8f6ee"] },
+      "light-money-text": { "role": "primary", "displayName": "绿色文字（亮色）", "canonical": "#00703c" },
+      "dark-money-text": { "role": "primary", "displayName": "绿色文字（暗色）", "canonical": "#00a14c" },
+      "light-money-dim": { "role": "primary", "displayName": "钱绿上的弱字（亮色）", "canonical": "#bfe6cf" },
+      "dark-money-dim": { "role": "primary", "displayName": "钱绿上的弱字（暗色）", "canonical": "#b8f0cf" },
       "light-tile": { "role": "neutral", "displayName": "磁贴灰（亮色）", "canonical": "#f1f2f0", "tonalRamp": ["#141514", "#1d1f1d", "#464a46", "#6a6f6a", "#a3a8a2", "#d2d5d0", "#e6e8e4", "#f7f8f6"] },
-      "dark-tile": { "role": "neutral", "displayName": "磁贴黑（暗色）", "canonical": "#141514", "tonalRamp": ["#000000", "#141514", "#1d1f1d", "#262826", "#464a46", "#6a6f6a", "#8d938d", "#b9beb9"] }
+      "dark-tile": { "role": "neutral", "displayName": "磁贴黑（暗色）", "canonical": "#141514", "tonalRamp": ["#000000", "#0b0c0b", "#141514", "#1d1f1d", "#2a2d2a", "#6a6f6a", "#8d938d", "#b9beb9"] },
+      "light-series-1": { "role": "secondary", "displayName": "分组色 1（亮色）", "canonical": "#00703c" },
+      "light-series-2": { "role": "secondary", "displayName": "分组色 2（亮色）", "canonical": "#0050b4" },
+      "light-series-3": { "role": "secondary", "displayName": "分组色 3（亮色）", "canonical": "#a24b00" },
+      "light-series-4": { "role": "secondary", "displayName": "分组色 4（亮色）", "canonical": "#8a1c9c" },
+      "light-series-5": { "role": "secondary", "displayName": "分组色 5（亮色）", "canonical": "#6a6f6a" }
     },
     "typographyMeta": {
-      "display": { "displayName": "Display", "purpose": "仪表盘问候语、登录注册页大标题。" },
-      "headline": { "displayName": "Headline", "purpose": "页面内分区标题。" },
-      "metric": { "displayName": "Metric", "purpose": "数据磁贴大数字，等宽。" },
-      "code": { "displayName": "Code", "purpose": "模型名、API Key、接口地址。" }
+      "display": { "displayName": "Display", "purpose": "仪表盘问候语、钱包页标题、登录页品牌栏和表单标题；手机 40px。" },
+      "headline": { "displayName": "Headline", "purpose": "页面内分区标题和 .page-title；手机 26px。" },
+      "metric": { "displayName": "Metric", "purpose": "数据磁贴大数字，等宽；手机 30px。" },
+      "title": { "displayName": "Title", "purpose": "快捷操作磁贴标题。" },
+      "label": { "displayName": "Label", "purpose": "磁贴标签、表头、侧栏分组名。" },
+      "code": { "displayName": "Code", "purpose": "模型名、API Key、接口地址、请求 ID。" }
     },
-    "shadows": [],
+    "shadows": [
+      { "name": "rule-ring", "value": "0 0 0 1px rgb(var(--c-rule))", "purpose": "shadow-lg/xl/2xl 在新版下的取值：浮层 1px 细线外框。" },
+      { "name": "sticky-head", "value": "0 1px 0 rgb(var(--c-rule))", "purpose": "固定表头与滚动内容的分隔线。" }
+    ],
     "motion": [
-      { "name": "ease-glide", "value": "cubic-bezier(.2,.9,.2,1)", "purpose": "首屏磁贴从右侧滑入，0.5s，错开 55ms。" },
-      { "name": "state", "value": "150ms ease-out", "purpose": "悬停换底色。" },
-      { "name": "press-tilt", "value": "perspective(700px) rotateX/Y ≤8deg scale(.985)", "purpose": "按下磁贴时朝指针方向倾斜；减少动画时关闭。" }
+      { "name": "ease-glide", "value": "cubic-bezier(.2,.9,.2,1)", "purpose": "首屏磁贴从右侧 28px 滑入，0.5s，按 --n 错开 55ms；模态框入场也用它。" },
+      { "name": "state", "value": "150ms ease-out", "purpose": "悬停换底色和文字颜色。" },
+      { "name": "press", "value": "scale(.985)", "purpose": "按下按钮或磁贴时轻微缩小，不倾斜。" },
+      { "name": "modal-enter", "value": "250ms translateY(12px) → 0", "purpose": "模态框入场；退场 200ms。" },
+      { "name": "chart-enter", "value": "500ms easeOutQuart", "purpose": "首页趋势图入场；减少动画时关闭。" }
     ],
     "breakpoints": [
-      { "name": "tablet", "value": "1180px" },
-      { "name": "mobile", "value": "860px" }
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" },
+      { "name": "2xl", "value": "1536px" }
     ]
   },
   "components": [
@@ -33,7 +52,7 @@
       "refersTo": "button-primary",
       "description": "钱绿实心主操作，每个区域最多一个。",
       "html": "<button class=\"ds-btn-primary\">充值</button>",
-      "css": ".ds-btn-primary { background: #00703c; color: #fff; height: 40px; padding: 0 16px; border: 0; border-radius: 0; font-weight: 600; font-size: 15px; transition: background .15s; cursor: pointer; } .ds-btn-primary:hover { background: #005c31; } .ds-btn-primary:focus-visible { outline: 3px solid #005c31; outline-offset: 2px; }"
+      "css": ".ds-btn-primary { background: #00703c; color: #fff; height: 40px; padding: 0 16px; border: 0; border-radius: 0; font-weight: 600; font-size: 14px; transition: background-color .15s, transform .15s; cursor: pointer; } .ds-btn-primary:hover { background: #005c31; } .ds-btn-primary:active { transform: scale(.985); } .ds-btn-primary:focus-visible { outline: 3px solid #005c31; outline-offset: 2px; }"
     },
     {
       "name": "Solid Button",
@@ -41,78 +60,107 @@
       "refersTo": "button-solid",
       "description": "反色实心，第二重要的操作。",
       "html": "<button class=\"ds-btn-solid\">创建 Key</button>",
-      "css": ".ds-btn-solid { background: #0a0b0a; color: #fff; height: 40px; padding: 0 16px; border: 0; border-radius: 0; font-weight: 600; font-size: 15px; cursor: pointer; } .ds-btn-solid:hover { background: #1d1f1d; } .ds-btn-solid:focus-visible { outline: 3px solid #005c31; outline-offset: 2px; }"
+      "css": ".ds-btn-solid { background: #000; color: #fff; height: 40px; padding: 0 16px; border: 0; border-radius: 0; font-weight: 600; font-size: 14px; transition: background-color .15s, transform .15s; cursor: pointer; } .ds-btn-solid:hover { background: #1d1f1d; } .ds-btn-solid:active { transform: scale(.985); } .ds-btn-solid:focus-visible { outline: 3px solid #005c31; outline-offset: 2px; }"
     },
     {
       "name": "Tile Button",
       "kind": "button",
       "refersTo": "button-tile",
-      "description": "中性磁贴按钮，其余所有操作。",
+      "description": "中性磁贴按钮（btn-secondary），其余操作。",
       "html": "<button class=\"ds-btn-tile\">取消</button>",
-      "css": ".ds-btn-tile { background: #f1f2f0; color: #0a0b0a; height: 40px; padding: 0 16px; border: 0; border-radius: 0; font-weight: 600; font-size: 15px; transition: background .15s; cursor: pointer; } .ds-btn-tile:hover { background: #e6e8e4; } .ds-btn-tile:focus-visible { outline: 3px solid #005c31; outline-offset: 2px; }"
+      "css": ".ds-btn-tile { background: #f1f2f0; color: #0a0b0a; height: 40px; padding: 0 16px; border: 0; border-radius: 0; font-weight: 600; font-size: 14px; transition: background-color .15s, transform .15s; cursor: pointer; } .ds-btn-tile:hover { background: #e6e8e4; } .ds-btn-tile:active { transform: scale(.985); } .ds-btn-tile:focus-visible { outline: 3px solid #005c31; outline-offset: 2px; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "透明底次要操作，悬停出现磁贴底。",
+      "html": "<button class=\"ds-btn-ghost\">查看详情</button>",
+      "css": ".ds-btn-ghost { background: transparent; color: #464a46; height: 40px; padding: 0 16px; border: 0; border-radius: 0; font-weight: 600; font-size: 14px; transition: background-color .15s, color .15s; cursor: pointer; } .ds-btn-ghost:hover { background: #f1f2f0; color: #0a0b0a; } .ds-btn-ghost:focus-visible { outline: 3px solid #005c31; outline-offset: 2px; }"
     },
     {
       "name": "Input",
       "kind": "input",
       "refersTo": "input",
-      "description": "直角输入框，聚焦时边框变钱绿。",
+      "description": "直角输入框，2px 边框，聚焦时边框变钱绿。",
       "html": "<input class=\"ds-input\" placeholder=\"输入兑换码\">",
-      "css": ".ds-input { height: 40px; padding: 0 12px; border: 2px solid #d2d5d0; border-radius: 0; background: #fff; color: #0a0b0a; font-size: 15px; outline: none; caret-color: #00703c; } .ds-input::placeholder { color: #6a6f6a; } .ds-input:focus { border-color: #00703c; }"
+      "css": ".ds-input { width: 260px; padding: 8px 12px; border: 2px solid #d2d5d0; border-radius: 0; background: #fff; color: #0a0b0a; font-size: 14px; line-height: 20px; outline: none; caret-color: #00703c; transition: border-color .15s; } .ds-input::placeholder { color: #6a6f6a; } .ds-input:focus { border-color: #00703c; }"
     },
     {
       "name": "Segmented Control",
       "kind": "chip",
       "refersTo": "segment-active",
-      "description": "每项一块中性小磁贴，选中项被钱绿灌满。",
+      "description": "每项一块中性小磁贴，选中项被钱绿灌满（.tab / .tab-active 同款）。",
       "html": "<div class=\"ds-seg\"><button aria-pressed=\"true\">今天</button><button>7 天</button><button>30 天</button></div>",
-      "css": ".ds-seg { display: inline-flex; gap: 4px; } .ds-seg button { height: 36px; padding: 0 16px; border: 0; border-radius: 0; background: #f1f2f0; color: #464a46; font-weight: 600; font-size: 14px; cursor: pointer; } .ds-seg button:hover { background: #e6e8e4; color: #0a0b0a; } .ds-seg button[aria-pressed='true'] { background: #00703c; color: #fff; }"
+      "css": ".ds-seg { display: inline-flex; flex-wrap: wrap; gap: 4px; } .ds-seg button { height: 36px; padding: 0 16px; border: 0; border-radius: 0; background: #f1f2f0; color: #464a46; font-weight: 600; font-size: 14px; transition: background-color .15s, color .15s; cursor: pointer; } .ds-seg button:hover { background: #e6e8e4; color: #0a0b0a; } .ds-seg button[aria-pressed='true'] { background: #00703c; color: #fff; } .ds-seg button[aria-pressed='true']:hover { background: #005c31; }"
+    },
+    {
+      "name": "Switch",
+      "kind": "custom",
+      "description": "Metro 式方形开关，打开为钱绿。",
+      "html": "<button class=\"ds-switch\" role=\"switch\" aria-checked=\"true\"><span></span></button>",
+      "css": ".ds-switch { position: relative; width: 44px; height: 24px; border: 0; border-radius: 0; background: #d2d5d0; cursor: pointer; transition: background-color .15s; } .ds-switch span { position: absolute; left: 2px; top: 2px; width: 20px; height: 20px; background: #fff; transition: transform .15s; } .ds-switch[aria-checked='true'] { background: #00703c; } .ds-switch[aria-checked='true'] span { transform: translateX(20px); } .ds-switch:focus-visible { outline: 3px solid #005c31; outline-offset: 2px; }"
     },
     {
       "name": "Wallet Tile",
       "kind": "card",
       "refersTo": "tile-money",
       "description": "钱绿磁贴：余额大字占左，今日花费和剩余天数在右侧上下两格。",
-      "html": "<a class=\"ds-wallet\" href=\"#\"><div class=\"b\"><span>余额</span><strong>¥128.40</strong></div><div class=\"s\"><span>今日花费</span><strong>¥6.82</strong></div><div class=\"d\"><span>预计还能用</span><strong>约 19 天</strong></div></a>",
-      "css": ".ds-wallet { display: grid; grid-template-columns: 1.45fr 1fr; grid-template-rows: 1fr 1fr; width: 440px; height: 172px; background: #00703c; color: #fff; text-decoration: none; font-variant-numeric: tabular-nums; transition: background .15s; } .ds-wallet:hover { background: #005c31; } .ds-wallet > div { padding: 12px 22px; display: flex; flex-direction: column; justify-content: center; gap: 4px; } .ds-wallet .b { grid-row: span 2; justify-content: space-between; padding: 18px 22px; } .ds-wallet .s, .ds-wallet .d { border-left: 1px solid rgba(255,255,255,.28); } .ds-wallet .d { border-top: 1px solid rgba(255,255,255,.28); } .ds-wallet span { font-size: 14px; color: #bfe6cf; font-weight: 500; } .ds-wallet .b strong { font-size: 60px; font-weight: 400; letter-spacing: -.035em; line-height: 1; } .ds-wallet .s strong { font-size: 32px; font-weight: 500; line-height: 1; } .ds-wallet .d strong { font-size: 20px; font-weight: 400; line-height: 1; }"
+      "html": "<a class=\"ds-wallet\" href=\"#\"><div class=\"b\"><span>余额</span><strong>¥128.40</strong></div><div class=\"s\"><span>今日花费</span><strong>¥6.82</strong></div><div class=\"d\"><span>预计还能用</span><strong>约 19 天</strong><em>按近 7 天日均 ¥6.75</em></div></a>",
+      "css": ".ds-wallet { display: grid; grid-template-columns: 1.3fr 1fr; grid-template-rows: 1fr 1fr; width: 460px; min-height: 172px; background: #00703c; color: #fff; text-decoration: none; font-variant-numeric: tabular-nums; transition: background-color .15s; } .ds-wallet:hover { background: #005c31; } .ds-wallet > div { padding: 12px 22px; display: flex; flex-direction: column; justify-content: center; gap: 4px; } .ds-wallet .b { grid-row: span 2; justify-content: space-between; padding: 18px 22px; } .ds-wallet .s, .ds-wallet .d { border-left: 1px solid rgba(255,255,255,.3); } .ds-wallet .d { border-top: 1px solid rgba(255,255,255,.3); } .ds-wallet span { font-size: 14px; color: #bfe6cf; font-weight: 500; } .ds-wallet em { font-style: normal; font-size: 12px; color: #bfe6cf; } .ds-wallet .b strong { font-size: 44px; font-weight: 400; letter-spacing: -.035em; line-height: 1; } .ds-wallet .s strong { font-size: 32px; font-weight: 500; line-height: 1; } .ds-wallet .d strong { font-size: 20px; font-weight: 400; line-height: 1; }"
     },
     {
       "name": "Sidebar Nav",
       "kind": "nav",
       "description": "无框侧栏，当前项钱绿加粗并带 8px 实心方块。",
       "html": "<nav class=\"ds-nav\"><h6>常用</h6><a aria-current=\"page\" href=\"#\">仪表盘</a><a href=\"#\">API 密钥</a><h6>钱</h6><a href=\"#\">钱包</a></nav>",
-      "css": ".ds-nav { display: flex; flex-direction: column; width: 200px; } .ds-nav h6 { margin: 16px 0 6px; font-size: 13px; font-weight: 400; color: #6a6f6a; } .ds-nav a { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 16px; color: #464a46; text-decoration: none; } .ds-nav a::before { content: ''; width: 8px; height: 8px; } .ds-nav a:hover { color: #0a0b0a; } .ds-nav a[aria-current] { color: #00703c; font-weight: 700; } .ds-nav a[aria-current]::before { background: currentColor; }"
+      "css": ".ds-nav { display: flex; flex-direction: column; width: 232px; padding: 0 12px; } .ds-nav h6 { margin: 16px 0 6px; padding: 0 12px; font-size: 13px; font-weight: 400; color: #6a6f6a; } .ds-nav a { position: relative; display: flex; align-items: center; gap: 12px; padding: 8px 14px 8px 17px; font-size: 15px; color: #464a46; text-decoration: none; transition: color .15s; } .ds-nav a:hover { color: #0a0b0a; } .ds-nav a[aria-current] { color: #00703c; font-weight: 700; } .ds-nav a[aria-current]::before { content: ''; position: absolute; left: 3px; top: 50%; width: 8px; height: 8px; margin-top: -4px; background: currentColor; }"
+    },
+    {
+      "name": "Toast",
+      "kind": "custom",
+      "refersTo": "toast",
+      "description": "反色实心提示块，用图标区分类型，不加彩色竖条。",
+      "html": "<div class=\"ds-toast\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#34d17a\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M4.5 12.75l6 6 9-13.5\"/></svg><span>已复制接口地址</span></div>",
+      "css": ".ds-toast { display: flex; align-items: flex-start; gap: 12px; min-width: 320px; max-width: 448px; padding: 16px; background: #000; color: #fff; border-radius: 0; font-size: 14px; }"
     }
   ],
   "narrative": {
     "northStar": "钱是那块颜色（The Money Tile）",
-    "overview": "界面源自 Metro 设计语言的平涂磁贴，按本产品改造：颜色本身就是信息。全站只有一块真正饱和的颜色，深绿，它只出现在和钱有关、或者“现在就该点这里”的地方。其余区域都是中性的。字就是界面，大标题用轻字重、超大字号；没有渐变、斜面、玻璃和投影，容器就是一块平涂色块，之间用 8px 缝隙分开。",
+    "overview": "界面取自 Metro 设计语言的平涂磁贴，并按本产品做了改造：颜色本身就是信息。全站只有一种真正饱和的颜色，就是深绿。它只出现在和钱有关、或者“现在就该点这里”的地方：钱包磁贴、充值按钮、选中的页签、当前菜单、登录页的品牌栏。其余区域都是中性色：亮色主题是纯白底配浅灰磁贴，暗色主题是纯黑底配近黑磁贴。用户扫一眼先看到绿色，也就先看到了余额。\n\n字就是界面。大标题用轻字重、超大字号，问候语能放到海报级；说明小字退成浅灰。层级靠字号和字重拉开，不靠边框、阴影和图标方块。界面里没有渐变、斜面、玻璃效果和投影，每个容器都是一块平涂色块，块与块之间留 8px 缝隙。\n\n亮色、暗色两套主题同等重要，默认跟随系统。管理后台沿用上游的布局，换上本系统的颜色、直角和字体。",
     "keyCharacteristics": [
-      "一块饱和绿（钱）+ 中性灰阶，零渐变、零投影、零圆角",
-      "磁贴网格：平涂色块，8px 缝隙，左对齐",
-      "轻字重大字号做标题，数字一律等宽（tabular-nums）",
-      "分组有固定识别色，用小方块标在名称前，图表系列同色",
-      "状态同时用颜色和图标区分"
+      "一种饱和绿（钱）+ 略带绿调的中性灰阶；零渐变、零投影、零圆角",
+      "磁贴网格：平涂色块，8px 缝隙，表格行之间 4px 缝隙，一律左对齐",
+      "轻字重大字号做标题，所有数字等宽（tabular-nums）",
+      "每个分组有固定识别色，以 14px 小方块标在名称前，图表系列用同一种颜色",
+      "状态同时用颜色和图标区分",
+      "浮层分两种：只放文字的用反色实心块，可交互的用页面底色加 1px 细线"
     ],
     "rules": [
-      { "name": "The One Saturated Color Rule", "body": "一屏之内，大面积的饱和色只能是钱绿。分组识别色只能出现在 14px 以内的小方块、细条和图表线上。", "section": "colors" },
-      { "name": "The Money Tile Rule", "body": "余额永远在一块钱绿实心磁贴上，白字。其他数据磁贴一律中性。", "section": "colors" },
-      { "name": "The Tabular Rule", "body": "所有数字都开 tabular-nums，表格里的数字列右对齐。金额统一写 ¥，大数缩写为 1.2K / 3.4M。", "section": "typography" },
-      { "name": "The Light Display Rule", "body": "大字用轻字重（300），重点靠字号；粗体只留给 17px 以下的标题和强调。", "section": "typography" },
-      { "name": "The Flat Rule", "body": "不用 box-shadow 表达层级，也不用玻璃和模糊。需要“浮起”时改底色明度，或换成反色块。", "section": "elevation" }
+      { "name": "The One Saturated Color Rule", "body": "一屏之内，大面积的饱和色只能是钱绿。分组识别色只能出现在 14px 以内的小方块、细条和图表线上。支付品牌色只出现在各自的支付按钮上。", "section": "colors" },
+      { "name": "The Money Tile Rule", "body": "余额永远放在一块钱绿实心磁贴上，用白字。其他数据磁贴一律用中性色。", "section": "colors" },
+      { "name": "The Semantic First Rule", "body": "新页面用语义类（surface*、ink*、rule、money*、ok/warn/bad、series-*、chart-*），它们会自动跟随主题，也自动兼容经典风格。只有在沿用上游组件时才写 gray-* / dark-* / primary-* 配 dark: 前缀。", "section": "colors" },
+      { "name": "The Tabular Rule", "body": "新版的 body 全局开启 font-variant-numeric: tabular-nums，所有数字（金额、Token、次数、百分比、时间）天然等宽，表格里的数字列右对齐。金额统一写 ¥，大数缩写为 1.2K / 3.4M，整数去掉多余的“.0”。", "section": "typography" },
+      { "name": "The Light Display Rule", "body": "大字用轻字重（300），重点靠字号拉开；粗体只留给 17px 及以下的标题和强调。", "section": "typography" },
+      { "name": "The Fit-the-Tile Rule", "body": "磁贴里的大数字随位数逐级缩小，保证不换行、不溢出，不用省略号截断金额。", "section": "typography" },
+      { "name": "The Flat Rule", "body": "不用 box-shadow 表达层级，也不用玻璃和模糊。需要“浮起”时，改底色明度、换成反色块，或者加一圈 1px rule。", "section": "elevation" }
     ],
     "dos": [
       "Do 让余额和今日花费永远同时出现在钱绿实心磁贴上，并在手机端放在最上方。",
-      "Do 所有数字开等宽数字，金额统一写 ¥，大数缩写为 1.2K / 3.4M。",
-      "Do 状态同时用颜色和图标表达；“请求太少”显示“—”，并给出悬停说明。",
-      "Do 亮色和暗色都检查一遍：正文对比 ≥4.5:1，暗色下的绿色文字用 dark-money-hover。",
-      "Do 浏览器自带的部分也按主题处理：文字选中底色用钱绿、caret 用钱绿、细滚动条、3px 钱绿焦点环。"
+      "Do 新页面用语义类（surface*、ink*、money*、rule、ok/warn/bad、series-*），用现成的 .tile、.tile-money、.tile-grid、.btn-*、.tab、.input、.switch，并且新页面写成新文件。",
+      "Do 所有数字等宽，金额统一写 ¥，大数缩写为 1.2K / 3.4M；磁贴里的大数字随位数缩小，不截断。",
+      "Do 状态同时用颜色和图标表达；“请求太少”时显示“—”，并给出悬停说明。",
+      "Do 亮色和暗色都检查一遍：正文对比度 ≥4.5:1，暗色下的绿色文字用 money-text。",
+      "Do 浏览器自带的部分也按主题处理：文字选中底色用钱绿，caret 用钱绿，滚动条细且平时透明，焦点环是 3px money-hover。",
+      "Do 新增的样式规则区分新版和经典：用 :where(html:not([data-ui='classic'])) / :where(html[data-ui='classic']) 做前缀，不用 CSS 嵌套。"
     ],
     "donts": [
-      "Don't 用渐变、玻璃模糊、投影、发光，也不要沿用旧版的 mesh 背景。",
-      "Don't 给容器加圆角或描边，也不要把磁贴嵌进磁贴。",
+      "Don't 用渐变、玻璃模糊、投影、发光，也不要沿用经典风格的 mesh 背景。",
+      "Don't 给容器加圆角或描边，不要把磁贴嵌进磁贴，也不要在开关、头像、标签上用 rounded-full。",
       "Don't 在标题上方加小号“眉题”标签，也不要用渐变文字。",
-      "Don't 把分组识别色或状态色铺成大面积底色；大面积饱和色只能是钱绿。",
-      "Don't 用彩色图标方块加大数字的模板化统计卡，也不要用进度环。",
+      "Don't 把分组识别色、状态色或支付品牌色铺成大面积底色；大面积的饱和色只能是钱绿。",
+      "Don't 用“彩色图标方块 + 大数字”的模板化统计卡，也不要用进度环。",
+      "Don't 给 Toast 加左侧彩色竖条，也不要在按下时做倾斜或弹跳。",
       "Don't 用 emoji 或 Unicode 符号代替图标，也不要在用户可见处显示分组的数字 ID。"
     ]
   }
