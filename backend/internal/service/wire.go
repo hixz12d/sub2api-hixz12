@@ -1005,7 +1005,24 @@ var ProviderSet = wire.NewSet(
 	ProvideMonitorJobRuntime,
 	NewChannelMonitorRequestTemplateService,
 	ProvideUserPlatformQuotaUsageFlusher,
+	NewResetCardService,
+	ProvideResetCardExpiryService,
 )
+
+// ProvideResetCardExpiryService 创建并启动重置卡限时额度到期回收任务。
+func ProvideResetCardExpiryService(
+	repo ResetCardRepository,
+	userRepo UserRepository,
+	entClient *dbent.Client,
+	authCacheInvalidator APIKeyAuthCacheInvalidator,
+	billingCacheService *BillingCacheService,
+	lockCache LeaderLockCache,
+	db *sql.DB,
+) *ResetCardExpiryService {
+	svc := NewResetCardExpiryService(repo, userRepo, entClient, authCacheInvalidator, billingCacheService, lockCache, db)
+	svc.Start()
+	return svc
+}
 
 // ProvideUserPlatformQuotaUsageFlusher 创建并启动 UserPlatformQuotaUsageFlusher。
 func ProvideUserPlatformQuotaUsageFlusher(cfg *config.Config, cache BillingCache, quotaRepo UserPlatformQuotaRepository, tw *TimingWheelService) *UserPlatformQuotaUsageFlusher {

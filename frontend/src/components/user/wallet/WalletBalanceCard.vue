@@ -10,6 +10,17 @@
         <div v-if="frozen > 0" class="mt-2 text-xs tabular-nums text-money-dim">
           {{ t('wallet.frozen', { amount: formatMoney(frozen) }) }}
         </div>
+        <!-- 有重置卡限时额度时，余额拆成"常规 + 限时"两格（只是显示上的拆分） -->
+        <dl v-if="limitedShown > 0" class="mb-0 mt-4 grid max-w-[440px] grid-cols-2 gap-px bg-white/25">
+          <div class="grid min-w-0 gap-0.5 bg-money pr-3 pt-2">
+            <dt class="text-xs text-money-dim">{{ t('resetCards.wallet.regular') }}</dt>
+            <dd class="m-0 whitespace-nowrap text-lg font-light leading-tight tracking-[-0.02em] tabular-nums sm:text-xl">{{ formatMoney(regularShown) }}</dd>
+          </div>
+          <div class="grid min-w-0 gap-0.5 bg-money pl-3.5 pt-2">
+            <dt class="text-xs text-money-dim">{{ limitedLabel }}</dt>
+            <dd class="m-0 whitespace-nowrap text-lg font-light leading-tight tracking-[-0.02em] tabular-nums sm:text-xl">{{ formatMoney(limitedShown) }}</dd>
+          </div>
+        </dl>
       </div>
       <button
         v-if="canRecharge"
@@ -31,19 +42,44 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
+import { daysUntil } from '@/stores/resetCards'
 
-defineProps<{
-  balance: number
-  frozen: number
-  /** 返利余额；null 表示返利功能未开启或还没取到 */
-  rebate: number | null
-  canRecharge: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    balance: number
+    frozen: number
+    /** 返利余额；null 表示返利功能未开启或还没取到 */
+    rebate: number | null
+    canRecharge: boolean
+    /** 重置卡限时额度剩余；0 时外观与原来完全一致 */
+    limited?: number
+    /** 最早一笔限时额度的到期时间 */
+    limitedExpiresAt?: string | null
+  }>(),
+  { limited: 0, limitedExpiresAt: null }
+)
 defineEmits<{ recharge: [] }>()
 
 const { t } = useI18n()
+
+// 限时额度最多显示到总余额；常规余额 = 余额 − 显示的限时额度，不显示负数
+const limitedShown = computed(() => {
+  const limited = Number(props.limited) || 0
+  const balance = Number(props.balance) || 0
+  return limited > 0 ? Math.max(0, Math.min(limited, balance)) : 0
+})
+const regularShown = computed(() => Math.max((Number(props.balance) || 0) - limitedShown.value, 0))
+
+const limitedLabel = computed(() => {
+  const days = daysUntil(props.limitedExpiresAt)
+  if (!props.limitedExpiresAt || days < 0) return t('resetCards.wallet.limitedPlain')
+  if (days === 0) return t('resetCards.wallet.limitedToday')
+  if (days === 1) return t('resetCards.wallet.limitedTomorrow')
+  return t('resetCards.wallet.limited', { n: days }, days)
+})
 
 // 与顶栏一致，金额用 $ 计
 function formatMoney(value: number): string {

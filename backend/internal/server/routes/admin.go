@@ -133,6 +133,25 @@ func RegisterAdminRoutes(
 
 		// 操作审计日志
 		registerAuditLogRoutes(admin, h, stepUpAuth)
+
+		// 重置卡（不受功能开关限制）
+		registerResetCardRoutes(admin, h)
+	}
+}
+
+func registerResetCardRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
+	if h.Admin == nil || h.Admin.ResetCard == nil {
+		return
+	}
+	resetCards := admin.Group("/reset-cards")
+	{
+		resetCards.GET("/batches", h.Admin.ResetCard.ListBatches)
+		resetCards.POST("/batches/preview", h.Admin.ResetCard.PreviewBatch)
+		resetCards.POST("/batches", h.Admin.ResetCard.CreateBatch)
+		resetCards.GET("/batches/:id", h.Admin.ResetCard.GetBatch)
+		resetCards.GET("/batches/:id/cards", h.Admin.ResetCard.ListBatchCards)
+		resetCards.POST("/batches/:id/revoke", h.Admin.ResetCard.RevokeBatch)
+		resetCards.POST("/cards/:id/revoke", h.Admin.ResetCard.RevokeCard)
 	}
 }
 

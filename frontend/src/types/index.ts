@@ -292,6 +292,8 @@ export interface PublicSettings {
   plugin_management_enabled: boolean
   service_quota_enabled: boolean
   affiliate_enabled: boolean
+  /** 重置卡功能总开关（默认关闭）；关闭时用户端隐藏全部重置卡入口。 */
+  reset_card_enabled?: boolean
   allow_user_view_error_requests?: boolean
   /** True when the deployment configures MCP_PUBLIC_URL; MCP is disabled otherwise. */
   mcp_enabled?: boolean

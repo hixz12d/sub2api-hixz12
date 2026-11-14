@@ -94,6 +94,12 @@ export default {
           riskControlUserAllowlistHint: '输入任意邮箱关键词进行模糊搜索。 白名单中的用户不会触发封号或本地屏蔽，但仍然无法突破上游拦截。该功能通常用于可信的下游中转站。',
           cyberSessionBlockTTL: '屏蔽时长(秒)',
         },
+        resetCard: {
+          title: '重置卡',
+          description: '管理员按批次给用户发放消费返还卡，用户用卡后按比例返还最近 7 天在指定分组的消费。默认关闭。',
+          enabled: '启用重置卡',
+          enabledHint: '关闭后用户端看不到重置卡入口',
+        },
         affiliate: {
           title: '邀请返利',
           description: '老用户邀请新用户注册，新用户充值后老用户按比例获得返利额度。默认关闭。',

@@ -56,6 +56,7 @@ func ProvideAdminHandlers(
 	detectorTasks *service.DetectorTaskService,
 	monitorPolicyControl service.MonitorPolicyControl,
 	claudeResetCredits *service.ClaudeResetCreditService,
+	resetCardHandler *admin.ResetCardHandler,
 ) *AdminHandlers {
 	accountHandler.SetUpstreamBillingProbeService(upstreamBillingProbe)
 	accountHandler.SetOllamaCloudUsageService(ollamaCloudUsage)
@@ -103,6 +104,7 @@ func ProvideAdminHandlers(
 		Affiliate:              affiliateHandler,
 		Compliance:             complianceHandler,
 		AuditLog:               auditLogHandler,
+		ResetCard:              resetCardHandler,
 	}
 }
 
@@ -213,6 +215,7 @@ func ProvideHandlers(
 	modelPlazaHandler *ModelPlazaHandler,
 	asyncImageHandler *AsyncImageHandler,
 	batchImageHandler *BatchImageHandler,
+	resetCardHandler *ResetCardHandler,
 	_ *service.IdempotencyCoordinator,
 	_ *service.IdempotencyCleanupService,
 	_ *service.OpenAIQuotaAutoResetService,
@@ -240,6 +243,7 @@ func ProvideHandlers(
 		ModelPlaza:       modelPlazaHandler,
 		AsyncImage:       asyncImageHandler,
 		BatchImage:       batchImageHandler,
+		ResetCard:        resetCardHandler,
 	}
 }
 
@@ -267,6 +271,7 @@ var ProviderSet = wire.NewSet(
 	NewModelPlazaHandler,
 	NewAsyncImageHandler,
 	ProvideBatchImageHandler,
+	NewResetCardHandler,
 
 	// Admin handlers
 	admin.NewDashboardHandler,
@@ -305,6 +310,7 @@ var ProviderSet = wire.NewSet(
 	admin.NewAffiliateHandler,
 	admin.NewComplianceHandler,
 	admin.NewAuditLogHandler,
+	admin.NewResetCardHandler,
 
 	// AdminHandlers and Handlers constructors
 	ProvideAdminHandlers,

@@ -187,6 +187,17 @@ const (
 	AdjustmentTypeAdminConcurrency = domain.AdjustmentTypeAdminConcurrency // 管理员调整并发数
 )
 
+// Reset card balance record type constants
+const (
+	RedeemTypeResetCard         = domain.RedeemTypeResetCard         // 重置卡返还
+	RedeemTypeResetCardClawback = domain.RedeemTypeResetCardClawback // 重置卡额度到期回收
+)
+
+// Reset card settings
+const (
+	ResetCardEnabledDefault = false // 重置卡功能总开关默认关闭
+)
+
 // Group subscription type constants
 const (
 	SubscriptionTypeStandard     = domain.SubscriptionTypeStandard     // 标准计费模式（按余额扣费）
@@ -234,6 +245,7 @@ const (
 	SettingKeyAffiliateRebateDurationDays         = "affiliate_rebate_duration_days"   // 返利有效期（天，0=永久）
 	SettingKeyAffiliateRebatePerInviteeCap        = "affiliate_rebate_per_invitee_cap" // 单人返利上限（0=无上限）
 	SettingKeyAffiliateAdminRechargeEnabled       = "affiliate_admin_recharge_enabled" // 管理员充值是否产生返利
+	SettingKeyResetCardEnabled                    = "reset_card_enabled"               // 重置卡功能总开关
 	SettingKeyRiskControlEnabled                  = "risk_control_enabled"             // 是否启用风控中心入口与审计链路
 	SettingKeyContentModerationConfig             = "content_moderation_config"        // 内容审计配置（JSON）
 	SettingKeyCyberSessionBlockEnabled            = "cyber_session_block_enabled"      // cyber 命中后会话级自动屏蔽总开关(默认关)

@@ -357,6 +357,9 @@ type SystemSettings struct {
 	// Affiliate (邀请返利) feature switch
 	AffiliateEnabled bool `json:"affiliate_enabled"`
 
+	// 重置卡功能总开关
+	ResetCardEnabled bool `json:"reset_card_enabled"`
+
 	// OpenAI fast/flex policy
 	OpenAIFastPolicySettings *OpenAIFastPolicySettings `json:"openai_fast_policy_settings,omitempty"`
 
@@ -462,6 +465,8 @@ type PublicSettings struct {
 	PluginManagementEnabled bool `json:"plugin_management_enabled"`
 
 	AffiliateEnabled bool `json:"affiliate_enabled"`
+
+	ResetCardEnabled bool `json:"reset_card_enabled"`
 
 	RiskControlEnabled bool `json:"risk_control_enabled"`
 

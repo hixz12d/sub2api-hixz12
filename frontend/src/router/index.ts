@@ -171,6 +171,17 @@ const modernUserRoutes: RouteRecordRaw[] = [
         }
       },
       {
+        path: 'reset-cards',
+        name: 'ResetCards',
+        component: () => import('@/views/user/ResetCardsView.vue'),
+        meta: {
+          requiresAuth: true,
+          requiresAdmin: false,
+          title: 'Reset Cards',
+          titleKey: 'resetCards.title'
+        }
+      },
+      {
         path: 'orders',
         name: 'OrderList',
         component: () => import('@/views/user/UserOrdersView.vue'),
@@ -739,6 +750,18 @@ const routes: RouteRecordRaw[] = [
       title: 'Promo Code Management',
       titleKey: 'admin.promo.title',
       descriptionKey: 'admin.promo.description'
+    }
+  },
+  {
+    path: '/admin/reset-cards',
+    name: 'AdminResetCards',
+    component: () => import('@/views/admin/ResetCardsView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Reset Cards',
+      titleKey: 'admin.resetCards.title',
+      descriptionKey: 'admin.resetCards.description'
     }
   },
   {

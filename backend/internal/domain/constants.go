@@ -90,6 +90,12 @@ const (
 	AdjustmentTypeAdminConcurrency = "admin_concurrency" // 管理员调整并发数
 )
 
+// Reset card balance record type constants（写入 redeem_codes.type，长度不超过 20）
+const (
+	RedeemTypeResetCard         = "reset_card"          // 重置卡返还（金额为正）
+	RedeemTypeResetCardClawback = "reset_card_clawback" // 重置卡额度到期回收（金额为负）
+)
+
 // Group subscription type constants
 const (
 	SubscriptionTypeStandard     = "standard"     // 标准计费模式（按余额扣费）

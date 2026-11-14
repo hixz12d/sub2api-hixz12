@@ -244,6 +244,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyModelPlazaRequireAuth,
 		SettingKeyPluginManagementEnabled,
 		SettingKeyAffiliateEnabled,
+		SettingKeyResetCardEnabled,
 		SettingKeyRiskControlEnabled,
 		SettingKeyAllowUserViewErrorRequests,
 	}
@@ -382,6 +383,8 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		PluginManagementEnabled: settings[SettingKeyPluginManagementEnabled] == "true",
 
 		AffiliateEnabled: settings[SettingKeyAffiliateEnabled] == "true",
+
+		ResetCardEnabled: settings[SettingKeyResetCardEnabled] == "true",
 
 		RiskControlEnabled: settings[SettingKeyRiskControlEnabled] == "true",
 
@@ -651,6 +654,7 @@ type PublicSettingsInjectionPayload struct {
 	ModelPlazaRequireAuth          bool `json:"model_plaza_require_auth"`
 	PluginManagementEnabled        bool `json:"plugin_management_enabled"`
 	AffiliateEnabled               bool `json:"affiliate_enabled"`
+	ResetCardEnabled               bool `json:"reset_card_enabled"`
 	RiskControlEnabled             bool `json:"risk_control_enabled"`
 	AllowUserViewErrorRequests     bool `json:"allow_user_view_error_requests"`
 	// Hide ranking only for non-admin monitor viewers; default false.
@@ -743,6 +747,7 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		ModelPlazaRequireAuth:                settings.ModelPlazaRequireAuth,
 		PluginManagementEnabled:              settings.PluginManagementEnabled,
 		AffiliateEnabled:                     settings.AffiliateEnabled,
+		ResetCardEnabled:                     settings.ResetCardEnabled,
 		RiskControlEnabled:                   settings.RiskControlEnabled,
 		AllowUserViewErrorRequests:           settings.AllowUserViewErrorRequests,
 	}, nil

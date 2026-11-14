@@ -665,8 +665,10 @@ func redeemCodeFromServiceBase(rc *service.RedeemCode) RedeemCode {
 	}
 
 	// For admin_balance/admin_concurrency types, include notes so users can see
-	// why they were charged or credited by admin
-	if (rc.Type == "admin_balance" || rc.Type == "admin_concurrency") && rc.Notes != "" {
+	// why they were charged or credited by admin. Reset-card refund/clawback
+	// records carry the batch name in notes.
+	if (rc.Type == "admin_balance" || rc.Type == "admin_concurrency" ||
+		rc.Type == service.RedeemTypeResetCard || rc.Type == service.RedeemTypeResetCardClawback) && rc.Notes != "" {
 		out.Notes = &rc.Notes
 	}
 

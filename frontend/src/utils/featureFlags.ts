@@ -154,6 +154,11 @@ export const FeatureFlags = {
     mode: 'opt-in',
     label: 'Affiliate',
   }),
+  resetCard: defineFlag({
+    key: 'reset_card_enabled',
+    mode: 'opt-in',
+    label: 'Reset Cards',
+  }),
   // Read-only: enabled by the deployment's MCP_PUBLIC_URL, not an admin toggle.
   mcp: defineFlag({
     key: 'mcp_enabled',

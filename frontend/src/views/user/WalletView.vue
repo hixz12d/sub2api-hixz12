@@ -11,6 +11,8 @@
         :balance="balance"
         :frozen="frozen"
         :rebate="rebate"
+        :limited="resetCardsStore.enabled ? resetCardsStore.limitedCreditRemaining : 0"
+        :limited-expires-at="resetCardsStore.limitedEarliestExpiresAt"
         :can-recharge="showRecharge"
         @recharge="router.push('/wallet/recharge')"
       />
@@ -44,6 +46,7 @@ import WalletTabs, { type WalletTab } from '@/components/user/wallet/WalletTabs.
 import userAPI from '@/api/user'
 import { useAppStore, useAuthStore } from '@/stores'
 import { usePaymentStore } from '@/stores/payment'
+import { useResetCardsStore } from '@/stores/resetCards'
 import { FeatureFlags, makeSidebarFlag } from '@/utils/featureFlags'
 import { getExternalRechargeEntries } from '@/utils/externalRecharge'
 
@@ -53,6 +56,7 @@ const router = useRouter()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const paymentStore = usePaymentStore()
+const resetCardsStore = useResetCardsStore()
 
 const balance = computed(() => Number(authStore.user?.balance || 0))
 const frozen = computed(() => Number(authStore.user?.frozen_balance || 0))
@@ -70,6 +74,8 @@ const visibleTabs = computed((): WalletTab[] => {
   const tabs: WalletTab[] = []
   if (showRecharge.value) tabs.push({ path: '/wallet/recharge', label: t('wallet.tabs.recharge') })
   if (showRedeem.value) tabs.push({ path: '/wallet/redeem', label: t('wallet.tabs.redeem') })
+  // 重置卡：后台开启且为新版界面（store.enabled 已含 !isClassicUi）
+  if (resetCardsStore.enabled && !authStore.isSimpleMode) tabs.push({ path: '/wallet/reset-cards', label: t('resetCards.walletTab') })
   if (showOrders.value) tabs.push({ path: '/wallet/orders', label: t('wallet.tabs.orders') })
   if (showInvite.value) tabs.push({ path: '/wallet/invite', label: t('wallet.tabs.invite') })
   return tabs
@@ -104,6 +110,15 @@ async function loadRebate() {
   }
 }
 watch(showInvite, () => void loadRebate())
+
+// 限时额度：开关可能在公共设置加载完后才变成开启，所以用 watch
+watch(
+  () => resetCardsStore.enabled,
+  (enabled) => {
+    if (enabled) void resetCardsStore.fetch()
+  },
+  { immediate: true }
+)
 
 onMounted(async () => {
   void authStore.refreshUser().catch(() => undefined)

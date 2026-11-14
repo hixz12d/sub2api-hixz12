@@ -12,6 +12,7 @@ import userHome from './userHome'
 import wallet from './wallet'
 import appShell from './appShell'
 import authPages from './authPages'
+import resetCards from './resetCards'
 
 export default {
   adminAccessKeys,
@@ -28,4 +29,5 @@ export default {
   ...wallet,
   ...appShell,
   ...authPages,
+  ...resetCards,
 }

@@ -309,8 +309,11 @@
                 >
                   {{ formatHistoryValue(item) }}
                 </p>
+                <p v-if="isResetCardType(item.type)" class="text-xs text-gray-400 dark:text-dark-500">
+                  {{ t('resetCards.history.source') }}
+                </p>
                 <p
-                  v-if="!isAdminAdjustment(item.type)"
+                  v-else-if="!isAdminAdjustment(item.type)"
                   class="font-mono text-xs text-gray-400 dark:text-dark-500"
                 >
                   {{ item.code.slice(0, 8) }}...
@@ -416,7 +419,12 @@ const contactInfo = ref('')
 
 // Helper functions for history display
 const isBalanceType = (type: string) => {
-  return type === 'balance' || type === 'admin_balance'
+  return type === 'balance' || type === 'admin_balance' || isResetCardType(type)
+}
+
+// 重置卡返还（正数）和限时额度到期回收（负数），notes 为批次名
+const isResetCardType = (type: string) => {
+  return type === 'reset_card' || type === 'reset_card_clawback'
 }
 
 const isSubscriptionType = (type: string) => {
@@ -438,6 +446,10 @@ const getHistoryItemTitle = (item: RedeemHistoryItem) => {
     return item.value >= 0 ? t('redeem.concurrencyAddedAdmin') : t('redeem.concurrencyReducedAdmin')
   } else if (item.type === 'subscription') {
     return t('redeem.subscriptionAssigned')
+  } else if (item.type === 'reset_card') {
+    return t('resetCards.history.refund')
+  } else if (item.type === 'reset_card_clawback') {
+    return t('resetCards.history.clawback')
   }
   return t('common.unknown')
 }

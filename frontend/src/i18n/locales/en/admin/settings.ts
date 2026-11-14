@@ -94,6 +94,12 @@ export default {
           riskControlUserAllowlistHint: 'Enter any email keyword to search for matching users. Allowlisted users will not trigger account bans or local blocking, but upstream restrictions still apply. This feature is typically used for trusted downstream relays.',
           cyberSessionBlockTTL: 'Block TTL (seconds)',
         },
+        resetCard: {
+          title: 'Reset Cards',
+          description: 'Admins issue spend-rebate cards in batches; using a card refunds a percentage of the user’s last 7 days of spend in the selected groups. Disabled by default.',
+          enabled: 'Enable reset cards',
+          enabledHint: 'When off, all reset card entry points are hidden from users.',
+        },
         affiliate: {
           title: 'Affiliate (Invite Rebate)',
           description: 'Existing users invite new ones; the inviter earns a percentage rebate on the invitee’s recharges. Disabled by default.',

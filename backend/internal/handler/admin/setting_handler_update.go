@@ -372,6 +372,9 @@ type UpdateSettingsRequest struct {
 	// Affiliate (邀请返利) feature switch
 	AffiliateEnabled *bool `json:"affiliate_enabled"`
 
+	// 重置卡功能总开关
+	ResetCardEnabled *bool `json:"reset_card_enabled"`
+
 	// 风控中心功能开关
 	RiskControlEnabled *bool `json:"risk_control_enabled"`
 
@@ -2070,6 +2073,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.AffiliateEnabled
 		}(),
+		ResetCardEnabled: func() bool {
+			if req.ResetCardEnabled != nil {
+				return *req.ResetCardEnabled
+			}
+			return previousSettings.ResetCardEnabled
+		}(),
 		RiskControlEnabled: func() bool {
 			if req.RiskControlEnabled != nil {
 				return *req.RiskControlEnabled
@@ -2517,6 +2526,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		PluginManagementEnabled: updatedSettings.PluginManagementEnabled,
 
 		AffiliateEnabled: updatedSettings.AffiliateEnabled,
+
+		ResetCardEnabled: updatedSettings.ResetCardEnabled,
 
 		RiskControlEnabled:          updatedSettings.RiskControlEnabled,
 		CyberSessionBlockEnabled:    updatedSettings.CyberSessionBlockEnabled,

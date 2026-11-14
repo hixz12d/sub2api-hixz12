@@ -133,6 +133,17 @@ func RegisterUserRoutes(
 			redeem.GET("/history", h.Redeem.GetHistory)
 		}
 
+		// 重置卡（功能开关关闭时由 service 返回 404）
+		if h.ResetCard != nil {
+			resetCards := authenticated.Group("/reset-cards")
+			{
+				resetCards.GET("", h.ResetCard.List)
+				resetCards.POST("/popup-seen", h.ResetCard.MarkPopupSeen)
+				resetCards.GET("/:id/preview", h.ResetCard.Preview)
+				resetCards.POST("/:id/use", h.ResetCard.Use)
+			}
+		}
+
 		// 用户订阅
 		subscriptions := authenticated.Group("/subscriptions")
 		{

@@ -90,6 +90,15 @@ func (s *SettingService) IsAffiliateEnabled(ctx context.Context) bool {
 	return value == "true"
 }
 
+// IsResetCardEnabled 检查是否启用重置卡功能（总开关）
+func (s *SettingService) IsResetCardEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyResetCardEnabled)
+	if err != nil {
+		return ResetCardEnabledDefault
+	}
+	return value == "true"
+}
+
 // IsAffiliateAdminRechargeEnabled reports whether admin balance
 // deposits should participate in the affiliate rebate program.
 func (s *SettingService) IsAffiliateAdminRechargeEnabled(ctx context.Context) bool {

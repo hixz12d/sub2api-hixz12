@@ -6,7 +6,9 @@ import NavigationProgress from '@/components/common/NavigationProgress.vue'
 import AdminComplianceDialog from '@/components/admin/AdminComplianceDialog.vue'
 import { resolveRouteDocumentTitle } from '@/router/title'
 import AnnouncementPopup from '@/components/common/AnnouncementPopup.vue'
+import ResetCardPopup from '@/components/user/resetCard/ResetCardPopup.vue'
 import { useAppStore, useAuthStore, useSubscriptionStore, useAnnouncementStore, useAdminComplianceStore, useAdminSettingsStore } from '@/stores'
+import { useResetCardsStore } from '@/stores/resetCards'
 import { getSetupStatus } from '@/api/setup'
 import { updateFavicon } from '@/utils/branding'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
@@ -20,6 +22,7 @@ const subscriptionStore = useSubscriptionStore()
 const announcementStore = useAnnouncementStore()
 const adminComplianceStore = useAdminComplianceStore()
 const adminSettingsStore = useAdminSettingsStore()
+const resetCardsStore = useResetCardsStore()
 
 function updateDocumentTitle() {
   const customMenuItems = [
@@ -62,8 +65,22 @@ watch(
 function onVisibilityChange() {
   if (document.visibilityState === 'visible' && authStore.isAuthenticated) {
     announcementStore.fetchAnnouncements()
+    resetCardsStore.fetch()
   }
 }
+
+// 重置卡：功能开关要等公共设置加载完才知道，开启时补拉一次；关闭时清空（store 内部已排除经典界面）
+watch(
+  () => resetCardsStore.enabled,
+  (enabled) => {
+    if (!authStore.isAuthenticated) return
+    if (enabled) {
+      resetCardsStore.fetch()
+    } else {
+      resetCardsStore.reset()
+    }
+  }
+)
 
 function onAdminComplianceRequired(event: Event) {
   const detail = (event as CustomEvent<Record<string, string>>).detail || {}
@@ -114,12 +131,16 @@ watch(
         announcementStore.fetchAnnouncements()
       }
 
+      // Reset cards (no-op when the feature is off or in the classic UI)
+      resetCardsStore.fetch(true)
+
       // Register visibility change listener
       document.addEventListener('visibilitychange', onVisibilityChange)
     } else {
       // User logged out: clear data and stop polling
       subscriptionStore.clear()
       announcementStore.reset()
+      resetCardsStore.reset()
       adminComplianceStore.reset()
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
@@ -131,6 +152,7 @@ watch(
 router.afterEach(() => {
   if (authStore.isAuthenticated) {
     announcementStore.fetchAnnouncements()
+    resetCardsStore.fetch()
   }
 })
 
@@ -166,5 +188,6 @@ onMounted(async () => {
   <RouterView />
   <Toast />
   <AnnouncementPopup />
+  <ResetCardPopup />
   <AdminComplianceDialog />
 </template>

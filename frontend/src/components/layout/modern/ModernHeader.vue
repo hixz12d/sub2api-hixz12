@@ -26,6 +26,9 @@
         <!-- Announcement Bell -->
         <AnnouncementBell v-if="user" />
 
+        <!-- 重置卡未用张数：组件自己判断功能开关和是否有卡 -->
+        <ResetCardHeaderBadge v-if="user" />
+
         <!-- Docs Link -->
         <a
           v-if="docUrl"
@@ -243,6 +246,7 @@ import { usePaymentStore } from '@/stores/payment'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import SubscriptionProgressMini from '@/components/common/SubscriptionProgressMini.vue'
 import AnnouncementBell from '@/components/common/AnnouncementBell.vue'
+import ResetCardHeaderBadge from '@/components/user/resetCard/ResetCardHeaderBadge.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { sanitizeUrl } from '@/utils/url'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'

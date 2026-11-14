@@ -137,6 +137,12 @@
                 {{ t('redeem.adminAdjustment') }}
               </p>
               <p
+                v-else-if="isResetCardType(item.type)"
+                class="text-xs text-gray-400 dark:text-dark-500"
+              >
+                {{ t('admin.resetCards.history.source') }}
+              </p>
+              <p
                 v-else
                 class="font-mono text-xs text-gray-400 dark:text-dark-500"
               >
@@ -204,6 +210,8 @@ const typeOptions = computed(() => [
   { value: 'balance', label: t('admin.users.typeBalance') },
   { value: 'affiliate_balance', label: t('admin.users.typeAffiliateBalance') },
   { value: 'admin_balance', label: t('admin.users.typeAdminBalance') },
+  { value: 'reset_card', label: t('admin.resetCards.history.typeRefund') },
+  { value: 'reset_card_clawback', label: t('admin.resetCards.history.typeClawback') },
   { value: 'concurrency', label: t('admin.users.typeConcurrency') },
   { value: 'admin_concurrency', label: t('admin.users.typeAdminConcurrency') },
   { value: 'subscription', label: t('admin.users.typeSubscription') }
@@ -245,14 +253,20 @@ const loadHistory = async (page: number) => {
 // Helper: check if admin type
 const isAdminType = (type: string) => type === 'admin_balance' || type === 'admin_concurrency'
 
-// Helper: check if balance type (includes admin_balance)
-const isBalanceType = (type: string) => type === 'balance' || type === 'admin_balance' || type === 'affiliate_balance'
+// Helper: check if reset card type (refund / credit clawback)
+const isResetCardType = (type: string) => type === 'reset_card' || type === 'reset_card_clawback'
+
+// Helper: check if balance type (includes admin_balance and reset card types)
+const isBalanceType = (type: string) =>
+  type === 'balance' || type === 'admin_balance' || type === 'affiliate_balance' || isResetCardType(type)
 
 // Helper: check if subscription type
 const isSubscriptionType = (type: string) => type === 'subscription'
 
 // Icon name based on type
 const getIconName = (item: BalanceHistoryItem) => {
+  if (item.type === 'reset_card') return 'gift'
+  if (item.type === 'reset_card_clawback') return 'clock'
   if (isBalanceType(item.type)) return 'dollar'
   if (isSubscriptionType(item.type)) return 'badge'
   return 'bolt' // concurrency
@@ -306,6 +320,10 @@ const getItemTitle = (item: BalanceHistoryItem) => {
       return t('redeem.balanceAddedAffiliate')
     case 'admin_balance':
       return item.value >= 0 ? t('redeem.balanceAddedAdmin') : t('redeem.balanceDeductedAdmin')
+    case 'reset_card':
+      return t('admin.resetCards.history.typeRefund')
+    case 'reset_card_clawback':
+      return t('admin.resetCards.history.typeClawback')
     case 'concurrency':
       return t('redeem.concurrencyAddedRedeem')
     case 'admin_concurrency':
