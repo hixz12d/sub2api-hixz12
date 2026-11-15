@@ -3,6 +3,7 @@ package securityaudit
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"time"
 )
@@ -17,7 +18,29 @@ type GuardEvaluator struct {
 	perNodeLimit int
 	nodeMu       sync.Mutex
 	nodes        map[string]chan struct{}
+
+	passCache *promptPassCache
 }
+
+const (
+	// judgeContextMaxRunes keeps only the tail of the previous assistant output
+	// as reference context for the judge.
+	judgeContextMaxRunes = 2000
+
+	judgeTargetOpenTag  = "<待审内容>"
+	judgeTargetCloseTag = "</待审内容>"
+	judgeContextOpenTag = "<上下文>"
+	judgeContextClose   = "</上下文>"
+)
+
+// judgeTagEscaper neutralizes forged wrapper tags inside client text so content
+// cannot break out of the <待审内容> section.
+var judgeTagEscaper = strings.NewReplacer(
+	judgeTargetOpenTag, "＜待审内容＞",
+	judgeTargetCloseTag, "＜/待审内容＞",
+	judgeContextOpenTag, "＜上下文＞",
+	judgeContextClose, "＜/上下文＞",
+)
 
 func NewGuardEvaluator(scanner PromptScanner, repo JobRepository, metrics Metrics) *GuardEvaluator {
 	return newGuardEvaluator(scanner, repo, metrics, 64, 16)
@@ -31,7 +54,53 @@ func newGuardEvaluator(scanner PromptScanner, repo JobRepository, metrics Metric
 		perNodeLimit = 16
 	}
 	return &GuardEvaluator{scanner: scanner, repo: repo, metrics: metrics, clock: realClock{},
-		global: make(chan struct{}, globalLimit), perNodeLimit: perNodeLimit, nodes: map[string]chan struct{}{}}
+		global: make(chan struct{}, globalLimit), perNodeLimit: perNodeLimit, nodes: map[string]chan struct{}{},
+		passCache: newPromptPassCache(DefaultPassCacheTTL, DefaultPassCacheMaxEntries)}
+}
+
+// buildJudgeChunks splits the latest-turn scan text into judge user messages.
+// Only the current user text is chunked by inputLimit; the tail of the previous
+// assistant output is attached to the first chunk as context.
+func buildJudgeChunks(scanText string, inputLimit int) []string {
+	target, priorOutput, _ := strings.Cut(scanText, promptAuditPrioritySeparator)
+	target = strings.TrimSpace(judgeTagEscaper.Replace(target))
+	priorOutput = strings.TrimSpace(judgeTagEscaper.Replace(strings.ReplaceAll(priorOutput, promptAuditPrioritySeparator, "\n\n")))
+	if runes := []rune(priorOutput); len(runes) > judgeContextMaxRunes {
+		priorOutput = strings.TrimSpace(string(runes[len(runes)-judgeContextMaxRunes:]))
+	}
+	pieces := SplitRunes(target, inputLimit)
+	chunks := make([]string, 0, len(pieces))
+	for index, piece := range pieces {
+		var builder strings.Builder
+		if index == 0 && priorOutput != "" {
+			builder.WriteString(judgeContextOpenTag + "\n" + priorOutput + "\n" + judgeContextClose + "\n\n")
+		}
+		builder.WriteString(judgeTargetOpenTag + "\n" + piece + "\n" + judgeTargetCloseTag)
+		chunks = append(chunks, builder.String())
+	}
+	return chunks
+}
+
+// applyJudgeAggregate marks a judge-mode aggregate and keeps the judge reason
+// from a chunk at the aggregate's severity rather than from a safer chunk.
+func applyJudgeAggregate(aggregated *NormalizedResult, results []*NormalizedResult) {
+	if aggregated == nil {
+		return
+	}
+	aggregated.ScannerBackend = ScannerBackendJudge
+	if aggregated.ScannerEvidence == nil {
+		aggregated.ScannerEvidence = map[string]string{}
+	}
+	delete(aggregated.ScannerEvidence, JudgeReasonEvidenceKey)
+	for _, result := range results {
+		if result == nil || result.Decision != aggregated.Decision {
+			continue
+		}
+		if reason := strings.TrimSpace(result.ScannerEvidence[JudgeReasonEvidenceKey]); reason != "" {
+			aggregated.ScannerEvidence[JudgeReasonEvidenceKey] = RedactPreview(reason, 160)
+			return
+		}
+	}
 }
 
 func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapshot PromptSnapshot) (*PromptDecision, error) {
@@ -53,6 +122,23 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 		logGuardFailure(snapshot, cfg, DecisionUnavailable, ErrorCodeUnavailable, "", g.clock.Now().Sub(start))
 		return nil, &GuardError{Code: ErrorCodeUnavailable}
 	}
+	judge := cfg.JudgeMode()
+	passKey := ""
+	if g.passCache != nil && strings.TrimSpace(snapshot.ScanText) != "" {
+		passKey = passCacheKey(cfg, endpoints, snapshot.ScanText)
+		if g.passCache.Hit(passKey, g.clock.Now()) {
+			latency := g.clock.Now().Sub(start)
+			if g.metrics != nil {
+				g.metrics.IncPassCacheHit()
+				g.metrics.Observe(DecisionAllow, latency)
+			}
+			LogInfo(EventGuardAllowed, mergeLogFields(baseFields, map[string]any{
+				"decision": DecisionAllow, "latency_ms": latency.Milliseconds(), "stage": snapshot.Stage,
+				"status": "cache_hit",
+			}))
+			return &PromptDecision{Kind: DecisionAllow, AllowNextStage: true}, nil
+		}
+	}
 	select {
 	case g.global <- struct{}{}:
 		defer func() { <-g.global }()
@@ -71,7 +157,12 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 	evalCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	inputLimit := minimumInputLimit(endpoints)
-	chunks := SplitRunes(snapshot.ScanText, inputLimit)
+	var chunks []string
+	if judge {
+		chunks = buildJudgeChunks(snapshot.ScanText, inputLimit)
+	} else {
+		chunks = SplitRunes(snapshot.ScanText, inputLimit)
+	}
 	if len(chunks) == 0 {
 		if g.metrics != nil {
 			g.metrics.Observe(DecisionAllow, g.clock.Now().Sub(start))
@@ -130,6 +221,9 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 		return nil, &GuardError{Code: ErrorCodeInvalidResponse, Cause: err}
 	}
 	aggregated.ChunkTotal = len(chunks)
+	if judge {
+		applyJudgeAggregate(aggregated, results)
+	}
 	kind := DecisionAllow
 	if aggregated.Action == ActionWarn {
 		kind = DecisionFlag
@@ -144,11 +238,14 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 	if g.metrics != nil {
 		g.metrics.Observe(kind, g.clock.Now().Sub(start))
 	}
+	if kind == DecisionAllow && g.passCache != nil {
+		g.passCache.Store(passKey, g.clock.Now())
+	}
 	LogInfo(EventChunksAggregated, mergeLogFields(baseFields, map[string]any{
 		"decision":   kind,
 		"risk_level": aggregated.RiskLevel, "action": aggregated.Action, "chunk_total": aggregated.ChunkTotal,
 		"latency_ms": aggregated.LatencyMS, "guard_endpoint_id": aggregated.GuardEndpointID, "stage": snapshot.Stage,
-		"status": "completed",
+		"scanner_backend": aggregated.ScannerBackend, "status": "completed",
 	}))
 	if g.repo != nil {
 		if _, recordErr := g.repo.RecordBlocking(ctx, snapshot.Redacted(), cfg.ConfigVersion, aggregated, cfg.StorePassEvents); recordErr != nil {
@@ -167,12 +264,14 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 			"decision":          kind, "risk_level": aggregated.RiskLevel, "action": aggregated.Action, "chunk_total": aggregated.ChunkTotal,
 			"latency_ms": aggregated.LatencyMS, "status": "blocked", "error_code": ErrorCodeBlocked,
 			"stage": snapshot.Stage, "upstream_dispatched": false, "billing_preconsumed": false,
+			"scanner_backend": aggregated.ScannerBackend,
 		}))
 	} else {
 		LogInfo(EventGuardAllowed, mergeLogFields(baseFields, map[string]any{
 			"decision": kind, "risk_level": aggregated.RiskLevel, "action": aggregated.Action,
 			"guard_endpoint_id": aggregated.GuardEndpointID, "chunk_total": aggregated.ChunkTotal,
 			"latency_ms": aggregated.LatencyMS, "stage": snapshot.Stage, "status": "allowed",
+			"scanner_backend": aggregated.ScannerBackend,
 		}))
 	}
 	return decision, nil

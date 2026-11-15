@@ -206,12 +206,16 @@ type GuardMetricsSnapshot struct {
 	Failovers    int64 `json:"failovers"`
 	BulkheadFull int64 `json:"bulkhead_full"`
 	RecordFailed int64 `json:"record_failed"`
-	LatencyCount int64 `json:"latency_count"`
-	LatencyAvgMS int64 `json:"latency_avg_ms"`
-	LatencyP50MS int64 `json:"latency_p50_ms"`
-	LatencyP95MS int64 `json:"latency_p95_ms"`
-	LatencyP99MS int64 `json:"latency_p99_ms"`
-	LatencyMaxMS int64 `json:"latency_max_ms"`
+	// FailOpen counts guard errors that were turned into allow by fail_open.
+	FailOpen int64 `json:"fail_open"`
+	// PassCacheHits counts allow verdicts served from the pass cache.
+	PassCacheHits int64 `json:"pass_cache_hits"`
+	LatencyCount  int64 `json:"latency_count"`
+	LatencyAvgMS  int64 `json:"latency_avg_ms"`
+	LatencyP50MS  int64 `json:"latency_p50_ms"`
+	LatencyP95MS  int64 `json:"latency_p95_ms"`
+	LatencyP99MS  int64 `json:"latency_p99_ms"`
+	LatencyMaxMS  int64 `json:"latency_max_ms"`
 }
 
 type AuditMetricsSnapshot struct {
@@ -272,6 +276,8 @@ type Metrics interface {
 	IncFailover()
 	IncBulkheadFull()
 	IncRecordFailed()
+	IncFailOpen()
+	IncPassCacheHit()
 }
 
 type PromptScanner interface {

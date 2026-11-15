@@ -537,8 +537,13 @@ func normalizeSegmentsLatestUserFirst(values []promptSegment) []string {
 // deliberately opt-in because full transcript scanning remains stronger at
 // finding client-controlled content placed in older or non-user messages.
 func blockingSegmentsLatestUserAndPreviousOutput(values []promptSegment) []string {
-	normalized := normalizedPromptSegments(values)
+	normalized, droppedReminders := dropClientSystemReminders(normalizedPromptSegments(values))
 	latestUserStart := latestUserSegmentStart(normalized)
+	if latestUserStart < 0 && droppedReminders {
+		// Every user text part was an automatic client reminder: there is no
+		// user-typed input in this request to audit.
+		return nil
+	}
 	if latestUserStart < 0 {
 		// A request without user content cannot be narrowed safely. Preserve the
 		// established full-snapshot behavior for unusual protocol payloads.
@@ -569,6 +574,32 @@ func blockingSegmentsLatestUserAndPreviousOutput(values []promptSegment) []strin
 	}
 	return promptSegmentTexts(selected)
 }
+
+// dropClientSystemReminders removes the <system-reminder> text parts Claude
+// Code injects into user turns (CLAUDE.md, tool hints, ...). They are not
+// user-typed, and keeping them would change the latest user input on every
+// tool continuation. Only well-formed reminder blocks are stripped; any text
+// left around them is kept so the tag cannot be used to hide user input.
+func dropClientSystemReminders(values []promptSegment) ([]promptSegment, bool) {
+	result := make([]promptSegment, 0, len(values))
+	dropped := false
+	for _, value := range values {
+		if isUserSegment(value) && strings.HasPrefix(value.text, "<system-reminder>") {
+			stripped := strings.TrimSpace(systemReminderPattern.ReplaceAllString(value.text, ""))
+			if stripped != value.text {
+				dropped = true
+				if stripped == "" {
+					continue
+				}
+				value.text = stripped
+			}
+		}
+		result = append(result, value)
+	}
+	return result, dropped
+}
+
+var systemReminderPattern = regexp.MustCompile(`(?s)<system-reminder>.*?</system-reminder>`)
 
 func normalizedPromptSegments(values []promptSegment) []promptSegment {
 	normalized := make([]promptSegment, 0, len(values))

@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 )
@@ -25,7 +26,15 @@ const (
 	MinInputLimit        = 128
 	MaxInputLimit        = 100000
 	DefaultPayloadTTL    = 30 * time.Minute
+	// MaxSystemPromptRunes caps the judge instructions stored per endpoint.
+	MaxSystemPromptRunes = 20000
 )
+
+// allowedReasoningEfforts lists the reasoning_effort values accepted for an
+// endpoint. An empty value means the parameter is not sent at all.
+var allowedReasoningEfforts = map[string]struct{}{
+	"": {}, "minimal": {}, "low": {}, "medium": {}, "high": {},
+}
 
 type SecretEncryptor interface {
 	Encrypt(plaintext string) (string, error)
@@ -61,6 +70,8 @@ type StorageEndpoint struct {
 	TimeoutMS       int    `json:"timeout_ms"`
 	InputLimit      int    `json:"input_limit"`
 	Enabled         bool   `json:"enabled"`
+	SystemPrompt    string `json:"system_prompt"`
+	ReasoningEffort string `json:"reasoning_effort"`
 }
 
 type storageConfig struct {
@@ -68,6 +79,7 @@ type storageConfig struct {
 	BlockingEnabled        bool              `json:"blocking_enabled"`
 	BlockingLatestTurnOnly bool              `json:"blocking_latest_turn_only"`
 	StorePassEvents        bool              `json:"store_pass_events"`
+	FailOpen               bool              `json:"fail_open"`
 	Strategy               string            `json:"strategy"`
 	WorkerCount            int               `json:"worker_count"`
 	QueueCapacity          int               `json:"queue_capacity"`
@@ -91,6 +103,10 @@ type ActiveEndpoint struct {
 	TimeoutMS  int
 	InputLimit int
 	Enabled    bool
+	// SystemPrompt switches the endpoint to judge mode: the chunk is sent with
+	// these instructions instead of as a bare Qwen3Guard user message.
+	SystemPrompt    string
+	ReasoningEffort string
 	// TokenInvalid marks an endpoint whose persisted token ciphertext cannot be
 	// decrypted with the current encryption key (key changed or auto-generated
 	// on restart). The endpoint is kept visible for admins but excluded from
@@ -104,6 +120,7 @@ type ActiveConfig struct {
 	BlockingEnabled        bool
 	BlockingLatestTurnOnly bool
 	StorePassEvents        bool
+	FailOpen               bool
 	Strategy               string
 	WorkerCount            int
 	QueueCapacity          int
@@ -128,6 +145,9 @@ type PublicEndpoint struct {
 	Enabled     bool   `json:"enabled"`
 	HasToken    bool   `json:"has_token"`
 	TokenStatus string `json:"token_status"`
+
+	SystemPrompt    string `json:"system_prompt"`
+	ReasoningEffort string `json:"reasoning_effort"`
 }
 
 type PublicConfig struct {
@@ -135,6 +155,7 @@ type PublicConfig struct {
 	BlockingEnabled        bool             `json:"blocking_enabled"`
 	BlockingLatestTurnOnly bool             `json:"blocking_latest_turn_only"`
 	StorePassEvents        bool             `json:"store_pass_events"`
+	FailOpen               bool             `json:"fail_open"`
 	EffectiveMode          Mode             `json:"effective_mode"`
 	Strategy               string           `json:"strategy"`
 	WorkerCount            int              `json:"worker_count"`
@@ -160,6 +181,9 @@ type UpdateEndpoint struct {
 	TimeoutMS  int    `json:"timeout_ms"`
 	InputLimit int    `json:"input_limit"`
 	Enabled    bool   `json:"enabled"`
+
+	SystemPrompt    string `json:"system_prompt"`
+	ReasoningEffort string `json:"reasoning_effort"`
 }
 
 type UpdateConfigRequest struct {
@@ -168,6 +192,7 @@ type UpdateConfigRequest struct {
 	BlockingEnabled        bool             `json:"blocking_enabled"`
 	BlockingLatestTurnOnly bool             `json:"blocking_latest_turn_only"`
 	StorePassEvents        bool             `json:"store_pass_events"`
+	FailOpen               bool             `json:"fail_open"`
 	Strategy               string           `json:"strategy"`
 	WorkerCount            int              `json:"worker_count"`
 	QueueCapacity          int              `json:"queue_capacity"`
@@ -251,6 +276,8 @@ func normalizeStorageConfig(cfg *storageConfig) {
 		if ep.InputLimit == 0 {
 			ep.InputLimit = DefaultInputLimit
 		}
+		ep.SystemPrompt = strings.TrimSpace(ep.SystemPrompt)
+		ep.ReasoningEffort = strings.ToLower(strings.TrimSpace(ep.ReasoningEffort))
 	}
 }
 
@@ -275,6 +302,7 @@ func validateStorageConfig(cfg storageConfig) error {
 	}
 	seen := make(map[string]struct{}, len(cfg.Endpoints))
 	enabled := 0
+	enabledJudge := 0
 	for _, ep := range cfg.Endpoints {
 		if ep.ID == "" || ep.Name == "" {
 			return infraerrors.BadRequest("prompt_audit_invalid_endpoint", "审计节点 ID 和名称不能为空")
@@ -295,14 +323,41 @@ func validateStorageConfig(cfg storageConfig) error {
 		if ep.InputLimit < MinInputLimit || ep.InputLimit > MaxInputLimit {
 			return infraerrors.BadRequest("prompt_audit_invalid_input_limit", "审计节点输入上限超出允许范围")
 		}
+		if utf8.RuneCountInString(strings.TrimSpace(ep.SystemPrompt)) > MaxSystemPromptRunes {
+			return infraerrors.BadRequest("prompt_audit_invalid_system_prompt", "审计节点审核提示词不能超过 20000 字")
+		}
+		if _, ok := allowedReasoningEfforts[strings.ToLower(strings.TrimSpace(ep.ReasoningEffort))]; !ok {
+			return infraerrors.BadRequest("prompt_audit_invalid_reasoning_effort", "审计节点推理强度只能为空或 minimal、low、medium、high")
+		}
 		if ep.Enabled {
 			enabled++
+			if strings.TrimSpace(ep.SystemPrompt) != "" {
+				enabledJudge++
+			}
 		}
+	}
+	if enabledJudge > 0 && enabledJudge != enabled {
+		return infraerrors.BadRequest("prompt_audit_mixed_judge_endpoints", "启用中的审计节点必须全部填写审核提示词，或全部不填写，不能混用")
 	}
 	if cfg.Enabled && enabled == 0 {
 		return infraerrors.BadRequest("prompt_audit_endpoint_required", "启用提示词审计前至少需要启用一个审计节点")
 	}
 	return nil
+}
+
+// JudgeMode reports whether every enabled endpoint carries judge instructions,
+// in which case a whole evaluation runs in judge mode.
+func (cfg ActiveConfig) JudgeMode() bool {
+	endpoints := cfg.EnabledEndpoints()
+	if len(endpoints) == 0 {
+		return false
+	}
+	for _, ep := range endpoints {
+		if strings.TrimSpace(ep.SystemPrompt) == "" {
+			return false
+		}
+	}
+	return true
 }
 
 func validateUpdateConfigRequest(req UpdateConfigRequest) error {
@@ -408,11 +463,13 @@ func PublicFromStorage(cfg storageConfig, riskControlEnabled bool, invalidTokenE
 			ID: ep.ID, Name: ep.Name, Protocol: ep.Protocol, BaseURL: ep.BaseURL,
 			Model: ep.Model, TimeoutMS: ep.TimeoutMS, InputLimit: ep.InputLimit,
 			Enabled: ep.Enabled, HasToken: hasToken, TokenStatus: status,
+			SystemPrompt: ep.SystemPrompt, ReasoningEffort: ep.ReasoningEffort,
 		})
 	}
 	active := ActiveConfig{RiskControlEnabled: riskControlEnabled, Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled}
 	return PublicConfig{
 		Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled, BlockingLatestTurnOnly: cfg.BlockingLatestTurnOnly, StorePassEvents: cfg.StorePassEvents,
+		FailOpen:      cfg.FailOpen,
 		EffectiveMode: active.EffectiveMode(), Strategy: cfg.Strategy, WorkerCount: cfg.WorkerCount,
 		QueueCapacity: cfg.QueueCapacity, Scanners: scanners, AllGroups: cfg.AllGroups,
 		GroupIDs: groupIDs, Endpoints: endpoints, ConfigVersion: cfg.ConfigVersion,
@@ -423,8 +480,8 @@ func PublicFromStorage(cfg storageConfig, riskControlEnabled bool, invalidTokenE
 func ActiveFromStorage(cfg storageConfig, riskControlEnabled bool, encryptor SecretEncryptor) (ActiveConfig, error) {
 	active := ActiveConfig{
 		RiskControlEnabled: riskControlEnabled, Enabled: cfg.Enabled, BlockingEnabled: cfg.BlockingEnabled,
-		BlockingLatestTurnOnly: cfg.BlockingLatestTurnOnly,
-		StorePassEvents:        cfg.StorePassEvents, Strategy: cfg.Strategy, WorkerCount: cfg.WorkerCount,
+		BlockingLatestTurnOnly: cfg.BlockingLatestTurnOnly, FailOpen: cfg.FailOpen,
+		StorePassEvents: cfg.StorePassEvents, Strategy: cfg.Strategy, WorkerCount: cfg.WorkerCount,
 		QueueCapacity: cfg.QueueCapacity, Scanners: append([]string(nil), cfg.Scanners...), AllGroups: cfg.AllGroups,
 		GroupIDs: append([]int64(nil), cfg.GroupIDs...), ConfigVersion: cfg.ConfigVersion,
 		UpdatedAt: cfg.UpdatedAt, UpdatedBy: cfg.UpdatedBy, ChangeSummary: cfg.ChangeSummary,
@@ -453,6 +510,7 @@ func ActiveFromStorage(cfg storageConfig, riskControlEnabled bool, encryptor Sec
 			ID: ep.ID, Name: ep.Name, Protocol: ep.Protocol, BaseURL: ep.BaseURL, Model: ep.Model,
 			Token: token, TimeoutMS: ep.TimeoutMS, InputLimit: ep.InputLimit,
 			Enabled: ep.Enabled && !tokenInvalid, TokenInvalid: tokenInvalid,
+			SystemPrompt: ep.SystemPrompt, ReasoningEffort: ep.ReasoningEffort,
 		})
 	}
 	return active, nil
@@ -464,12 +522,19 @@ func changeSummary(cfg storageConfig) string {
 		BlockingEnabled        bool   `json:"blocking_enabled"`
 		BlockingLatestTurnOnly bool   `json:"blocking_latest_turn_only"`
 		StorePassEvents        bool   `json:"store_pass_events"`
+		FailOpen               bool   `json:"fail_open"`
 		EndpointCount          int    `json:"endpoint_count"`
+		JudgeEndpointCount     int    `json:"judge_endpoint_count"`
 		ScannerCount           int    `json:"scanner_count"`
 		AllGroups              bool   `json:"all_groups"`
 		GroupCount             int    `json:"group_count"`
 		GroupHash              string `json:"group_hash"`
-	}{cfg.Enabled, cfg.BlockingEnabled, cfg.BlockingLatestTurnOnly, cfg.StorePassEvents, len(cfg.Endpoints), len(cfg.Scanners), cfg.AllGroups, len(cfg.GroupIDs), ""}
+	}{cfg.Enabled, cfg.BlockingEnabled, cfg.BlockingLatestTurnOnly, cfg.StorePassEvents, cfg.FailOpen, len(cfg.Endpoints), 0, len(cfg.Scanners), cfg.AllGroups, len(cfg.GroupIDs), ""}
+	for _, ep := range cfg.Endpoints {
+		if strings.TrimSpace(ep.SystemPrompt) != "" {
+			summary.JudgeEndpointCount++
+		}
+	}
 	rawGroups, _ := json.Marshal(cfg.GroupIDs)
 	digest := sha256.Sum256(rawGroups)
 	summary.GroupHash = hex.EncodeToString(digest[:])

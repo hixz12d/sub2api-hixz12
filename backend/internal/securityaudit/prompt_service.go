@@ -164,7 +164,31 @@ func (s *PromptService) Evaluate(ctx context.Context, req Request) (*PromptDecis
 	if err != nil {
 		return nil, &GuardError{Code: ErrorCodeInvalidResponse, Cause: err}
 	}
-	return s.evaluator.Evaluate(ctx, cfg, snapshot)
+	started := s.now()
+	decision, evalErr := s.evaluator.Evaluate(ctx, cfg, snapshot)
+	if evalErr != nil && cfg.FailOpen {
+		// fail_open: an unavailable, slow, malformed or saturated guard must not
+		// turn into a 503 for the client. Allow and keep a visible trace.
+		code := guardErrorCode(evalErr)
+		if s.metrics != nil {
+			s.metrics.IncFailOpen()
+		}
+		fields := snapshotLogFields(snapshot)
+		fields["config_version"] = cfg.ConfigVersion
+		LogWarn(EventGuardFailOpen, mergeLogFields(fields, map[string]any{
+			"decision": DecisionAllow, "error_code": code, "status": "fail_open",
+			"latency_ms": s.now().Sub(started).Milliseconds(),
+		}))
+		return &PromptDecision{Kind: DecisionAllow, AllowNextStage: true, ErrorCode: code}, nil
+	}
+	return decision, evalErr
+}
+
+func (s *PromptService) now() time.Time {
+	if s.clock == nil {
+		return time.Now().UTC()
+	}
+	return s.clock.Now()
 }
 
 func (s *PromptService) GetConfig() (PublicConfig, error) { return s.config.Public() }
@@ -357,7 +381,8 @@ func (s *PromptService) resolveProbeEndpoint(input UpdateEndpoint) (ActiveEndpoi
 	if err := validateStorageConfig(storage); err != nil {
 		return ActiveEndpoint{}, false, err
 	}
-	return ActiveEndpoint{ID: storage.Endpoints[0].ID, Name: storage.Endpoints[0].Name, Protocol: "openai_compatible", BaseURL: baseURL, Model: model, Token: token, TimeoutMS: timeout, InputLimit: limit, Enabled: true}, token != "", nil
+	return ActiveEndpoint{ID: storage.Endpoints[0].ID, Name: storage.Endpoints[0].Name, Protocol: "openai_compatible", BaseURL: baseURL, Model: model, Token: token, TimeoutMS: timeout, InputLimit: limit, Enabled: true,
+		SystemPrompt: strings.TrimSpace(input.SystemPrompt), ReasoningEffort: strings.ToLower(strings.TrimSpace(input.ReasoningEffort))}, token != "", nil
 }
 
 func (s *PromptService) finishProbe(id string, started time.Time, result ProbeResult) ProbeResult {

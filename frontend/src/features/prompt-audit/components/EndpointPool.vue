@@ -48,6 +48,9 @@
               <div class="flex min-w-0 items-center gap-2">
                 <p class="truncate font-semibold text-gray-950 dark:text-white">{{ endpoint.name }}</p>
                 <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="endpoint.enabled ? 'bg-emerald-500' : 'bg-gray-300 dark:bg-dark-500'" aria-hidden="true" />
+                <span v-if="hasSystemPrompt(endpoint)" class="shrink-0 rounded-md bg-primary-50 px-1.5 py-0.5 text-[11px] font-medium text-primary-700 dark:bg-primary-950/40 dark:text-primary-300" data-test="judge-mode-badge">
+                  {{ t('admin.promptAudit.pool.judgeMode') }}
+                </span>
               </div>
               <p class="mt-0.5 truncate font-mono text-[11px] text-gray-500 dark:text-dark-400" :title="endpoint.base_url">{{ endpoint.base_url }}</p>
             </div>
@@ -127,11 +130,40 @@
           <span>{{ t('admin.promptAudit.pool.inputLimit') }}</span>
           <input v-model.number="editing.input_limit" class="input w-full" type="number" min="128" max="100000" required :aria-label="t('admin.promptAudit.pool.inputLimit')" />
         </label>
+        <label class="space-y-1 text-sm text-gray-700 dark:text-dark-200 sm:col-span-2">
+          <span>{{ t('admin.promptAudit.pool.reasoningEffort') }}</span>
+          <select v-model="editing.reasoning_effort" class="input w-full" data-test="endpoint-reasoning-effort" :aria-label="t('admin.promptAudit.pool.reasoningEffort')">
+            <option v-for="option in REASONING_EFFORT_OPTIONS" :key="option || 'none'" :value="option">
+              {{ option ? option : t('admin.promptAudit.pool.reasoningEffortNone') }}
+            </option>
+          </select>
+          <span class="block text-xs text-gray-500 dark:text-dark-400">{{ t('admin.promptAudit.pool.reasoningEffortHint') }}</span>
+        </label>
+        <label class="space-y-1 text-sm text-gray-700 dark:text-dark-200 sm:col-span-2">
+          <span class="flex items-center justify-between gap-3">
+            <span>{{ t('admin.promptAudit.pool.systemPrompt') }}</span>
+            <span class="text-xs tabular-nums" :class="promptTooLong ? 'font-medium text-red-600 dark:text-red-300' : 'text-gray-500 dark:text-dark-400'" data-test="endpoint-system-prompt-count">
+              {{ t('admin.promptAudit.pool.systemPromptCount', { count: promptLength, max: SYSTEM_PROMPT_MAX_CHARS }) }}
+            </span>
+          </span>
+          <textarea
+            v-model="editing.system_prompt"
+            rows="8"
+            spellcheck="false"
+            class="input min-h-[12rem] w-full resize-y font-mono text-xs leading-5"
+            :class="promptTooLong ? 'border-red-400 focus:border-red-500 focus:ring-red-500 dark:border-red-500/70' : ''"
+            data-test="endpoint-system-prompt"
+            :aria-invalid="promptTooLong"
+            :aria-label="t('admin.promptAudit.pool.systemPrompt')"
+          />
+          <span class="block text-xs text-gray-500 dark:text-dark-400">{{ t('admin.promptAudit.pool.systemPromptHint') }}</span>
+          <span v-if="promptTooLong" class="block text-xs text-red-600 dark:text-red-300" role="alert">{{ t('admin.promptAudit.pool.systemPromptTooLong', { max: SYSTEM_PROMPT_MAX_CHARS }) }}</span>
+        </label>
       </form>
       <template #footer>
         <div class="flex justify-end gap-3">
           <button type="button" class="btn btn-secondary" @click="closeEditor">{{ t('common.cancel') }}</button>
-          <button type="button" class="btn btn-primary" data-test="save-endpoint" @click="saveEditor">{{ t('common.save') }}</button>
+          <button type="button" class="btn btn-primary" data-test="save-endpoint" :disabled="promptTooLong" @click="saveEditor">{{ t('common.save') }}</button>
         </div>
       </template>
     </BaseDialog>
@@ -139,11 +171,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import BaseDialog from '@/components/common/BaseDialog.vue'
 import type { PromptAuditEndpointDraft, PromptProbeResult } from '../types'
-import { cloneData, createDefaultEndpoint } from '../viewModel'
+import {
+  cloneData,
+  createDefaultEndpoint,
+  REASONING_EFFORT_OPTIONS,
+  SYSTEM_PROMPT_MAX_CHARS,
+  systemPromptLength,
+  systemPromptTooLong,
+} from '../viewModel'
 
 const props = defineProps<{
   endpoints: PromptAuditEndpointDraft[]
@@ -157,6 +196,8 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const editing = ref<PromptAuditEndpointDraft | null>(null)
 const editingIndex = ref(-1)
+const promptLength = computed(() => systemPromptLength(editing.value?.system_prompt ?? ''))
+const promptTooLong = computed(() => systemPromptTooLong(editing.value?.system_prompt ?? ''))
 
 function openCreate() {
   editingIndex.value = -1
@@ -172,6 +213,7 @@ function closeEditor() {
 }
 function saveEditor() {
   if (!editing.value?.id.trim() || !editing.value.name.trim() || !editing.value.base_url.trim()) return
+  if (promptTooLong.value) return
   const next = props.endpoints.map((item) => cloneData(item))
   const value = cloneData(editing.value)
   if (value.token.trim()) value.clear_token = false
@@ -186,6 +228,9 @@ function toggleEndpoint(id: string) {
 function removeEndpoint(endpoint: PromptAuditEndpointDraft) {
   if (!window.confirm(t('admin.promptAudit.pool.deleteConfirm', { name: endpoint.name }))) return
   emit('update:endpoints', props.endpoints.filter((item) => item.id !== endpoint.id).map((item) => cloneData(item)))
+}
+function hasSystemPrompt(endpoint: PromptAuditEndpointDraft): boolean {
+  return Boolean((endpoint.system_prompt ?? '').trim())
 }
 function hasCredential(endpoint: PromptAuditEndpointDraft): boolean {
   return Boolean(endpoint.token.trim() || (endpoint.has_token && !endpoint.clear_token))

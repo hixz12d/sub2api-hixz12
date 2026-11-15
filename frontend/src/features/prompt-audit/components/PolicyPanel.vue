@@ -54,6 +54,27 @@
       </div>
 
       <div class="space-y-4 rounded-xl border border-gray-200 p-4 dark:border-dark-700/60 dark:bg-dark-900/20 sm:p-5">
+        <div class="flex items-start gap-3 border-b border-gray-100 pb-4 dark:border-dark-800">
+          <button
+            type="button"
+            role="switch"
+            :aria-checked="draft.fail_open"
+            :aria-label="t('admin.promptAudit.policy.failOpen')"
+            class="relative mt-0.5 inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
+            :class="draft.fail_open ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'"
+            data-test="fail-open-toggle"
+            @click="patch({ fail_open: !draft.fail_open })"
+          >
+            <span
+              class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow transition-transform duration-200 ease-in-out"
+              :class="draft.fail_open ? 'translate-x-5' : 'translate-x-0'"
+            />
+          </button>
+          <div class="min-w-0 text-sm">
+            <p class="font-medium text-gray-900 dark:text-white">{{ t('admin.promptAudit.policy.failOpen') }}</p>
+            <p class="mt-1 text-xs leading-5 text-gray-500 dark:text-dark-400">{{ t('admin.promptAudit.policy.failOpenHint') }}</p>
+          </div>
+        </div>
         <label class="block text-sm text-gray-700 dark:text-dark-200">
           <span>{{ t('admin.promptAudit.policy.workerCount') }}</span>
           <input :value="draft.worker_count" type="number" min="1" max="32" class="input mt-1.5 w-full" :aria-label="t('admin.promptAudit.policy.workerCount')" @input="patch({ worker_count: Number(($event.target as HTMLInputElement).value) })" />

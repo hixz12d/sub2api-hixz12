@@ -23,6 +23,9 @@
             <dt class="text-gray-500">{{ t('admin.promptAudit.events.group') }}</dt><dd>{{ event.snapshot.group_name || '—' }}</dd>
             <dt class="text-gray-500">{{ t('admin.promptAudit.events.model') }}</dt><dd>{{ event.snapshot.model || '—' }}</dd>
             <dt class="text-gray-500">{{ t('admin.promptAudit.events.categories') }}</dt><dd>{{ formatCategories(event.categories) }}</dd>
+            <template v-if="judgeReason(event)">
+              <dt class="text-gray-500">{{ t('admin.promptAudit.events.judgeReason') }}</dt><dd class="break-words text-gray-900 dark:text-white" data-test="summary-judge-reason">{{ judgeReason(event) }}</dd>
+            </template>
           </dl>
         </div>
 
@@ -42,6 +45,9 @@
 
           <div class="space-y-3">
             <h4 class="text-sm font-medium text-gray-900 dark:text-white">{{ t('admin.promptAudit.events.riskSummaries') }}</h4>
+            <p v-if="judgeReason(event)" class="break-words rounded-lg bg-gray-50 px-4 py-3 text-sm text-gray-700 dark:bg-dark-900 dark:text-dark-200" data-test="risk-judge-reason">
+              {{ t('admin.promptAudit.events.judgeReasonLine', { reason: judgeReason(event) }) }}
+            </p>
             <article v-for="issue in event.issue_summaries" :key="`${issue.scanner_id}-${issue.code}`" class="border-l-2 border-red-400 pl-4" data-test="risk-issue">
               <div class="flex flex-wrap items-center gap-2">
                 <h5 class="font-medium text-gray-900 dark:text-white">{{ issueTitle(issue) }}</h5>
@@ -61,7 +67,7 @@
         <dl v-show="activeTab === 'technical'" class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm" role="tabpanel">
           <dt class="text-gray-500">{{ t('admin.promptAudit.events.requestId') }}</dt><dd class="break-all font-mono">{{ event.snapshot.request_id || '—' }}</dd>
           <dt class="text-gray-500">{{ t('admin.promptAudit.events.promptHash') }}</dt><dd class="break-all font-mono">{{ event.snapshot.prompt_hash }}</dd>
-          <dt class="text-gray-500">{{ t('admin.promptAudit.events.technical.scanner') }}</dt><dd>{{ event.scanner_backend }} · {{ event.scanner_version }}</dd>
+          <dt class="text-gray-500">{{ t('admin.promptAudit.events.technical.scanner') }}</dt><dd>{{ scannerBackendLabel(event.scanner_backend) }} · {{ event.scanner_version }}</dd>
           <dt class="text-gray-500">{{ t('admin.promptAudit.events.technical.policy') }}</dt><dd>{{ event.policy_id }} · v{{ event.policy_version }}</dd>
           <dt class="text-gray-500">{{ t('admin.promptAudit.events.technical.guardEndpoint') }}</dt><dd>{{ event.guard_endpoint_id }}</dd>
           <dt class="text-gray-500">{{ t('admin.promptAudit.events.technical.config') }}</dt><dd>v{{ event.config_version }}</dd>
@@ -118,11 +124,25 @@ function translateEvidence(value: string): string {
   if (byLabel) return t(`admin.promptAudit.scanners.${byLabel.id}`)
   return value
 }
+// The judge's one-line reason is stored next to category evidence; it is free
+// text, not a category, so it is shown on its own line instead.
+const JUDGE_REASON_KEY = 'judge_reason'
+function judgeReason(event: PromptAuditEvent): string {
+  return (event.scanner_evidence?.[JUDGE_REASON_KEY] ?? '').trim()
+}
+function scannerBackendLabel(backend: string): string {
+  // e.g. "openai-judge" -> scannerBackends.openai_judge
+  const key = `admin.promptAudit.scannerBackends.${backend.replace(/[^A-Za-z0-9_]/g, '_')}`
+  const label = backend ? t(key) : ''
+  return label && label !== key ? label : backend
+}
 function formatGuardReturn(event: PromptAuditEvent): string {
   const evidence: Record<string, string> = {}
   for (const [key, value] of Object.entries(event.scanner_evidence || {})) {
+    if (key === JUDGE_REASON_KEY) continue
     evidence[key] = translateEvidence(value)
   }
+  const reason = judgeReason(event)
   return JSON.stringify({
     decision: DECISIONS.has(event.decision) ? t(`admin.promptAudit.decisions.${event.decision}`) : event.decision,
     risk_level: RISK_LEVELS.has(event.risk_level) ? t(`admin.promptAudit.riskLevels.${event.risk_level}`) : event.risk_level,
@@ -131,7 +151,8 @@ function formatGuardReturn(event: PromptAuditEvent): string {
     matched_scanners: event.matched_scanners.map(translateCategory),
     scanner_scores: event.scanner_scores,
     scanner_evidence: evidence,
-    scanner_backend: event.scanner_backend,
+    ...(reason ? { judge_reason: reason } : {}),
+    scanner_backend: scannerBackendLabel(event.scanner_backend),
     scanner_version: event.scanner_version,
     guard_endpoint_id: event.guard_endpoint_id,
     chunk_total: event.chunk_total,

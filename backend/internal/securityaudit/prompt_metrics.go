@@ -20,6 +20,8 @@ type AtomicMetrics struct {
 	failovers    atomic.Int64
 	bulkheadFull atomic.Int64
 	recordFailed atomic.Int64
+	failOpen     atomic.Int64
+	passCacheHit atomic.Int64
 	latencyTotal atomic.Int64
 	latencyMax   atomic.Int64
 	enqueued     atomic.Int64
@@ -40,6 +42,7 @@ func (m *AtomicMetrics) Snapshot() GuardMetricsSnapshot {
 		Blocked: m.blocked.Load(), Unavailable: m.unavailable.Load(), Invalid: m.invalid.Load(),
 		Timeouts: m.timeouts.Load(), Failovers: m.failovers.Load(), BulkheadFull: m.bulkheadFull.Load(),
 		RecordFailed: m.recordFailed.Load(), LatencyCount: m.total.Load(), LatencyMaxMS: m.latencyMax.Load(),
+		FailOpen: m.failOpen.Load(), PassCacheHits: m.passCacheHit.Load(),
 	}
 	if snapshot.LatencyCount > 0 {
 		snapshot.LatencyAvgMS = m.latencyTotal.Load() / snapshot.LatencyCount
@@ -141,5 +144,15 @@ func (m *AtomicMetrics) IncBulkheadFull() {
 func (m *AtomicMetrics) IncRecordFailed() {
 	if m != nil {
 		m.recordFailed.Add(1)
+	}
+}
+func (m *AtomicMetrics) IncFailOpen() {
+	if m != nil {
+		m.failOpen.Add(1)
+	}
+}
+func (m *AtomicMetrics) IncPassCacheHit() {
+	if m != nil {
+		m.passCacheHit.Add(1)
 	}
 }

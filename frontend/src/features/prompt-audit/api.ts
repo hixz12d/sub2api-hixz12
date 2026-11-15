@@ -34,6 +34,8 @@ export async function probeEndpoint(endpoint: PromptAuditEndpointDraft): Promise
       protocol: 'openai_compatible',
       base_url: endpoint.base_url,
       model: endpoint.model,
+      system_prompt: (endpoint.system_prompt ?? '').trim(),
+      reasoning_effort: endpoint.reasoning_effort ?? '',
       token: endpoint.token || undefined,
       timeout_ms: endpoint.timeout_ms,
       input_limit: endpoint.input_limit,

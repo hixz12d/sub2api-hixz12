@@ -1,6 +1,8 @@
 export type PromptAuditMode = 'off' | 'async_audit' | 'blocking'
 export type PromptDecision = 'pass' | 'flag' | 'critical'
 export type PromptRiskLevel = 'low' | 'medium' | 'high' | 'critical'
+// '' means the reasoning_effort parameter is not sent to the audit model.
+export type PromptReasoningEffort = '' | 'minimal' | 'low' | 'medium' | 'high'
 
 export interface PromptAuditEndpoint {
   id: string
@@ -8,6 +10,9 @@ export interface PromptAuditEndpoint {
   protocol: 'openai_compatible'
   base_url: string
   model: string
+  // Empty = native Qwen3Guard format; non-empty = generic LLM judge prompt.
+  system_prompt: string
+  reasoning_effort: PromptReasoningEffort | string
   timeout_ms: number
   input_limit: number
   enabled: boolean
@@ -25,6 +30,8 @@ export interface PromptAuditConfig {
   blocking_enabled: boolean
   blocking_latest_turn_only: boolean
   store_pass_events: boolean
+  // Allow requests (and record them) when every audit node is unavailable.
+  fail_open: boolean
   effective_mode: PromptAuditMode
   strategy: 'priority'
   worker_count: number
@@ -49,6 +56,7 @@ export interface PromptAuditUpdateRequest {
   blocking_enabled: boolean
   blocking_latest_turn_only: boolean
   store_pass_events: boolean
+  fail_open: boolean
   strategy: 'priority'
   worker_count: number
   queue_capacity: number
@@ -61,6 +69,8 @@ export interface PromptAuditUpdateRequest {
     protocol: 'openai_compatible'
     base_url: string
     model: string
+    system_prompt: string
+    reasoning_effort: string
     token?: string
     clear_token: boolean
     timeout_ms: number

@@ -18,7 +18,23 @@ export const SCANNER_CATALOG = [
   { id: 'politically_sensitive_topics', label: 'Politically Sensitive Topics' },
   { id: 'copyright_violation', label: 'Copyright Violation' },
   { id: 'jailbreak', label: 'Jailbreak' },
+  { id: 'cbrn_weapons', label: 'CBRN Weapons' },
+  { id: 'cyber_attack', label: 'Cyber Attack' },
+  { id: 'child_safety', label: 'Child Safety' },
 ] as const
+
+// Matches the backend cap (runes after trimming surrounding whitespace).
+export const SYSTEM_PROMPT_MAX_CHARS = 20000
+
+export const REASONING_EFFORT_OPTIONS = ['', 'minimal', 'low', 'medium', 'high'] as const
+
+export function systemPromptLength(value: string): number {
+  return Array.from(value.trim()).length
+}
+
+export function systemPromptTooLong(value: string): boolean {
+  return systemPromptLength(value) > SYSTEM_PROMPT_MAX_CHARS
+}
 
 // Vue props/refs are proxies and cannot be passed to structuredClone in every
 // browser. Prompt Audit state is JSON-only, so this produces a detached draft
@@ -30,10 +46,14 @@ export function cloneData<T>(value: T): T {
 export function configToDraft(config: PromptAuditConfig): PromptAuditDraft {
   return {
     ...cloneData(config),
+    // Older backends do not return these fields yet.
+    fail_open: config.fail_open ?? false,
     group_ids: [...(config.group_ids ?? [])],
     scanners: [...(config.scanners ?? [])],
     endpoints: (config.endpoints ?? []).map((endpoint) => ({
       ...endpoint,
+      system_prompt: endpoint.system_prompt ?? '',
+      reasoning_effort: endpoint.reasoning_effort ?? '',
       token: '',
       clear_token: false,
     })),
@@ -47,6 +67,8 @@ export function createDefaultEndpoint(index = 1): PromptAuditEndpointDraft {
     protocol: 'openai_compatible',
     base_url: 'http://127.0.0.1:8000',
     model: DEFAULT_GUARD_MODEL,
+    system_prompt: '',
+    reasoning_effort: '',
     timeout_ms: 3000,
     input_limit: 4000,
     enabled: true,
@@ -64,6 +86,7 @@ export function buildUpdateRequest(draft: PromptAuditDraft): PromptAuditUpdateRe
     blocking_enabled: draft.enabled && draft.blocking_enabled,
     blocking_latest_turn_only: draft.blocking_latest_turn_only,
     store_pass_events: draft.store_pass_events,
+    fail_open: Boolean(draft.fail_open),
     strategy: 'priority',
     worker_count: Number(draft.worker_count),
     queue_capacity: Number(draft.queue_capacity),
@@ -76,6 +99,9 @@ export function buildUpdateRequest(draft: PromptAuditDraft): PromptAuditUpdateRe
       protocol: 'openai_compatible',
       base_url: endpoint.base_url.trim(),
       model: endpoint.model.trim() || DEFAULT_GUARD_MODEL,
+      // Keep inner line breaks; only drop surrounding whitespace.
+      system_prompt: (endpoint.system_prompt ?? '').trim(),
+      reasoning_effort: endpoint.reasoning_effort ?? '',
       token: endpoint.token.trim() || undefined,
       clear_token: endpoint.clear_token,
       timeout_ms: Number(endpoint.timeout_ms),

@@ -282,6 +282,11 @@ func (r *PostgreSQLRepository) RecordBlocking(ctx context.Context, snapshot Prom
 	if result == nil {
 		return nil, errors.New("prompt guard result required")
 	}
+	// A plain pass without store_pass_events leaves no trace: writing a done job
+	// row for every allowed request would only grow prompt_audit_jobs.
+	if !shouldStorePromptAuditEvent(result.Decision, storePassEvents) {
+		return nil, nil
+	}
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
