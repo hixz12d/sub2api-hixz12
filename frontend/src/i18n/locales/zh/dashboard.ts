@@ -827,7 +827,8 @@ export default {
 
   affiliate: {
     title: '邀请返利',
-    description: '邀请新用户注册，并将返利额度转入账户余额',
+    description: '邀请好友注册，好友每次充值你都能获得返利，直接加到余额',
+    rebateDescription: '好友每次充值，你将获得 {rate} 返利，直接加到你的余额',
     yourCode: '我的邀请码',
     inviteLink: '邀请链接',
     copyCode: '复制邀请码',
@@ -843,7 +844,8 @@ export default {
       availableQuota: '可转返利额度',
       frozenQuota: '冻结中',
       frozenQuotaHint: '新产生的返利正在冻结期中',
-      totalQuota: '历史返利额度'
+      totalQuota: '累计返利',
+      totalQuotaHint: '已直接加到你的余额'
     },
     transfer: {
       title: '返利额度转余额',
@@ -866,8 +868,8 @@ export default {
     tips: {
       title: '使用说明',
       line1: '将邀请码或邀请链接分享给新用户。',
-      line2: '被邀请用户充值后，你可获得 {rate} 的返利额度。',
-      line3: '返利额度可随时转入账户余额。',
+      line2: '好友注册后每次充值，你都可获得 {rate} 的返利，直接加到你的账户余额。',
+      line3: '每笔返利到账都会记入余额变动记录，显示为“邀请返利”。',
       line4: '新产生的返利需要经过冻结期后才能提现。'
     }
   },
@@ -898,7 +900,7 @@ export default {
     recentActivity: '最近活动',
     historyWillAppear: '您的兑换历史将显示在这里',
     balanceAddedRedeem: '余额充值（兑换）',
-    balanceAddedAffiliate: '余额充值（返利转入）',
+    balanceAddedAffiliate: '邀请返利',
     balanceAddedAdmin: '余额充值（管理员）',
     balanceDeductedAdmin: '余额扣除（管理员）',
     concurrencyAddedRedeem: '并发增加（兑换）',

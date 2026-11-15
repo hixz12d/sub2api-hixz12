@@ -96,6 +96,8 @@ type UpdateBalanceRequest struct {
 	Balance   float64 `json:"balance" binding:"required,gt=0"`
 	Operation string  `json:"operation" binding:"required,oneof=set add subtract"`
 	Notes     string  `json:"notes"`
+	// CountAffiliateRebate 为 true 且 operation 为 add 时，这笔加余额计入邀请返利。
+	CountAffiliateRebate bool `json:"count_affiliate_rebate"`
 }
 
 type BindUserAuthIdentityRequest struct {
@@ -423,6 +425,9 @@ func (h *UserHandler) UpdateBalance(c *gin.Context) {
 		Body:   req,
 	}
 	executeAdminIdempotentJSONWithResponse(c, "admin.users.balance.update", idempotencyPayload, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
+		if req.CountAffiliateRebate && req.Operation == "add" {
+			ctx = service.ContextCountAffiliateRebate(ctx)
+		}
 		user, execErr := h.adminService.UpdateUserBalance(ctx, userID, req.Balance, req.Operation, req.Notes)
 		if execErr != nil {
 			return nil, execErr

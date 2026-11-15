@@ -583,11 +583,14 @@ func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, 
 	return user, nil
 }
 
+// tryAccrueAffiliateRebateForAdminRecharge 只在管理员“增加余额”且勾选了“计入邀请返利”
+// （ctx 带 ContextCountAffiliateRebate 标记）时发放邀请返利；设置余额、扣减余额永远不返利。
+// 返利是否发放还受邀请返利总开关控制（在 AccrueInviteRebate 里判断）。
 func (s *adminServiceImpl) tryAccrueAffiliateRebateForAdminRecharge(ctx context.Context, userID int64, operation string, amount float64) {
-	if operation != "add" || amount <= 0 || s.settingService == nil || s.affiliateService == nil {
+	if operation != "add" || amount <= 0 || s.affiliateService == nil {
 		return
 	}
-	if !s.settingService.IsAffiliateAdminRechargeEnabled(ctx) {
+	if !shouldCountAffiliateRebate(ctx) {
 		return
 	}
 
@@ -700,7 +703,7 @@ func (s *adminServiceImpl) GetUserUsageStats(ctx context.Context, userID int64, 
 func (s *adminServiceImpl) GetUserBalanceHistory(ctx context.Context, userID int64, page, pageSize int, codeType string) ([]RedeemCode, int64, float64, error) {
 	params := pagination.PaginationParams{Page: page, PageSize: pageSize}
 	if codeType == RedeemTypeAffiliateBalance {
-		codes, total, err := s.listAffiliateBalanceHistory(ctx, userID, params)
+		codes, total, err := listAffiliateBalanceHistory(ctx, s.entClient, userID, params)
 		if err != nil {
 			return nil, 0, 0, err
 		}
@@ -729,30 +732,39 @@ func (s *adminServiceImpl) GetUserBalanceHistory(ctx context.Context, userID int
 }
 
 func (s *adminServiceImpl) getAllUserBalanceHistory(ctx context.Context, userID int64, params pagination.PaginationParams) ([]RedeemCode, int64, float64, error) {
-	needed := params.Offset() + params.Limit()
-	if needed < params.Limit() {
-		needed = params.Limit()
-	}
-
-	redeemCodes, redeemTotal, err := s.listRedeemBalanceHistoryForMerge(ctx, userID, needed)
+	codes, total, err := listMergedBalanceHistory(ctx, s.redeemCodeRepo, s.entClient, userID, params)
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	affiliateCodes, affiliateTotal, err := s.listAffiliateBalanceHistoryForMerge(ctx, userID, needed)
-	if err != nil {
-		return nil, 0, 0, err
-	}
-	codes := mergeBalanceHistoryCodes(redeemCodes, affiliateCodes, params)
 
 	totalRecharged, err := s.redeemCodeRepo.SumPositiveBalanceByUser(ctx, userID)
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	return codes, redeemTotal + affiliateTotal, totalRecharged, nil
+	return codes, total, totalRecharged, nil
 }
 
-func (s *adminServiceImpl) listRedeemBalanceHistoryForMerge(ctx context.Context, userID int64, needed int) ([]RedeemCode, int64, error) {
-	if needed <= 0 {
+// listMergedBalanceHistory 把用户的 redeem_codes 记录与邀请返利入余额（transfer 流水，
+// 显示为 affiliate_balance 类型）合并，按时间倒序分页。管理端和用户端余额记录共用。
+func listMergedBalanceHistory(ctx context.Context, repo RedeemCodeRepository, client *dbent.Client, userID int64, params pagination.PaginationParams) ([]RedeemCode, int64, error) {
+	needed := params.Offset() + params.Limit()
+	if needed < params.Limit() {
+		needed = params.Limit()
+	}
+
+	redeemCodes, redeemTotal, err := listRedeemBalanceHistoryForMerge(ctx, repo, userID, needed)
+	if err != nil {
+		return nil, 0, err
+	}
+	affiliateCodes, affiliateTotal, err := listAffiliateBalanceHistoryForMerge(ctx, client, userID, needed)
+	if err != nil {
+		return nil, 0, err
+	}
+	return mergeBalanceHistoryCodes(redeemCodes, affiliateCodes, params), redeemTotal + affiliateTotal, nil
+}
+
+func listRedeemBalanceHistoryForMerge(ctx context.Context, repo RedeemCodeRepository, userID int64, needed int) ([]RedeemCode, int64, error) {
+	if needed <= 0 || repo == nil {
 		return nil, 0, nil
 	}
 
@@ -762,7 +774,7 @@ func (s *adminServiceImpl) listRedeemBalanceHistoryForMerge(ctx context.Context,
 	)
 	for page := 1; len(out) < needed; page++ {
 		params := pagination.PaginationParams{Page: page, PageSize: 1000}
-		codes, result, err := s.redeemCodeRepo.ListByUserPaginated(ctx, userID, params, "")
+		codes, result, err := repo.ListByUserPaginated(ctx, userID, params, "")
 		if err != nil {
 			return nil, 0, err
 		}
@@ -780,7 +792,7 @@ func (s *adminServiceImpl) listRedeemBalanceHistoryForMerge(ctx context.Context,
 	return out, total, nil
 }
 
-func (s *adminServiceImpl) listAffiliateBalanceHistoryForMerge(ctx context.Context, userID int64, needed int) ([]RedeemCode, int64, error) {
+func listAffiliateBalanceHistoryForMerge(ctx context.Context, client *dbent.Client, userID int64, needed int) ([]RedeemCode, int64, error) {
 	if needed <= 0 {
 		return nil, 0, nil
 	}
@@ -791,7 +803,7 @@ func (s *adminServiceImpl) listAffiliateBalanceHistoryForMerge(ctx context.Conte
 	)
 	for page := 1; len(out) < needed; page++ {
 		params := pagination.PaginationParams{Page: page, PageSize: 1000}
-		codes, currentTotal, err := s.listAffiliateBalanceHistory(ctx, userID, params)
+		codes, currentTotal, err := listAffiliateBalanceHistory(ctx, client, userID, params)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -807,12 +819,14 @@ func (s *adminServiceImpl) listAffiliateBalanceHistoryForMerge(ctx context.Conte
 	return out, total, nil
 }
 
-func (s *adminServiceImpl) listAffiliateBalanceHistory(ctx context.Context, userID int64, params pagination.PaginationParams) ([]RedeemCode, int64, error) {
-	if s == nil || s.entClient == nil || userID <= 0 {
+// listAffiliateBalanceHistory 把用户的邀请返利入余额流水（action='transfer'）转成
+// affiliate_balance 类型的余额记录（负 ID、AFF-<流水ID> 编码），按时间倒序分页。
+func listAffiliateBalanceHistory(ctx context.Context, client *dbent.Client, userID int64, params pagination.PaginationParams) ([]RedeemCode, int64, error) {
+	if client == nil || userID <= 0 {
 		return nil, 0, nil
 	}
 
-	rows, err := s.entClient.QueryContext(ctx, `
+	rows, err := client.QueryContext(ctx, `
 SELECT id,
        amount::double precision,
        created_at
@@ -852,7 +866,7 @@ LIMIT $3`, userID, params.Offset(), params.Limit())
 		return nil, 0, err
 	}
 
-	total, err := countAffiliateBalanceHistory(ctx, s.entClient, userID)
+	total, err := countAffiliateBalanceHistory(ctx, client, userID)
 	if err != nil {
 		return nil, 0, err
 	}

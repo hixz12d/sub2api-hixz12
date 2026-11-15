@@ -170,19 +170,23 @@ export async function deleteUser(id: number): Promise<{ message: string }> {
  * @param balance - New balance
  * @param operation - Operation type ('set', 'add', 'subtract')
  * @param notes - Optional notes for the balance adjustment
+ * @param countAffiliateRebate - Only for 'add': treat this top-up as a recharge that pays the inviter's rebate
  * @returns Updated user
  */
 export async function updateBalance(
   id: number,
   balance: number,
   operation: 'set' | 'add' | 'subtract' = 'set',
-  notes?: string
+  notes?: string,
+  countAffiliateRebate = false
 ): Promise<AdminUser> {
-  const { data } = await apiClient.post<AdminUser>(`/admin/users/${id}/balance`, {
+  const payload: Record<string, unknown> = {
     balance,
     operation,
     notes: notes || ''
-  })
+  }
+  if (countAffiliateRebate) payload.count_affiliate_rebate = true
+  const { data } = await apiClient.post<AdminUser>(`/admin/users/${id}/balance`, payload)
   return data
 }
 

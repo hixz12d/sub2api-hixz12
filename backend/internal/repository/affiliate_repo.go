@@ -87,7 +87,7 @@ func (r *affiliateRepository) BindInviter(ctx context.Context, userID, inviterID
 		}
 
 		res, err := txClient.ExecContext(txCtx,
-			"UPDATE user_affiliates SET inviter_id = $1, updated_at = NOW() WHERE user_id = $2 AND inviter_id IS NULL",
+			"UPDATE user_affiliates SET inviter_id = $1, inviter_bound_at = NOW(), updated_at = NOW() WHERE user_id = $2 AND inviter_id IS NULL",
 			inviterID, userID,
 		)
 		if err != nil {
@@ -112,6 +112,317 @@ func (r *affiliateRepository) BindInviter(ctx context.Context, userID, inviterID
 		return false, err
 	}
 	return bound, nil
+}
+
+// GetInviterBinding 读取用户当前的邀请人与绑定时间。用户不存在（或已删除）时返回
+// ErrUserNotFound；用户还没有返利档案或没有邀请人时 Inviter、BoundAt 为 nil。
+func (r *affiliateRepository) GetInviterBinding(ctx context.Context, userID int64) (*service.AffiliateInviterBinding, error) {
+	if userID <= 0 {
+		return nil, service.ErrUserNotFound
+	}
+	client := clientFromContext(ctx, r.client)
+	rows, err := client.QueryContext(ctx, `
+SELECT ua.inviter_id,
+       COALESCE(inv.email, ''),
+       COALESCE(inv.username, ''),
+       CASE WHEN ua.inviter_id IS NOT NULL THEN COALESCE(ua.inviter_bound_at, ua.created_at) END
+FROM users u
+LEFT JOIN user_affiliates ua ON ua.user_id = u.id
+LEFT JOIN users inv ON inv.id = ua.inviter_id
+WHERE u.id = $1
+  AND u.deleted_at IS NULL
+LIMIT 1`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("query affiliate inviter binding: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		return nil, service.ErrUserNotFound
+	}
+	var inviterID sql.NullInt64
+	var inviterEmail, inviterUsername string
+	var boundAt sql.NullTime
+	if err := rows.Scan(&inviterID, &inviterEmail, &inviterUsername, &boundAt); err != nil {
+		return nil, err
+	}
+	binding := &service.AffiliateInviterBinding{UserID: userID}
+	if inviterID.Valid {
+		binding.Inviter = &service.AffiliateInviterInfo{
+			ID:       inviterID.Int64,
+			Email:    inviterEmail,
+			Username: inviterUsername,
+		}
+		if boundAt.Valid {
+			t := boundAt.Time
+			binding.BoundAt = &t
+		}
+	}
+	return binding, rows.Close()
+}
+
+// SetInviterByAdmin 由管理员为用户指定或改绑邀请人：对本用户的返利档案行加锁，
+// 旧邀请人 aff_count - 1（不低于 0）、新邀请人 aff_count + 1，并把绑定时间更新为
+// 当前时间。目标邀请人的邀请人正是本用户时返回 ErrAffiliateInviterCycle；任一用户
+// 不存在返回 ErrUserNotFound。邀请人没有变化时不做任何修改（Changed=false）。
+func (r *affiliateRepository) SetInviterByAdmin(ctx context.Context, userID, inviterID int64) (*service.AffiliateInviterChange, error) {
+	if userID <= 0 || inviterID <= 0 {
+		return nil, service.ErrUserNotFound
+	}
+	var change *service.AffiliateInviterChange
+	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		for _, id := range []int64{userID, inviterID} {
+			if err := ensureActiveUserExists(txCtx, txClient, id); err != nil {
+				return err
+			}
+			if _, err := ensureUserAffiliateWithClient(txCtx, txClient, id); err != nil {
+				return err
+			}
+		}
+
+		oldInviterID, err := lockAffiliateInviter(txCtx, txClient, userID)
+		if err != nil {
+			return err
+		}
+		if oldInviterID != nil && *oldInviterID == inviterID {
+			change = &service.AffiliateInviterChange{OldInviterID: oldInviterID, Changed: false}
+			return nil
+		}
+
+		targetInviterID, err := queryAffiliateInviterID(txCtx, txClient, inviterID)
+		if err != nil {
+			return err
+		}
+		if targetInviterID != nil && *targetInviterID == userID {
+			return service.ErrAffiliateInviterCycle
+		}
+
+		if _, err := txClient.ExecContext(txCtx, `
+UPDATE user_affiliates
+SET inviter_id = $1,
+    inviter_bound_at = NOW(),
+    updated_at = NOW()
+WHERE user_id = $2`, inviterID, userID); err != nil {
+			return fmt.Errorf("admin set inviter: %w", err)
+		}
+		if oldInviterID != nil {
+			if err := decrementAffiliateCount(txCtx, txClient, *oldInviterID); err != nil {
+				return err
+			}
+		}
+		if _, err := txClient.ExecContext(txCtx,
+			"UPDATE user_affiliates SET aff_count = aff_count + 1, updated_at = NOW() WHERE user_id = $1",
+			inviterID,
+		); err != nil {
+			return fmt.Errorf("increment inviter aff_count: %w", err)
+		}
+		change = &service.AffiliateInviterChange{OldInviterID: oldInviterID, Changed: true}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return change, nil
+}
+
+// ClearInviterByAdmin 由管理员解除用户的邀请人：清空 inviter_id 与绑定时间，
+// 旧邀请人 aff_count - 1（不低于 0）。返回解绑前的邀请人；原本没有邀请人时为 nil。
+func (r *affiliateRepository) ClearInviterByAdmin(ctx context.Context, userID int64) (*int64, error) {
+	if userID <= 0 {
+		return nil, service.ErrUserNotFound
+	}
+	var oldInviterID *int64
+	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		if err := ensureActiveUserExists(txCtx, txClient, userID); err != nil {
+			return err
+		}
+		if _, err := ensureUserAffiliateWithClient(txCtx, txClient, userID); err != nil {
+			return err
+		}
+		var err error
+		oldInviterID, err = lockAffiliateInviter(txCtx, txClient, userID)
+		if err != nil {
+			return err
+		}
+		if oldInviterID == nil {
+			return nil
+		}
+		if _, err := txClient.ExecContext(txCtx, `
+UPDATE user_affiliates
+SET inviter_id = NULL,
+    inviter_bound_at = NULL,
+    updated_at = NOW()
+WHERE user_id = $1`, userID); err != nil {
+			return fmt.Errorf("admin clear inviter: %w", err)
+		}
+		return decrementAffiliateCount(txCtx, txClient, *oldInviterID)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return oldInviterID, nil
+}
+
+// ensureActiveUserExists 确认用户存在且未被删除，否则返回 ErrUserNotFound。
+func ensureActiveUserExists(ctx context.Context, client affiliateQueryExecer, userID int64) error {
+	rows, err := client.QueryContext(ctx, "SELECT 1 FROM users WHERE id = $1 AND deleted_at IS NULL LIMIT 1", userID)
+	if err != nil {
+		return fmt.Errorf("check user exists: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		return service.ErrUserNotFound
+	}
+	return rows.Close()
+}
+
+// lockAffiliateInviter 对用户的返利档案行加 FOR UPDATE 锁并返回当前邀请人。
+func lockAffiliateInviter(ctx context.Context, client affiliateQueryExecer, userID int64) (*int64, error) {
+	rows, err := client.QueryContext(ctx, "SELECT inviter_id FROM user_affiliates WHERE user_id = $1 FOR UPDATE", userID)
+	if err != nil {
+		return nil, fmt.Errorf("lock affiliate profile: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		return nil, service.ErrAffiliateProfileNotFound
+	}
+	var inviterID sql.NullInt64
+	if err := rows.Scan(&inviterID); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	return nullableInt64Ptr(inviterID), nil
+}
+
+func queryAffiliateInviterID(ctx context.Context, client affiliateQueryExecer, userID int64) (*int64, error) {
+	rows, err := client.QueryContext(ctx, "SELECT inviter_id FROM user_affiliates WHERE user_id = $1", userID)
+	if err != nil {
+		return nil, fmt.Errorf("query affiliate inviter: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	}
+	var inviterID sql.NullInt64
+	if err := rows.Scan(&inviterID); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	return nullableInt64Ptr(inviterID), nil
+}
+
+func decrementAffiliateCount(ctx context.Context, client affiliateQueryExecer, inviterID int64) error {
+	if _, err := client.ExecContext(ctx,
+		"UPDATE user_affiliates SET aff_count = GREATEST(aff_count - 1, 0), updated_at = NOW() WHERE user_id = $1",
+		inviterID,
+	); err != nil {
+		return fmt.Errorf("decrement inviter aff_count: %w", err)
+	}
+	return nil
+}
+
+// AccrueRebateToBalance 把一笔邀请返利直接计入邀请人余额（传入的 ctx 已带事务时
+// 沿用该事务）：历史返利总额 aff_history_quota 增加（可用额度、冻结额度不变），
+// 写一条 accrue 流水供返利记录与单人上限统计；邀请人余额与累计充值增加，再写一条
+// 带余额快照的 transfer 流水供余额记录展示。邀请人不存在、已删除或没有返利档案时
+// 不做任何修改，返回 false。
+func (r *affiliateRepository) AccrueRebateToBalance(ctx context.Context, inviterID, inviteeUserID int64, amount float64, sourceOrderID *int64) (bool, error) {
+	if amount <= 0 || inviterID <= 0 {
+		return false, nil
+	}
+
+	var applied bool
+	err := r.withTx(ctx, func(txCtx context.Context, txClient *dbent.Client) error {
+		if err := ensureActiveUserExists(txCtx, txClient, inviterID); err != nil {
+			if errors.Is(err, service.ErrUserNotFound) {
+				applied = false
+				return nil
+			}
+			return err
+		}
+
+		res, err := txClient.ExecContext(txCtx,
+			"UPDATE user_affiliates SET aff_history_quota = aff_history_quota + $1, updated_at = NOW() WHERE user_id = $2",
+			amount, inviterID,
+		)
+		if err != nil {
+			return fmt.Errorf("accumulate affiliate history quota: %w", err)
+		}
+		affected, _ := res.RowsAffected()
+		if affected == 0 {
+			applied = false
+			return nil
+		}
+
+		if _, err = txClient.ExecContext(txCtx, `
+INSERT INTO user_affiliate_ledger (user_id, action, amount, source_user_id, source_order_id, created_at, updated_at)
+VALUES ($1, 'accrue', $2, $3, $4, NOW(), NOW())`, inviterID, amount, inviteeUserID, nullableInt64Arg(sourceOrderID)); err != nil {
+			return fmt.Errorf("insert affiliate accrue ledger: %w", err)
+		}
+
+		updated, err := txClient.User.Update().
+			Where(user.IDEQ(inviterID)).
+			AddBalance(amount).
+			AddTotalRecharged(amount).
+			Save(txCtx)
+		if err != nil {
+			return fmt.Errorf("credit inviter balance by affiliate rebate: %w", err)
+		}
+		if updated == 0 {
+			return service.ErrUserNotFound
+		}
+
+		snapshot, err := queryAffiliateTransferSnapshot(txCtx, txClient, inviterID)
+		if err != nil {
+			return err
+		}
+		if _, err = txClient.ExecContext(txCtx, `
+INSERT INTO user_affiliate_ledger (
+    user_id,
+    action,
+    amount,
+    source_user_id,
+    balance_after,
+    aff_quota_after,
+    aff_frozen_quota_after,
+    aff_history_quota_after,
+    created_at,
+    updated_at
+)
+VALUES ($1, 'transfer', $2, NULL, $3, $4, $5, $6, NOW(), NOW())`,
+			inviterID,
+			amount,
+			snapshot.BalanceAfter,
+			snapshot.AvailableQuotaAfter,
+			snapshot.FrozenQuotaAfter,
+			snapshot.HistoryQuotaAfter,
+		); err != nil {
+			return fmt.Errorf("insert affiliate transfer ledger: %w", err)
+		}
+
+		applied = true
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return applied, nil
 }
 
 func (r *affiliateRepository) AccrueQuota(ctx context.Context, inviterID, inviteeUserID int64, amount float64, freezeHours int, sourceOrderID *int64) (bool, error) {
@@ -515,7 +826,7 @@ func (r *affiliateRepository) ListInvitees(ctx context.Context, inviterID int64,
 SELECT ua.user_id,
        COALESCE(u.email, ''),
        COALESCE(u.username, ''),
-       ua.created_at,
+       COALESCE(ua.inviter_bound_at, ua.created_at) AS bound_at,
        COALESCE(SUM(ual.amount), 0)::double precision AS total_rebate
 FROM user_affiliates ua
 LEFT JOIN users u ON u.id = ua.user_id
@@ -524,8 +835,8 @@ LEFT JOIN user_affiliate_ledger ual
       AND ual.source_user_id = ua.user_id
       AND ual.action = 'accrue'
 WHERE ua.inviter_id = $1
-GROUP BY ua.user_id, u.email, u.username, ua.created_at
-ORDER BY ua.created_at DESC
+GROUP BY ua.user_id, u.email, u.username, ua.inviter_bound_at, ua.created_at
+ORDER BY bound_at DESC
 LIMIT $2`, inviterID, limit)
 	if err != nil {
 		return nil, err
@@ -550,7 +861,9 @@ LIMIT $2`, inviterID, limit)
 
 func (r *affiliateRepository) ListAffiliateInviteRecords(ctx context.Context, filter service.AffiliateRecordFilter) ([]service.AffiliateInviteRecord, int64, error) {
 	client := clientFromContext(ctx, r.client)
-	where, args := buildAffiliateRecordWhere(filter, "ua.created_at", []string{
+	// 邀请记录的时间是绑定时间；早于绑定时间列的关系没有记录，退回档案创建时间。
+	const boundAtExpr = "COALESCE(ua.inviter_bound_at, ua.created_at)"
+	where, args := buildAffiliateRecordWhere(filter, boundAtExpr, []string{
 		"inviter.email", "inviter.username", "invitee.email", "invitee.username",
 		"ua.inviter_id::text", "ua.user_id::text", "inviter_aff.aff_code",
 	})
@@ -571,8 +884,8 @@ JOIN user_affiliates inviter_aff ON inviter_aff.user_id = ua.inviter_id
 		"invitee":      "invitee.email",
 		"aff_code":     "inviter_aff.aff_code",
 		"total_rebate": "total_rebate",
-		"created_at":   "ua.created_at",
-	}, "ua.created_at")
+		"created_at":   boundAtExpr,
+	}, boundAtExpr)
 	args = append(args, filter.PageSize, (filter.Page-1)*filter.PageSize)
 	rows, err := client.QueryContext(ctx, `
 SELECT ua.inviter_id,
@@ -583,7 +896,7 @@ SELECT ua.inviter_id,
        COALESCE(invitee.username, ''),
        COALESCE(inviter_aff.aff_code, ''),
        COALESCE(SUM(ual.amount), 0)::double precision AS total_rebate,
-       ua.created_at
+       `+boundAtExpr+`
 FROM user_affiliates ua
 JOIN users invitee ON invitee.id = ua.user_id
 JOIN users inviter ON inviter.id = ua.inviter_id
@@ -593,7 +906,7 @@ LEFT JOIN user_affiliate_ledger ual
       AND ual.source_user_id = ua.user_id
       AND ual.action = 'accrue'
 `+where+`
-GROUP BY ua.inviter_id, inviter.email, inviter.username, ua.user_id, invitee.email, invitee.username, inviter_aff.aff_code, ua.created_at
+GROUP BY ua.inviter_id, inviter.email, inviter.username, ua.user_id, invitee.email, invitee.username, inviter_aff.aff_code, ua.inviter_bound_at, ua.created_at
 `+orderBy+`
 LIMIT $`+fmt.Sprint(len(args)-1)+` OFFSET $`+fmt.Sprint(len(args)), args...)
 	if err != nil {
@@ -962,6 +1275,7 @@ SELECT user_id,
        aff_code_custom,
        aff_rebate_rate_percent,
        inviter_id,
+       inviter_bound_at,
        aff_count,
        aff_quota::double precision,
        aff_frozen_quota::double precision,
@@ -983,6 +1297,7 @@ WHERE user_id = $1`, userID)
 
 	var out service.AffiliateSummary
 	var inviterID sql.NullInt64
+	var inviterBoundAt sql.NullTime
 	var rebateRate sql.NullFloat64
 	if err := rows.Scan(
 		&out.UserID,
@@ -990,6 +1305,7 @@ WHERE user_id = $1`, userID)
 		&out.AffCodeCustom,
 		&rebateRate,
 		&inviterID,
+		&inviterBoundAt,
 		&out.AffCount,
 		&out.AffQuota,
 		&out.AffFrozenQuota,
@@ -1001,6 +1317,10 @@ WHERE user_id = $1`, userID)
 	}
 	if inviterID.Valid {
 		out.InviterID = &inviterID.Int64
+	}
+	if inviterBoundAt.Valid {
+		t := inviterBoundAt.Time
+		out.InviterBoundAt = &t
 	}
 	if rebateRate.Valid {
 		v := rebateRate.Float64
@@ -1016,6 +1336,7 @@ SELECT user_id,
        aff_code_custom,
        aff_rebate_rate_percent,
        inviter_id,
+       inviter_bound_at,
        aff_count,
        aff_quota::double precision,
        aff_frozen_quota::double precision,
@@ -1039,6 +1360,7 @@ LIMIT 1`, strings.ToUpper(strings.TrimSpace(code)))
 
 	var out service.AffiliateSummary
 	var inviterID sql.NullInt64
+	var inviterBoundAt sql.NullTime
 	var rebateRate sql.NullFloat64
 	if err := rows.Scan(
 		&out.UserID,
@@ -1046,6 +1368,7 @@ LIMIT 1`, strings.ToUpper(strings.TrimSpace(code)))
 		&out.AffCodeCustom,
 		&rebateRate,
 		&inviterID,
+		&inviterBoundAt,
 		&out.AffCount,
 		&out.AffQuota,
 		&out.AffFrozenQuota,
@@ -1057,6 +1380,10 @@ LIMIT 1`, strings.ToUpper(strings.TrimSpace(code)))
 	}
 	if inviterID.Valid {
 		out.InviterID = &inviterID.Int64
+	}
+	if inviterBoundAt.Valid {
+		t := inviterBoundAt.Time
+		out.InviterBoundAt = &t
 	}
 	if rebateRate.Valid {
 		v := rebateRate.Float64

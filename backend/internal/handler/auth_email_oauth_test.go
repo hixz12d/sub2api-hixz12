@@ -451,6 +451,22 @@ func (r *oauthEmailAffiliateRepoStub) GetAffiliateUserOverview(context.Context, 
 	panic("unexpected GetAffiliateUserOverview call")
 }
 
+func (r *oauthEmailAffiliateRepoStub) AccrueRebateToBalance(context.Context, int64, int64, float64, *int64) (bool, error) {
+	panic("unexpected AccrueRebateToBalance call")
+}
+
+func (r *oauthEmailAffiliateRepoStub) GetInviterBinding(context.Context, int64) (*service.AffiliateInviterBinding, error) {
+	panic("unexpected GetInviterBinding call")
+}
+
+func (r *oauthEmailAffiliateRepoStub) SetInviterByAdmin(context.Context, int64, int64) (*service.AffiliateInviterChange, error) {
+	panic("unexpected SetInviterByAdmin call")
+}
+
+func (r *oauthEmailAffiliateRepoStub) ClearInviterByAdmin(context.Context, int64) (*int64, error) {
+	panic("unexpected ClearInviterByAdmin call")
+}
+
 func findSetCookieValue(cookies []*http.Cookie, name string) string {
 	for _, cookie := range cookies {
 		if cookie != nil && strings.EqualFold(cookie.Name, name) && cookie.MaxAge >= 0 {

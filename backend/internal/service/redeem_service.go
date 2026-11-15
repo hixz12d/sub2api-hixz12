@@ -45,6 +45,20 @@ func ContextSkipRedeemAffiliate(ctx context.Context) context.Context {
 	return context.WithValue(ctx, ctxKeySkipRedeemAffiliate{}, true)
 }
 
+type ctxKeyCountAffiliateRebate struct{}
+
+// ContextCountAffiliateRebate returns a context marking an admin balance "add"
+// as a recharge that counts toward the invitee's affiliate rebate. Set by the
+// admin handler when the request carries count_affiliate_rebate=true.
+func ContextCountAffiliateRebate(ctx context.Context) context.Context {
+	return context.WithValue(ctx, ctxKeyCountAffiliateRebate{}, true)
+}
+
+func shouldCountAffiliateRebate(ctx context.Context) bool {
+	v, _ := ctx.Value(ctxKeyCountAffiliateRebate{}).(bool)
+	return v
+}
+
 // RedeemCache defines cache operations for redeem service
 type RedeemCache interface {
 	GetRedeemAttemptCount(ctx context.Context, userID int64) (int, error)
@@ -751,7 +765,19 @@ func (s *RedeemService) reduceOrCancelSubscription(ctx context.Context, userID, 
 	return nil
 }
 
-// GetUserHistoryPaginated returns all redemption types for the authenticated user.
+// GetUserHistoryPaginated returns all redemption types for the authenticated user,
+// merged with affiliate rebates credited to balance (type affiliate_balance).
 func (s *RedeemService) GetUserHistoryPaginated(ctx context.Context, userID int64, params pagination.PaginationParams) ([]RedeemCode, *pagination.PaginationResult, error) {
-	return s.redeemRepo.ListByUserPaginated(ctx, userID, params, "")
+	codes, total, err := listMergedBalanceHistory(ctx, s.redeemRepo, s.entClient, userID, params)
+	if err != nil {
+		return nil, nil, err
+	}
+	limit := params.Limit()
+	pages := int((total + int64(limit) - 1) / int64(limit))
+	return codes, &pagination.PaginationResult{
+		Total:    total,
+		Page:     params.Page,
+		PageSize: limit,
+		Pages:    pages,
+	}, nil
 }

@@ -823,7 +823,8 @@ export default {
 
   affiliate: {
     title: 'Affiliate Rebates',
-    description: 'Invite new users and convert your rebate quota into account balance',
+    description: 'Invite friends to sign up and earn a rebate on every recharge they make, added straight to your balance',
+    rebateDescription: 'Each time a friend recharges, you get a {rate} rebate added straight to your balance',
     yourCode: 'Your Affiliate Code',
     inviteLink: 'Invite Link',
     copyCode: 'Copy Code',
@@ -839,7 +840,8 @@ export default {
       availableQuota: 'Available Rebate Quota',
       frozenQuota: 'Frozen',
       frozenQuotaHint: 'Recently earned rebates pending release',
-      totalQuota: 'Historical Rebate Quota'
+      totalQuota: 'Total Rebates Earned',
+      totalQuotaHint: 'Already added to your balance'
     },
     transfer: {
       title: 'Transfer Rebate Quota',
@@ -862,8 +864,8 @@ export default {
     tips: {
       title: 'How It Works',
       line1: 'Share your affiliate code or invite link with new users.',
-      line2: 'When invitees recharge, you receive {rate} of the recharge as rebate quota.',
-      line3: 'Transfer rebate quota to balance at any time.',
+      line2: 'Every time an invitee recharges, you receive {rate} of the recharge, added straight to your balance.',
+      line3: 'Each rebate appears in your balance history as "Referral rebate".',
       line4: 'Newly earned rebates may have a waiting period before they can be transferred.'
     }
   },
@@ -894,7 +896,7 @@ export default {
     recentActivity: 'Recent Activity',
     historyWillAppear: 'Your redemption history will appear here',
     balanceAddedRedeem: 'Balance Added (Redeem)',
-    balanceAddedAffiliate: 'Balance Added (Affiliate Transfer)',
+    balanceAddedAffiliate: 'Referral rebate',
     balanceAddedAdmin: 'Balance Added (Admin)',
     balanceDeductedAdmin: 'Balance Deducted (Admin)',
     concurrencyAddedRedeem: 'Concurrency Added (Redeem)',

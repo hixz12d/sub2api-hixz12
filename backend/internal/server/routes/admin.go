@@ -887,6 +887,9 @@ func registerAffiliateRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 			users.POST("/batch-rate", h.Admin.Affiliate.BatchSetRate)
 			users.GET("/:user_id/overview", h.Admin.Affiliate.GetUserOverview)
 			users.POST("/:user_id/withdraw", h.Admin.Affiliate.WithdrawQuota)
+			users.GET("/:user_id/inviter", h.Admin.Affiliate.GetUserInviter)
+			users.PUT("/:user_id/inviter", h.Admin.Affiliate.SetUserInviter)
+			users.DELETE("/:user_id/inviter", h.Admin.Affiliate.ClearUserInviter)
 			users.PUT("/:user_id", h.Admin.Affiliate.UpdateUserSettings)
 			users.DELETE("/:user_id", h.Admin.Affiliate.ClearUserSettings)
 		}

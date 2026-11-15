@@ -201,6 +201,69 @@ func (h *AffiliateHandler) GetUserOverview(c *gin.Context) {
 	response.Success(c, overview)
 }
 
+// GetUserInviter returns the user's current inviter and bind time.
+// GET /api/v1/admin/affiliates/users/:user_id/inviter
+func (h *AffiliateHandler) GetUserInviter(c *gin.Context) {
+	userID, err := strconv.ParseInt(c.Param("user_id"), 10, 64)
+	if err != nil || userID <= 0 {
+		response.BadRequest(c, "Invalid user_id")
+		return
+	}
+	binding, err := h.affiliateService.AdminGetUserInviter(c.Request.Context(), userID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, binding)
+}
+
+// SetUserInviterRequest 是管理员指定/改绑邀请人的请求体。
+type SetUserInviterRequest struct {
+	InviterUserID int64 `json:"inviter_user_id"`
+}
+
+// SetUserInviter binds or rebinds the user's inviter. Not gated by the
+// affiliate master switch, so relationships can be set up in advance.
+// PUT /api/v1/admin/affiliates/users/:user_id/inviter
+func (h *AffiliateHandler) SetUserInviter(c *gin.Context) {
+	userID, err := strconv.ParseInt(c.Param("user_id"), 10, 64)
+	if err != nil || userID <= 0 {
+		response.BadRequest(c, "Invalid user_id")
+		return
+	}
+	var req SetUserInviterRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if req.InviterUserID <= 0 {
+		response.BadRequest(c, "inviter_user_id is required")
+		return
+	}
+	binding, err := h.affiliateService.AdminSetUserInviter(c.Request.Context(), userID, req.InviterUserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, binding)
+}
+
+// ClearUserInviter removes the user's inviter.
+// DELETE /api/v1/admin/affiliates/users/:user_id/inviter
+func (h *AffiliateHandler) ClearUserInviter(c *gin.Context) {
+	userID, err := strconv.ParseInt(c.Param("user_id"), 10, 64)
+	if err != nil || userID <= 0 {
+		response.BadRequest(c, "Invalid user_id")
+		return
+	}
+	binding, err := h.affiliateService.AdminClearUserInviter(c.Request.Context(), userID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, binding)
+}
+
 // WithdrawQuotaRequest 是登记线下提现的请求体。Amount 是已在站外打款给
 // 用户的金额，由 AffiliateService 校验。
 type WithdrawQuotaRequest struct {

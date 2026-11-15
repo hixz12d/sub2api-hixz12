@@ -139,6 +139,13 @@ export interface SimpleUser {
   username: string
 }
 
+/** A user's current inviter; `inviter` and `bound_at` are null when unbound. */
+export interface UserInviterInfo {
+  user_id: number
+  inviter: SimpleUser | null
+  bound_at: string | null
+}
+
 export async function listUsers(
   params: ListAffiliateUsersParams = {},
 ): Promise<PaginatedResponse<AffiliateAdminEntry>> {
@@ -266,6 +273,32 @@ export async function withdrawUserQuota(
   }
 }
 
+export async function getUserInviter(userId: number): Promise<UserInviterInfo> {
+  const { data } = await apiClient.get<UserInviterInfo>(
+    `/admin/affiliates/users/${userId}/inviter`,
+  )
+  return data
+}
+
+/** Binds or rebinds the inviter; only future recharges are rebated to the new inviter. */
+export async function setUserInviter(
+  userId: number,
+  inviterUserId: number,
+): Promise<UserInviterInfo> {
+  const { data } = await apiClient.put<UserInviterInfo>(
+    `/admin/affiliates/users/${userId}/inviter`,
+    { inviter_user_id: inviterUserId },
+  )
+  return data
+}
+
+export async function clearUserInviter(userId: number): Promise<UserInviterInfo> {
+  const { data } = await apiClient.delete<UserInviterInfo>(
+    `/admin/affiliates/users/${userId}/inviter`,
+  )
+  return data
+}
+
 export const affiliatesAPI = {
   listUsers,
   lookupUsers,
@@ -277,6 +310,9 @@ export const affiliatesAPI = {
   listTransferRecords,
   getUserOverview,
   withdrawUserQuota,
+  getUserInviter,
+  setUserInviter,
+  clearUserInviter,
 }
 
 export default affiliatesAPI

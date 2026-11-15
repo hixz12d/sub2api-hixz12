@@ -194,6 +194,22 @@ func (r *paymentFulfillmentAffiliateRepoStub) GetAffiliateUserOverview(context.C
 	panic("unexpected GetAffiliateUserOverview call")
 }
 
+func (r *paymentFulfillmentAffiliateRepoStub) AccrueRebateToBalance(ctx context.Context, inviterID, inviteeUserID int64, amount float64, sourceOrderID *int64) (bool, error) {
+	return r.AccrueQuota(ctx, inviterID, inviteeUserID, amount, 0, sourceOrderID)
+}
+
+func (r *paymentFulfillmentAffiliateRepoStub) GetInviterBinding(context.Context, int64) (*AffiliateInviterBinding, error) {
+	panic("unexpected GetInviterBinding call")
+}
+
+func (r *paymentFulfillmentAffiliateRepoStub) SetInviterByAdmin(context.Context, int64, int64) (*AffiliateInviterChange, error) {
+	panic("unexpected SetInviterByAdmin call")
+}
+
+func (r *paymentFulfillmentAffiliateRepoStub) ClearInviterByAdmin(context.Context, int64) (*int64, error) {
+	panic("unexpected ClearInviterByAdmin call")
+}
+
 type paymentFulfillmentSettingRepoStub struct {
 	values map[string]string
 }

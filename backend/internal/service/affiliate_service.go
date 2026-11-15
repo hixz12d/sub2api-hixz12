@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +23,9 @@ var (
 
 	ErrAffiliateQuotaInsufficient     = infraerrors.BadRequest("AFFILIATE_QUOTA_INSUFFICIENT", "insufficient available affiliate quota")
 	ErrAffiliateWithdrawAmountInvalid = infraerrors.BadRequest("AFFILIATE_WITHDRAW_AMOUNT_INVALID", "invalid offline withdrawal amount")
+
+	ErrAffiliateInviterSelf  = infraerrors.BadRequest("AFFILIATE_INVITER_SELF", "a user cannot be their own inviter")
+	ErrAffiliateInviterCycle = infraerrors.BadRequest("AFFILIATE_INVITER_CYCLE", "the selected inviter was invited by this user")
 )
 
 const (
@@ -63,17 +67,41 @@ func isValidAffiliateCodeFormat(code string) bool {
 }
 
 type AffiliateSummary struct {
-	UserID               int64     `json:"user_id"`
-	AffCode              string    `json:"aff_code"`
-	AffCodeCustom        bool      `json:"aff_code_custom"`
-	AffRebateRatePercent *float64  `json:"aff_rebate_rate_percent,omitempty"`
-	InviterID            *int64    `json:"inviter_id,omitempty"`
-	AffCount             int       `json:"aff_count"`
-	AffQuota             float64   `json:"aff_quota"`
-	AffFrozenQuota       float64   `json:"aff_frozen_quota"`
-	AffHistoryQuota      float64   `json:"aff_history_quota"`
-	CreatedAt            time.Time `json:"created_at"`
-	UpdatedAt            time.Time `json:"updated_at"`
+	UserID               int64    `json:"user_id"`
+	AffCode              string   `json:"aff_code"`
+	AffCodeCustom        bool     `json:"aff_code_custom"`
+	AffRebateRatePercent *float64 `json:"aff_rebate_rate_percent,omitempty"`
+	InviterID            *int64   `json:"inviter_id,omitempty"`
+	// InviterBoundAt 是当前邀请人的绑定时间；返利有效期从这里起算，
+	// 为 nil 时（历史数据）退回 CreatedAt。
+	InviterBoundAt  *time.Time `json:"inviter_bound_at,omitempty"`
+	AffCount        int        `json:"aff_count"`
+	AffQuota        float64    `json:"aff_quota"`
+	AffFrozenQuota  float64    `json:"aff_frozen_quota"`
+	AffHistoryQuota float64    `json:"aff_history_quota"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+// AffiliateInviterInfo 是邀请人的基本信息。
+type AffiliateInviterInfo struct {
+	ID       int64  `json:"id"`
+	Email    string `json:"email"`
+	Username string `json:"username"`
+}
+
+// AffiliateInviterBinding 是管理端查看/指定/解绑邀请人接口的返回结构；
+// 没有邀请人时 Inviter、BoundAt 为 nil（JSON 输出 null）。
+type AffiliateInviterBinding struct {
+	UserID  int64                 `json:"user_id"`
+	Inviter *AffiliateInviterInfo `json:"inviter"`
+	BoundAt *time.Time            `json:"bound_at"`
+}
+
+// AffiliateInviterChange 是管理员改绑邀请人的结果：改绑前的邀请人，以及是否真的发生了变化。
+type AffiliateInviterChange struct {
+	OldInviterID *int64
+	Changed      bool
 }
 
 type AffiliateInvitee struct {
@@ -104,6 +132,8 @@ type AffiliateRepository interface {
 	GetAffiliateByCode(ctx context.Context, code string) (*AffiliateSummary, error)
 	BindInviter(ctx context.Context, userID, inviterID int64) (bool, error)
 	AccrueQuota(ctx context.Context, inviterID, inviteeUserID int64, amount float64, freezeHours int, sourceOrderID *int64) (bool, error)
+	// AccrueRebateToBalance 把返利直接计入邀请人余额，同时写 accrue 与 transfer 两条流水。
+	AccrueRebateToBalance(ctx context.Context, inviterID, inviteeUserID int64, amount float64, sourceOrderID *int64) (bool, error)
 	GetAccruedRebateFromInvitee(ctx context.Context, inviterID, inviteeUserID int64) (float64, error)
 	ThawFrozenQuota(ctx context.Context, userID int64) (float64, error)
 	TransferQuotaToBalance(ctx context.Context, userID int64) (float64, float64, error)
@@ -120,6 +150,11 @@ type AffiliateRepository interface {
 	ListAffiliateRebateRecords(ctx context.Context, filter AffiliateRecordFilter) ([]AffiliateRebateRecord, int64, error)
 	ListAffiliateTransferRecords(ctx context.Context, filter AffiliateRecordFilter) ([]AffiliateTransferRecord, int64, error)
 	GetAffiliateUserOverview(ctx context.Context, userID int64) (*AffiliateUserOverview, error)
+
+	// 管理端：指定/改绑/解绑邀请人
+	GetInviterBinding(ctx context.Context, userID int64) (*AffiliateInviterBinding, error)
+	SetInviterByAdmin(ctx context.Context, userID, inviterID int64) (*AffiliateInviterChange, error)
+	ClearInviterByAdmin(ctx context.Context, userID int64) (*int64, error)
 }
 
 // AffiliateAdminFilter 列表筛选条件
@@ -335,40 +370,59 @@ func (s *AffiliateService) BindInviterByCode(ctx context.Context, userID int64, 
 	return nil
 }
 
+// AccrueInviteRebate 为不在外部事务里的充值（余额兑换码、管理员加余额）发放邀请返利，
+// 返利直接进邀请人余额，并在写入后立即失效邀请人的认证与余额缓存。
+// 在事务里调用时请改用 AccrueInviteRebateForOrder，并在提交后自行失效缓存。
 func (s *AffiliateService) AccrueInviteRebate(ctx context.Context, inviteeUserID int64, baseRechargeAmount float64) (float64, error) {
-	return s.AccrueInviteRebateForOrder(ctx, inviteeUserID, baseRechargeAmount, nil)
+	rebate, inviterID, err := s.AccrueInviteRebateForOrder(ctx, inviteeUserID, baseRechargeAmount, nil)
+	if err != nil {
+		return 0, err
+	}
+	if rebate > 0 {
+		s.InvalidateInviterCaches(ctx, inviterID)
+	}
+	return rebate, nil
 }
 
-func (s *AffiliateService) AccrueInviteRebateForOrder(ctx context.Context, inviteeUserID int64, baseRechargeAmount float64, sourceOrderID *int64) (float64, error) {
+// AccrueInviteRebateForOrder 按被邀请人这笔充值计算返利并直接计入邀请人余额，
+// 返回返利金额和邀请人 ID（未产生返利时金额为 0）。ctx 带事务时沿用该事务；
+// 本方法不失效缓存，调用方须在事务提交后调用 InvalidateInviterCaches。
+// 冻结期设置在“直接进余额”模式下不再生效。
+func (s *AffiliateService) AccrueInviteRebateForOrder(ctx context.Context, inviteeUserID int64, baseRechargeAmount float64, sourceOrderID *int64) (float64, int64, error) {
 	if s == nil || s.repo == nil {
-		return 0, nil
+		return 0, 0, nil
 	}
 	if inviteeUserID <= 0 || baseRechargeAmount <= 0 || math.IsNaN(baseRechargeAmount) || math.IsInf(baseRechargeAmount, 0) {
-		return 0, nil
+		return 0, 0, nil
 	}
 	// 总开关关闭时，新充值不再产生返利
 	if !s.IsEnabled(ctx) {
-		return 0, nil
+		return 0, 0, nil
 	}
 
 	inviteeSummary, err := s.repo.EnsureUserAffiliate(ctx, inviteeUserID)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	if inviteeSummary.InviterID == nil || *inviteeSummary.InviterID <= 0 {
-		return 0, nil
+		return 0, 0, nil
 	}
+	inviterID := *inviteeSummary.InviterID
 
 	// 加载邀请人 profile，优先使用专属比例（覆盖全局）
-	inviterSummary, err := s.repo.EnsureUserAffiliate(ctx, *inviteeSummary.InviterID)
+	inviterSummary, err := s.repo.EnsureUserAffiliate(ctx, inviterID)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	// 有效期检查：超过返利有效期后不再产生返利
+	// 有效期检查：从绑定时间起算，超过返利有效期后不再产生返利
 	if s.settingService != nil {
 		if durationDays := s.settingService.GetAffiliateRebateDurationDays(ctx); durationDays > 0 {
-			if time.Now().After(inviteeSummary.CreatedAt.AddDate(0, 0, durationDays)) {
-				return 0, nil
+			boundAt := inviteeSummary.CreatedAt
+			if inviteeSummary.InviterBoundAt != nil {
+				boundAt = *inviteeSummary.InviterBoundAt
+			}
+			if time.Now().After(boundAt.AddDate(0, 0, durationDays)) {
+				return 0, 0, nil
 			}
 		}
 	}
@@ -376,18 +430,18 @@ func (s *AffiliateService) AccrueInviteRebateForOrder(ctx context.Context, invit
 	rebateRatePercent := s.resolveRebateRatePercent(ctx, inviterSummary)
 	rebate := roundTo(baseRechargeAmount*(rebateRatePercent/100), 8)
 	if rebate <= 0 {
-		return 0, nil
+		return 0, 0, nil
 	}
 
 	// 单人上限检查：精确截断到剩余额度
 	if s.settingService != nil {
 		if perInviteeCap := s.settingService.GetAffiliateRebatePerInviteeCap(ctx); perInviteeCap > 0 {
-			existing, err := s.repo.GetAccruedRebateFromInvitee(ctx, *inviteeSummary.InviterID, inviteeUserID)
+			existing, err := s.repo.GetAccruedRebateFromInvitee(ctx, inviterID, inviteeUserID)
 			if err != nil {
-				return 0, err
+				return 0, 0, err
 			}
 			if existing >= perInviteeCap {
-				return 0, nil
+				return 0, 0, nil
 			}
 			if remaining := perInviteeCap - existing; rebate > remaining {
 				rebate = roundTo(remaining, 8)
@@ -395,19 +449,23 @@ func (s *AffiliateService) AccrueInviteRebateForOrder(ctx context.Context, invit
 		}
 	}
 
-	var freezeHours int
-	if s.settingService != nil {
-		freezeHours = s.settingService.GetAffiliateRebateFreezeHours(ctx)
-	}
-
-	applied, err := s.repo.AccrueQuota(ctx, *inviteeSummary.InviterID, inviteeUserID, rebate, freezeHours, sourceOrderID)
+	applied, err := s.repo.AccrueRebateToBalance(ctx, inviterID, inviteeUserID, rebate, sourceOrderID)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	if !applied {
-		return 0, nil
+		return 0, 0, nil
 	}
-	return rebate, nil
+	return rebate, inviterID, nil
+}
+
+// InvalidateInviterCaches 失效邀请人的认证缓存和余额缓存。返利进余额后调用；
+// 在事务里发放的返利必须等事务提交后再调用，否则缓存可能被旧余额回填。
+func (s *AffiliateService) InvalidateInviterCaches(ctx context.Context, inviterID int64) {
+	if s == nil || inviterID <= 0 {
+		return
+	}
+	s.invalidateAffiliateCaches(ctx, inviterID)
 }
 
 // resolveRebateRatePercent returns the inviter's exclusive rate when set,
@@ -667,6 +725,70 @@ func (s *AffiliateService) AdminGetUserOverview(ctx context.Context, userID int6
 		overview.RebateRatePercent = clampAffiliateRebateRate(overview.RebateRatePercent)
 	}
 	return overview, nil
+}
+
+// =========================
+// Admin: 指定/改绑/解绑邀请人（不受邀请返利总开关限制）
+// =========================
+
+// AdminGetUserInviter 返回用户当前的邀请人与绑定时间。
+func (s *AffiliateService) AdminGetUserInviter(ctx context.Context, userID int64) (*AffiliateInviterBinding, error) {
+	if userID <= 0 {
+		return nil, ErrUserNotFound
+	}
+	if s == nil || s.repo == nil {
+		return nil, infraerrors.ServiceUnavailable("SERVICE_UNAVAILABLE", "affiliate service unavailable")
+	}
+	return s.repo.GetInviterBinding(ctx, userID)
+}
+
+// AdminSetUserInviter 为用户指定或改绑邀请人。不能绑自己，也不能绑“邀请人就是该用户”
+// 的人；绑的是同一个人时不做修改、不更新绑定时间。已发出的返利不追回。
+func (s *AffiliateService) AdminSetUserInviter(ctx context.Context, userID, inviterID int64) (*AffiliateInviterBinding, error) {
+	if userID <= 0 || inviterID <= 0 {
+		return nil, ErrUserNotFound
+	}
+	if userID == inviterID {
+		return nil, ErrAffiliateInviterSelf
+	}
+	if s == nil || s.repo == nil {
+		return nil, infraerrors.ServiceUnavailable("SERVICE_UNAVAILABLE", "affiliate service unavailable")
+	}
+	change, err := s.repo.SetInviterByAdmin(ctx, userID, inviterID)
+	if err != nil {
+		return nil, err
+	}
+	if change != nil && change.Changed {
+		logger.LegacyPrintf("service.affiliate", "[Affiliate] admin set inviter: user_id=%d old_inviter=%s new_inviter=%d",
+			userID, formatOptionalInt64(change.OldInviterID), inviterID)
+	}
+	return s.repo.GetInviterBinding(ctx, userID)
+}
+
+// AdminClearUserInviter 解除用户的邀请人。已发出的返利不追回。
+func (s *AffiliateService) AdminClearUserInviter(ctx context.Context, userID int64) (*AffiliateInviterBinding, error) {
+	if userID <= 0 {
+		return nil, ErrUserNotFound
+	}
+	if s == nil || s.repo == nil {
+		return nil, infraerrors.ServiceUnavailable("SERVICE_UNAVAILABLE", "affiliate service unavailable")
+	}
+	oldInviterID, err := s.repo.ClearInviterByAdmin(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if oldInviterID != nil {
+		logger.LegacyPrintf("service.affiliate", "[Affiliate] admin cleared inviter: user_id=%d old_inviter=%d new_inviter=none",
+			userID, *oldInviterID)
+	}
+	return s.repo.GetInviterBinding(ctx, userID)
+}
+
+func formatOptionalInt64(v *int64) string {
+	if v == nil {
+		return "none"
+	}
+	return strconv.FormatInt(*v, 10)
 }
 
 func normalizeAffiliateRecordFilter(filter AffiliateRecordFilter) AffiliateRecordFilter {
