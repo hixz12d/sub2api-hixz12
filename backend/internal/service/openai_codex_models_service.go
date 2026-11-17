@@ -509,7 +509,7 @@ func newConfiguredCodexModelDescriptor(modelID string) configuredCodexModelDescr
 		descriptor.ServiceTiers = configuredCodexServiceTiersForModel(modelID)
 		if isOpenAICodexReasoningGPTModel(modelID) {
 			defaultReasoningLevel := "medium"
-			if getNormalizedCodexModel(modelID) == "gpt-5.6-sol" || isOpenAIGPT6AstraModel(modelID) || openai.IsGPT61SolModelSpelling(modelID) {
+			if getNormalizedCodexModel(modelID) == "gpt-5.6-sol" || isOpenAIGPT6AstraModel(modelID) || openai.IsGPT61SolModelSpelling(modelID) || openai.IsGPT62ModelSpelling(modelID) {
 				defaultReasoningLevel = "low"
 			}
 			descriptor.DefaultReasoningLevel = &defaultReasoningLevel
@@ -524,6 +524,13 @@ func newConfiguredCodexModelDescriptor(modelID string) configuredCodexModelDescr
 			if isOpenAIGPT6SolLunaModel(modelID) {
 				descriptor.ContextWindow = configuredCodexGPT6AstraContext
 				descriptor.MaxContextWindow = configuredCodexGPT6AstraContext
+			}
+			// GPT-6.2 Codex defaults: Sol 500k, Astra 272k; both configurable up to 1.05M.
+			switch openai.GPT62BaseModel(modelID) {
+			case "gpt-6.2-sol":
+				descriptor.ContextWindow = 500_000
+			case "gpt-6.2-astra":
+				descriptor.ContextWindow = 272_000
 			}
 			if isOpenAIGPT6AstraModel(modelID) {
 				// Codex resolves the Ultra workflow to this effort before inference.
@@ -666,8 +673,8 @@ func configuredCodexGPTReasoningLevels(modelID string) []configuredCodexReasonin
 			Description: "Maximum reasoning with automatic task delegation",
 		})
 	}
-	// GPT-6.1 Sol does not accept reasoning.effort=none.
-	if isOpenAIGPT6SolLunaModel(modelID) && openAIGPT6SolLunaBase(modelID) != "gpt-6.1-sol" {
+	// GPT-6.1 Sol and GPT-6.2 do not accept reasoning.effort=none.
+	if isOpenAIGPT6SolLunaModel(modelID) && openAIGPT6SolLunaBase(modelID) != "gpt-6.1-sol" && !openai.IsGPT62ModelSpelling(modelID) {
 		levels = append([]configuredCodexReasoningLevel{{Effort: "none", Description: "Respond without reasoning"}}, levels...)
 	}
 	return levels
@@ -2089,6 +2096,8 @@ func CodexModelsManifestETag(body []byte) string {
 }
 
 var apiKeyCodexModelsWithoutResponsesLite = map[string]struct{}{
+	"gpt-6.2-sol":   {},
+	"gpt-6.2-astra": {},
 	"gpt-6.1-terra": {},
 	"gpt-6-astra":   {},
 	"gpt-6.1-sol":   {},

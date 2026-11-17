@@ -21,6 +21,8 @@ type Model struct {
 // DefaultModels OpenAI models list
 var DefaultModels = []Model{
 	{ID: "gpt-5.6-sol", Object: "model", Created: 1780876800, OwnedBy: "openai", Type: "model", DisplayName: "GPT-5.6 Sol"},
+	{ID: "gpt-6.2-sol", Object: "model", Created: 1794873600, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6.2 Sol"},
+	{ID: "gpt-6.2-astra", Object: "model", Created: 1794873600, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6.2 Astra"},
 	{ID: "gpt-6.1-terra", Object: "model", Created: 1792972800, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6.1 Terra"},
 	{ID: "gpt-6.1-sol", Object: "model", Created: 1790640000, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6.1 Sol"},
 	{ID: "gpt-6-sol", Object: "model", Created: 1790035200, OwnedBy: "openai", Type: "model", DisplayName: "GPT-6 Sol"},
@@ -162,6 +164,7 @@ func CanonicalizeOpenAIModelAliasSpelling(model string) string {
 
 // CodexBaseInstructionsForModel 按模型返回最匹配的真实 Codex base instructions：
 //   - gpt-6.1-sol / gpt-6.1-terra → 各自官方 Codex 描述中的 instructions_template
+//   - gpt-6.2-sol → GPT-6.1 Sol 模板；gpt-6.2-astra → GPT-6 Astra prompt（尚无打包的官方描述）
 //   - gpt-6 / gpt-6-astra（含供应商前缀与日期变体）→ GPT-6 Astra prompt
 //   - 含 "codex" 的模型（gpt-5-codex / gpt-5.x-codex / codex-max / spark 等）→ GPT-5-Codex prompt
 //   - gpt-5.5 系非 codex 模型 → GPT-5.5 prompt
@@ -173,11 +176,11 @@ func CanonicalizeOpenAIModelAliasSpelling(model string) string {
 func CodexBaseInstructionsForModel(model string) string {
 	canonical := CanonicalizeOpenAIModelAliasSpelling(model)
 	switch {
-	case IsGPT61SolModelSpelling(canonical):
+	case IsGPT61SolModelSpelling(canonical) || GPT62BaseModel(canonical) == "gpt-6.2-sol":
 		return codexInstructionsTemplate(CodexGPT61SolMetadata)
 	case IsGPT61TerraModelSpelling(canonical):
 		return codexInstructionsTemplate(CodexGPT61TerraMetadata)
-	case canonical == "gpt-6" || canonical == "gpt-6-astra" || strings.HasPrefix(canonical, "gpt-6-astra-"):
+	case canonical == "gpt-6" || canonical == "gpt-6-astra" || strings.HasPrefix(canonical, "gpt-6-astra-") || GPT62BaseModel(canonical) == "gpt-6.2-astra":
 		if v := strings.TrimSpace(instructionsGPT6Astra); v != "" {
 			return instructionsGPT6Astra
 		}
@@ -253,6 +256,29 @@ func IsGPT61TerraModelSpelling(model string) bool {
 	}
 }
 
+// GPT62BaseModel returns gpt-6.2-sol or gpt-6.2-astra for the published IDs
+// and local effort/compact spellings; other variants (e.g. -law) return "".
+func GPT62BaseModel(model string) string {
+	canonical := CanonicalizeOpenAIModelAliasSpelling(model)
+	for _, base := range []string{"gpt-6.2-sol", "gpt-6.2-astra"} {
+		if canonical == base {
+			return base
+		}
+		if suffix, ok := strings.CutPrefix(canonical, base+"-"); ok {
+			switch suffix {
+			case "none", "minimal", "low", "medium", "high", "xhigh", "max", "openai-compact":
+				return base
+			}
+		}
+	}
+	return ""
+}
+
+// IsGPT62ModelSpelling reports GPT-6.2 Sol / Astra spellings.
+func IsGPT62ModelSpelling(model string) bool {
+	return GPT62BaseModel(model) != ""
+}
+
 // RequiresResponsesForToolCalls reports models whose tool calls are only
 // available through the Responses API.
 func RequiresResponsesForToolCalls(model string) bool {
@@ -266,6 +292,13 @@ func ValidateGPT61SolReasoningEffort(model, effort string) error {
 		switch strings.ToLower(strings.TrimSpace(effort)) {
 		case "none", "minimal":
 			return fmt.Errorf("gpt-6.1-sol does not support reasoning effort %q; use low, medium, high, xhigh or max", effort)
+		}
+	}
+	// GPT-6.2 Sol / Astra: the API rejects reasoning effort none.
+	if base := GPT62BaseModel(model); base != "" {
+		switch strings.ToLower(strings.TrimSpace(effort)) {
+		case "none", "minimal":
+			return fmt.Errorf("%s does not support reasoning effort %q; use low, medium, high, xhigh or max", base, effort)
 		}
 	}
 	return nil
