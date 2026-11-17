@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"context"
 	"crypto/sha256"
 	"net/http"
 	"strings"
 
+	"github.com/Wei-Shaw/sub2api/internal/pkg/ctxkey"
 	"github.com/Wei-Shaw/sub2api/internal/securityaudit"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -13,6 +15,7 @@ import (
 )
 
 const securityAuditCompletedContextKey = "sub2api.security_audit.completed"
+const securityAuditAllowedContextKey = "sub2api.security_audit.allowed"
 const selectedAccountContentModerationCompletedContextKey = "sub2api.content_moderation.selected_account.completed"
 const securityAuditWSTurnContextKey = "sub2api.security_audit.ws_turn"
 const securityAuditWSDedupeContextKey = "sub2api.security_audit.ws_dedupe"
@@ -206,8 +209,61 @@ func runSecurityAudit(c *gin.Context, reqLog *zap.Logger, coordinator *securitya
 	if decision.AllowNextStage && cacheCompletion {
 		c.Set(securityAuditCompletedContextKey, true)
 	}
+	if decision.AllowNextStage && decision.Prompt != nil && decision.Prompt.AllowVia != "" {
+		c.Set(securityAuditAllowedContextKey, securityAuditAllowedRecord{
+			request: request, configVersion: decision.Prompt.ConfigVersion, allowVia: decision.Prompt.AllowVia,
+		})
+	}
 	logSecurityAuditDone(reqLog, request, decision, false)
 	return &decision
+}
+
+// securityAuditAllowedRecord remembers a request the prompt guard audited and
+// let through, so an upstream refusal can be traced back to that verdict.
+type securityAuditAllowedRecord struct {
+	request       securityaudit.Request
+	configVersion int64
+	allowVia      string
+}
+
+// handleSecurityAuditUpstreamRefusal runs after forwarding: when the prompt
+// guard allowed this request and the last forwarding attempt ended in an
+// upstream refusal, it hands the request to the prompt audit for archiving and
+// the refused cache. It never touches the response already sent.
+func handleSecurityAuditUpstreamRefusal(c *gin.Context, coordinator *securityaudit.Coordinator) {
+	if c == nil || c.Request == nil || coordinator == nil {
+		return
+	}
+	value, exists := c.Get(securityAuditAllowedContextKey)
+	if !exists {
+		return
+	}
+	record, ok := value.(securityAuditAllowedRecord)
+	if !ok {
+		return
+	}
+	kind := service.ObservedUpstreamRefusalKind(c)
+	if kind == "" {
+		return
+	}
+	coordinator.HandleUpstreamRefusal(securityaudit.UpstreamRefusal{
+		Request: record.request.Clone(), AuditConfigVersion: record.configVersion, AllowVia: record.allowVia,
+		RefusalKind: kind, ClientRequestID: securityAuditUsageRequestID(c.Request.Context(), record.request.RequestID),
+	})
+}
+
+// securityAuditUsageRequestID mirrors the usage_logs.request_id derivation
+// for a forwarded request ("client:<id>", else "local:<id>").
+func securityAuditUsageRequestID(ctx context.Context, requestID string) string {
+	if ctx != nil {
+		if clientRequestID, _ := ctx.Value(ctxkey.ClientRequestID).(string); strings.TrimSpace(clientRequestID) != "" {
+			return "client:" + strings.TrimSpace(clientRequestID)
+		}
+	}
+	if requestID = strings.TrimSpace(requestID); requestID != "" {
+		return "local:" + requestID
+	}
+	return ""
 }
 
 func logSecurityAuditStart(reqLog *zap.Logger, request securityaudit.Request, bodyBytes int, cached bool) {

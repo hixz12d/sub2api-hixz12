@@ -22,6 +22,8 @@ type AtomicMetrics struct {
 	recordFailed atomic.Int64
 	failOpen     atomic.Int64
 	passCacheHit atomic.Int64
+	refusals     atomic.Int64
+	refusalBlock atomic.Int64
 	latencyTotal atomic.Int64
 	latencyMax   atomic.Int64
 	enqueued     atomic.Int64
@@ -43,6 +45,7 @@ func (m *AtomicMetrics) Snapshot() GuardMetricsSnapshot {
 		Timeouts: m.timeouts.Load(), Failovers: m.failovers.Load(), BulkheadFull: m.bulkheadFull.Load(),
 		RecordFailed: m.recordFailed.Load(), LatencyCount: m.total.Load(), LatencyMaxMS: m.latencyMax.Load(),
 		FailOpen: m.failOpen.Load(), PassCacheHits: m.passCacheHit.Load(),
+		UpstreamRefusals: m.refusals.Load(), RefusalRepeatBlocks: m.refusalBlock.Load(),
 	}
 	if snapshot.LatencyCount > 0 {
 		snapshot.LatencyAvgMS = m.latencyTotal.Load() / snapshot.LatencyCount
@@ -154,5 +157,15 @@ func (m *AtomicMetrics) IncFailOpen() {
 func (m *AtomicMetrics) IncPassCacheHit() {
 	if m != nil {
 		m.passCacheHit.Add(1)
+	}
+}
+func (m *AtomicMetrics) IncUpstreamRefusal() {
+	if m != nil {
+		m.refusals.Add(1)
+	}
+}
+func (m *AtomicMetrics) IncRefusalRepeatBlock() {
+	if m != nil {
+		m.refusalBlock.Add(1)
 	}
 }

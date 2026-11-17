@@ -1,6 +1,9 @@
 package service
 
 import (
+	"bytes"
+	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -36,7 +39,25 @@ type upstreamResponseModelObserver struct {
 	firstTier         string
 	firstTierConflict bool
 	terminalTier      string
+
+	// refusalKind records an upstream Claude refusal seen during this attempt:
+	// stop_reason=refusal in a 200 response, or a 400 citing the usage policy.
+	refusalKind string
 }
+
+const (
+	// UpstreamRefusalKindStopReason marks a 200 response whose stop_reason is
+	// "refusal" (message_delta in streams, the top-level body otherwise).
+	UpstreamRefusalKindStopReason = "stop_reason_refusal"
+	// UpstreamRefusalKindUsagePolicy400 marks a 400 whose error.message cites
+	// the usage policy.
+	UpstreamRefusalKindUsagePolicy400 = "http_400_usage_policy"
+)
+
+var (
+	anthropicRefusalStopReasonMarker = []byte(`"refusal"`)
+	upstreamUsagePolicyPattern       = regexp.MustCompile(`(?i)usage polic`)
+)
 
 func (o *upstreamResponseModelObserver) Observe(model string, terminal bool) {
 	model = normalizeObservedUpstreamResponseModel(model)
@@ -88,6 +109,9 @@ func (o *upstreamResponseModelObserver) ObserveOpenAI(payload []byte, eventType 
 }
 
 func (o *upstreamResponseModelObserver) ObserveAnthropic(payload []byte) {
+	// message_delta carries stop_reason but no model, so this must run before
+	// the model-free early return below.
+	o.observeAnthropicStopReason(payload)
 	model := firstValidTrimmedGJSONString(payload, "message.model", "model")
 	o.Observe(model, false)
 	// usage.speed travels with the message object (message_start in streams,
@@ -97,6 +121,48 @@ func (o *upstreamResponseModelObserver) ObserveAnthropic(payload []byte) {
 	}
 	tier := normalizeObservedAnthropicSpeed(firstValidTrimmedGJSONString(payload, "message.usage.speed", "usage.speed"))
 	o.ObserveServiceTier(tier, false)
+}
+
+// observeAnthropicStopReason flags stop_reason=refusal. The byte scan keeps the
+// common delta path free of JSON lookups.
+func (o *upstreamResponseModelObserver) observeAnthropicStopReason(payload []byte) {
+	if o == nil || len(payload) == 0 || !bytes.Contains(payload, anthropicRefusalStopReasonMarker) {
+		return
+	}
+	for _, path := range []string{"delta.stop_reason", "stop_reason"} {
+		value := gjson.GetBytes(payload, path)
+		if value.Type == gjson.String && value.String() == "refusal" {
+			o.refusalKind = UpstreamRefusalKindStopReason
+			return
+		}
+	}
+}
+
+// RefusalKind returns the refusal recorded for this attempt, or "".
+func (o *upstreamResponseModelObserver) RefusalKind() string {
+	if o == nil {
+		return ""
+	}
+	return o.refusalKind
+}
+
+// markUpstreamUsagePolicyRefusal flags a 400 whose error message cites the
+// usage policy on the current attempt's observer.
+func markUpstreamUsagePolicyRefusal(c *gin.Context, statusCode int, message string) {
+	if c == nil || statusCode != http.StatusBadRequest || !upstreamUsagePolicyPattern.MatchString(message) {
+		return
+	}
+	observer := upstreamResponseModelObserverFromContext(c)
+	if observer == nil {
+		observer = beginUpstreamResponseModelObservation(c)
+	}
+	observer.refusalKind = UpstreamRefusalKindUsagePolicy400
+}
+
+// ObservedUpstreamRefusalKind reports whether the last forwarding attempt of
+// this request ended in an upstream refusal (UpstreamRefusalKind* or "").
+func ObservedUpstreamRefusalKind(c *gin.Context) string {
+	return upstreamResponseModelObserverFromContext(c).RefusalKind()
 }
 
 // ObserveServiceTier records a tier declared by the upstream response. A

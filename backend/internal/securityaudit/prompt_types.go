@@ -144,6 +144,11 @@ type PromptDecision struct {
 	ErrorCode      string            `json:"error_code,omitempty"`
 	Result         *NormalizedResult `json:"result,omitempty"`
 	AllowNextStage bool              `json:"allow_next_stage"`
+	// AllowVia tells how an audited request was let through (AllowVia*). It is
+	// empty when the request was not audited at all (out of scope, no text).
+	AllowVia string `json:"allow_via,omitempty"`
+	// ConfigVersion is the active config version the verdict was made under.
+	ConfigVersion int64 `json:"config_version,omitempty"`
 }
 
 type LegacyDecision struct {
@@ -210,12 +215,17 @@ type GuardMetricsSnapshot struct {
 	FailOpen int64 `json:"fail_open"`
 	// PassCacheHits counts allow verdicts served from the pass cache.
 	PassCacheHits int64 `json:"pass_cache_hits"`
-	LatencyCount  int64 `json:"latency_count"`
-	LatencyAvgMS  int64 `json:"latency_avg_ms"`
-	LatencyP50MS  int64 `json:"latency_p50_ms"`
-	LatencyP95MS  int64 `json:"latency_p95_ms"`
-	LatencyP99MS  int64 `json:"latency_p99_ms"`
-	LatencyMaxMS  int64 `json:"latency_max_ms"`
+	// UpstreamRefusals counts audited-and-allowed requests that the upstream
+	// Claude account then refused.
+	UpstreamRefusals int64 `json:"upstream_refusals"`
+	// RefusalRepeatBlocks counts retries blocked by the refused cache.
+	RefusalRepeatBlocks int64 `json:"refusal_repeat_blocks"`
+	LatencyCount        int64 `json:"latency_count"`
+	LatencyAvgMS        int64 `json:"latency_avg_ms"`
+	LatencyP50MS        int64 `json:"latency_p50_ms"`
+	LatencyP95MS        int64 `json:"latency_p95_ms"`
+	LatencyP99MS        int64 `json:"latency_p99_ms"`
+	LatencyMaxMS        int64 `json:"latency_max_ms"`
 }
 
 type AuditMetricsSnapshot struct {
@@ -278,6 +288,8 @@ type Metrics interface {
 	IncRecordFailed()
 	IncFailOpen()
 	IncPassCacheHit()
+	IncUpstreamRefusal()
+	IncRefusalRepeatBlock()
 }
 
 type PromptScanner interface {

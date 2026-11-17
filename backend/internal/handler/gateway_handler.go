@@ -237,6 +237,9 @@ func (h *GatewayHandler) Messages(c *gin.Context) {
 		h.anthropicSecurityAuditError(c, decision)
 		return
 	}
+	// After forwarding (success, 400 or failover, whichever attempt came last):
+	// an upstream refusal of a guard-allowed request is archived and cached.
+	defer handleSecurityAuditUpstreamRefusal(c, h.securityAuditCoordinator)
 
 	// Track if we've started streaming (for error handling)
 	streamStarted := false

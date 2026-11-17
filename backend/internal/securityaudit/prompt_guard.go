@@ -20,12 +20,26 @@ type GuardEvaluator struct {
 	nodes        map[string]chan struct{}
 
 	passCache *promptPassCache
+	// refusedCache holds keys (same as passCache) whose allowed request the
+	// upstream then refused; a hit blocks the retry before any guard call.
+	refusedCache *promptPassCache
 }
 
 const (
 	// judgeContextMaxRunes keeps only the tail of the previous assistant output
 	// as reference context for the judge.
 	judgeContextMaxRunes = 2000
+	// judgeShortTargetRunes: a latest user turn shorter than this (after
+	// trimming) also gets the previous user turn as context.
+	judgeShortTargetRunes = 300
+	// judgePriorUserMaxRunes keeps only the tail of that previous user turn.
+	judgePriorUserMaxRunes = 1500
+	// judgeLabeledContextMaxRunes bounds a labeled context: both tails plus
+	// the two labels.
+	judgeLabeledContextMaxRunes = judgeContextMaxRunes + judgePriorUserMaxRunes + 32
+
+	judgeContextPriorUserLabel = "【上一轮用户】"
+	judgeContextPriorAILabel   = "【上一轮 AI】"
 
 	judgeTargetOpenTag  = "<待审内容>"
 	judgeTargetCloseTag = "</待审内容>"
@@ -42,6 +56,13 @@ var judgeTagEscaper = strings.NewReplacer(
 	judgeContextClose, "＜/上下文＞",
 )
 
+// judgeContextLabelEscaper keeps client text from forging the short-turn
+// context labels.
+var judgeContextLabelEscaper = strings.NewReplacer(
+	judgeContextPriorUserLabel, "[上一轮用户]",
+	judgeContextPriorAILabel, "[上一轮 AI]",
+)
+
 func NewGuardEvaluator(scanner PromptScanner, repo JobRepository, metrics Metrics) *GuardEvaluator {
 	return newGuardEvaluator(scanner, repo, metrics, 64, 16)
 }
@@ -55,19 +76,24 @@ func newGuardEvaluator(scanner PromptScanner, repo JobRepository, metrics Metric
 	}
 	return &GuardEvaluator{scanner: scanner, repo: repo, metrics: metrics, clock: realClock{},
 		global: make(chan struct{}, globalLimit), perNodeLimit: perNodeLimit, nodes: map[string]chan struct{}{},
-		passCache: newPromptPassCache(DefaultPassCacheTTL, DefaultPassCacheMaxEntries)}
+		passCache:    newPromptPassCache(DefaultPassCacheTTL, DefaultPassCacheMaxEntries),
+		refusedCache: newPromptPassCache(RefusedCacheTTL, RefusedCacheMaxEntries)}
 }
 
 // buildJudgeChunks splits the latest-turn scan text into judge user messages.
 // Only the current user text is chunked by inputLimit; the tail of the previous
-// assistant output is attached to the first chunk as context.
+// assistant output is attached to the first chunk as context. A short latest
+// turn carries a labeled context (previous user + previous AI) whose parts were
+// already cut to their tails by the snapshot.
 func buildJudgeChunks(scanText string, inputLimit int) []string {
 	target, priorOutput, _ := strings.Cut(scanText, promptAuditPrioritySeparator)
 	target = strings.TrimSpace(judgeTagEscaper.Replace(target))
 	priorOutput = strings.TrimSpace(judgeTagEscaper.Replace(strings.ReplaceAll(priorOutput, promptAuditPrioritySeparator, "\n\n")))
-	if runes := []rune(priorOutput); len(runes) > judgeContextMaxRunes {
-		priorOutput = strings.TrimSpace(string(runes[len(runes)-judgeContextMaxRunes:]))
+	contextLimit := judgeContextMaxRunes
+	if strings.HasPrefix(priorOutput, judgeContextPriorUserLabel+"\n") || strings.HasPrefix(priorOutput, judgeContextPriorAILabel+"\n") {
+		contextLimit = judgeLabeledContextMaxRunes
 	}
+	priorOutput = tailRunes(priorOutput, contextLimit)
 	pieces := SplitRunes(target, inputLimit)
 	chunks := make([]string, 0, len(pieces))
 	for index, piece := range pieces {
@@ -124,20 +150,24 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 	}
 	judge := cfg.JudgeMode()
 	passKey := ""
-	if g.passCache != nil && strings.TrimSpace(snapshot.ScanText) != "" {
+	if (g.passCache != nil || g.refusedCache != nil) && strings.TrimSpace(snapshot.ScanText) != "" {
 		passKey = passCacheKey(cfg, endpoints, snapshot.ScanText)
-		if g.passCache.Hit(passKey, g.clock.Now()) {
-			latency := g.clock.Now().Sub(start)
-			if g.metrics != nil {
-				g.metrics.IncPassCacheHit()
-				g.metrics.Observe(DecisionAllow, latency)
-			}
-			LogInfo(EventGuardAllowed, mergeLogFields(baseFields, map[string]any{
-				"decision": DecisionAllow, "latency_ms": latency.Milliseconds(), "stage": snapshot.Stage,
-				"status": "cache_hit",
-			}))
-			return &PromptDecision{Kind: DecisionAllow, AllowNextStage: true}, nil
+	}
+	if passKey != "" && g.refusedCache.Hit(passKey, g.clock.Now()) {
+		g.passCache.Delete(passKey)
+		return g.blockRefusalRepeat(ctx, cfg, snapshot, baseFields, start), nil
+	}
+	if passKey != "" && g.passCache.Hit(passKey, g.clock.Now()) {
+		latency := g.clock.Now().Sub(start)
+		if g.metrics != nil {
+			g.metrics.IncPassCacheHit()
+			g.metrics.Observe(DecisionAllow, latency)
 		}
+		LogInfo(EventGuardAllowed, mergeLogFields(baseFields, map[string]any{
+			"decision": DecisionAllow, "latency_ms": latency.Milliseconds(), "stage": snapshot.Stage,
+			"status": "cache_hit",
+		}))
+		return &PromptDecision{Kind: DecisionAllow, AllowNextStage: true, AllowVia: AllowViaCacheHit}, nil
 	}
 	select {
 	case g.global <- struct{}{}:
@@ -234,6 +264,8 @@ func (g *GuardEvaluator) Evaluate(ctx context.Context, cfg ActiveConfig, snapsho
 	decision := &PromptDecision{Kind: kind, Result: aggregated, AllowNextStage: kind == DecisionAllow || kind == DecisionFlag}
 	if kind == DecisionBlock {
 		decision.ErrorCode = ErrorCodeBlocked
+	} else {
+		decision.AllowVia = AllowViaJudged
 	}
 	if g.metrics != nil {
 		g.metrics.Observe(kind, g.clock.Now().Sub(start))

@@ -32,6 +32,8 @@ const (
 	EventGuardFailed          = "prompt_guard.failed"
 	EventGuardFailOpen        = "prompt_guard.fail_open"
 	EventResultRecordFailed   = "prompt_guard.result_record_failed"
+	EventUpstreamRefusal      = "prompt_guard.upstream_refusal"
+	EventRefusalRepeatBlocked = "prompt_guard.refusal_repeat_blocked"
 	EventEventDeleted         = "prompt_audit.event_deleted"
 	EventEventsDeleted        = "prompt_audit.events_deleted"
 	EventDeletePreviewed      = "prompt_audit.events_delete_previewed"
@@ -45,6 +47,7 @@ var knownLogEvents = map[string]struct{}{
 	EventAuditStarted: {}, EventProcessingReclaimed: {}, EventProcessed: {}, EventProcessFailed: {}, EventFindingRecorded: {},
 	EventChunkStarted: {}, EventChunkCompleted: {}, EventChunkFailed: {}, EventChunksAggregated: {},
 	EventEvaluationStarted: {}, EventGuardAllowed: {}, EventGuardBlocked: {}, EventGuardFailed: {}, EventGuardFailOpen: {}, EventResultRecordFailed: {},
+	EventUpstreamRefusal: {}, EventRefusalRepeatBlocked: {},
 	EventEventDeleted: {}, EventEventsDeleted: {}, EventDeletePreviewed: {}, EventEventsFilterDeleted: {},
 }
 
@@ -57,7 +60,8 @@ var allowedLogFields = map[string]struct{}{
 	"queue_length": {}, "queue_capacity": {}, "stage": {}, "upstream_dispatched": {},
 	"billing_preconsumed": {}, "worker_id": {}, "reclaimed_total": {}, "attempts": {},
 	"max_attempts": {}, "claim_version": {}, "http_status": {}, "retryable": {},
-	"scanner_backend": {},
+	"scanner_backend": {}, "client_request_id": {}, "allow_via": {}, "refusal_kind": {},
+	"audit_config_version": {},
 }
 
 func LogInfo(event string, fields map[string]any) {

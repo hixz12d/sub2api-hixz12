@@ -560,7 +560,9 @@ func blockingSegmentsLatestUserAndPreviousOutput(values []promptSegment) []strin
 	// A single client turn may have several text content parts. Keep it in one
 	// priority segment so every part of the latest input is scanned before the
 	// prior output begins.
-	selected := []promptSegment{{text: strings.Join(currentUserText, "\n\n"), user: true, role: "user"}}
+	target := strings.Join(currentUserText, "\n\n")
+	selected := []promptSegment{{text: target, user: true, role: "user"}}
+	var priorOutput []promptSegment
 	for index := latestUserStart - 1; index >= 0; index-- {
 		if !isAssistantOutputSegment(normalized[index]) {
 			continue
@@ -569,10 +571,66 @@ func blockingSegmentsLatestUserAndPreviousOutput(values []promptSegment) []strin
 		for start > 0 && isAssistantOutputSegment(normalized[start-1]) {
 			start--
 		}
-		selected = append(selected, normalized[start:index+1]...)
+		priorOutput = normalized[start : index+1]
 		break
 	}
+	if utf8.RuneCountInString(strings.TrimSpace(target)) >= judgeShortTargetRunes {
+		selected = append(selected, priorOutput...)
+		return promptSegmentTexts(selected)
+	}
+	// A short latest turn ("continue", "go on") only makes sense with what it
+	// continues, and the previous assistant text may be a bare refusal or empty
+	// (tool calls only). Attach the previous user text as labeled context too.
+	if context := buildLabeledJudgeContext(previousUserText(normalized, latestUserStart), promptSegmentTexts(priorOutput)); context != "" {
+		selected = append(selected, promptSegment{text: context, role: "assistant"})
+	}
 	return promptSegmentTexts(selected)
+}
+
+// previousUserText returns the nearest user turn before latestUserStart.
+// Tool-result-only user messages carry no text segment and reminder blocks
+// were already dropped, so both are skipped naturally.
+func previousUserText(values []promptSegment, latestUserStart int) string {
+	end := -1
+	for index := latestUserStart - 1; index >= 0; index-- {
+		if isUserSegment(values[index]) {
+			end = index
+			break
+		}
+	}
+	if end < 0 {
+		return ""
+	}
+	start := end
+	for start > 0 && isUserSegment(values[start-1]) {
+		start--
+	}
+	return strings.Join(promptSegmentTexts(values[start:end+1]), "\n\n")
+}
+
+// buildLabeledJudgeContext renders the short-turn context as
+// "【上一轮用户】\n…\n\n【上一轮 AI】\n…", omitting an empty part. Each part is
+// already cut to its tail budget, so buildJudgeChunks keeps it whole.
+func buildLabeledJudgeContext(priorUser string, priorOutput []string) string {
+	priorUser = tailRunes(judgeContextLabelEscaper.Replace(priorUser), judgePriorUserMaxRunes)
+	priorAI := tailRunes(judgeContextLabelEscaper.Replace(strings.Join(priorOutput, "\n\n")), judgeContextMaxRunes)
+	parts := make([]string, 0, 2)
+	if priorUser != "" {
+		parts = append(parts, judgeContextPriorUserLabel+"\n"+priorUser)
+	}
+	if priorAI != "" {
+		parts = append(parts, judgeContextPriorAILabel+"\n"+priorAI)
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+// tailRunes keeps the trimmed last limit runes of value.
+func tailRunes(value string, limit int) string {
+	value = strings.TrimSpace(value)
+	if runes := []rune(value); len(runes) > limit {
+		value = strings.TrimSpace(string(runes[len(runes)-limit:]))
+	}
+	return value
 }
 
 // dropClientSystemReminders removes the <system-reminder> text parts Claude

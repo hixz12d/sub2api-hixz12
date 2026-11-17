@@ -179,7 +179,10 @@ func (s *PromptService) Evaluate(ctx context.Context, req Request) (*PromptDecis
 			"decision": DecisionAllow, "error_code": code, "status": "fail_open",
 			"latency_ms": s.now().Sub(started).Milliseconds(),
 		}))
-		return &PromptDecision{Kind: DecisionAllow, AllowNextStage: true, ErrorCode: code}, nil
+		return &PromptDecision{Kind: DecisionAllow, AllowNextStage: true, ErrorCode: code, AllowVia: AllowViaFailOpen, ConfigVersion: cfg.ConfigVersion}, nil
+	}
+	if decision != nil {
+		decision.ConfigVersion = cfg.ConfigVersion
 	}
 	return decision, evalErr
 }

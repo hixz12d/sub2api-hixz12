@@ -82,6 +82,20 @@ func (c *promptPassCache) Hit(key string, now time.Time) bool {
 	return true
 }
 
+// Delete drops key, e.g. when the upstream refused a request the cached
+// verdict had allowed.
+func (c *promptPassCache) Delete(key string) {
+	if c == nil || key == "" {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if element, ok := c.entries[key]; ok {
+		c.order.Remove(element)
+		delete(c.entries, key)
+	}
+}
+
 // Store records an allow verdict for key, evicting the oldest entries when the
 // cache is full.
 func (c *promptPassCache) Store(key string, now time.Time) {
