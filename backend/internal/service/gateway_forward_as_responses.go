@@ -36,6 +36,9 @@ func (s *GatewayService) ForwardAsResponses(
 	parsed *ParsedRequest,
 ) (*ForwardResult, error) {
 	startTime := time.Now()
+	// Fresh per attempt: the prompt audit reads a Claude refusal back from it
+	// after forwarding (see ObservedUpstreamRefusalKind).
+	beginUpstreamResponseModelObservation(c)
 
 	normalizedBody, normalized, err := normalizeOpenAIResponsesLegacyIngressWithConfig(s.cfg, body)
 	if err != nil {
@@ -191,6 +194,7 @@ func (s *GatewayService) ForwardAsResponses(
 		}
 
 		// Non-failover error: return Responses-formatted error to client
+		markUpstreamUsagePolicyRefusal(c, resp.StatusCode, extractUpstreamErrorMessage(respBody))
 		writeResponsesError(c, mapUpstreamStatusCode(resp.StatusCode), "server_error", upstreamMsg)
 		return nil, fmt.Errorf("upstream error: %d %s", resp.StatusCode, upstreamMsg)
 	}
@@ -399,6 +403,7 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 	var finalResp *apicompat.AnthropicResponse
 	var usage ClaudeUsage
 	streamStatus := &anthropicCompatStream{body: resp.Body}
+	refusalObserver := upstreamResponseModelObserverFromContext(c)
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -428,6 +433,7 @@ func (s *GatewayService) handleResponsesBufferedStreamingResponse(
 		}
 
 		streamStatus.observe(&event, payload)
+		refusalObserver.observeAnthropicStopReasonString(payload)
 		if streamStatus.upstreamErrType != "" {
 			break
 		}
@@ -576,6 +582,7 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 
 	stream := newAnthropicCompatStream(s.cfg, c, resp, "forward_as_responses", requestID)
 	defer stream.stop()
+	refusalObserver := upstreamResponseModelObserverFromContext(c)
 
 	resultWithUsage := func() *ForwardResult {
 		return &ForwardResult{
@@ -706,6 +713,7 @@ func (s *GatewayService) handleResponsesStreamingResponse(
 		}
 
 		stream.observe(&event, payload)
+		refusalObserver.observeAnthropicStopReasonString(payload)
 		if stream.upstreamErrType != "" {
 			break
 		}

@@ -138,6 +138,16 @@ func (o *upstreamResponseModelObserver) observeAnthropicStopReason(payload []byt
 	}
 }
 
+// observeAnthropicStopReasonString is observeAnthropicStopReason for SSE data
+// held as a string (the Chat Completions / Responses compat paths); it skips
+// the byte copy for the common non-refusal event.
+func (o *upstreamResponseModelObserver) observeAnthropicStopReasonString(payload string) {
+	if o == nil || !strings.Contains(payload, `"refusal"`) {
+		return
+	}
+	o.observeAnthropicStopReason([]byte(payload))
+}
+
 // RefusalKind returns the refusal recorded for this attempt, or "".
 func (o *upstreamResponseModelObserver) RefusalKind() string {
 	if o == nil {

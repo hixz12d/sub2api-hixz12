@@ -34,6 +34,9 @@ func (s *GatewayService) ForwardAsChatCompletions(
 	parsed *ParsedRequest,
 ) (*ForwardResult, error) {
 	startTime := time.Now()
+	// Fresh per attempt: the prompt audit reads a Claude refusal back from it
+	// after forwarding (see ObservedUpstreamRefusalKind).
+	beginUpstreamResponseModelObservation(c)
 
 	// 1. Parse Chat Completions request
 	var ccReq apicompat.ChatCompletionsRequest
@@ -179,6 +182,7 @@ func (s *GatewayService) ForwardAsChatCompletions(
 			}
 		}
 
+		markUpstreamUsagePolicyRefusal(c, resp.StatusCode, extractUpstreamErrorMessage(respBody))
 		writeGatewayCCError(c, mapUpstreamStatusCode(resp.StatusCode), "server_error", upstreamMsg)
 		return nil, fmt.Errorf("upstream error: %d %s", resp.StatusCode, upstreamMsg)
 	}
@@ -249,6 +253,7 @@ func (s *GatewayService) handleCCBufferedFromAnthropic(
 	var finalResp *apicompat.AnthropicResponse
 	var usage ClaudeUsage
 	streamStatus := &anthropicCompatStream{body: resp.Body}
+	refusalObserver := upstreamResponseModelObserverFromContext(c)
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -272,6 +277,7 @@ func (s *GatewayService) handleCCBufferedFromAnthropic(
 		}
 
 		streamStatus.observe(&event, payload)
+		refusalObserver.observeAnthropicStopReasonString(payload)
 		if streamStatus.upstreamErrType != "" {
 			break
 		}
@@ -412,6 +418,7 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 
 	stream := newAnthropicCompatStream(s.cfg, c, resp, "forward_as_cc", requestID)
 	defer stream.stop()
+	refusalObserver := upstreamResponseModelObserverFromContext(c)
 
 	resultWithUsage := func() *ForwardResult {
 		return &ForwardResult{
@@ -523,6 +530,7 @@ func (s *GatewayService) handleCCStreamingFromAnthropic(
 		ccState.IncludeUsage = ccState.IncludeUsage || anthropicChatStreamHasUsage(&event, payload)
 
 		stream.observe(&event, payload)
+		refusalObserver.observeAnthropicStopReasonString(payload)
 		if stream.upstreamErrType != "" {
 			break
 		}

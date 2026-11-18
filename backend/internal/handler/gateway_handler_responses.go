@@ -126,6 +126,9 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		h.responsesSecurityAuditError(c, decision)
 		return
 	}
+	// After forwarding: an upstream Claude refusal of a guard-allowed request is
+	// archived and cached, the same as on /v1/messages.
+	defer handleSecurityAuditUpstreamRefusal(c, h.securityAuditCoordinator)
 
 	// Error passthrough binding
 	if h.errorPassthroughService != nil {
