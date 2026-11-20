@@ -37,6 +37,7 @@ export interface PaymentRecoverySnapshot {
   qrCode: string
   expiresAt: string
   paymentType: string
+  providerKey?: string
   payUrl: string
   outTradeNo: string
   clientSecret: string
@@ -157,6 +158,7 @@ export function decidePaymentLaunch(
     qrCode: result.qr_code || '',
     expiresAt: result.expires_at || '',
     paymentType: visibleMethod,
+    providerKey: (result.provider_key || '').trim(),
     payUrl: result.pay_url || '',
     outTradeNo: result.out_trade_no || '',
     clientSecret: result.client_secret || '',
@@ -316,6 +318,7 @@ export function readPaymentRecoverySnapshot(
       qrCode: parsed.qrCode,
       expiresAt: parsed.expiresAt,
       paymentType: parsed.paymentType,
+      providerKey: typeof parsed.providerKey === 'string' ? parsed.providerKey : '',
       payUrl: parsed.payUrl,
       outTradeNo: parsed.outTradeNo || '',
       clientSecret: parsed.clientSecret,

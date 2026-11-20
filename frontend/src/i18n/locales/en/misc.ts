@@ -339,6 +339,8 @@ export default {
       scanWxpayHint: 'Open WeChat on your phone and scan the QR code to pay',
       payInNewWindow: 'Complete Payment in New Window',
       payInNewWindowHint: 'The payment page has opened in a new window. Please complete the payment there and return to this page.',
+      perpayExactAmount: 'Enter exactly {amount} in Alipay',
+      perpayAmountNotice: 'The decimals identify your order. The extra cents are added to your balance too; they are not a fee. If you enter even one cent less, the payment cannot be credited automatically. Always place an order before scanning; paying with a saved QR code will not be credited automatically.',
       openPayWindow: 'Reopen Payment Page',
       expiresIn: 'Expires in',
       expired: 'Order Expired',

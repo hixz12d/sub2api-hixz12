@@ -363,6 +363,8 @@ export default {
       scanWxpayHint: '请使用手机打开微信，扫描二维码完成支付',
       payInNewWindow: '请在新窗口中完成支付',
       payInNewWindowHint: '支付页面已在新窗口打开，请在新窗口中完成支付后返回此页面',
+      perpayExactAmount: '请在支付宝输入 {amount}',
+      perpayAmountNotice: '金额里的小数用来识别你的订单，多付的几毛钱会一起加进你的余额，不是手续费；少输一分钱都无法自动到账。每次请先下单再扫码，用保存的二维码直接转账不会自动到账。',
       openPayWindow: '重新打开支付页面',
       expiresIn: '剩余支付时间',
       expired: '订单已过期',

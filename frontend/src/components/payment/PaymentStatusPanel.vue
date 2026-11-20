@@ -205,6 +205,14 @@
       <div class="card p-6">
         <div class="flex flex-col items-center space-y-4 py-4">
           <div class="h-10 w-10 animate-spin rounded-full border-4 border-primary-500 border-t-transparent"></div>
+          <div v-if="showPerPayAmount" data-test="perpay-exact-amount" class="space-y-2 text-center">
+            <i18n-t keypath="payment.qr.perpayExactAmount" tag="p" class="text-base font-medium text-gray-900 dark:text-white">
+              <template #amount>
+                <span class="whitespace-nowrap text-3xl font-bold tabular-nums text-red-600 dark:text-red-400">{{ displayPaymentAmount }}</span>
+              </template>
+            </i18n-t>
+            <p class="text-xs text-gray-500 dark:text-gray-400">{{ t('payment.qr.perpayAmountNotice') }}</p>
+          </div>
           <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('payment.qr.payInNewWindowHint') }}</p>
           <button v-if="payUrl" class="btn btn-secondary text-sm" @click="reopenPopup">
             {{ t('payment.qr.openPayWindow') }}
@@ -250,6 +258,7 @@ const props = defineProps<{
   qrCode: string
   expiresAt: string
   paymentType: string
+  providerKey?: string
   payUrl?: string
   orderType?: string
   currency?: string
@@ -339,6 +348,11 @@ const countdownDisplay = computed(() => {
 
 const displayPaymentAmount = computed(() => formatGatewayAmount(props.payAmount || props.amount || 0))
 const displayOrderNumber = computed(() => props.outTradeNo || `#${props.orderId}`)
+const showPerPayAmount = computed(() => {
+  if ((props.providerKey || '').trim().toLowerCase() !== 'perpay') return false
+  const value = props.payAmount || props.amount || 0
+  return Number.isFinite(value) && value > 0
+})
 
 function formatGatewayAmount(value: number, currency?: string | null): string {
   return formatPaymentAmount(value, currency || paymentCurrency.value, localeCode.value)

@@ -92,6 +92,7 @@ type perPayOrder struct {
 	} `json:"checkout"`
 	Payment struct {
 		Status   string `json:"status"`
+		Basis    string `json:"basis"`
 		Received *int64 `json:"received_amount_cents"`
 	} `json:"payment"`
 	Refund struct {
@@ -198,7 +199,11 @@ func (p *PerPay) result(o *perPayOrder) (*payment.QueryOrderResponse, error) {
 	status := payment.ProviderStatusPending
 	switch o.Payment.Status {
 	case "CONFIRMED":
-		if o.Received == nil || o.Payment.Received == nil || *o.Received != o.Payable || *o.Payment.Received != o.Payable || o.Refund.Status != "NONE" {
+		if o.Received == nil || o.Payment.Received == nil || *o.Received != *o.Payment.Received || o.Refund.Status != "NONE" {
+			return nil, fmt.Errorf("perpay confirmed amount or refund mismatch")
+		}
+		// A different amount is only accepted when an operator manually confirmed it in PerPay.
+		if *o.Received != o.Payable && (o.Payment.Basis != "MANUAL" || *o.Received < 1 || *o.Received > 9999999999) {
 			return nil, fmt.Errorf("perpay confirmed amount or refund mismatch")
 		}
 		status = payment.ProviderStatusPaid
@@ -219,6 +224,9 @@ func (p *PerPay) result(o *perPayOrder) (*payment.QueryOrderResponse, error) {
 	metadata["payable_amount_cents"] = strconv.FormatInt(o.Payable, 10)
 	if o.Received != nil {
 		metadata["received_amount_cents"] = strconv.FormatInt(*o.Received, 10)
+	}
+	if o.Payment.Basis != "" {
+		metadata["payment_basis"] = o.Payment.Basis
 	}
 	// Keep the requested amount for binding to legacy orders. The service checks
 	// all three amounts and credits the verified offset using stored order terms.

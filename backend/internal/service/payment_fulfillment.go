@@ -200,20 +200,26 @@ func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, trad
 	previousStatus := o.Status
 	now := time.Now()
 	grace := now.Add(-paymentGraceMinutes * time.Minute)
+	expiredRecoverable := paymentorder.And(
+		paymentorder.StatusEQ(OrderStatusExpired),
+		paymentorder.UpdatedAtGTE(grace),
+	)
+	if isPerPayOrder(o, pk) {
+		// PerPay payments confirmed by an operator may arrive long after the
+		// checkout expired; the authenticated PerPay state decides, not the grace window.
+		expiredRecoverable = paymentorder.StatusEQ(OrderStatusExpired)
+	}
 	update := s.entClient.PaymentOrder.Update().Where(
 		paymentorder.IDEQ(o.ID),
 		paymentorder.Or(
 			paymentorder.StatusEQ(OrderStatusPending),
 			paymentorder.StatusEQ(OrderStatusCancelled),
-			paymentorder.And(
-				paymentorder.StatusEQ(OrderStatusExpired),
-				paymentorder.UpdatedAtGTE(grace),
-			),
+			expiredRecoverable,
 		),
 	).SetStatus(OrderStatusPaid).SetPayAmount(paid).SetPaymentTradeNo(tradeNo).SetPaidAt(now).ClearFailedAt().ClearFailedReason()
 	if pk == payment.TypePerPay {
 		// Credit terms and the PAID transition are one CAS: retries cannot add the offset twice.
-		update.SetAmount(o.Amount).SetProviderSnapshot(o.ProviderSnapshot)
+		update.SetAmount(o.Amount).SetBonusAmount(o.BonusAmount).SetProviderSnapshot(o.ProviderSnapshot)
 	}
 	c, err := update.Save(ctx)
 	if err != nil {
@@ -238,6 +244,12 @@ func (s *PaymentService) toPaid(ctx context.Context, o *dbent.PaymentOrder, trad
 	}
 	s.writeAuditLog(ctx, o.ID, "ORDER_PAID", pk, map[string]any{"tradeNo": tradeNo, "paidAmount": paid})
 	return s.executeFulfillment(ctx, o.ID)
+}
+
+// isPerPayOrder reports whether a verified notification belongs to a PerPay
+// order; confirmPayment has already bound the order's PerPay snapshot to it.
+func isPerPayOrder(o *dbent.PaymentOrder, pk string) bool {
+	return pk == payment.TypePerPay && o != nil && psSnapshotStringValue(o.ProviderSnapshot["perpay_origin"]) != ""
 }
 
 func (s *PaymentService) alreadyProcessed(ctx context.Context, o *dbent.PaymentOrder) error {
