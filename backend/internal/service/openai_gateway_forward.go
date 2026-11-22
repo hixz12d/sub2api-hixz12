@@ -614,7 +614,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		if c != nil {
 			c.Set("codex_fingerprint_ids", fpIDs)
 		}
-		if wsDecision.Transport == OpenAIUpstreamTransportResponsesWebsocketV2 && !isCompactRequest && !s.isOpenAIAccountScopedIdentityEnabled(account) && applyCodexAccountIdentityClientMetadataMap(decoded, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c)) {
+		if wsDecision.Transport == OpenAIUpstreamTransportResponsesWebsocketV2 && !isCompactRequest && !s.isOpenAIAccountScopedIdentityEnabled(account) && applyCodexAccountIdentityClientMetadataMap(decoded, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), codexClientSessionID(c)) {
 			markDecodedModified()
 		}
 		if codexResult.NormalizedModel != "" {
@@ -708,10 +708,10 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 
 	rawTier := requestView.ServiceTier
-	if openAIGroupForcesFast(ctx, account) {
-		rawTier = OpenAIFastTierPriority
-		if requestView.ServiceTier != OpenAIFastTierPriority {
-			markPatchSet("service_tier", OpenAIFastTierPriority)
+	if forcedTier := openAIGroupForcedServiceTier(ctx, account, upstreamModel); forcedTier != "" {
+		rawTier = forcedTier
+		if requestView.ServiceTier != forcedTier {
+			markPatchSet("service_tier", forcedTier)
 		}
 	}
 	if rawTier != "" {

@@ -1007,6 +1007,8 @@ var ProviderSet = wire.NewSet(
 	ProvideUserPlatformQuotaUsageFlusher,
 	NewResetCardService,
 	ProvideResetCardExpiryService,
+	NewUsageBillingLaneCombiner,
+	ProvideUsageBillingRepository,
 )
 
 // ProvideResetCardExpiryService 创建并启动重置卡限时额度到期回收任务。
@@ -1022,6 +1024,11 @@ func ProvideResetCardExpiryService(
 	svc := NewResetCardExpiryService(repo, userRepo, entClient, authCacheInvalidator, billingCacheService, lockCache, db)
 	svc.Start()
 	return svc
+}
+
+// ProvideUsageBillingRepository 以按用户合并结算的通道作为各服务使用的计费仓储。
+func ProvideUsageBillingRepository(lanes *UsageBillingLaneCombiner) UsageBillingRepository {
+	return lanes
 }
 
 // ProvideUserPlatformQuotaUsageFlusher 创建并启动 UserPlatformQuotaUsageFlusher。

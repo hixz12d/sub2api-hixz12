@@ -416,7 +416,7 @@ func (s *OpenAIGatewayService) finalizeCodexOAuthBody(
 		return nil, err
 	}
 	if s.shouldApplyLegacyCodexAccountIdentity(c, account) {
-		updated, _, err = applyCodexAccountIdentityClientMetadataRaw(updated, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
+		updated, _, err = applyCodexAccountIdentityClientMetadataRaw(updated, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), codexClientSessionID(c))
 		if err != nil {
 			return nil, fmt.Errorf("scope Codex account request identity: %w", err)
 		}

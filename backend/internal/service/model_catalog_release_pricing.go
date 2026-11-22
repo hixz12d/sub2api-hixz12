@@ -1,10 +1,6 @@
 package service
 
-import (
-	"strings"
-
-	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
-)
+import "strings"
 
 // Published 2026-09-22 (GPT-6.1 Sol: 2026-09-29). USD per token; explicit operator prices take precedence.
 // Sources: https://developers.openai.com/api/docs/models/gpt-6.1-sol
@@ -13,58 +9,7 @@ import (
 // https://developers.openai.com/api/docs/models/gpt-6-luna
 // https://platform.claude.com/docs/en/models/opus-5-5/overview
 var (
-	// GPT-6.2 (2026-11-17): https://developers.openai.com/api/docs/models/gpt-6.2-sol
-	// https://developers.openai.com/api/docs/models/gpt-6.2-astra
-	// Sol keeps GPT-6.1 Sol prices; Astra is 20% below GPT-6 Astra. Cache writes are 1.25x input.
-	openAIGPT62SolFallbackPricing = &LiteLLMModelPricing{
-		InputCostPerToken: 2e-6, OutputCostPerToken: 10e-6,
-		CacheCreationInputTokenCost: 2.5e-6, CacheReadInputTokenCost: 0.1e-6,
-		InputCostPerTokenPriority: 4e-6, OutputCostPerTokenPriority: 20e-6,
-		CacheCreationInputTokenCostPriority: 5e-6, CacheReadInputTokenCostPriority: 0.2e-6,
-		LongContextInputTokenThreshold: 272000, LongContextInputCostMultiplier: 2, LongContextOutputCostMultiplier: 1.5,
-		LiteLLMProvider: "openai", Mode: "chat", SupportsPromptCaching: true, SupportsServiceTier: true,
-	}
-	openAIGPT62AstraFallbackPricing = &LiteLLMModelPricing{
-		InputCostPerToken: 8e-6, OutputCostPerToken: 40e-6,
-		CacheCreationInputTokenCost: 10e-6, CacheReadInputTokenCost: 0.4e-6,
-		InputCostPerTokenPriority: 16e-6, OutputCostPerTokenPriority: 80e-6,
-		CacheCreationInputTokenCostPriority: 20e-6, CacheReadInputTokenCostPriority: 0.8e-6,
-		LongContextInputTokenThreshold: 272000, LongContextInputCostMultiplier: 2, LongContextOutputCostMultiplier: 1.5,
-		LiteLLMProvider: "openai", Mode: "chat", SupportsPromptCaching: true, SupportsServiceTier: true,
-	}
-	// GPT-6.1 Sol keeps GPT-6 Sol input/output prices but halves cached input.
-	openAIGPT61SolFallbackPricing = &LiteLLMModelPricing{
-		InputCostPerToken: 2e-6, OutputCostPerToken: 10e-6,
-		CacheCreationInputTokenCost: 2.5e-6, CacheReadInputTokenCost: 0.1e-6,
-		InputCostPerTokenPriority: 4e-6, OutputCostPerTokenPriority: 20e-6,
-		CacheCreationInputTokenCostPriority: 5e-6, CacheReadInputTokenCostPriority: 0.2e-6,
-		LongContextInputTokenThreshold: 272000, LongContextInputCostMultiplier: 2, LongContextOutputCostMultiplier: 1.5,
-		LiteLLMProvider: "openai", Mode: "chat", SupportsPromptCaching: true, SupportsServiceTier: true,
-	}
-	openAIGPT61TerraFallbackPricing = &LiteLLMModelPricing{
-		InputCostPerToken: 1e-6, OutputCostPerToken: 5e-6,
-		CacheCreationInputTokenCost: 1.25e-6, CacheReadInputTokenCost: 0.05e-6,
-		InputCostPerTokenPriority: 2e-6, OutputCostPerTokenPriority: 10e-6,
-		CacheCreationInputTokenCostPriority: 2.5e-6, CacheReadInputTokenCostPriority: 0.1e-6,
-		LongContextInputTokenThreshold: 272000, LongContextInputCostMultiplier: 2, LongContextOutputCostMultiplier: 1.5,
-		LiteLLMProvider: "openai", Mode: "chat", SupportsPromptCaching: true, SupportsServiceTier: true,
-	}
-	openAIGPT6SolFallbackPricing = &LiteLLMModelPricing{
-		InputCostPerToken: 2e-6, OutputCostPerToken: 10e-6,
-		CacheCreationInputTokenCost: 2.5e-6, CacheReadInputTokenCost: 0.2e-6,
-		InputCostPerTokenPriority: 4e-6, OutputCostPerTokenPriority: 20e-6,
-		CacheCreationInputTokenCostPriority: 5e-6, CacheReadInputTokenCostPriority: 0.4e-6,
-		LongContextInputTokenThreshold: 272000, LongContextInputCostMultiplier: 2, LongContextOutputCostMultiplier: 1.5,
-		LiteLLMProvider: "openai", Mode: "chat", SupportsPromptCaching: true, SupportsServiceTier: true,
-	}
-	openAIGPT6LunaFallbackPricing = &LiteLLMModelPricing{
-		InputCostPerToken: 0.1e-6, OutputCostPerToken: 0.5e-6,
-		CacheCreationInputTokenCost: 0.125e-6, CacheReadInputTokenCost: 0.01e-6,
-		InputCostPerTokenPriority: 0.2e-6, OutputCostPerTokenPriority: 1e-6,
-		CacheCreationInputTokenCostPriority: 0.25e-6, CacheReadInputTokenCostPriority: 0.02e-6,
-		LongContextInputTokenThreshold: 272000, LongContextInputCostMultiplier: 2, LongContextOutputCostMultiplier: 1.5,
-		LiteLLMProvider: "openai", Mode: "chat", SupportsPromptCaching: true, SupportsServiceTier: true,
-	}
+	// GPT-6.1 / GPT-6 Sol、Luna 与 GPT-6.2 的卡价随上游定义在 pricing_service.go。
 	claudeOpus55FallbackPricing = &LiteLLMModelPricing{
 		InputCostPerToken: 4e-6, OutputCostPerToken: 20e-6,
 		CacheCreationInputTokenCost: 5e-6, CacheCreationInputTokenCostAbove1hr: 8e-6, CacheReadInputTokenCost: 0.2e-6,
@@ -80,9 +25,6 @@ func isOpenAIGPT6SolLunaModel(model string) bool {
 
 func openAIGPT6SolLunaBase(model string) string {
 	canonical := canonicalizeOpenAIModelAliasSpelling(model)
-	if base := openai.GPT62BaseModel(canonical); base != "" {
-		return base
-	}
 	for _, base := range []string{"gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-sol", "gpt-6-luna"} {
 		if canonical == base || strings.HasPrefix(canonical, base+"-") {
 			return base
@@ -106,10 +48,6 @@ func isClaudeOpus55Model(model string) bool {
 
 func openAIGPT6SolLunaFallbackPricing(base string) *LiteLLMModelPricing {
 	switch base {
-	case "gpt-6.2-sol":
-		return openAIGPT62SolFallbackPricing
-	case "gpt-6.2-astra":
-		return openAIGPT62AstraFallbackPricing
 	case "gpt-6.1-sol":
 		return openAIGPT61SolFallbackPricing
 	case "gpt-6.1-terra":
