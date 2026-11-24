@@ -18,6 +18,60 @@ import (
 	"github.com/tidwall/gjson"
 )
 
+// ForwardRawResponses 直接按 OpenAI Responses 协议透传请求到上游 `{base_url}/v1/responses`，
+// 仅按账号配置应用模型映射，完全绕开 resolveUpstreamProtocol 与 Codex/Grok 专属改写。
+// 供开启「多协议直通」的 Gemini 第三方 API Key 账号复用。
+func (s *OpenAIGatewayService) ForwardRawResponses(ctx context.Context, c *gin.Context, account *Account, body []byte) (*OpenAIForwardResult, error) {
+	if account == nil {
+		return nil, errors.New("account is nil")
+	}
+	startTime := time.Now()
+	MarkOpenAIForwardStart(c, startTime)
+	EnsureOpenAIRetryBudget(c, account, body)
+	beginUpstreamResponseModelObservation(c)
+	ClearActualOpenAIUpstreamEndpoint(c)
+	SetActualOpenAIUpstreamEndpoint(c, openAIResponsesUpstreamEndpoint)
+	clearOpenAIResponsesClientToolMapping(c)
+	clearGrokResponsesClientToolMapping(c)
+	clearOpenAIResponsesNamespaceNames(c)
+	setCodexToolNameReverse(c, nil)
+
+	reqModel := strings.TrimSpace(gjson.GetBytes(body, "model").String())
+	reqStream := gjson.GetBytes(body, "stream").Bool()
+
+	mappedModel := reqModel
+	if reqModel != "" {
+		mappedModel = account.GetMappedModel(reqModel)
+	}
+	upstreamBody := body
+	modelMapped := mappedModel != "" && mappedModel != reqModel
+	if modelMapped {
+		upstreamBody = ReplaceModelInBody(body, mappedModel)
+	}
+	reasoningEffort := extractOpenAIReasoningEffortFromBody(upstreamBody, mappedModel)
+	reasoningEffort = ApplyThinkingEnabledFallback(reasoningEffort, upstreamBody, mappedModel)
+
+	result, err := s.forwardOpenAIPassthrough(
+		ctx,
+		c,
+		account,
+		upstreamBody,
+		body,
+		reqModel,
+		modelMapped,
+		reasoningEffort,
+		reqStream,
+		startTime,
+	)
+	if result != nil {
+		if strings.TrimSpace(result.UpstreamModel) == "" && mappedModel != "" {
+			result.UpstreamModel = mappedModel
+		}
+		stampOpenAIResponsesUpstreamEndpoint(c, result)
+	}
+	return result, err
+}
+
 // Forward forwards request to OpenAI API
 func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (out *OpenAIForwardResult, retErr error) {
 	defer func() {

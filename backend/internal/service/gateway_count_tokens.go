@@ -47,7 +47,7 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 		}
 	}
 
-	if account != nil && account.IsAnthropicAPIKeyPassthroughEnabled() {
+	if account != nil && (account.IsAnthropicAPIKeyPassthroughEnabled() || account.IsGeminiMultiProtocolPassthroughEnabled()) {
 		passthroughBody := parsed.Body.Bytes()
 		passthroughModel := parsed.Model
 		if reqModel := parsed.Model; reqModel != "" {

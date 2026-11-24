@@ -197,22 +197,30 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		APIKeyID:  apiKey.ID,
 	}
 	sessionHash := h.gatewayService.GenerateSessionHash(parsedReq)
+	groupPlatform := effectiveAPIKeyPlatform(c, apiKey)
+	selectionSessionHash := sessionHash
+	if groupPlatform == service.PlatformGemini && selectionSessionHash != "" {
+		selectionSessionHash = "gemini:" + selectionSessionHash
+	}
 
 	// 3. Account selection + failover loop
 	fs := NewFailoverState(h.maxAccountSwitches, false)
+	if groupPlatform == service.PlatformGemini {
+		fs = NewFailoverState(h.maxAccountSwitchesGemini, false)
+	}
 
 	for {
 		if failoverClientGone(c) {
 			return
 		}
-		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(requestCtx, apiKey.GroupID, sessionHash, reqModel, fs.FailedAccountIDs, "", int64(0))
+		selection, err := h.gatewayService.SelectAccountWithLoadAwareness(requestCtx, apiKey.GroupID, selectionSessionHash, reqModel, fs.FailedAccountIDs, "", int64(0))
 		if err != nil {
 			if failoverClientGone(c) {
 				reqLog.Info("gateway.responses.account_select_aborted_client_disconnected", zap.Error(err))
 				return
 			}
 			if len(fs.FailedAccountIDs) == 0 {
-				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, effectiveAPIKeyPlatform(c, apiKey))
+				cls := classifyNoAccountErrorFromGin(c, h.gatewayService, apiKey, reqModel, reqModel, groupPlatform)
 				cls = classifySelectionFailureError(err, cls)
 				if !cls.ModelNotFound {
 					markOpsRoutingCapacityLimitedIfNoAvailable(c, err)
@@ -292,11 +300,19 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 		account = latest
 		selection.Account = latest
 		if selection.ProfitGateActive() {
-			if err := h.gatewayService.BindStickySessionAfterProfitAdmission(admissionCtx, apiKey.GroupID, sessionHash, account.ID); err != nil {
+			if err := h.gatewayService.BindStickySessionAfterProfitAdmission(admissionCtx, apiKey.GroupID, selectionSessionHash, account.ID); err != nil {
 				reqLog.Warn("gateway.responses.bind_sticky_session_after_profit_admission_failed", zap.Int64("account_id", account.ID), zap.Error(err))
 			}
 		}
 		accountReleaseFunc = wrapReleaseOnDone(c.Request.Context(), accountReleaseFunc)
+
+		if groupPlatform == service.PlatformGemini && account.Platform != service.PlatformGemini {
+			if accountReleaseFunc != nil {
+				accountReleaseFunc()
+			}
+			fs.FailedAccountIDs[account.ID] = struct{}{}
+			continue
+		}
 
 		// 5. Forward request
 		writerSizeBeforeForward := c.Writer.Size()
@@ -305,8 +321,32 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 			forwardBody = h.gatewayService.ReplaceModelInBody(body, channelMapping.MappedModel)
 		}
 		var result *service.ForwardResult
+		var openAIResult *service.OpenAIForwardResult
 		setActualUpstreamEndpoint(c, "")
-		if shouldUseAntigravityCompat(account) {
+		service.ClearActualOpenAIUpstreamEndpoint(c)
+		if account.Platform == service.PlatformGemini {
+			if !account.IsGeminiMultiProtocolPassthroughEnabled() {
+				if accountReleaseFunc != nil {
+					accountReleaseFunc()
+				}
+				h.responsesErrorResponse(
+					c,
+					http.StatusBadRequest,
+					"invalid_request_error",
+					"This Gemini account does not have multi-protocol passthrough enabled and does not support /v1/responses",
+				)
+				return
+			}
+			if h.openAIGatewayService == nil {
+				h.responsesErrorResponse(c, http.StatusBadGateway, "upstream_error", "OpenAI gateway service is not configured")
+				if accountReleaseFunc != nil {
+					accountReleaseFunc()
+				}
+				return
+			}
+			setActualUpstreamEndpoint(c, EndpointResponses)
+			openAIResult, err = h.openAIGatewayService.ForwardRawResponses(requestCtx, c, account, forwardBody)
+		} else if shouldUseAntigravityCompat(account) {
 			if h.antigravityGatewayService == nil {
 				h.responsesErrorResponse(c, http.StatusBadGateway, "upstream_error", "Antigravity compatibility service is not configured")
 				if accountReleaseFunc != nil {
@@ -363,6 +403,55 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 			})
 		}
 
+		// OpenAI 直通路径返回的 InputTokens 包含缓存读，必须交由 OpenAIGatewayService.RecordUsage
+		// 通过 billingUsageTokens() 拆分互斥桶，避免缓存 Token 被双重计费。
+		submitOpenAIUsage := func(res *service.OpenAIForwardResult) {
+			if res == nil {
+				return
+			}
+			stampOpenAIRequestedReasoningEffort(res, c)
+			service.ApplyRequestTiming(c, res)
+			userAgent := c.GetHeader("User-Agent")
+			clientIP := ip.GetClientIP(c)
+			requestPayloadHash := service.HashUsageRequestPayload(body)
+			inboundEndpoint := GetInboundEndpointWithRoute(c)
+			upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account, res)
+			quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+			sessionID := service.ExtractClientSessionID(c)
+			cyberBlocked := service.GetOpsCyberPolicy(c) != nil
+			channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, res.UpstreamModel)
+			recordTask := func(ctx context.Context) {
+				if err := h.openAIGatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
+					Result:             res,
+					APIKey:             apiKey,
+					User:               apiKey.User,
+					Account:            account,
+					Subscription:       subscription,
+					InboundEndpoint:    inboundEndpoint,
+					UpstreamEndpoint:   upstreamEndpoint,
+					UserAgent:          userAgent,
+					IPAddress:          clientIP,
+					RequestPayloadHash: requestPayloadHash,
+					APIKeyService:      h.apiKeyService,
+					QuotaPlatform:      quotaPlatform,
+					SessionID:          sessionID,
+					ChannelUsageFields: channelUsageFields,
+					PricingAt:          pricingAt,
+					CyberBlocked:       cyberBlocked,
+				}); err != nil {
+					reqLog.Error("gateway.responses.openai_record_usage_failed",
+						zap.Int64("account_id", account.ID),
+						zap.Error(err),
+					)
+				}
+			}
+			if res.ImageCount > 0 || res.VideoCount > 0 || res.SearchCount > 0 || res.WebSearchCalls > 0 || res.AudioUsage != nil {
+				h.submitMandatoryUsageRecordTask(c.Request.Context(), recordTask)
+				return
+			}
+			h.submitUsageRecordTask(c.Request.Context(), recordTask)
+		}
+
 		if err != nil {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
@@ -396,15 +485,21 @@ func (h *GatewayHandler) Responses(c *gin.Context) {
 			)
 			// The response is already committed, so the client retries; send that
 			// retry through scheduling again instead of back to this account.
-			h.gatewayService.ReleaseStickySessionAfterCommittedNoContent(context.WithoutCancel(requestCtx), apiKey.GroupID, sessionHash, account.ID, err)
-			if result != nil {
+			h.gatewayService.ReleaseStickySessionAfterCommittedNoContent(context.WithoutCancel(requestCtx), apiKey.GroupID, selectionSessionHash, account.ID, err)
+			if openAIResult != nil {
+				submitOpenAIUsage(openAIResult)
+			} else if result != nil {
 				submitForwardUsage(result)
 			}
 			return
 		}
 
 		// 6. Record usage
-		submitForwardUsage(result)
+		if openAIResult != nil {
+			submitOpenAIUsage(openAIResult)
+		} else {
+			submitForwardUsage(result)
+		}
 		return
 	}
 }

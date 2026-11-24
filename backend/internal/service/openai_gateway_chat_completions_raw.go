@@ -36,6 +36,19 @@ var openaiCCRawAllowedHeaders = map[string]bool{
 	"user-agent":      true,
 }
 
+// ForwardAsRawChatCompletions 直转客户端的 Chat Completions 请求到上游
+// `{base_url}/v1/chat/completions`（不做 CC↔Responses 协议转换），供开启多协议直通的
+// Gemini API Key 账号等调用方复用。
+func (s *OpenAIGatewayService) ForwardAsRawChatCompletions(
+	ctx context.Context,
+	c *gin.Context,
+	account *Account,
+	body []byte,
+	defaultMappedModel string,
+) (*OpenAIForwardResult, error) {
+	return s.forwardAsRawChatCompletions(ctx, c, account, body, defaultMappedModel)
+}
+
 // forwardAsRawChatCompletions 直转客户端的 Chat Completions 请求到上游
 // `{base_url}/v1/chat/completions`，**不**做 CC↔Responses 协议转换。
 //

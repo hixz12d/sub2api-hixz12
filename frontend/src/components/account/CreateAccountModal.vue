@@ -1912,6 +1912,27 @@
           </div>
         </div>
 
+        <!-- Gemini 多协议直通开关：仅自定义地址的 Gemini API Key 账号 -->
+        <div
+          v-if="form.platform === 'gemini' && accountCategory === 'apikey' && !isOfficialGeminiBaseUrl(apiKeyBaseUrl)"
+          class="border-t border-gray-200 pt-4 dark:border-dark-600"
+          data-testid="gemini-multi-protocol-passthrough-section"
+        >
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <label class="input-label mb-0">{{ t('admin.accounts.gemini.multiProtocolPassthrough') }}</label>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.accounts.gemini.multiProtocolPassthroughDesc') }}
+              </p>
+            </div>
+            <Toggle
+              v-model="geminiMultiProtocolPassthroughEnabled"
+              data-testid="gemini-multi-protocol-passthrough-toggle"
+              :aria-label="t('admin.accounts.gemini.multiProtocolPassthrough')"
+            />
+          </div>
+        </div>
+
         <!-- Custom Error Codes Section -->
         <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
           <div class="mb-3 flex items-center justify-between">
@@ -4736,6 +4757,7 @@ const DEFAULT_POOL_MODE_RETRY_STATUS_CODES = [401, 403, 429]
 const poolModeEnabled = ref(false)
 const explicitCacheUpstreamEnabled = ref(false)
 const explicitCacheUpstreamMaxTTL = ref<string | number>('')
+const geminiMultiProtocolPassthroughEnabled = ref(false)
 const poolModeRetryCount = ref(DEFAULT_POOL_MODE_RETRY_COUNT)
 const poolModeRetryStatusCodesInput = ref('')
 
@@ -5394,6 +5416,9 @@ watch(
       anthropicAPIKeyAuthScheme.value = 'x_api_key'
       webSearchEmulationMode.value = 'default'
     }
+    if (newPlatform !== 'gemini') {
+      geminiMultiProtocolPassthroughEnabled.value = false
+    }
     // 请求头覆写为平台相关配置（常用头集合不同），切换平台时清空，
     // 避免上一平台的配置行被提交到新平台账号
     headerOverrideEnabled.value = false
@@ -5424,6 +5449,9 @@ watch(
       anthropicPassthroughEnabled.value = false
       anthropicAPIKeyAuthScheme.value = 'x_api_key'
       webSearchEmulationMode.value = 'default'
+    }
+    if (platform !== 'gemini' || category !== 'apikey') {
+      geminiMultiProtocolPassthroughEnabled.value = false
     }
   }
 )
@@ -5833,6 +5861,7 @@ const resetForm = () => {
   poolModeRetryStatusCodesInput.value = ''
   explicitCacheUpstreamEnabled.value = false
   explicitCacheUpstreamMaxTTL.value = ''
+  geminiMultiProtocolPassthroughEnabled.value = false
   customErrorCodesEnabled.value = false
   selectedErrorCodes.value = []
   customErrorCodeInput.value = null
@@ -6046,6 +6075,21 @@ const buildAnthropicExtra = (base?: Record<string, unknown>): Record<string, unk
     delete extra.web_search_emulation
   } else {
     extra.web_search_emulation = webSearchEmulationMode.value
+  }
+
+  return Object.keys(extra).length > 0 ? extra : undefined
+}
+
+const buildGeminiExtra = (base?: Record<string, unknown>): Record<string, unknown> | undefined => {
+  if (form.platform !== 'gemini' || accountCategory.value !== 'apikey') {
+    return base
+  }
+
+  const extra: Record<string, unknown> = { ...(base || {}) }
+  if (!isOfficialGeminiBaseUrl(apiKeyBaseUrl.value) && geminiMultiProtocolPassthroughEnabled.value) {
+    extra.gemini_multi_protocol_passthrough = true
+  } else {
+    delete extra.gemini_multi_protocol_passthrough
   }
 
   return Object.keys(extra).length > 0 ? extra : undefined
@@ -6421,7 +6465,7 @@ const handleSubmit = async () => {
   }
 
   form.credentials = credentials
-  const extra = buildAnthropicExtra(buildOpenAIExtra())
+  const extra = buildGeminiExtra(buildAnthropicExtra(buildOpenAIExtra()))
 
   await doCreateAccount({
     ...form,

@@ -1629,6 +1629,9 @@ export default {
         modelPassthrough: 'Gemini Model Passthrough',
         modelPassthroughDesc:
           'All model requests are forwarded directly to the Gemini API without model restrictions or mappings.',
+        multiProtocolPassthrough: 'Multi-protocol passthrough (forward as-is by request format)',
+        multiProtocolPassthroughDesc:
+          'Only for custom upstreams that natively support Gemini, Anthropic, and OpenAI protocols (such as self-hosted gateways). When enabled, /v1beta, /v1/messages, /v1/chat/completions, and /v1/responses are forwarded directly in their original protocol without translation; when disabled, non-Gemini requests continue to be translated to /v1beta.',
         baseUrlHint: 'Leave default for official Gemini API',
         apiKeyHint: 'New AI Studio keys start with AQ. (legacy keys start with AIza); for a third-party upstream, use the key it provides',
         tier: {

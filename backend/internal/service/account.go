@@ -1541,6 +1541,9 @@ func (a *Account) IsOpenAIApiKey() bool {
 // 适用 openai、国产 OpenAI 兼容供应商（kimi/zhipu/deepseek）与 OpenCode Go；
 // grok 走 GetGrokBaseURL，此处对 grok 返回 "" 以保持原有行为。
 func (a *Account) GetOpenAIBaseURL() string {
+	if a != nil && a.IsGeminiMultiProtocolPassthroughEnabled() {
+		return strings.TrimSpace(a.GetCredential("base_url"))
+	}
 	if !a.IsOpenAI() && !a.IsMultiProtocolAPIKey() {
 		return ""
 	}
@@ -1886,6 +1889,9 @@ func (a *Account) GetOpenAIProtocolAPIKey() string {
 		if a.Type != AccountTypeAPIKey {
 			return ""
 		}
+		return a.GetCredential("api_key")
+	}
+	if a.IsGeminiMultiProtocolPassthroughEnabled() {
 		return a.GetCredential("api_key")
 	}
 	return a.GetOpenAIApiKey()
@@ -2437,6 +2443,23 @@ func (a *Account) IsAnthropicAPIKeyPassthroughEnabled() bool {
 		return false
 	}
 	enabled, ok := a.Extra["anthropic_passthrough"].(bool)
+	return ok && enabled
+}
+
+// AccountExtraGeminiMultiProtocolPassthrough 是 Gemini 第三方 API Key 账号「多协议直通」开关的 extra 键。
+const AccountExtraGeminiMultiProtocolPassthrough = "gemini_multi_protocol_passthrough"
+
+// IsGeminiMultiProtocolPassthroughEnabled 返回 Gemini 第三方 API Key 账号是否开启「多协议直通」：
+// 开启后 /v1/messages、/v1/chat/completions、/v1/responses 按入站协议原样转发到该账号 base_url 的同名端点。
+// 仅对自定义非官方 base_url 的 Gemini API Key 账号生效；不影响 IsModelSupported 的白名单判定。
+func (a *Account) IsGeminiMultiProtocolPassthroughEnabled() bool {
+	if a == nil || a.Platform != PlatformGemini || a.Type != AccountTypeAPIKey || a.Extra == nil {
+		return false
+	}
+	if !a.IsGeminiThirdPartyAPIKey() {
+		return false
+	}
+	enabled, ok := a.Extra[AccountExtraGeminiMultiProtocolPassthrough].(bool)
 	return ok && enabled
 }
 

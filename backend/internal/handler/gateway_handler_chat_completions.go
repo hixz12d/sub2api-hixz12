@@ -311,16 +311,30 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 			forwardBody = h.gatewayService.ReplaceModelInBody(body, channelMapping.MappedModel)
 		}
 		var result *service.ForwardResult
+		var openAIResult *service.OpenAIForwardResult
 		setActualUpstreamEndpoint(c, "")
+		service.ClearActualOpenAIUpstreamEndpoint(c)
 		if account.Platform == service.PlatformGemini {
-			if h.geminiCompatService == nil {
-				h.chatCompletionsErrorResponse(c, http.StatusBadGateway, "upstream_error", "Gemini compatibility service is not configured")
-				if accountReleaseFunc != nil {
-					accountReleaseFunc()
+			if account.IsGeminiMultiProtocolPassthroughEnabled() {
+				if h.openAIGatewayService == nil {
+					h.chatCompletionsErrorResponse(c, http.StatusBadGateway, "upstream_error", "OpenAI gateway service is not configured")
+					if accountReleaseFunc != nil {
+						accountReleaseFunc()
+					}
+					return
 				}
-				return
+				setActualUpstreamEndpoint(c, EndpointChatCompletions)
+				openAIResult, err = h.openAIGatewayService.ForwardAsRawChatCompletions(c.Request.Context(), c, account, forwardBody, "")
+			} else {
+				if h.geminiCompatService == nil {
+					h.chatCompletionsErrorResponse(c, http.StatusBadGateway, "upstream_error", "Gemini compatibility service is not configured")
+					if accountReleaseFunc != nil {
+						accountReleaseFunc()
+					}
+					return
+				}
+				result, err = h.geminiCompatService.ForwardAsChatCompletions(c.Request.Context(), c, account, forwardBody)
 			}
-			result, err = h.geminiCompatService.ForwardAsChatCompletions(c.Request.Context(), c, account, forwardBody)
 		} else if shouldUseAntigravityCompat(account) {
 			if h.antigravityGatewayService == nil {
 				h.chatCompletionsErrorResponse(c, http.StatusBadGateway, "upstream_error", "Antigravity compatibility service is not configured")
@@ -378,6 +392,55 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 			})
 		}
 
+		// OpenAI 直通路径返回的 InputTokens 包含缓存读，必须交由 OpenAIGatewayService.RecordUsage
+		// 通过 billingUsageTokens() 拆分互斥桶，避免缓存 Token 被双重计费。
+		submitOpenAIUsage := func(res *service.OpenAIForwardResult) {
+			if res == nil {
+				return
+			}
+			stampOpenAIRequestedReasoningEffort(res, c)
+			service.ApplyRequestTiming(c, res)
+			userAgent := c.GetHeader("User-Agent")
+			clientIP := ip.GetClientIP(c)
+			requestPayloadHash := service.HashUsageRequestPayload(body)
+			inboundEndpoint := GetInboundEndpointWithRoute(c)
+			upstreamEndpoint := resolveOpenAIUpstreamEndpoint(c, account, res)
+			quotaPlatform := service.QuotaPlatform(c.Request.Context(), apiKey)
+			sessionID := service.ExtractClientSessionID(c)
+			cyberBlocked := service.GetOpsCyberPolicy(c) != nil
+			channelUsageFields := clientRequestedUsageFields(c, channelMapping, reqModel, res.UpstreamModel)
+			recordTask := func(ctx context.Context) {
+				if err := h.openAIGatewayService.RecordUsage(ctx, &service.OpenAIRecordUsageInput{
+					Result:             res,
+					APIKey:             apiKey,
+					User:               apiKey.User,
+					Account:            account,
+					Subscription:       subscription,
+					InboundEndpoint:    inboundEndpoint,
+					UpstreamEndpoint:   upstreamEndpoint,
+					UserAgent:          userAgent,
+					IPAddress:          clientIP,
+					RequestPayloadHash: requestPayloadHash,
+					APIKeyService:      h.apiKeyService,
+					QuotaPlatform:      quotaPlatform,
+					SessionID:          sessionID,
+					ChannelUsageFields: channelUsageFields,
+					PricingAt:          pricingAt,
+					CyberBlocked:       cyberBlocked,
+				}); err != nil {
+					reqLog.Error("gateway.cc.openai_record_usage_failed",
+						zap.Int64("account_id", account.ID),
+						zap.Error(err),
+					)
+				}
+			}
+			if res.ImageCount > 0 || res.VideoCount > 0 || res.SearchCount > 0 || res.WebSearchCalls > 0 || res.AudioUsage != nil {
+				h.submitMandatoryUsageRecordTask(c.Request.Context(), recordTask)
+				return
+			}
+			h.submitUsageRecordTask(c.Request.Context(), recordTask)
+		}
+
 		if err != nil {
 			var failoverErr *service.UpstreamFailoverError
 			if errors.As(err, &failoverErr) {
@@ -409,14 +472,20 @@ func (h *GatewayHandler) ChatCompletions(c *gin.Context) {
 				zap.Error(err),
 			)
 			h.gatewayService.ReleaseStickySessionAfterCommittedNoContent(context.WithoutCancel(c.Request.Context()), apiKey.GroupID, selectionSessionHash, account.ID, err)
-			if result != nil {
+			if openAIResult != nil {
+				submitOpenAIUsage(openAIResult)
+			} else if result != nil {
 				submitForwardUsage(result)
 			}
 			return
 		}
 
 		// 6. Record usage
-		submitForwardUsage(result)
+		if openAIResult != nil {
+			submitOpenAIUsage(openAIResult)
+		} else {
+			submitForwardUsage(result)
+		}
 		return
 	}
 }

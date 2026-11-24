@@ -242,11 +242,16 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 	}
 
 	// 透传白名单中的客户端 header。详见 openaiCCRawAllowedHeaders 的设计说明。
-	for key, values := range c.Request.Header {
-		lowerKey := strings.ToLower(key)
-		if openaiCCRawAllowedHeaders[lowerKey] {
-			for _, v := range values {
-				upstreamReq.Header.Add(key, v)
+	// 开启多协议直通的 Gemini 第三方上游需要客户端会话头保持粘性，但不放进全局白名单，
+	// 避免把会话头带给 DeepSeek/Kimi/GLM 等严格上游。
+	allowGeminiSessionHeaders := account != nil && account.IsGeminiMultiProtocolPassthroughEnabled()
+	if c != nil && c.Request != nil {
+		for key, values := range c.Request.Header {
+			lowerKey := strings.ToLower(strings.TrimSpace(key))
+			if openaiCCRawAllowedHeaders[lowerKey] || (allowGeminiSessionHeaders && (lowerKey == "x-session-id" || lowerKey == "session_id")) {
+				for _, v := range values {
+					upstreamReq.Header.Add(key, v)
+				}
 			}
 		}
 	}

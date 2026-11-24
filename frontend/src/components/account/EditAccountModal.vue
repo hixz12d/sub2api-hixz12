@@ -661,6 +661,27 @@
           </div>
         </div>
 
+        <!-- Gemini 多协议直通开关：仅自定义地址的 Gemini API Key 账号 -->
+        <div
+          v-if="account.platform === 'gemini' && account.type === 'apikey' && !isOfficialGeminiBaseUrl(editBaseUrl)"
+          class="border-t border-gray-200 pt-4 dark:border-dark-600"
+          data-testid="gemini-multi-protocol-passthrough-section"
+        >
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <label class="input-label mb-0">{{ t('admin.accounts.gemini.multiProtocolPassthrough') }}</label>
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.accounts.gemini.multiProtocolPassthroughDesc') }}
+              </p>
+            </div>
+            <Toggle
+              v-model="geminiMultiProtocolPassthroughEnabled"
+              data-testid="gemini-multi-protocol-passthrough-toggle"
+              :aria-label="t('admin.accounts.gemini.multiProtocolPassthrough')"
+            />
+          </div>
+        </div>
+
         <!-- Custom Error Codes Section -->
         <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
           <div class="mb-3 flex items-center justify-between">
@@ -3987,6 +4008,7 @@ const GROK_CLIENT_TOOL_CACHE_EXTRA_KEY = 'grok_client_tool_cache_enabled'
 const poolModeEnabled = ref(false)
 const explicitCacheUpstreamEnabled = ref(false)
 const explicitCacheUpstreamMaxTTL = ref<string | number>('')
+const geminiMultiProtocolPassthroughEnabled = ref(false)
 const poolModeRetryCount = ref(DEFAULT_POOL_MODE_RETRY_COUNT)
 const poolModeRetryStatusCodesInput = ref('')
 
@@ -4900,6 +4922,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   anthropicPassthroughEnabled.value = false
   anthropicAPIKeyAuthScheme.value = 'x_api_key'
   webSearchEmulationMode.value = 'default'
+  geminiMultiProtocolPassthroughEnabled.value = false
   if (newAccount.platform === 'openai' && (newAccount.type === 'oauth' || newAccount.type === 'setup-token' || newAccount.type === 'apikey')) {
     openaiPassthroughEnabled.value = extra?.openai_passthrough === true || extra?.openai_oauth_passthrough === true
     openaiPassthroughModelFilterEnabled.value = extra?.openai_passthrough_model_filter === true
@@ -4968,6 +4991,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     anthropicAPIKeyAuthScheme.value = extra?.anthropic_apikey_auth_scheme === 'authorization_bearer'
       ? 'authorization_bearer'
       : 'x_api_key'
+  }
+  if (newAccount.platform === 'gemini' && newAccount.type === 'apikey') {
+    geminiMultiProtocolPassthroughEnabled.value = extra?.gemini_multi_protocol_passthrough === true
   }
   if ((newAccount.platform === 'anthropic' || newAccount.platform === 'openai') && newAccount.type === 'apikey') {
     // 三态：string "default"/"enabled"/"disabled"，向后兼容旧 bool
@@ -6488,6 +6514,18 @@ const handleSubmit = async () => {
         delete newExtra.web_search_emulation
       } else {
         newExtra.web_search_emulation = webSearchEmulationMode.value
+      }
+      updatePayload.extra = newExtra
+    }
+
+    // For Gemini API Key accounts, handle multi-protocol passthrough mode in extra
+    if (props.account.platform === 'gemini' && props.account.type === 'apikey') {
+      const currentExtra = (updatePayload.extra as Record<string, unknown>) || (props.account.extra as Record<string, unknown>) || {}
+      const newExtra: Record<string, unknown> = { ...currentExtra }
+      if (!isOfficialGeminiBaseUrl(editBaseUrl.value) && geminiMultiProtocolPassthroughEnabled.value) {
+        newExtra.gemini_multi_protocol_passthrough = true
+      } else {
+        delete newExtra.gemini_multi_protocol_passthrough
       }
       updatePayload.extra = newExtra
     }

@@ -1734,6 +1734,9 @@ export default {
         },
         modelPassthrough: 'Gemini 直接转发模型',
         modelPassthroughDesc: '所有模型请求将直接转发至 Gemini API，不进行模型限制或映射。',
+        multiProtocolPassthrough: '多协议直通（按请求格式原样转发）',
+        multiProtocolPassthroughDesc:
+          '仅适用于同时支持 Gemini、Anthropic、OpenAI 协议的自定义上游（如自建网关）。开启后，/v1beta、/v1/messages、/v1/chat/completions、/v1/responses 将按原格式直通转发，不经协议转码；关闭时仍按传统模式转码到 /v1beta。',
         baseUrlHint: '留空使用官方 Gemini API',
         apiKeyHint: 'AI Studio 新建的 Key 以 AQ. 开头（旧版以 AIza 开头）；第三方上游填写其提供的 Key',
         tier: {
