@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "gray-on-color",
+        "value": "*",
+        "files": [
+          "frontend/src/views/user/KeysView.vue"
+        ],
+        "createdAt": "2026-11-25T14:36:01.432Z",
+        "reason": "Claude: gray text only sits on transparent bg; hover:bg-* tint always pairs with hover:text-* color, existing row-action pattern"
+      }
+    ]
+  }
+}

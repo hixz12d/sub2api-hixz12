@@ -427,6 +427,16 @@
                 <Icon name="upload" size="sm" />
                 <span class="text-xs">{{ t('keys.importToCcSwitch') }}</span>
               </button>
+              <!-- Import to Magpie Button -->
+              <button
+                type="button"
+                :disabled="row.status !== 'active'"
+                @click="importToMagpie(row)"
+                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40 dark:hover:bg-blue-900/20 dark:hover:text-blue-400"
+              >
+                <Icon name="externalLink" size="sm" />
+                <span class="text-xs">{{ t('keys.importToMagpie') }}</span>
+              </button>
               <!-- Toggle Status Button -->
               <button
                 @click="toggleKeyStatus(row)"
@@ -1261,6 +1271,7 @@ import {
   buildCcSwitchImportDeeplink,
   type CcSwitchClientType
 } from '@/utils/ccswitchImport'
+import { buildMagpieImportLink } from '@/utils/magpieImport'
 
 // Helper to format date for datetime-local input
 const formatDateTimeLocal = (isoDate: string): string => {
@@ -2087,6 +2098,17 @@ const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
   } catch (error) {
     appStore.showError(t('keys.ccSwitchNotInstalled'))
   }
+}
+
+const importToMagpie = (row: ApiKey) => {
+  if (row.status !== 'active') return
+  const link = buildMagpieImportLink({
+    baseUrl: publicSettings.value?.api_base_url || window.location.origin,
+    platform: row.group?.platform,
+    providerName: publicSettings.value?.site_name || 'sub2api',
+    apiKey: row.key
+  })
+  window.open(link, '_blank', 'noopener,noreferrer')
 }
 
 const handleCcsClientSelect = (clientType: CcSwitchClientType) => {
