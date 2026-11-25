@@ -192,7 +192,7 @@ func (s *AccountTestService) ProbeOpenAIAPIKeyResponsesSupport(ctx context.Conte
 	applyOpenAICodexProbeHeaders(req.Header, account)
 
 	// 账号级请求头覆写必须先于统一 API Key 身份收口。
-	account.ApplyHeaderOverrides(req.Header)
+	account.ApplyHeaderOverrides(req.Context(), req.Header)
 	identity := resolveOpenAIOutboundIdentityWithPolicy(ctx, account, s.accountRepo, s.settingService, s.cfg != nil && s.cfg.Gateway.ForceCodexCLI, req.Header.Get("User-Agent"))
 	applyResolvedOpenAIOutboundIdentityWithPolicy(req.Header, identity, openAIOutboundAPIKeyPolicy)
 

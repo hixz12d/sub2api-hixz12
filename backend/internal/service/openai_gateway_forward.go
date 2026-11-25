@@ -1722,7 +1722,7 @@ func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.
 	applyOpenCodeUpstreamUserAgent(account, targetURL, req.Header)
 	// Apply account overrides before the final identity stage. Protected OpenAI
 	// identity/session headers are excluded by ApplyHeaderOverrides.
-	account.ApplyHeaderOverrides(req.Header)
+	account.ApplyHeaderOverrides(req.Context(), req.Header)
 	applyOpenCodeSessionHeader(c, account, targetURL, req.Header, body, openCodeSessionHintBody(promptCacheKey))
 	applyOpenAIPoolSessionFallbackHeader(c, account, req.Header, promptCacheKey)
 	if account.Type == AccountTypeOAuth || usesCodexRelayKernel(account) {

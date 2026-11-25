@@ -267,7 +267,7 @@ func (s *OpenAIGatewayService) sendCCUpstreamRequest(
 	}
 	// Normalize OpenCode/Command Code UA before account overrides and final identity.
 	applyOpenCodeUpstreamUserAgent(account, targetURL, upstreamReq.Header)
-	account.ApplyHeaderOverrides(upstreamReq.Header)
+	account.ApplyHeaderOverrides(upstreamReq.Context(), upstreamReq.Header)
 	applyOpenCodeSessionHeader(c, account, targetURL, upstreamReq.Header, body)
 	if account.Platform == PlatformOpenAI && !isOfficialOpenCodeHost(targetURL) {
 		policy := openAIOutboundAPIKeyPolicy

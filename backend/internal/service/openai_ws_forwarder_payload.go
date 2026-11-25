@@ -162,7 +162,7 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 
 	// Apply account overrides before the shared final identity stage. The
 	// identity resolver intentionally ignores inbound client User-Agent values.
-	account.ApplyHeaderOverrides(headers)
+	account.ApplyHeaderOverrides(withHeaderOverrideConnectionScope(ctx), headers)
 	if account != nil && (account.Type == AccountTypeOAuth || usesCodexRelayKernel(account)) {
 		s.finalizeCodexOAuthHeaders(ctx, c, account, headers, codexFingerprintIDsFromContext(c), bodyIdentitySessionID)
 	} else if account != nil && account.IsOpenAIOAuthLike() {

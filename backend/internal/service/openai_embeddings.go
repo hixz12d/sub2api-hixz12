@@ -84,7 +84,7 @@ func (s *OpenAIGatewayService) ForwardEmbeddings(
 		}
 	}
 	// 账号级请求头覆写必须先于统一身份收口。
-	account.ApplyHeaderOverrides(upstreamReq.Header)
+	account.ApplyHeaderOverrides(upstreamReq.Context(), upstreamReq.Header)
 	s.applyOpenAIOutboundIdentityPolicy(ctx, account, upstreamReq.Header, openAIOutboundAPIKeyPolicy)
 
 	proxyURL, err := s.resolveOpenAICompatibleProxyURL(ctx, account)
