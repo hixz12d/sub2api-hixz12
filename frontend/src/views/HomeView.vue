@@ -76,12 +76,22 @@
         />
         <h1 class="[overflow-wrap:anywhere] text-3xl font-bold md:text-4xl">{{ siteName }}</h1>
         <p class="mt-4 whitespace-pre-wrap [overflow-wrap:anywhere] text-base text-gray-600 dark:text-dark-300">{{ siteSubtitle }}</p>
-        <router-link
-          :to="isAuthenticated ? dashboardPath : '/login'"
-          class="mt-8 inline-flex min-h-10 items-center justify-center rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-primary-700"
-        >
-          {{ isAuthenticated ? t('home.goToDashboard') : t('home.login') }}
-        </router-link>
+        <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
+          <router-link
+            :to="isAuthenticated ? dashboardPath : '/login'"
+            class="inline-flex min-h-10 items-center justify-center rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-primary-700"
+          >
+            {{ isAuthenticated ? t('home.goToDashboard') : t('home.login') }}
+          </router-link>
+          <router-link
+            v-if="showModelPlazaEntry"
+            to="/model-plaza"
+            class="btn btn-secondary min-h-10 px-5 py-2.5 text-sm"
+          >
+            <Icon name="grid" size="sm" aria-hidden="true" />
+            <span>{{ t('modelPlaza.homeCta') }}</span>
+          </router-link>
+        </div>
       </div>
     </main>
 
@@ -216,13 +226,21 @@
             </p>
 
             <!-- CTA Button -->
-            <div>
+            <div class="flex flex-wrap items-center justify-center gap-3 lg:justify-start">
               <router-link
                 :to="isAuthenticated ? dashboardPath : '/login'"
                 class="btn btn-primary px-8 py-3 text-base shadow-lg shadow-primary-500/30"
               >
                 {{ isAuthenticated ? t('home.goToDashboard') : t('home.getStarted') }}
                 <Icon name="arrowRight" size="md" class="ml-2" :stroke-width="2" />
+              </router-link>
+              <router-link
+                v-if="showModelPlazaEntry"
+                to="/model-plaza"
+                class="btn btn-secondary px-6 py-3 text-base"
+              >
+                <Icon name="grid" size="md" aria-hidden="true" />
+                <span>{{ t('modelPlaza.homeCta') }}</span>
               </router-link>
             </div>
           </div>

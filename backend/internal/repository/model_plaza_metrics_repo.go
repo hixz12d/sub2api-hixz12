@@ -1,0 +1,584 @@
+package repository
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/service"
+)
+
+type modelPlazaMetricsRepository struct {
+	db *sql.DB
+}
+
+// NewModelPlazaMetricsRepository 创建模型广场专用只读质量聚合仓库。
+// 仅查询 Channel Monitor V2 预聚合 rollup / histogram / watermark 表，严禁扫描 usage_logs。
+func NewModelPlazaMetricsRepository(db *sql.DB) service.ModelPlazaMetricsRepository {
+	return &modelPlazaMetricsRepository{db: db}
+}
+
+func (r *modelPlazaMetricsRepository) LoadPlazaListSnapshot(ctx context.Context, now time.Time) (*service.PlazaListMetricsRawSnapshot, error) {
+	out := &service.PlazaListMetricsRawSnapshot{
+		AggregationReady: false,
+		Group30d:         make(map[int64]service.PlazaRawBucketCounts),
+		Group7d:          make(map[int64]service.PlazaRawBucketCounts),
+		Models:           make(map[service.PlazaModelKey]*service.PlazaListModelRaw),
+	}
+	if r == nil || r.db == nil {
+		return out, nil
+	}
+
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("begin plaza list metrics tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	asOf, updatedAt, ready, err := loadPlazaWatermarkTx(ctx, tx, now)
+	if err != nil {
+		return nil, err
+	}
+	if !ready {
+		return out, tx.Commit()
+	}
+
+	hourEnd := alignPlazaHourEnd(asOf)
+	hour24Start := hourEnd.Add(-24 * time.Hour)
+	start7d := hourEnd.Add(-7 * 24 * time.Hour)
+	todayStart := asOf.Truncate(24 * time.Hour)
+	start30d := todayStart.Add(-29 * 24 * time.Hour)
+
+	out.AggregationReady = true
+	out.UpdatedAt = &updatedAt
+	out.Window24hStart = hour24Start
+	out.Window24hEnd = hourEnd
+
+	// 1. 全站 30d 按分组汇总（历史完整天读 86400s 桶，当天未封桶部分读 3600s 桶，互斥不重叠）
+	rows, err := tx.QueryContext(ctx, `
+		SELECT group_id, SUM(success_requests), SUM(error_requests)
+		FROM channel_monitor_v2_metrics_rollup
+		WHERE group_id > 0
+		  AND (
+		    (bucket_seconds = 86400 AND bucket_start >= $1 AND bucket_start < $2)
+		    OR (bucket_seconds = 3600 AND bucket_start >= $2 AND bucket_start < $3)
+		  )
+		GROUP BY group_id`, start30d, todayStart, hourEnd)
+	if err != nil {
+		return nil, fmt.Errorf("query plaza 30d rollup: %w", err)
+	}
+	for rows.Next() {
+		var gid, succ, errs int64
+		if scanErr := rows.Scan(&gid, &succ, &errs); scanErr != nil {
+			_ = rows.Close()
+			return nil, scanErr
+		}
+		out.Group30d[gid] = service.PlazaRawBucketCounts{
+			SuccessRequests: succ,
+			ErrorRequests:   errs,
+		}
+	}
+	if err = rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	_ = rows.Close()
+
+	// 2. 全站 7d 按分组汇总（读 3600s 桶）
+	rows, err = tx.QueryContext(ctx, `
+		SELECT group_id, SUM(success_requests), SUM(error_requests)
+		FROM channel_monitor_v2_metrics_rollup
+		WHERE group_id > 0
+		  AND bucket_seconds = 3600
+		  AND bucket_start >= $1 AND bucket_start < $2
+		GROUP BY group_id`, start7d, hourEnd)
+	if err != nil {
+		return nil, fmt.Errorf("query plaza 7d rollup: %w", err)
+	}
+	for rows.Next() {
+		var gid, succ, errs int64
+		if scanErr := rows.Scan(&gid, &succ, &errs); scanErr != nil {
+			_ = rows.Close()
+			return nil, scanErr
+		}
+		out.Group7d[gid] = service.PlazaRawBucketCounts{
+			SuccessRequests: succ,
+			ErrorRequests:   errs,
+		}
+	}
+	if err = rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	_ = rows.Close()
+
+	// 3. 24h 按 (bucket_start, platform, group_id, model) 汇总（同时得出 24h 总计与 12 格 2h 心跳）
+	rows, err = tx.QueryContext(ctx, `
+		SELECT bucket_start, platform, group_id, model,
+		       SUM(success_requests), SUM(error_requests),
+		       SUM(input_tokens), SUM(output_tokens),
+		       SUM(cache_creation_tokens), SUM(cache_read_tokens),
+		       SUM(model_observed_requests), SUM(model_mismatch_requests)
+		FROM channel_monitor_v2_metrics_rollup
+		WHERE group_id > 0
+		  AND bucket_seconds = 3600
+		  AND bucket_start >= $1 AND bucket_start < $2
+		GROUP BY bucket_start, platform, group_id, model`, hour24Start, hourEnd)
+	if err != nil {
+		return nil, fmt.Errorf("query plaza 24h metrics rollup: %w", err)
+	}
+	for rows.Next() {
+		var bucketStart time.Time
+		var platform, model string
+		var gid int64
+		var c service.PlazaRawBucketCounts
+		if scanErr := rows.Scan(
+			&bucketStart, &platform, &gid, &model,
+			&c.SuccessRequests, &c.ErrorRequests,
+			&c.InputTokens, &c.OutputTokens,
+			&c.CacheCreationTokens, &c.CacheReadTokens,
+			&c.ModelObservedRequests, &c.ModelMismatchRequests,
+		); scanErr != nil {
+			_ = rows.Close()
+			return nil, scanErr
+		}
+		key := service.NewPlazaModelKey(platform, gid, model)
+		if key.Model == "" {
+			continue
+		}
+		entry := getOrCreatePlazaListModelRaw(out.Models, key)
+		entry.Total24h.Add(c)
+		slotIdx := int(bucketStart.UTC().Sub(hour24Start) / (2 * time.Hour))
+		if slotIdx >= 0 && slotIdx < 12 {
+			entry.Slots12[slotIdx].Add(c)
+		}
+	}
+	if err = rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	_ = rows.Close()
+
+	// 4. 24h 全平台 TTFT 直方图
+	rows, err = tx.QueryContext(ctx, `
+		SELECT platform, group_id, model, upper_bound_ms, SUM(sample_count)
+		FROM channel_monitor_v2_latency_histograms_rollup
+		WHERE group_id > 0
+		  AND bucket_seconds = 3600
+		  AND bucket_start >= $1 AND bucket_start < $2
+		  AND user_id = 0
+		  AND metric = 'ttft'
+		GROUP BY platform, group_id, model, upper_bound_ms`, hour24Start, hourEnd)
+	if err != nil {
+		return nil, fmt.Errorf("query plaza 24h ttft histogram rollup: %w", err)
+	}
+	for rows.Next() {
+		var platform, model string
+		var gid, upperBound, count int64
+		if scanErr := rows.Scan(&platform, &gid, &model, &upperBound, &count); scanErr != nil {
+			_ = rows.Close()
+			return nil, scanErr
+		}
+		if count <= 0 {
+			continue
+		}
+		key := service.NewPlazaModelKey(platform, gid, model)
+		if key.Model == "" {
+			continue
+		}
+		entry := getOrCreatePlazaListModelRaw(out.Models, key)
+		entry.TTFTHist[upperBound] += count
+	}
+	if err = rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	_ = rows.Close()
+
+	// 5. 24h OpenAI 可见输出速度 TPS 直方图
+	tpsBuckets := len(service.MonitorTPSBoundsV1()) + 1
+	rows, err = tx.QueryContext(ctx, `
+		SELECT group_id, model, bucket_index, SUM(sample_count)
+		FROM channel_monitor_v2_tps_histograms_rollup
+		WHERE group_id > 0
+		  AND bucket_seconds = 3600
+		  AND bucket_start >= $1 AND bucket_start < $2
+		  AND platform = 'openai'
+		  AND metric_version = 1
+		GROUP BY group_id, model, bucket_index`, hour24Start, hourEnd)
+	if err != nil {
+		return nil, fmt.Errorf("query plaza 24h tps histogram rollup: %w", err)
+	}
+	for rows.Next() {
+		var model string
+		var gid, count int64
+		var bucketIdx int
+		if scanErr := rows.Scan(&gid, &model, &bucketIdx, &count); scanErr != nil {
+			_ = rows.Close()
+			return nil, scanErr
+		}
+		if count <= 0 || bucketIdx < 0 || bucketIdx >= tpsBuckets {
+			continue
+		}
+		key := service.NewPlazaModelKey(service.PlatformOpenAI, gid, model)
+		if key.Model == "" {
+			continue
+		}
+		entry := getOrCreatePlazaListModelRaw(out.Models, key)
+		if entry.TPSCounts == nil {
+			entry.TPSCounts = make([]int64, tpsBuckets)
+		}
+		entry.TPSCounts[bucketIdx] += count
+	}
+	if err = rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	_ = rows.Close()
+
+	return out, tx.Commit()
+}
+
+func (r *modelPlazaMetricsRepository) LoadPlazaModelDetail(
+	ctx context.Context,
+	platform string,
+	groupID int64,
+	model string,
+	now time.Time,
+) (*service.PlazaModelDetailRawSnapshot, error) {
+	out := &service.PlazaModelDetailRawSnapshot{
+		AggregationReady: false,
+		H24:              service.PlazaDetailWindowRaw{TTFTHist: make(map[int64]int64)},
+		D7:               service.PlazaDetailWindowRaw{TTFTHist: make(map[int64]int64)},
+		D30:              service.PlazaDetailWindowRaw{TTFTHist: make(map[int64]int64)},
+	}
+	if r == nil || r.db == nil || groupID <= 0 || strings.TrimSpace(model) == "" {
+		return out, nil
+	}
+
+	normPlatform := strings.ToLower(strings.TrimSpace(platform))
+	normModel := strings.TrimSpace(model)
+
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	if err != nil {
+		return nil, fmt.Errorf("begin plaza model detail tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	asOf, updatedAt, ready, err := loadPlazaWatermarkTx(ctx, tx, now)
+	if err != nil {
+		return nil, err
+	}
+	if !ready {
+		return out, tx.Commit()
+	}
+
+	hourEnd := alignPlazaHourEnd(asOf)
+	hour24Start := hourEnd.Add(-24 * time.Hour)
+	start7d := hourEnd.Add(-7 * 24 * time.Hour)
+	todayStart := asOf.Truncate(24 * time.Hour)
+	start30d := todayStart.Add(-29 * 24 * time.Hour)
+
+	asOf5m := asOf.Truncate(5 * time.Minute)
+	if asOf.After(asOf5m) {
+		asOf5m = asOf5m.Add(5 * time.Minute)
+	}
+	hb72Start := asOf5m.Add(-24 * time.Hour)
+
+	out.AggregationReady = true
+	out.UpdatedAt = &updatedAt
+	out.HeartbeatStart = hb72Start
+	out.Trend24h = make([]service.PlazaDetailHourRaw, 24)
+	for i := 0; i < 24; i++ {
+		out.Trend24h[i] = service.PlazaDetailHourRaw{
+			BucketStart: hour24Start.Add(time.Duration(i) * time.Hour),
+			TTFTHist:    make(map[int64]int64),
+		}
+	}
+
+	// 1. 30d 汇总指标（历史完整天 86400s + 当天 3600s）
+	err = tx.QueryRowContext(ctx, `
+		SELECT COALESCE(SUM(success_requests), 0), COALESCE(SUM(error_requests), 0),
+		       COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0),
+		       COALESCE(SUM(cache_creation_tokens), 0), COALESCE(SUM(cache_read_tokens), 0),
+		       COALESCE(SUM(model_observed_requests), 0), COALESCE(SUM(model_mismatch_requests), 0)
+		FROM channel_monitor_v2_metrics_rollup
+		WHERE platform = $1 AND group_id = $2 AND model = $3
+		  AND (
+		    (bucket_seconds = 86400 AND bucket_start >= $4 AND bucket_start < $5)
+		    OR (bucket_seconds = 3600 AND bucket_start >= $5 AND bucket_start < $6)
+		  )`, normPlatform, groupID, normModel, start30d, todayStart, hourEnd).Scan(
+		&out.D30.Counts.SuccessRequests, &out.D30.Counts.ErrorRequests,
+		&out.D30.Counts.InputTokens, &out.D30.Counts.OutputTokens,
+		&out.D30.Counts.CacheCreationTokens, &out.D30.Counts.CacheReadTokens,
+		&out.D30.Counts.ModelObservedRequests, &out.D30.Counts.ModelMismatchRequests,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query plaza detail 30d metrics: %w", err)
+	}
+
+	// 2. 7d 小时级指标（同时汇总 7d、24h 与 24h 小时级趋势）
+	rows, err := tx.QueryContext(ctx, `
+		SELECT bucket_start,
+		       SUM(success_requests), SUM(error_requests),
+		       SUM(input_tokens), SUM(output_tokens),
+		       SUM(cache_creation_tokens), SUM(cache_read_tokens),
+		       SUM(model_observed_requests), SUM(model_mismatch_requests)
+		FROM channel_monitor_v2_metrics_rollup
+		WHERE platform = $1 AND group_id = $2 AND model = $3
+		  AND bucket_seconds = 3600
+		  AND bucket_start >= $4 AND bucket_start < $5
+		GROUP BY bucket_start`, normPlatform, groupID, normModel, start7d, hourEnd)
+	if err != nil {
+		return nil, fmt.Errorf("query plaza detail 7d metrics: %w", err)
+	}
+	for rows.Next() {
+		var bucketStart time.Time
+		var c service.PlazaRawBucketCounts
+		if scanErr := rows.Scan(
+			&bucketStart,
+			&c.SuccessRequests, &c.ErrorRequests,
+			&c.InputTokens, &c.OutputTokens,
+			&c.CacheCreationTokens, &c.CacheReadTokens,
+			&c.ModelObservedRequests, &c.ModelMismatchRequests,
+		); scanErr != nil {
+			_ = rows.Close()
+			return nil, scanErr
+		}
+		out.D7.Counts.Add(c)
+		at := bucketStart.UTC()
+		if !at.Before(hour24Start) && at.Before(hourEnd) {
+			out.H24.Counts.Add(c)
+			idx := int(at.Sub(hour24Start) / time.Hour)
+			if idx >= 0 && idx < 24 {
+				out.Trend24h[idx].Counts.Add(c)
+			}
+		}
+	}
+	if err = rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	_ = rows.Close()
+
+	// 3. 近 24h 的 72 格心跳（每格 20 分钟，源自 300s 桶合并）
+	rows, err = tx.QueryContext(ctx, `
+		SELECT bucket_start, SUM(success_requests), SUM(error_requests)
+		FROM channel_monitor_v2_metrics_rollup
+		WHERE platform = $1 AND group_id = $2 AND model = $3
+		  AND bucket_seconds = 300
+		  AND bucket_start >= $4 AND bucket_start < $5
+		GROUP BY bucket_start`, normPlatform, groupID, normModel, hb72Start, asOf5m)
+	if err != nil {
+		return nil, fmt.Errorf("query plaza detail 72-slot heartbeat: %w", err)
+	}
+	for rows.Next() {
+		var bucketStart time.Time
+		var succ, errs int64
+		if scanErr := rows.Scan(&bucketStart, &succ, &errs); scanErr != nil {
+			_ = rows.Close()
+			return nil, scanErr
+		}
+		idx := int(bucketStart.UTC().Sub(hb72Start) / (20 * time.Minute))
+		if idx >= 0 && idx < 72 {
+			out.Slots72[idx].SuccessRequests += succ
+			out.Slots72[idx].ErrorRequests += errs
+		}
+	}
+	if err = rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	_ = rows.Close()
+
+	// 4. 7d/24h 小时级 TTFT 直方图
+	rows, err = tx.QueryContext(ctx, `
+		SELECT bucket_start, upper_bound_ms, SUM(sample_count)
+		FROM channel_monitor_v2_latency_histograms_rollup
+		WHERE platform = $1 AND group_id = $2 AND model = $3
+		  AND bucket_seconds = 3600
+		  AND bucket_start >= $4 AND bucket_start < $5
+		  AND user_id = 0 AND metric = 'ttft'
+		GROUP BY bucket_start, upper_bound_ms`, normPlatform, groupID, normModel, start7d, hourEnd)
+	if err != nil {
+		return nil, fmt.Errorf("query plaza detail 7d ttft histogram: %w", err)
+	}
+	for rows.Next() {
+		var bucketStart time.Time
+		var upperBound, count int64
+		if scanErr := rows.Scan(&bucketStart, &upperBound, &count); scanErr != nil {
+			_ = rows.Close()
+			return nil, scanErr
+		}
+		if count <= 0 {
+			continue
+		}
+		out.D7.TTFTHist[upperBound] += count
+		at := bucketStart.UTC()
+		if !at.Before(hour24Start) && at.Before(hourEnd) {
+			out.H24.TTFTHist[upperBound] += count
+			idx := int(at.Sub(hour24Start) / time.Hour)
+			if idx >= 0 && idx < 24 {
+				out.Trend24h[idx].TTFTHist[upperBound] += count
+			}
+		}
+	}
+	if err = rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	_ = rows.Close()
+
+	// 5. 30d TTFT 直方图
+	rows, err = tx.QueryContext(ctx, `
+		SELECT upper_bound_ms, SUM(sample_count)
+		FROM channel_monitor_v2_latency_histograms_rollup
+		WHERE platform = $1 AND group_id = $2 AND model = $3
+		  AND user_id = 0 AND metric = 'ttft'
+		  AND (
+		    (bucket_seconds = 86400 AND bucket_start >= $4 AND bucket_start < $5)
+		    OR (bucket_seconds = 3600 AND bucket_start >= $5 AND bucket_start < $6)
+		  )
+		GROUP BY upper_bound_ms`, normPlatform, groupID, normModel, start30d, todayStart, hourEnd)
+	if err != nil {
+		return nil, fmt.Errorf("query plaza detail 30d ttft histogram: %w", err)
+	}
+	for rows.Next() {
+		var upperBound, count int64
+		if scanErr := rows.Scan(&upperBound, &count); scanErr != nil {
+			_ = rows.Close()
+			return nil, scanErr
+		}
+		if count > 0 {
+			out.D30.TTFTHist[upperBound] += count
+		}
+	}
+	if err = rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	_ = rows.Close()
+
+	// 6. 仅 OpenAI 平台读取可见输出速度 TPS 直方图（24h / 7d / 30d）
+	if normPlatform == service.PlatformOpenAI {
+		tpsBuckets := len(service.MonitorTPSBoundsV1()) + 1
+		out.H24.TPSCounts = make([]int64, tpsBuckets)
+		out.D7.TPSCounts = make([]int64, tpsBuckets)
+		out.D30.TPSCounts = make([]int64, tpsBuckets)
+
+		rows, err = tx.QueryContext(ctx, `
+			SELECT bucket_start, bucket_index, SUM(sample_count)
+			FROM channel_monitor_v2_tps_histograms_rollup
+			WHERE platform = 'openai' AND group_id = $1 AND model = $2
+			  AND bucket_seconds = 3600
+			  AND bucket_start >= $3 AND bucket_start < $4
+			  AND metric_version = 1
+			GROUP BY bucket_start, bucket_index`, groupID, normModel, start7d, hourEnd)
+		if err != nil {
+			return nil, fmt.Errorf("query plaza detail 7d tps histogram: %w", err)
+		}
+		for rows.Next() {
+			var bucketStart time.Time
+			var bucketIdx int
+			var count int64
+			if scanErr := rows.Scan(&bucketStart, &bucketIdx, &count); scanErr != nil {
+				_ = rows.Close()
+				return nil, scanErr
+			}
+			if count <= 0 || bucketIdx < 0 || bucketIdx >= tpsBuckets {
+				continue
+			}
+			out.D7.TPSCounts[bucketIdx] += count
+			at := bucketStart.UTC()
+			if !at.Before(hour24Start) && at.Before(hourEnd) {
+				out.H24.TPSCounts[bucketIdx] += count
+			}
+		}
+		if err = rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		_ = rows.Close()
+
+		rows, err = tx.QueryContext(ctx, `
+			SELECT bucket_index, SUM(sample_count)
+			FROM channel_monitor_v2_tps_histograms_rollup
+			WHERE platform = 'openai' AND group_id = $1 AND model = $2
+			  AND metric_version = 1
+			  AND (
+			    (bucket_seconds = 86400 AND bucket_start >= $3 AND bucket_start < $4)
+			    OR (bucket_seconds = 3600 AND bucket_start >= $4 AND bucket_start < $5)
+			  )
+			GROUP BY bucket_index`, groupID, normModel, start30d, todayStart, hourEnd)
+		if err != nil {
+			return nil, fmt.Errorf("query plaza detail 30d tps histogram: %w", err)
+		}
+		for rows.Next() {
+			var bucketIdx int
+			var count int64
+			if scanErr := rows.Scan(&bucketIdx, &count); scanErr != nil {
+				_ = rows.Close()
+				return nil, scanErr
+			}
+			if count > 0 && bucketIdx >= 0 && bucketIdx < tpsBuckets {
+				out.D30.TPSCounts[bucketIdx] += count
+			}
+		}
+		if err = rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		_ = rows.Close()
+	}
+
+	return out, tx.Commit()
+}
+
+func loadPlazaWatermarkTx(ctx context.Context, tx *sql.Tx, now time.Time) (asOf, updatedAt time.Time, ready bool, err error) {
+	var dataThrough, lastSuccessful sql.NullTime
+	err = tx.QueryRowContext(ctx, `
+		SELECT data_through, last_successful_at
+		FROM channel_monitor_v2_watermarks
+		WHERE id = 1`).Scan(&dataThrough, &lastSuccessful)
+	if err == sql.ErrNoRows {
+		return time.Time{}, time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, time.Time{}, false, fmt.Errorf("query plaza watermark: %w", err)
+	}
+	if !dataThrough.Valid {
+		return time.Time{}, time.Time{}, false, nil
+	}
+	asOf = dataThrough.Time.UTC()
+	nowUTC := now.UTC()
+	if !nowUTC.IsZero() && asOf.After(nowUTC) {
+		asOf = nowUTC
+	}
+	if lastSuccessful.Valid {
+		updatedAt = lastSuccessful.Time.UTC()
+	} else {
+		updatedAt = asOf
+	}
+	return asOf, updatedAt, true, nil
+}
+
+func alignPlazaHourEnd(asOf time.Time) time.Time {
+	hourEnd := asOf.UTC().Truncate(time.Hour)
+	if asOf.UTC().After(hourEnd) {
+		hourEnd = hourEnd.Add(time.Hour)
+	}
+	return hourEnd
+}
+
+func getOrCreatePlazaListModelRaw(m map[service.PlazaModelKey]*service.PlazaListModelRaw, key service.PlazaModelKey) *service.PlazaListModelRaw {
+	entry, ok := m[key]
+	if !ok {
+		entry = &service.PlazaListModelRaw{
+			TTFTHist: make(map[int64]int64),
+		}
+		m[key] = entry
+	}
+	return entry
+}

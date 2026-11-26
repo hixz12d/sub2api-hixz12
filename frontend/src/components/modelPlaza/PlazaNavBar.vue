@@ -1,53 +1,87 @@
 <template>
-  <header
-    class="glass sticky top-0 z-30 border-b border-gray-200/50 dark:border-dark-700/50"
-  >
-    <div class="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3.5 sm:px-6">
-      <!-- 左:站点 logo + 名称 -->
-      <div class="flex min-w-0 items-center gap-3">
+  <header class="sticky top-0 z-30 border-b border-rule bg-surface text-ink">
+    <div
+      class="mx-auto flex h-16 max-w-[1320px] items-center justify-between gap-3 px-4 md:px-6 lg:h-[76px] lg:px-8"
+    >
+      <!-- Left: Site Logo + Name -->
+      <RouterLink to="/home" class="flex min-w-0 items-center gap-3">
         <template v-if="settings">
           <span
-            class="flex h-9 w-9 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white shadow-sm ring-1 ring-gray-200 dark:bg-dark-800 dark:ring-dark-700"
+            class="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-none bg-surface-tile"
           >
             <img :src="siteLogo || '/logo.svg'" alt="Logo" class="h-full w-full object-contain" />
           </span>
-          <span class="truncate text-base font-semibold text-gray-950 dark:text-white">
+          <span class="truncate text-base font-semibold text-ink">
             {{ siteName }}
           </span>
         </template>
         <template v-else>
-          <span class="h-9 w-9 flex-shrink-0 animate-pulse rounded-xl bg-gray-200 dark:bg-dark-700" aria-hidden="true"></span>
-          <span class="h-5 w-28 animate-pulse rounded bg-gray-200 dark:bg-dark-700" aria-hidden="true"></span>
+          <span
+            class="h-9 w-9 shrink-0 animate-pulse rounded-none bg-surface-tile"
+            aria-hidden="true"
+          />
+          <span
+            class="h-5 w-28 animate-pulse rounded-none bg-surface-tile"
+            aria-hidden="true"
+          />
         </template>
-      </div>
+      </RouterLink>
 
-      <!-- 右:登录 / 回到后台 -->
-      <RouterLink
-        v-if="isAuthenticated"
-        :to="backTarget"
-        class="inline-flex flex-shrink-0 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition-all duration-200 hover:from-primary-600 hover:to-primary-700 hover:shadow-lg hover:shadow-primary-500/30 active:scale-[0.98] dark:shadow-primary-500/20"
-      >
-        {{ t('modelPlaza.nav.backToDashboard') }}
-      </RouterLink>
-      <RouterLink
-        v-else
-        :to="{ path: '/login', query: { redirect: '/model-plaza' } }"
-        class="inline-flex flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-primary-500 to-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-primary-500/25 transition-all duration-200 hover:from-primary-600 hover:to-primary-700 hover:shadow-lg hover:shadow-primary-500/30 active:scale-[0.98] dark:shadow-primary-500/20"
-      >
-        {{ t('modelPlaza.nav.login') }}
-      </RouterLink>
+      <!-- Right: Monitor shortcut (if available) + Theme Toggle + Locale Switcher + Login / Console -->
+      <div class="flex shrink-0 items-center gap-1.5 sm:gap-2">
+        <RouterLink
+          v-if="canOpenMonitor"
+          to="/monitor"
+          class="btn btn-ghost hidden h-10 rounded-none px-3 text-sm sm:inline-flex"
+        >
+          <Icon name="chart" size="sm" aria-hidden="true" />
+          <span>{{ t('modelPlaza.nav.monitor') }}</span>
+        </RouterLink>
+
+        <button
+          type="button"
+          class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-none text-ink-2 transition-colors duration-150 hover:bg-surface-tile hover:text-ink"
+          :title="t('modelPlaza.nav.switchTheme')"
+          :aria-label="t('modelPlaza.nav.switchTheme')"
+          @click="toggleTheme"
+        >
+          <Icon :name="isDark ? 'sun' : 'moon'" size="md" aria-hidden="true" />
+        </button>
+
+        <LocaleSwitcher />
+
+        <RouterLink
+          v-if="isAuthenticated"
+          :to="backTarget"
+          class="btn btn-primary h-10 shrink-0 rounded-none px-4 text-sm"
+        >
+          {{ t('modelPlaza.nav.backToDashboard') }}
+        </RouterLink>
+        <RouterLink
+          v-else
+          :to="{ path: '/login', query: { redirect: loginRedirect } }"
+          class="btn btn-primary h-10 shrink-0 rounded-none px-4 text-sm"
+        >
+          {{ t('modelPlaza.nav.login') }}
+        </RouterLink>
+      </div>
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
+import Icon from '@/components/icons/Icon.vue'
+import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
 import { sanitizeUrl } from '@/utils/url'
+import { isChannelMonitorRouteEnabled } from '@/utils/featureFlags'
 import { useAppStore } from '@/stores/app'
 import { useAuthStore } from '@/stores/auth'
 
 const { t } = useI18n()
+const route = useRoute()
 const appStore = useAppStore()
 const authStore = useAuthStore()
 
@@ -58,4 +92,24 @@ const siteLogo = computed(() =>
 )
 const isAuthenticated = computed(() => authStore.isAuthenticated)
 const backTarget = computed(() => (authStore.isAdmin ? '/admin/dashboard' : '/dashboard'))
+const canOpenMonitor = computed(() => isAuthenticated.value && isChannelMonitorRouteEnabled())
+const loginRedirect = computed(() => route.fullPath || '/model-plaza')
+
+const isDark = ref(
+  typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+)
+
+function toggleTheme() {
+  isDark.value = !isDark.value
+  document.documentElement.classList.toggle('dark', isDark.value)
+  try {
+    localStorage.setItem('theme', isDark.value ? 'dark' : 'light')
+  } catch {
+    // ignore storage errors in restricted browsing modes
+  }
+}
+
+onMounted(() => {
+  isDark.value = document.documentElement.classList.contains('dark')
+})
 </script>

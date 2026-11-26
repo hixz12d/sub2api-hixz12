@@ -275,4 +275,9 @@ const iconInfo = computed(() => iconKey.value ? iconData[iconKey.value] : null)
   font-weight: 600;
   flex-shrink: 0;
 }
+:where(html:not([data-ui='classic'])) .model-icon-fallback {
+  border-radius: 0;
+  background: rgb(var(--c-tile-2));
+  color: rgb(var(--c-ink-2));
+}
 </style>

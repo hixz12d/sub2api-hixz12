@@ -182,7 +182,8 @@ const channelMonitorV2UsageMetricsSQL = `
 INSERT INTO channel_monitor_v2_metrics_1m (
   bucket_start, platform, group_id, model, success_requests,
   input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
-  ttft_sum_ms, ttft_count, duration_sum_ms, duration_count, computed_at
+  ttft_sum_ms, ttft_count, duration_sum_ms, duration_count,
+  model_observed_requests, model_mismatch_requests, computed_at
 )
 SELECT date_trunc('minute', ul.created_at), %s, COALESCE(ul.group_id, 0), %s,
        COUNT(DISTINCT COALESCE(NULLIF(ul.request_id, ''), 'usage:' || ul.id::text))
@@ -194,7 +195,10 @@ SELECT date_trunc('minute', ul.created_at), %s, COALESCE(ul.group_id, 0), %s,
        COALESCE(SUM(ul.first_token_ms) FILTER (WHERE ul.first_token_ms IS NOT NULL AND ` + usageLogSuccessFilterUL + `), 0),
        COUNT(ul.first_token_ms) FILTER (WHERE ` + usageLogSuccessFilterUL + `),
        COALESCE(SUM(ul.duration_ms) FILTER (WHERE ul.duration_ms IS NOT NULL AND ` + usageLogSuccessFilterUL + `), 0),
-       COUNT(ul.duration_ms) FILTER (WHERE ` + usageLogSuccessFilterUL + `), NOW()
+       COUNT(ul.duration_ms) FILTER (WHERE ` + usageLogSuccessFilterUL + `),
+       COUNT(*) FILTER (WHERE ul.upstream_model_mismatch IS NOT NULL AND ` + usageLogSuccessFilterUL + `),
+       COUNT(*) FILTER (WHERE ul.upstream_model_mismatch IS TRUE AND ` + usageLogSuccessFilterUL + `),
+       NOW()
 FROM usage_logs ul
 LEFT JOIN groups g ON g.id = ul.group_id
 LEFT JOIN accounts a ON a.id = ul.account_id
@@ -461,7 +465,8 @@ INSERT INTO channel_monitor_v2_metrics_rollup (
   upstream_affected_requests, upstream_attempt_count, input_tokens, output_tokens,
   cache_creation_tokens, cache_read_tokens, ttft_sum_ms, ttft_count, duration_sum_ms,
   duration_count, computed_at, monitor_metric_version, monitor_candidate_requests,
-  monitor_cache_measured_requests, monitor_input_tokens_total, monitor_cache_read_tokens
+  monitor_cache_measured_requests, monitor_input_tokens_total, monitor_cache_read_tokens,
+  model_observed_requests, model_mismatch_requests
 )
 ` + channelMonitorV2FixedRollupBoundsSQL + `
 SELECT date_bin($1::interval, m.bucket_start, ` + channelMonitorV2DateBinOrigin + `), $2::integer,
@@ -472,7 +477,8 @@ SELECT date_bin($1::interval, m.bucket_start, ` + channelMonitorV2DateBinOrigin 
        1, COALESCE(SUM(monitor_candidate_requests) FILTER (WHERE monitor_metric_version=1),0),
        COALESCE(SUM(monitor_cache_measured_requests) FILTER (WHERE monitor_metric_version=1),0),
        COALESCE(SUM(monitor_input_tokens_total) FILTER (WHERE monitor_metric_version=1),0),
-       COALESCE(SUM(monitor_cache_read_tokens) FILTER (WHERE monitor_metric_version=1),0)
+       COALESCE(SUM(monitor_cache_read_tokens) FILTER (WHERE monitor_metric_version=1),0),
+       SUM(model_observed_requests), SUM(model_mismatch_requests)
 FROM channel_monitor_v2_metrics_1m m, bounds
 WHERE m.bucket_start >= bounds.start_at AND m.bucket_start < bounds.end_at
 GROUP BY 1, 2, 3, 4, 5`

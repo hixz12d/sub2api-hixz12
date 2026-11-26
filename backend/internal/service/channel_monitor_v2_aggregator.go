@@ -41,6 +41,13 @@ type channelMonitorRuntimeSubscriber interface {
 	SubscribeChannelMonitorRuntime(listener func()) (unsubscribe func())
 }
 
+// modelPlazaRuntimeReader is the optional settings hook that lets passive
+// rollup aggregation keep running in V1 monitor mode when Model Plaza is
+// enabled, without altering ChannelMonitorRuntime.PassiveAggregationAllowed.
+type modelPlazaRuntimeReader interface {
+	GetModelPlazaRuntime(ctx context.Context) ModelPlazaRuntime
+}
+
 type ChannelMonitorV2Aggregator struct {
 	repo       ChannelMonitorV2Repository
 	db         *sql.DB
@@ -158,7 +165,9 @@ func (s *ChannelMonitorV2Aggregator) loop() {
 			continue
 		}
 		if cfg, err := s.repo.GetConfig(ctx); err == nil {
-			if !cfg.Enabled {
+			// Model Plaza reads the same rollups, so it keeps aggregation running
+			// even when the V2 monitor page itself is switched off (e.g. V1 mode).
+			if !cfg.Enabled && !s.modelPlazaAggregationEnabled(ctx) {
 				cancel()
 				if !s.wait(interval) {
 					return
@@ -190,7 +199,20 @@ func (s *ChannelMonitorV2Aggregator) passiveAggregationAllowed(ctx context.Conte
 		// Fail closed without settings: do not aggregate under ambiguous mode.
 		return false
 	}
-	return s.settings.GetChannelMonitorRuntime(ctx).PassiveAggregationAllowed()
+	if s.settings.GetChannelMonitorRuntime(ctx).PassiveAggregationAllowed() {
+		return true
+	}
+	return s.modelPlazaAggregationEnabled(ctx)
+}
+
+func (s *ChannelMonitorV2Aggregator) modelPlazaAggregationEnabled(ctx context.Context) bool {
+	if s == nil || s.settings == nil {
+		return false
+	}
+	if plazaReader, ok := s.settings.(modelPlazaRuntimeReader); ok && plazaReader != nil {
+		return plazaReader.GetModelPlazaRuntime(ctx).Enabled
+	}
+	return false
 }
 
 func (s *ChannelMonitorV2Aggregator) wait(interval time.Duration) bool {

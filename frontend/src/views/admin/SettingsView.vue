@@ -10052,7 +10052,7 @@ const form = reactive<SettingsForm>({
   // Subscription feature switch (user sidebar "My Subscriptions" entry)
   subscription_enabled: true,
   // Model Plaza feature switches + description
-  model_plaza_enabled: false,
+  model_plaza_enabled: true,
   model_plaza_require_auth: false,
   model_plaza_description: '',
   // Plugin management menu visibility; plugin runtime is unaffected.

@@ -366,7 +366,67 @@ func upstreamModelsMatchForAudit(sentModel, responseModel string) bool {
 	// Canonicalize only for mismatch auditing; keep the raw response model for
 	// observability and for the separate response-model billing safeguards.
 	sentGrokModel := canonicalGrokBuildRuntimeModel(sentModel)
-	return sentGrokModel != "" && sentGrokModel == canonicalGrokBuildRuntimeModel(responseModel)
+	if sentGrokModel != "" && sentGrokModel == canonicalGrokBuildRuntimeModel(responseModel) {
+		return true
+	}
+
+	// Official providers commonly resolve unpinned aliases to dated snapshots
+	// (e.g. gpt-4o -> gpt-4o-2024-08-06, claude-sonnet-4-5 -> claude-sonnet-4-5-20250929).
+	return isOfficialDateSnapshotMatch(sentModel, responseModel)
+}
+
+func isOfficialDateSnapshotMatch(sentModel, responseModel string) bool {
+	sent := strings.ToLower(strings.TrimSpace(sentModel))
+	resp := strings.ToLower(strings.TrimSpace(responseModel))
+	if sent == "" || len(resp) <= len(sent)+1 {
+		return false
+	}
+	if !strings.HasPrefix(resp, sent) || resp[len(sent)] != '-' {
+		return false
+	}
+	return isValidModelDateSnapshotSuffix(resp[len(sent)+1:])
+}
+
+func isValidModelDateSnapshotSuffix(suffix string) bool {
+	var yearStr, monthStr, dayStr string
+	switch len(suffix) {
+	case 8:
+		yearStr, monthStr, dayStr = suffix[0:4], suffix[4:6], suffix[6:8]
+	case 10:
+		if suffix[4] != '-' || suffix[7] != '-' {
+			return false
+		}
+		yearStr, monthStr, dayStr = suffix[0:4], suffix[5:7], suffix[8:10]
+	default:
+		return false
+	}
+	if _, ok := parseASCIIDigits(yearStr); !ok {
+		return false
+	}
+	month, ok := parseASCIIDigits(monthStr)
+	if !ok || month < 1 || month > 12 {
+		return false
+	}
+	day, ok := parseASCIIDigits(dayStr)
+	if !ok || day < 1 || day > 31 {
+		return false
+	}
+	return true
+}
+
+func parseASCIIDigits(s string) (int, bool) {
+	if s == "" {
+		return 0, false
+	}
+	n := 0
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c < '0' || c > '9' {
+			return 0, false
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n, true
 }
 
 func canonicalGrokBuildRuntimeModel(model string) string {

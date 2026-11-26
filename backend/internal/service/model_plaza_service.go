@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
 
 // PlazaOfficialPricing 模型广场展示用的官方参考价（USD per token），与计费同源：
@@ -30,6 +31,40 @@ type PlazaModel struct {
 	LongContextBasis ContextPricingBasis
 	// TimePricing 计费会生效的分时倍率时段；无分时为 nil。
 	TimePricing *TimePricingSchedule
+	// Metadata 模型元数据（由 EnrichVisibleGroups 填充，ListGroups 保持 nil 以兼容既有单测）。
+	Metadata *PlazaModelMetadata
+	// Metrics 近 24h 脱敏实测指标（由 EnrichVisibleGroups 填充）。
+	Metrics *PlazaModelMetrics
+}
+
+// PlazaGroupComparison 详情页跨可见分组横向比价项（不含分组数字 ID）。
+type PlazaGroupComparison struct {
+	GroupName        string
+	Platform         string
+	SubscriptionType string
+	IsExclusive      bool
+	EffectiveRate    float64
+	Pricing          *ChannelModelPricing
+	OfficialPricing  *PlazaOfficialPricing
+	Metrics          *PlazaModelMetrics
+}
+
+// PlazaModelDetail 模型广场单模型全维详情。
+type PlazaModelDetail struct {
+	Model            string
+	Platform         string
+	GroupName        string
+	Metadata         PlazaModelMetadata
+	Pricing          *ChannelModelPricing
+	OfficialPricing  *PlazaOfficialPricing
+	LongContextBasis ContextPricingBasis
+	TimePricing      *TimePricingSchedule
+	Windows          PlazaDetailWindows
+	Heartbeat72      []PlazaHeartbeatSlot
+	Trend24h         []PlazaDetailTrendPoint
+	GroupComparisons []PlazaGroupComparison
+	Protection       PlazaDetailProtection
+	UpdatedAt        *string
 }
 
 // PlazaGroup 模型广场中以分组为顶层的条目。
@@ -72,6 +107,7 @@ type ModelPlazaService struct {
 	pricingService *PricingService
 	billingService *BillingService
 	resolver       *ModelPricingResolver
+	metricsCache   *ModelPlazaMetricsCache
 }
 
 // NewModelPlazaService 创建模型广场服务。
@@ -89,6 +125,14 @@ func NewModelPlazaService(
 		billingService: billingService,
 		resolver:       resolver,
 	}
+}
+
+// SetMetricsCache 可选注入模型广场实测质量快照缓存（不改动 NewModelPlazaService 原签名）。
+func (s *ModelPlazaService) SetMetricsCache(cache *ModelPlazaMetricsCache) {
+	if s == nil {
+		return
+	}
+	s.metricsCache = cache
 }
 
 // ListGroups 返回模型广场数据：每个活跃分组附带其可用模型与定价。
@@ -383,4 +427,239 @@ func (s *ModelPlazaService) lookupOfficialPricing(ctx context.Context, modelName
 	}
 	memo[modelName] = result
 	return result
+}
+
+// EnrichVisibleGroups 为可见分组的模型补齐元数据与近 24h 脱敏实测指标，
+// 并仅基于当前可见分组范围合成全站实力招牌条摘要（绝不向匿名请求泄露专属分组指标）。
+func (s *ModelPlazaService) EnrichVisibleGroups(
+	ctx context.Context,
+	visible []PlazaGroup,
+	acceptLanguage string,
+) ([]PlazaGroup, *PlazaSiteSummary) {
+	listSnap := s.getListMetricsSnapshot(ctx)
+	summary := plazaBuildSiteSummary(visible, listSnap)
+
+	if len(visible) == 0 {
+		return visible, summary
+	}
+
+	out := make([]PlazaGroup, len(visible))
+	for i := range visible {
+		g := visible[i]
+		models := make([]PlazaModel, len(g.Models))
+		for j := range g.Models {
+			m := g.Models[j]
+			meta := ResolvePlazaModelMetadata(m.Name, m.Platform, m.Pricing, s.pricingService, acceptLanguage)
+			m.Metadata = &meta
+			var raw *PlazaListModelRaw
+			if listSnap != nil && listSnap.AggregationReady {
+				raw = listSnap.Models[NewPlazaModelKey(m.Platform, g.ID, m.Name)]
+			}
+			var winStart time.Time
+			ready := false
+			if listSnap != nil {
+				winStart = listSnap.Window24hStart
+				ready = listSnap.AggregationReady
+			}
+			m.Metrics = plazaBuildModelMetrics(m.Platform, m.Name, m.Pricing, m.OfficialPricing, raw, winStart, ready)
+			models[j] = m
+		}
+		g.Models = models
+		out[i] = g
+	}
+	return out, summary
+}
+
+// BuildModelDetail 按用户可见分组集合构造单模型全维详情（24h/7d/30d 三档窗口、72 格心跳、
+// 24h 趋势点、全可见分组比价与一致性保护说明）。若可见分组中均不含该模型，返回 (nil, false)。
+func (s *ModelPlazaService) BuildModelDetail(
+	ctx context.Context,
+	visible []PlazaGroup,
+	userRates map[int64]float64,
+	modelQuery string,
+	groupQuery string,
+	acceptLanguage string,
+) (*PlazaModelDetail, bool) {
+	modelQuery = strings.TrimSpace(modelQuery)
+	groupQuery = strings.TrimSpace(groupQuery)
+	if modelQuery == "" || len(visible) == 0 {
+		return nil, false
+	}
+
+	type candidate struct {
+		group         PlazaGroup
+		model         PlazaModel
+		localizedName string
+		effectiveRate float64
+	}
+
+	collect := func(exact bool) []candidate {
+		res := make([]candidate, 0, len(visible))
+		for i := range visible {
+			g := visible[i]
+			locName := g.I18n.LocalizeName(acceptLanguage, g.Name)
+			effRate := g.RateMultiplier
+			if rate, ok := userRates[g.ID]; ok {
+				effRate = rate
+			}
+			for j := range g.Models {
+				m := g.Models[j]
+				matched := m.Name == modelQuery
+				if !exact {
+					matched = strings.EqualFold(m.Name, modelQuery)
+				}
+				if matched {
+					res = append(res, candidate{
+						group:         g,
+						model:         m,
+						localizedName: locName,
+						effectiveRate: effRate,
+					})
+				}
+			}
+		}
+		return res
+	}
+
+	candidates := collect(true)
+	if len(candidates) == 0 {
+		candidates = collect(false)
+	}
+	if len(candidates) == 0 {
+		return nil, false
+	}
+
+	// 按生效倍率升序稳定排序，既作为默认目标分组选择顺序，也作为横向比价展示顺序。
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].effectiveRate != candidates[j].effectiveRate {
+			return candidates[i].effectiveRate < candidates[j].effectiveRate
+		}
+		if candidates[i].group.Name != candidates[j].group.Name {
+			return candidates[i].group.Name < candidates[j].group.Name
+		}
+		return candidates[i].model.Platform < candidates[j].model.Platform
+	})
+
+	selected := candidates[0]
+	if groupQuery != "" {
+		matchedIdx := -1
+		for i, c := range candidates {
+			if c.group.Name == groupQuery || c.localizedName == groupQuery {
+				matchedIdx = i
+				break
+			}
+		}
+		if matchedIdx < 0 {
+			for i, c := range candidates {
+				if strings.EqualFold(c.group.Name, groupQuery) || strings.EqualFold(c.localizedName, groupQuery) {
+					matchedIdx = i
+					break
+				}
+			}
+		}
+		if matchedIdx >= 0 {
+			selected = candidates[matchedIdx]
+		}
+	}
+
+	detailSnap := s.getDetailMetricsSnapshot(ctx, selected.model.Platform, selected.group.ID, selected.model.Name)
+	listSnap := s.getListMetricsSnapshot(ctx)
+
+	detailReady := detailSnap != nil && detailSnap.AggregationReady
+	var windows PlazaDetailWindows
+	if detailReady {
+		windows = PlazaDetailWindows{
+			H24: plazaBuildDetailWindow(selected.model.Platform, selected.model.Name, selected.model.Pricing, selected.model.OfficialPricing, detailSnap.H24, true),
+			D7:  plazaBuildDetailWindow(selected.model.Platform, selected.model.Name, selected.model.Pricing, selected.model.OfficialPricing, detailSnap.D7, true),
+			D30: plazaBuildDetailWindow(selected.model.Platform, selected.model.Name, selected.model.Pricing, selected.model.OfficialPricing, detailSnap.D30, true),
+		}
+	} else {
+		windows = PlazaDetailWindows{
+			H24: plazaBuildDetailWindow(selected.model.Platform, selected.model.Name, selected.model.Pricing, selected.model.OfficialPricing, PlazaDetailWindowRaw{}, false),
+			D7:  plazaBuildDetailWindow(selected.model.Platform, selected.model.Name, selected.model.Pricing, selected.model.OfficialPricing, PlazaDetailWindowRaw{}, false),
+			D30: plazaBuildDetailWindow(selected.model.Platform, selected.model.Name, selected.model.Pricing, selected.model.OfficialPricing, PlazaDetailWindowRaw{}, false),
+		}
+	}
+
+	heartbeat72 := make([]PlazaHeartbeatSlot, 0)
+	if detailReady && !detailSnap.HeartbeatStart.IsZero() {
+		heartbeat72 = make([]PlazaHeartbeatSlot, 72)
+		for i := 0; i < 72; i++ {
+			slotStart := detailSnap.HeartbeatStart.Add(time.Duration(i) * 20 * time.Minute)
+			heartbeat72[i] = plazaEvalHeartbeatSlot(slotStart, slotStart.Add(20*time.Minute), detailSnap.Slots72[i])
+		}
+	}
+
+	var trend24h []PlazaDetailTrendPoint
+	if detailReady {
+		trend24h = plazaBuildTrend24h(selected.model.Platform, selected.model.Name, selected.model.Pricing, detailSnap.Trend24h, true)
+	} else {
+		trend24h = []PlazaDetailTrendPoint{}
+	}
+
+	var updatedAt *string
+	if detailReady && detailSnap.UpdatedAt != nil && !detailSnap.UpdatedAt.IsZero() {
+		ts := detailSnap.UpdatedAt.UTC().Format(time.RFC3339)
+		updatedAt = &ts
+	}
+
+	comparisons := make([]PlazaGroupComparison, 0, len(candidates))
+	listReady := listSnap != nil && listSnap.AggregationReady
+	var listWinStart time.Time
+	if listSnap != nil {
+		listWinStart = listSnap.Window24hStart
+	}
+	for _, c := range candidates {
+		var raw *PlazaListModelRaw
+		if listReady {
+			raw = listSnap.Models[NewPlazaModelKey(c.model.Platform, c.group.ID, c.model.Name)]
+		}
+		metrics := plazaBuildModelMetrics(c.model.Platform, c.model.Name, c.model.Pricing, c.model.OfficialPricing, raw, listWinStart, listReady)
+		comparisons = append(comparisons, PlazaGroupComparison{
+			GroupName:        c.localizedName,
+			Platform:         c.model.Platform,
+			SubscriptionType: c.group.SubscriptionType,
+			IsExclusive:      c.group.IsExclusive,
+			EffectiveRate:    c.effectiveRate,
+			Pricing:          c.model.Pricing,
+			OfficialPricing:  c.model.OfficialPricing,
+			Metrics:          metrics,
+		})
+	}
+
+	meta := ResolvePlazaModelMetadata(selected.model.Name, selected.model.Platform, selected.model.Pricing, s.pricingService, acceptLanguage)
+	return &PlazaModelDetail{
+		Model:            selected.model.Name,
+		Platform:         selected.model.Platform,
+		GroupName:        selected.localizedName,
+		Metadata:         meta,
+		Pricing:          selected.model.Pricing,
+		OfficialPricing:  selected.model.OfficialPricing,
+		LongContextBasis: selected.model.LongContextBasis,
+		TimePricing:      selected.model.TimePricing,
+		Windows:          windows,
+		Heartbeat72:      heartbeat72,
+		Trend24h:         trend24h,
+		GroupComparisons: comparisons,
+		Protection: PlazaDetailProtection{
+			ConsistencyMethod:     PlazaConsistencyMethodPassiveAudit,
+			AutoPauseEnabled:      plazaAutoPauseProtected(selected.model.Platform),
+			CapabilityProbeStatus: PlazaCapabilityProbeReserved,
+		},
+		UpdatedAt: updatedAt,
+	}, true
+}
+
+func (s *ModelPlazaService) getListMetricsSnapshot(ctx context.Context) *PlazaListMetricsRawSnapshot {
+	if s == nil || s.metricsCache == nil {
+		return &PlazaListMetricsRawSnapshot{AggregationReady: false}
+	}
+	return s.metricsCache.GetListSnapshot(ctx)
+}
+
+func (s *ModelPlazaService) getDetailMetricsSnapshot(ctx context.Context, platform string, groupID int64, model string) *PlazaModelDetailRawSnapshot {
+	if s == nil || s.metricsCache == nil {
+		return &PlazaModelDetailRawSnapshot{AggregationReady: false}
+	}
+	return s.metricsCache.GetDetailSnapshot(ctx, platform, groupID, model)
 }

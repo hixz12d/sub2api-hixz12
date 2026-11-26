@@ -2,6 +2,7 @@ package handler
 
 import (
 	"log/slog"
+	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -63,7 +64,7 @@ type modelPlazaTimePricing struct {
 	Periods      []modelPlazaTimePricingPeriod `json:"periods"`
 }
 
-// modelPlazaModel 广场模型条目：实收口径展示定价（白名单形态）+ 官方参考价。
+// modelPlazaModel 广场模型条目：实收口径展示定价（白名单形态）+ 官方参考价 + 元数据与脱敏指标。
 type modelPlazaModel struct {
 	Name            string                     `json:"name"`
 	Platform        string                     `json:"platform"`
@@ -72,7 +73,39 @@ type modelPlazaModel struct {
 	// LongContextBasis 多档时的计价基准："whole_request"（整单按档）| "marginal"（仅超出部分）。
 	LongContextBasis string `json:"long_context_basis,omitempty"`
 	// TimePricing 分时倍率时段，落在时段内的请求整单乘倍率；无分时省略。
-	TimePricing *modelPlazaTimePricing `json:"time_pricing,omitempty"`
+	TimePricing *modelPlazaTimePricing      `json:"time_pricing,omitempty"`
+	Metadata    *service.PlazaModelMetadata `json:"metadata,omitempty"`
+	Metrics     *service.PlazaModelMetrics  `json:"metrics,omitempty"`
+}
+
+// modelPlazaGroupComparison 用户可见的全部分组横向比价项（严禁暴露分组数字 ID）。
+type modelPlazaGroupComparison struct {
+	GroupName        string                     `json:"group_name"`
+	Platform         string                     `json:"platform"`
+	SubscriptionType string                     `json:"subscription_type"`
+	IsExclusive      bool                       `json:"is_exclusive"`
+	EffectiveRate    float64                    `json:"effective_rate"`
+	Pricing          *userSupportedModelPricing `json:"pricing"`
+	OfficialPricing  *modelPlazaOfficialPricing `json:"official_pricing"`
+	Metrics          *service.PlazaModelMetrics `json:"metrics"`
+}
+
+// modelPlazaDetailResponse 单模型详情响应（按需懒加载，不含数字分组 ID）。
+type modelPlazaDetailResponse struct {
+	Model            string                          `json:"model"`
+	Platform         string                          `json:"platform"`
+	GroupName        string                          `json:"group_name"`
+	Metadata         service.PlazaModelMetadata      `json:"metadata"`
+	Pricing          *userSupportedModelPricing      `json:"pricing"`
+	OfficialPricing  *modelPlazaOfficialPricing      `json:"official_pricing"`
+	LongContextBasis string                          `json:"long_context_basis,omitempty"`
+	TimePricing      *modelPlazaTimePricing          `json:"time_pricing,omitempty"`
+	Windows          service.PlazaDetailWindows      `json:"windows"`
+	Heartbeat72      []service.PlazaHeartbeatSlot    `json:"heartbeat_72"`
+	Trend24h         []service.PlazaDetailTrendPoint `json:"trend_24h"`
+	GroupComparisons []modelPlazaGroupComparison     `json:"group_comparisons"`
+	Protection       service.PlazaDetailProtection   `json:"protection"`
+	UpdatedAt        *string                         `json:"updated_at"`
 }
 
 // modelPlazaGroup 广场分组条目（白名单字段）。
@@ -102,13 +135,36 @@ type modelPlazaGroup struct {
 
 // modelPlazaResponse 广场页响应。
 type modelPlazaResponse struct {
-	Description string            `json:"description"`
-	Groups      []modelPlazaGroup `json:"groups"`
+	Description string                    `json:"description"`
+	Groups      []modelPlazaGroup         `json:"groups"`
+	SiteSummary *service.PlazaSiteSummary `json:"site_summary,omitempty"`
 }
 
 // Get 返回模型广场数据。
 // GET /api/v1/model-plaza
 func (h *ModelPlazaHandler) Get(c *gin.Context) {
+	rt, visible, userRates, ok := h.loadVisiblePlazaContext(c)
+	if !ok {
+		return
+	}
+
+	acceptLanguage := c.GetHeader("Accept-Language")
+	enriched, siteSummary := h.plazaService.EnrichVisibleGroups(c.Request.Context(), visible, acceptLanguage)
+
+	// 广场可匿名访问，分组文案与模型简介随请求语言变化，提示中间缓存按语言区分。
+	// 追加而非覆盖：CORS 中间件已为具体来源写入 Vary: Origin。
+	c.Writer.Header().Add("Vary", "Accept-Language")
+	out := toLocalizedModelPlazaGroups(enriched, userRates, acceptLanguage)
+	response.Success(c, modelPlazaResponse{
+		Description: rt.Description,
+		Groups:      out,
+		SiteSummary: siteSummary,
+	})
+}
+
+// Detail 返回单模型全维详情（24h/7d/30d 三档 SLA、72 格心跳、趋势点、全可见分组比价、保护说明）。
+// GET /api/v1/model-plaza/detail?model=<模型名>&group=<分组名(可选)>
+func (h *ModelPlazaHandler) Detail(c *gin.Context) {
 	if h.settingService == nil {
 		response.NotFound(c, "Model plaza is not enabled")
 		return
@@ -125,10 +181,73 @@ func (h *ModelPlazaHandler) Get(c *gin.Context) {
 		return
 	}
 
+	modelQuery := strings.TrimSpace(c.Query("model"))
+	if modelQuery == "" {
+		response.BadRequest(c, "model parameter is required")
+		return
+	}
+	groupQuery := strings.TrimSpace(c.Query("group"))
+
+	visible, userRates, ok := h.loadVisibleGroupsForSubject(c, subject, authed)
+	if !ok {
+		return
+	}
+
+	acceptLanguage := c.GetHeader("Accept-Language")
+	detail, found := h.plazaService.BuildModelDetail(
+		c.Request.Context(),
+		visible,
+		userRates,
+		modelQuery,
+		groupQuery,
+		acceptLanguage,
+	)
+	if !found || detail == nil {
+		response.NotFound(c, "Model not found")
+		return
+	}
+
+	c.Writer.Header().Add("Vary", "Accept-Language")
+	response.Success(c, toModelPlazaDetailDTO(detail))
+}
+
+func (h *ModelPlazaHandler) loadVisiblePlazaContext(c *gin.Context) (service.ModelPlazaRuntime, []service.PlazaGroup, map[int64]float64, bool) {
+	if h.settingService == nil {
+		response.NotFound(c, "Model plaza is not enabled")
+		return service.ModelPlazaRuntime{}, nil, nil, false
+	}
+	rt := h.settingService.GetModelPlazaRuntime(c.Request.Context())
+	if !rt.Enabled {
+		response.NotFound(c, "Model plaza is not enabled")
+		return service.ModelPlazaRuntime{}, nil, nil, false
+	}
+
+	subject, authed := middleware.GetAuthSubjectFromContext(c)
+	if rt.RequireAuth && !authed {
+		response.Unauthorized(c, "Authentication required")
+		return service.ModelPlazaRuntime{}, nil, nil, false
+	}
+
+	visible, userRates, ok := h.loadVisibleGroupsForSubject(c, subject, authed)
+	if !ok {
+		return service.ModelPlazaRuntime{}, nil, nil, false
+	}
+	return rt, visible, userRates, true
+}
+
+func (h *ModelPlazaHandler) loadVisibleGroupsForSubject(
+	c *gin.Context,
+	subject middleware.AuthSubject,
+	authed bool,
+) ([]service.PlazaGroup, map[int64]float64, bool) {
+	if h.plazaService == nil {
+		response.NotFound(c, "Model plaza is not enabled")
+		return nil, nil, false
+	}
 	groups, err := h.plazaService.ListGroups(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)
-		return
+		return nil, nil, false
 	}
 
 	// allowedGroups == nil 表示匿名；登录用户恒为非 nil（可能为空集合）。
@@ -140,7 +259,7 @@ func (h *ModelPlazaHandler) Get(c *gin.Context) {
 		if err != nil {
 			// 可见性数据拿不到时不能静默降级成匿名视图（会错漏专属分组），直接报错。
 			response.ErrorFrom(c, err)
-			return
+			return nil, nil, false
 		}
 		userRates, err = h.apiKeyService.GetUserGroupRates(c.Request.Context(), subject.UserID)
 		if err != nil {
@@ -151,15 +270,7 @@ func (h *ModelPlazaHandler) Get(c *gin.Context) {
 	}
 
 	visible := filterPlazaVisibleGroups(groups, allowedGroups, restrictPublicGroups)
-
-	// 广场可匿名访问，分组文案随请求语言变化，提示中间缓存按语言区分。
-	// 追加而非覆盖：CORS 中间件已为具体来源写入 Vary: Origin。
-	c.Writer.Header().Add("Vary", "Accept-Language")
-	out := toLocalizedModelPlazaGroups(visible, userRates, c.GetHeader("Accept-Language"))
-	response.Success(c, modelPlazaResponse{
-		Description: rt.Description,
-		Groups:      out,
-	})
+	return visible, userRates, true
 }
 
 // filterPlazaVisibleGroups 按登录态裁剪分组可见性。
@@ -209,6 +320,8 @@ func toModelPlazaGroupDTO(g *service.PlazaGroup, userRates map[int64]float64) mo
 			OfficialPricing:  toModelPlazaOfficialPricing(m.OfficialPricing),
 			LongContextBasis: string(m.LongContextBasis),
 			TimePricing:      toModelPlazaTimePricing(m.TimePricing),
+			Metadata:         m.Metadata,
+			Metrics:          m.Metrics,
 		})
 	}
 	dto := modelPlazaGroup{
@@ -265,5 +378,51 @@ func toModelPlazaOfficialPricing(p *service.PlazaOfficialPricing) *modelPlazaOff
 		CacheWrite12hPrice: p.CacheWrite12hPrice,
 		CacheReadPrice:     p.CacheReadPrice,
 		Intervals:          toUserPricingIntervals(p.Intervals),
+	}
+}
+
+// toModelPlazaDetailDTO 将 service 层单模型详情映射为白名单 DTO（不含任何分组数字 ID）。
+func toModelPlazaDetailDTO(d *service.PlazaModelDetail) modelPlazaDetailResponse {
+	comparisons := make([]modelPlazaGroupComparison, 0, len(d.GroupComparisons))
+	for i := range d.GroupComparisons {
+		cmp := &d.GroupComparisons[i]
+		comparisons = append(comparisons, modelPlazaGroupComparison{
+			GroupName:        cmp.GroupName,
+			Platform:         cmp.Platform,
+			SubscriptionType: cmp.SubscriptionType,
+			IsExclusive:      cmp.IsExclusive,
+			EffectiveRate:    cmp.EffectiveRate,
+			Pricing:          toUserPricing(cmp.Pricing),
+			OfficialPricing:  toModelPlazaOfficialPricing(cmp.OfficialPricing),
+			Metrics:          cmp.Metrics,
+		})
+	}
+	heartbeat := d.Heartbeat72
+	if heartbeat == nil {
+		heartbeat = []service.PlazaHeartbeatSlot{}
+	}
+	trend := d.Trend24h
+	if trend == nil {
+		trend = []service.PlazaDetailTrendPoint{}
+	}
+	meta := d.Metadata
+	if meta.Capabilities == nil {
+		meta.Capabilities = []string{}
+	}
+	return modelPlazaDetailResponse{
+		Model:            d.Model,
+		Platform:         d.Platform,
+		GroupName:        d.GroupName,
+		Metadata:         meta,
+		Pricing:          toUserPricing(d.Pricing),
+		OfficialPricing:  toModelPlazaOfficialPricing(d.OfficialPricing),
+		LongContextBasis: string(d.LongContextBasis),
+		TimePricing:      toModelPlazaTimePricing(d.TimePricing),
+		Windows:          d.Windows,
+		Heartbeat72:      heartbeat,
+		Trend24h:         trend,
+		GroupComparisons: comparisons,
+		Protection:       d.Protection,
+		UpdatedAt:        d.UpdatedAt,
 	}
 }

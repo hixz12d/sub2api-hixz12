@@ -985,7 +985,8 @@ var ProviderSet = wire.NewSet(
 	NewChannelService,
 	wire.Bind(new(ChannelCacheInvalidator), new(*ChannelService)),
 	NewModelPricingResolver,
-	NewModelPlazaService,
+	NewModelPlazaMetricsCache,
+	ProvideModelPlazaService,
 	NewContentModerationService,
 	NewAffiliateService,
 	ProvidePaymentConfigService,
@@ -1120,6 +1121,21 @@ func ProvideChannelMonitorV2Aggregator(repo ChannelMonitorV2Repository, db *sql.
 	}
 	aggregator.Start()
 	return aggregator
+}
+
+// ProvideModelPlazaService 装配模型广场服务并可选注入实测质量快照缓存，
+// 保持 NewModelPlazaService 的 5 参数构造签名以兼容既有单测。
+func ProvideModelPlazaService(
+	channelRepo ChannelRepository,
+	groupRepo GroupRepository,
+	pricingService *PricingService,
+	billingService *BillingService,
+	resolver *ModelPricingResolver,
+	metricsCache *ModelPlazaMetricsCache,
+) *ModelPlazaService {
+	svc := NewModelPlazaService(channelRepo, groupRepo, pricingService, billingService, resolver)
+	svc.SetMetricsCache(metricsCache)
+	return svc
 }
 
 // ProvideClaudeResetCreditService wires the Claude reset query and, with the

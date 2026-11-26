@@ -9,9 +9,44 @@ export interface MagpieImportLinkInput {
 
 /** Magpie 名称上限 80 字符。 */
 const MAGPIE_NAME_MAX_LENGTH = 80
+const MAGPIE_ID_MAX_LENGTH = 32
+const MAGPIE_ID_FALLBACK = 'sub2api'
 
 function normalizeRootUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, '').replace(/\/v1$/, '')
+}
+
+function slugifyMagpieId(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, MAGPIE_ID_MAX_LENGTH)
+    .replace(/-+$/, '')
+}
+
+/** 取域名里有辨识度的一段：sub2api.example.com → sub2api，api.acme.com → acme，IP 整段保留。 */
+function hostLabelForId(root: string): string {
+  let host: string
+  try {
+    host = new URL(root).hostname
+  } catch {
+    return ''
+  }
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return host
+  const labels = host.split('.').filter(Boolean)
+  while (labels.length > 2 && /^(www|api)$/i.test(labels[0])) labels.shift()
+  return labels[0] || ''
+}
+
+/**
+ * Magpie 的 id（agent 里写成 `id/model`）不传时由名称推出，只认英文字母和数字；
+ * 名称全是中文（如“小破站”）时推不出来，导入会被拒绝。所以总是显式给出 id：
+ * 名称是纯英文时按名称生成（与 Magpie 默认一致），否则用 API 地址的域名生成。
+ */
+function buildMagpieId(name: string, root: string): string {
+  const fromName = /^[\x20-\x7e]+$/.test(name) ? slugifyMagpieId(name) : ''
+  return fromName || slugifyMagpieId(hostLabelForId(root)) || MAGPIE_ID_FALLBACK
 }
 
 /**
@@ -29,7 +64,10 @@ export function buildMagpieImportLink(input: MagpieImportLinkInput): string {
   const platform = input.platform || 'anthropic'
   const name = (input.providerName.trim() || 'sub2api').slice(0, MAGPIE_NAME_MAX_LENGTH)
 
-  const entries: [string, string][] = [['name', name]]
+  const entries: [string, string][] = [
+    ['name', name],
+    ['id', buildMagpieId(name, root)]
+  ]
 
   switch (platform) {
     case 'antigravity':
