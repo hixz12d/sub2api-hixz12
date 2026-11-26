@@ -836,6 +836,22 @@ func (w *opsCaptureWriter) WriteString(s string) (int, error) {
 
 var _ gin.ResponseWriter = (*opsCaptureWriter)(nil)
 
+func isNonEmptyJSONObject(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) < 2 || trimmed[0] != '{' || trimmed[len(trimmed)-1] != '}' {
+		return false
+	}
+	return len(bytes.TrimSpace(trimmed[1:len(trimmed)-1])) > 0
+}
+
+func isNonEmptyJSONArray(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) < 2 || trimmed[0] != '[' || trimmed[len(trimmed)-1] != ']' {
+		return false
+	}
+	return len(bytes.TrimSpace(trimmed[1:len(trimmed)-1])) > 0
+}
+
 func isOpsTerminalSSEFrame(frame []byte) bool {
 	eventType, payload := parseOpsSSEFrameEnvelope(frame)
 	if bytes.Equal(eventType, []byte("response.failed")) || bytes.Equal(eventType, []byte("error")) {
@@ -850,10 +866,23 @@ func isOpsTerminalSSEFrame(frame []byte) bool {
 		return false
 	}
 	var event struct {
-		Type string `json:"type"`
+		Type     string          `json:"type"`
+		Error    json.RawMessage `json:"error"`
+		Choices  json.RawMessage `json:"choices"`
+		Response *struct {
+			Error json.RawMessage `json:"error"`
+		} `json:"response"`
 	}
-	return json.Unmarshal(payload, &event) == nil &&
-		(event.Type == "response.failed" || event.Type == "error")
+	if json.Unmarshal(payload, &event) != nil {
+		return false
+	}
+	if event.Type == "response.failed" || event.Type == "error" {
+		return true
+	}
+	if event.Type == "" && isNonEmptyJSONObject(event.Error) && !isNonEmptyJSONArray(event.Choices) {
+		return true
+	}
+	return event.Type == "response.incomplete" && event.Response != nil && isNonEmptyJSONObject(event.Response.Error)
 }
 
 func parseOpsSSEFrameEnvelope(frame []byte) ([]byte, []byte) {
@@ -1003,8 +1032,8 @@ func mayContainOpsTerminalSSE(chunk []byte) bool {
 	if bytes.Contains(chunk, []byte("response.failed")) {
 		return true
 	}
-	return bytes.Contains(chunk, []byte("error")) &&
-		(bytes.Contains(chunk, []byte("event")) || bytes.Contains(chunk, []byte(`"type"`)))
+	return bytes.Contains(chunk, []byte(`"error"`)) ||
+		(bytes.Contains(chunk, []byte("error")) && bytes.Contains(chunk, []byte("event")))
 }
 
 func isOpsTerminalSSEEventLine(line []byte) bool {
@@ -1897,6 +1926,16 @@ func opsJSONInt(value any) int {
 	}
 }
 
+func isNonEmptyOpsMap(v any) bool {
+	m, ok := v.(map[string]any)
+	return ok && len(m) > 0
+}
+
+func hasNonEmptyOpsSlice(v any) bool {
+	s, ok := v.([]any)
+	return ok && len(s) > 0
+}
+
 func parseOpsSSEFailure(body []byte) (parsedOpsError, bool) {
 	normalized := strings.ReplaceAll(string(body), "\r\n", "\n")
 	normalized = strings.ReplaceAll(normalized, "\r", "\n")
@@ -1918,8 +1957,12 @@ func parseOpsSSEFailure(body []byte) (parsedOpsError, bool) {
 			if eventType == "" {
 				eventType, _ = event["type"].(string)
 			}
+			if eventType == "" && isNonEmptyOpsMap(event["error"]) && !hasNonEmptyOpsSlice(event["choices"]) {
+				eventType = "error"
+			}
 		}
-		if eventType != "response.failed" && eventType != "error" {
+		isIncompleteError := eventType == "response.incomplete" && isNonEmptyOpsMap(opsSSEErrorObject(event))
+		if eventType != "response.failed" && eventType != "error" && !isIncompleteError {
 			continue
 		}
 
@@ -1975,8 +2018,10 @@ func parseOpsSSEFailure(body []byte) (parsedOpsError, bool) {
 		if eventType == "response.failed" {
 			return parsed, true
 		}
-		candidate := parsed
-		errorCandidate = &candidate
+		if errorCandidate == nil || (strings.TrimSpace(parsed.Message) != "" && parsed.Message != "upstream stream failed") {
+			candidate := parsed
+			errorCandidate = &candidate
+		}
 	}
 	if errorCandidate != nil {
 		return *errorCandidate, true

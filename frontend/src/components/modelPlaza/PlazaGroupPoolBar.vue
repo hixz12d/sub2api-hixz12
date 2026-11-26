@@ -8,7 +8,7 @@
     <div
       v-if="isUnauthorized"
       class="flex flex-col gap-2 border-l-2 border-warn bg-surface-tile-2/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between md:px-5"
-      :class="hasMetaOrPool ? 'border-b border-rule' : ''"
+      :class="hasDescription ? 'border-b border-rule' : ''"
       role="status"
     >
       <div class="flex min-w-0 items-start gap-2.5">
@@ -41,39 +41,28 @@
 
     <!-- Group Description + Pool Status Row -->
     <div
-      v-if="hasMetaOrPool"
+      v-if="hasDescription"
       class="flex flex-col gap-3 px-4 py-3 md:flex-row md:items-center md:justify-between md:gap-5 md:px-5"
     >
-      <!-- Left: Group name + description -->
-      <div class="min-w-0 flex-1 space-y-1">
-        <div class="flex flex-wrap items-center gap-2">
-          <span
-            class="h-3 w-3 shrink-0 rounded-none"
-            :class="groupColorClass"
-            aria-hidden="true"
-          />
-          <span class="text-xs font-semibold text-ink sm:text-[13px]">
-            {{ group.name }}
-          </span>
-          <span
-            v-if="!isUnauthorized && group.showcase_badge"
-            class="inline-flex items-center bg-surface-tile-2 px-1.5 py-0.5 text-[11px] font-medium text-ink-2"
-          >
-            {{ group.showcase_badge }}
-          </span>
-        </div>
+      <!-- Left: Optional showcase badge + group description -->
+      <div class="flex min-w-0 flex-1 flex-wrap items-start gap-2">
+        <span
+          v-if="!isUnauthorized && group.showcase_badge"
+          class="inline-flex shrink-0 items-center bg-surface-tile-2 px-1.5 py-0.5 text-[11px] font-medium text-ink-2"
+        >
+          {{ group.showcase_badge }}
+        </span>
         <p
-          v-if="trimmedDescription"
-          class="whitespace-pre-line break-words text-xs leading-relaxed text-ink-2"
+          class="min-w-0 flex-1 whitespace-pre-line break-words text-xs leading-relaxed text-ink-2"
         >
           {{ trimmedDescription }}
         </p>
       </div>
 
-      <!-- Right: Pool 24h SLA + 12-slot heartbeat + last probe relative time -->
+      <!-- Right: Pool 24h SLA + 12-slot heartbeat + last probe relative time (desktop md+ only) -->
       <div
         v-if="group.pool_status"
-        class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-t border-rule pt-2.5 md:border-t-0 md:pt-0"
+        class="hidden shrink-0 flex-wrap items-center gap-x-4 gap-y-2 md:flex"
       >
         <div class="flex items-center gap-2 text-xs">
           <span class="whitespace-nowrap text-ink-3">
@@ -115,7 +104,6 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import PlazaHeartbeatBar from './PlazaHeartbeatBar.vue'
-import { groupSeriesClass } from '@/utils/groupSeriesColor'
 import {
   formatRelativeUpdatedAt,
   formatSlaPercent,
@@ -136,17 +124,11 @@ const { t } = useI18n()
 
 const isUnauthorized = computed(() => props.group.is_authorized === false)
 const trimmedDescription = computed(() => props.group.description?.trim() ?? '')
-const hasMetaOrPool = computed(
-  () => trimmedDescription.value.length > 0 || Boolean(props.group.pool_status)
-)
-const hasContent = computed(() => isUnauthorized.value || hasMetaOrPool.value)
+const hasDescription = computed(() => trimmedDescription.value.length > 0)
+const hasContent = computed(() => isUnauthorized.value || hasDescription.value)
 
 const showcaseBadgeText = computed(
   () => props.group.showcase_badge?.trim() || t('modelPlaza.badges.showcase')
-)
-
-const groupColorClass = computed(() =>
-  groupSeriesClass(props.group.id, props.orderedGroupIds)
 )
 
 const poolSla = computed(() =>

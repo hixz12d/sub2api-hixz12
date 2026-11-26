@@ -1,12 +1,12 @@
 <template>
   <div ref="toolbarRoot" class="space-y-2.5">
-    <!-- Row 1: Main single-row toolbar on lg+ -->
-    <div class="flex flex-wrap items-center gap-2 lg:flex-nowrap">
+    <!-- Row 1: Main single-row toolbar on lg+, compact 2-row layout on mobile -->
+    <div class="relative flex flex-wrap items-center gap-2 lg:flex-nowrap">
       <!-- Group single-select switcher (no numeric ID ever displayed) -->
-      <div class="relative max-w-full shrink-0">
+      <div class="relative w-full max-w-full shrink-0 sm:w-auto">
         <button
           type="button"
-          class="inline-flex h-10 max-w-full items-center gap-2 rounded-none bg-surface-tile px-3 text-sm font-medium text-ink transition-colors duration-150 hover:bg-surface-tile-2 sm:max-w-[300px]"
+          class="flex h-10 w-full max-w-full items-center gap-2 rounded-none bg-surface-tile px-3 text-sm font-medium text-ink transition-colors duration-150 hover:bg-surface-tile-2 sm:inline-flex sm:w-auto sm:max-w-[300px]"
           :disabled="groups.length === 0"
           :aria-expanded="groupOpen"
           :aria-label="t('modelPlaza.toolbar.groupSelectorLabel')"
@@ -56,7 +56,7 @@
             v-if="groups.length > 1"
             name="chevronDown"
             size="xs"
-            class="h-3.5 w-3.5 shrink-0 text-ink-3 transition-transform duration-150"
+            class="ml-auto h-3.5 w-3.5 shrink-0 text-ink-3 transition-transform duration-150 sm:ml-0"
             :class="{ 'rotate-180': groupOpen }"
             aria-hidden="true"
           />
@@ -142,7 +142,7 @@
       </div>
 
       <!-- Search input -->
-      <div class="relative min-w-[160px] flex-1">
+      <div class="relative min-w-0 flex-1">
         <Icon
           name="search"
           size="sm"
@@ -153,7 +153,7 @@
           :value="search"
           type="text"
           :placeholder="t('modelPlaza.toolbar.searchPlaceholder')"
-          class="input h-10 rounded-none pl-9 pr-8 text-sm"
+          class="input h-10 w-full rounded-none pl-9 pr-8 text-sm"
           @input="emit('update:search', ($event.target as HTMLInputElement).value)"
         />
         <button
@@ -169,7 +169,7 @@
       </div>
 
       <!-- Filter Popover -->
-      <div class="relative shrink-0">
+      <div class="shrink-0 sm:relative">
         <button
           type="button"
           class="inline-flex h-10 items-center gap-1.5 rounded-none px-3 text-sm font-medium transition-colors duration-150"
@@ -193,7 +193,7 @@
 
         <div
           v-if="filterOpen"
-          class="absolute left-0 top-full z-40 mt-1 w-[310px] max-w-[calc(100vw-2rem)] rounded-none border border-rule bg-surface p-4 sm:left-auto sm:right-0 sm:w-[360px]"
+          class="absolute right-0 top-full z-40 mt-1 w-[310px] max-w-[calc(100vw-2rem)] rounded-none border border-rule bg-surface p-4 sm:w-[360px]"
         >
           <!-- Capabilities multi-select -->
           <div>
@@ -371,10 +371,10 @@
         </button>
       </div>
 
-      <!-- Batch copy all filtered model IDs -->
+      <!-- Batch copy all filtered model IDs (md+ only) -->
       <button
         type="button"
-        class="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-none px-3 text-sm font-medium transition-colors duration-150 active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-50"
+        class="hidden h-10 shrink-0 items-center gap-1.5 rounded-none px-3 text-sm font-medium transition-colors duration-150 active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-50 md:inline-flex"
         :class="
           batchCopied
             ? 'bg-ok text-white'
@@ -396,8 +396,8 @@
       </button>
     </div>
 
-    <!-- Row 2: Horizontal scrollable vendor shortcut strip + result summary -->
-    <div v-if="resolvedVendors.length > 0" class="flex items-center justify-between gap-3">
+    <!-- Row 2: Horizontal scrollable vendor shortcut strip + result summary (only when >1 vendor) -->
+    <div v-if="resolvedVendors.length > 1" class="flex items-center justify-between gap-3">
       <div class="scrollbar-hide flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto whitespace-nowrap">
         <button
           type="button"
@@ -458,6 +458,21 @@
         v-if="effectiveTotalInGroup > 0"
         class="hidden shrink-0 whitespace-nowrap text-xs text-ink-3 tabular-nums sm:inline"
       >
+        {{
+          t('modelPlaza.toolbar.resultSummary', {
+            shown: shownEntryCount,
+            total: effectiveTotalInGroup
+          })
+        }}
+      </span>
+    </div>
+
+    <!-- Single-vendor desktop result summary when actively filtered/searched -->
+    <div
+      v-else-if="effectiveTotalInGroup > 0 && shownEntryCount !== effectiveTotalInGroup"
+      class="hidden justify-end sm:flex"
+    >
+      <span class="whitespace-nowrap text-xs text-ink-3 tabular-nums">
         {{
           t('modelPlaza.toolbar.resultSummary', {
             shown: shownEntryCount,
@@ -552,7 +567,6 @@ export type PlazaSortBy =
   | 'price_asc'
   | 'price_desc'
   | 'cache_desc'
-  | 'ref_multiplier_asc'
   | 'sla_desc'
   | 'ttft_asc'
 
@@ -776,7 +790,6 @@ const sortOptions = computed<Array<{ value: PlazaSortBy; label: string }>>(() =>
   { value: 'price_asc', label: t('modelPlaza.toolbar.sortPriceAsc') },
   { value: 'price_desc', label: t('modelPlaza.toolbar.sortPriceDesc') },
   { value: 'cache_desc', label: t('modelPlaza.toolbar.sortCacheDesc') },
-  { value: 'ref_multiplier_asc', label: t('modelPlaza.toolbar.sortRefMultiplierAsc') },
   { value: 'sla_desc', label: t('modelPlaza.toolbar.sortSlaDesc') },
   { value: 'ttft_asc', label: t('modelPlaza.toolbar.sortTtftAsc') }
 ])

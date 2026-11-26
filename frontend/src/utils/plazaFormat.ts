@@ -197,11 +197,14 @@ export function plazaToneTextClass(tone: PlazaMetricTone): string {
   }
 }
 
+export const PLAZA_SLA_OK_THRESHOLD = 0.97
+export const PLAZA_SLA_WARN_THRESHOLD = 0.90
+
 /**
  * Formats an SLA ratio (0~1) with 2 decimals by default (e.g. "99.85%") and status tone:
- * - >= 0.995 -> 'ok'
- * - 0.95 ~ 0.995 -> 'warn'
- * - < 0.95 -> 'bad'
+ * - >= 0.97 (PLAZA_SLA_OK_THRESHOLD) -> 'ok'
+ * - 0.90 ~ <0.97 (PLAZA_SLA_WARN_THRESHOLD) -> 'warn'
+ * - < 0.90 -> 'bad'
  * - low_sample / no_data / null -> '—' ('muted')
  */
 export function formatSlaPercent(
@@ -216,11 +219,11 @@ export function formatSlaPercent(
   const pct = clamped * 100
   const text = pct >= 100 ? '100%' : `${pct.toFixed(decimals)}%`
 
-  let tone: PlazaMetricTone = 'warn'
-  if (clamped >= 0.995) {
+  let tone: PlazaMetricTone = 'bad'
+  if (clamped >= PLAZA_SLA_OK_THRESHOLD) {
     tone = 'ok'
-  } else if (clamped < 0.95) {
-    tone = 'bad'
+  } else if (clamped >= PLAZA_SLA_WARN_THRESHOLD) {
+    tone = 'warn'
   }
   return { text, tone, valid: true }
 }
@@ -359,6 +362,18 @@ export function formatRefMultiplier(
   const formatted = rounded.toFixed(decimals)
   const tone: PlazaMetricTone = val < 0.5 ? 'ok' : 'neutral'
   return { text: `${formatted}×`, tone, valid: true }
+}
+
+/**
+ * Converts a 0 < multiplier < 1 effective ratio into Chinese discount fold (e.g. 0.088 -> "0.9", 0.35 -> "3.5", 0.5 -> "5").
+ * Returns null when multiplier is invalid or >= 1.
+ */
+export function formatDiscountFold(multiplier: number | null | undefined): string | null {
+  if (multiplier == null || !Number.isFinite(multiplier) || multiplier <= 0 || multiplier >= 1) {
+    return null
+  }
+  const fold = Math.max(0.1, Math.round(multiplier * 100) / 10)
+  return String(fold)
 }
 
 /**

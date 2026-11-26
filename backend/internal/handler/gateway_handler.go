@@ -2142,6 +2142,9 @@ func gatewayForwardErrorAlreadyCommunicated(c *gin.Context, writerSizeBeforeForw
 	if err == nil || c == nil || c.Writer == nil {
 		return false
 	}
+	if service.IsResponseCommitted(c) {
+		return true
+	}
 	if c.Writer.Size() == writerSizeBeforeForward {
 		return false
 	}

@@ -16,17 +16,16 @@
       :description="t('modelPlaza.card.emptyDescription')"
     />
 
-    <!-- Fixed 7-column left-aligned table (pure RMB ¥ pricing, effort pills, light/dark adaptive) -->
+    <!-- Fixed 6-column left-aligned table (pure RMB ¥ pricing, effort pills, light/dark adaptive) -->
     <div v-else-if="entries.length > 0" class="w-full border border-rule bg-surface">
       <table class="w-full table-fixed border-collapse text-left text-sm tabular-nums">
         <colgroup>
-          <col class="w-[32%]" />
-          <col class="w-[8%]" />
-          <col class="w-[17%]" />
-          <col class="w-[10%]" />
-          <col class="w-[13%]" />
-          <col class="w-[10%]" />
-          <col class="w-[10%]" />
+          <col class="w-[34%]" />
+          <col class="w-[9%]" />
+          <col class="w-[19%]" />
+          <col class="w-[12%]" />
+          <col class="w-[14%]" />
+          <col class="w-[12%]" />
         </colgroup>
         <thead>
           <tr class="border-b border-rule bg-surface-tile text-xs text-ink-3">
@@ -76,19 +75,8 @@
             </th>
 
             <!-- 6. Coding Cache -->
-            <th class="px-3 py-3 text-left font-medium">
+            <th class="py-3 pl-3 pr-4 text-left font-medium">
               <span>{{ t('modelPlaza.table.codingCacheHeader') }}</span>
-            </th>
-
-            <!-- 7. Reference Multiplier (with dashed underline tooltip) -->
-            <th class="px-4 py-3 text-left font-medium">
-              <span
-                class="cursor-help border-b border-dashed border-ink-3/70"
-                @mouseenter="showTooltip($event, t('modelPlaza.table.refMultiplierTooltip'))"
-                @mouseleave="hideTooltip"
-              >
-                {{ t('modelPlaza.table.refMultiplierHeader') }}
-              </span>
             </th>
           </tr>
         </thead>
@@ -104,7 +92,7 @@
             @keydown.enter.self="emit('select-model', row.activeModel)"
             @keydown.space.prevent.self="emit('select-model', row.activeModel)"
           >
-            <!-- 1. Model: icon + mono ID + inline right copy button + optional folded effort pills -->
+            <!-- 1. Model: icon + mono ID + inline consistency badge + copy button + optional folded effort pills -->
             <td class="px-4 py-3 align-middle">
               <div class="flex max-w-full items-center gap-2">
                 <ModelIcon
@@ -119,6 +107,20 @@
                     :title="row.activeModel.name"
                   >
                     {{ row.activeModel.name }}
+                  </span>
+                  <span
+                    v-if="row.consistencyBadge"
+                    class="inline-flex shrink-0 items-center gap-0.5 rounded-sm px-1.5 py-0.5 text-[11px] font-medium leading-4"
+                    :class="row.consistencyBadge.toneClass"
+                  >
+                    <Icon
+                      v-if="row.consistencyBadge.state === 'mismatch_detected'"
+                      name="exclamationTriangle"
+                      size="xs"
+                      class="h-3 w-3 shrink-0"
+                      aria-hidden="true"
+                    />
+                    <span>{{ row.consistencyBadge.label }}</span>
                   </span>
                   <button
                     type="button"
@@ -203,10 +205,7 @@
                   </div>
                   <div class="mt-0.5 truncate text-[11px] leading-4 text-ink-3">
                     <span>{{ t('modelPlaza.table.perMillionTokens') }}</span>
-                    <span v-if="row.pricing.tierCount > 1" class="text-ink-2">
-                      {{ t('modelPlaza.table.tiersCountSuffix', { count: row.pricing.tierCount }) }}
-                    </span>
-                    <span v-else-if="row.pricing.hasTimePricing" class="text-ink-2">
+                    <span v-if="row.pricing.hasTimePricing" class="text-ink-2">
                       · {{ t('modelPlaza.card.timePricingBadge') }}
                     </span>
                   </div>
@@ -281,7 +280,7 @@
             </td>
 
             <!-- 6. Coding Cache (2 decimals, neutral text) -->
-            <td class="px-3 py-3 align-middle">
+            <td class="py-3 pl-3 pr-4 align-middle">
               <span
                 v-if="row.cache.valid"
                 class="font-medium text-ink"
@@ -292,24 +291,6 @@
                 v-else
                 class="cursor-help text-ink-3"
                 @mouseenter="showTooltip($event, row.cacheTooltip)"
-                @mouseleave="hideTooltip"
-              >
-                {{ PLAZA_EMPTY_TEXT }}
-              </span>
-            </td>
-
-            <!-- 7. Reference Multiplier (fixed 3 decimals, neutral mono text) -->
-            <td class="px-4 py-3 align-middle">
-              <span
-                v-if="row.refMult.valid"
-                class="font-mono font-medium text-ink"
-              >
-                {{ row.refMult.text }}
-              </span>
-              <span
-                v-else
-                class="cursor-help text-ink-3"
-                @mouseenter="showTooltip($event, row.refMultTooltip)"
                 @mouseleave="hideTooltip"
               >
                 {{ PLAZA_EMPTY_TEXT }}
@@ -359,8 +340,8 @@ import type { PlazaSortBy } from './PlazaToolbar.vue'
 import {
   PLAZA_EMPTY_TEXT,
   formatCacheRate,
+  formatConsistencyPercent,
   formatPlazaPrice,
-  formatRefMultiplier,
   formatSlaPercent,
   needsDarkInvert,
   plazaToneTextClass
@@ -571,6 +552,27 @@ const orderedEntries = computed<PlazaFoldedEntry[]>(() => {
   return list
 })
 
+function buildConsistencyBadge(model: PlazaModel) {
+  const m = model.metrics
+  if (!m) return null
+  if (m.consistency_state === 'verified') {
+    return {
+      state: 'verified' as const,
+      label: t('modelPlaza.consistency.verifiedBadge'),
+      toneClass: 'bg-ok/12 text-ok'
+    }
+  }
+  if (m.consistency_state === 'mismatch_detected') {
+    const rate = formatConsistencyPercent(m.consistency_rate, m.consistency_state, 2)
+    return {
+      state: 'mismatch_detected' as const,
+      label: t('modelPlaza.consistency.mismatchBadge'),
+      toneClass: rate.tone === 'bad' ? 'bg-bad/12 text-bad' : 'bg-warn/12 text-warn'
+    }
+  }
+  return null
+}
+
 const tableRows = computed(() =>
   orderedEntries.value.map((entry) => {
     const activeEffort = entry.isFolded
@@ -582,11 +584,6 @@ const tableRows = computed(() =>
     const isGroupPoolFallback = metrics?.sla_source === 'group_pool'
     const sla = formatSlaPercent(metrics?.sla_24h, metrics?.sla_state, 2)
     const cache = formatCacheRate(metrics?.cache_read_ratio, metrics?.cache_state, 2)
-    const refMult = formatRefMultiplier(
-      metrics?.reference_multiplier,
-      metrics?.reference_multiplier_state,
-      3
-    )
 
     const slaDotClass =
       sla.tone === 'ok' ? 'bg-ok' : sla.tone === 'warn' ? 'bg-warn' : 'bg-bad'
@@ -598,15 +595,14 @@ const tableRows = computed(() =>
       darkInvert: needsDarkInvert(activeModel.name),
       typeLabel: billingTypeLabel(pricing.mode),
       modelNote: activeModel.note?.trim() || '',
+      consistencyBadge: buildConsistencyBadge(activeModel),
       pricing,
       isGroupPoolFallback,
       sla,
       slaDotClass,
       slaTooltip: sampleStateTooltip(metrics?.sla_state),
       cache,
-      cacheTooltip: sampleStateTooltip(metrics?.cache_state),
-      refMult,
-      refMultTooltip: sampleStateTooltip(metrics?.reference_multiplier_state)
+      cacheTooltip: sampleStateTooltip(metrics?.cache_state)
     }
   })
 )

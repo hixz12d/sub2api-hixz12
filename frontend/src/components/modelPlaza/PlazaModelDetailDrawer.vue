@@ -78,6 +78,37 @@
 
     <!-- Drawer body: 5 flat sections -->
     <div v-if="modelName" class="space-y-6 pb-4">
+      <!-- Sticky top quick-jump anchor bar -->
+      <nav
+        class="sticky top-0 z-10 -mx-5 -mt-4 flex items-center gap-1.5 overflow-x-auto border-b border-rule bg-surface px-5 py-2"
+        :aria-label="t('modelPlaza.drawer.sectionOverview')"
+      >
+        <button
+          type="button"
+          class="inline-flex shrink-0 items-center gap-1.5 rounded-none bg-money px-2.5 py-1.5 text-xs font-semibold text-money-ink transition-colors duration-150 hover:bg-money-hover active:scale-[0.985]"
+          @click="scrollToSection('connect')"
+        >
+          <Icon name="bolt" size="xs" class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span>{{ t('modelPlaza.drawer.quickJumpConnect') }}</span>
+        </button>
+        <button
+          type="button"
+          class="inline-flex shrink-0 items-center gap-1.5 rounded-none bg-surface-tile px-2.5 py-1.5 text-xs font-medium text-ink-2 transition-colors duration-150 hover:bg-surface-tile-2 hover:text-ink active:scale-[0.985]"
+          @click="scrollToSection('pricing')"
+        >
+          <Icon name="dollar" size="xs" class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span>{{ t('modelPlaza.drawer.quickJumpPricing') }}</span>
+        </button>
+        <button
+          type="button"
+          class="inline-flex shrink-0 items-center gap-1.5 rounded-none bg-surface-tile px-2.5 py-1.5 text-xs font-medium text-ink-2 transition-colors duration-150 hover:bg-surface-tile-2 hover:text-ink active:scale-[0.985]"
+          @click="scrollToSection('performance')"
+        >
+          <Icon name="trendingUp" size="xs" class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span>{{ t('modelPlaza.drawer.quickJumpPerformance') }}</span>
+        </button>
+      </nav>
+
       <!-- Detail loading / degraded fallback status strip -->
       <div
         v-if="loading && !detail"
@@ -216,7 +247,7 @@
       </section>
 
       <!-- 3. Performance, Reliability & Consistency -->
-      <section class="space-y-3 border-t border-rule pt-5">
+      <section ref="performanceSectionRef" class="scroll-mt-12 space-y-3 border-t border-rule pt-5">
         <h3 class="text-sm font-semibold text-ink">
           {{ t('modelPlaza.drawer.sectionPerformance') }}
         </h3>
@@ -301,7 +332,7 @@
       </section>
 
       <!-- 4. Full RMB Pricing, Tiers, Time/Peak, Cache Savings & Group Comparison -->
-      <section class="space-y-4 border-t border-rule pt-5">
+      <section ref="pricingSectionRef" class="scroll-mt-12 space-y-4 border-t border-rule pt-5">
         <div class="flex flex-wrap items-baseline justify-between gap-2">
           <h3 class="text-sm font-semibold text-ink">
             {{ t('modelPlaza.drawer.sectionPricingRmb') }}
@@ -408,15 +439,6 @@
             </span>
             <span v-else class="text-ink-3">{{ PLAZA_EMPTY_TEXT }}</span>
           </div>
-        </div>
-
-        <!-- Long-context disabled note -->
-        <div
-          v-if="showLongContextDisabledNote"
-          class="flex items-start gap-2 bg-surface-tile px-3.5 py-2.5 text-xs text-ink-2"
-        >
-          <Icon name="infoCircle" size="sm" class="mt-0.5 shrink-0 text-ink-3" />
-          <span>{{ t('modelPlaza.detail.longContextDisabledNote') }}</span>
         </div>
 
         <!-- Long-context tiered pricing table -->
@@ -559,9 +581,10 @@
           </div>
           <p class="mt-1 text-[11px] text-ink-3">
             {{
-              t('modelPlaza.drawer.savingsSimDesc', {
+              t('modelPlaza.drawer.savingsSimDescSimple', {
                 cacheRate: cacheSavingsSim.cacheRateText,
-                multiplier: cacheSavingsSim.multiplierText
+                fold: cacheSavingsSim.foldText,
+                percent: cacheSavingsSim.savedPercent
               })
             }}
           </p>
@@ -675,7 +698,7 @@
       </section>
 
       <!-- 5. Quick Connect -->
-      <section class="space-y-3 border-t border-rule pt-5">
+      <section ref="quickConnectSectionRef" class="scroll-mt-12 space-y-3 border-t border-rule pt-5">
         <h3 class="text-sm font-semibold text-ink">
           {{ t('modelPlaza.drawer.sectionQuickConnect') }}
         </h3>
@@ -720,8 +743,8 @@ import {
   formatCacheRate,
   formatConsistencyPercent,
   formatContextWindow,
+  formatDiscountFold,
   formatPlazaPrice,
-  formatRefMultiplier,
   formatRelativeUpdatedAt,
   inferVendorKey,
   needsDarkInvert,
@@ -774,6 +797,20 @@ const loading = ref(false)
 const loadError = ref(false)
 const copiedId = ref(false)
 const copiedShare = ref(false)
+
+const performanceSectionRef = ref<HTMLElement | null>(null)
+const pricingSectionRef = ref<HTMLElement | null>(null)
+const quickConnectSectionRef = ref<HTMLElement | null>(null)
+
+function scrollToSection(section: 'connect' | 'pricing' | 'performance') {
+  const target =
+    section === 'connect'
+      ? quickConnectSectionRef.value
+      : section === 'pricing'
+        ? pricingSectionRef.value
+        : performanceSectionRef.value
+  target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 
 let abortController: AbortController | null = null
 let copiedIdTimer: ReturnType<typeof setTimeout> | null = null
@@ -1270,12 +1307,6 @@ const requestIntervals = computed<UserPricingInterval[]>(() =>
   (effectivePricing.value?.intervals ?? []).filter((iv) => iv.per_request_price != null)
 )
 
-const showLongContextDisabledNote = computed(
-  () =>
-    currentGroup.value?.long_context_pricing_enabled === false &&
-    (effectiveOfficial.value?.intervals?.length ?? 0) > 1
-)
-
 function formatTokenCount(n: number): string {
   if (n >= 1_000_000) return `${Math.round((n / 1_000_000) * 100) / 100}M`
   if (n >= 1_000) return `${Math.round((n / 1_000) * 100) / 100}K`
@@ -1325,9 +1356,10 @@ const cacheSavingsSim = computed(() => {
   const cacheVal = h24?.cache_read_ratio ?? props.model?.metrics?.cache_read_ratio ?? null
   const cacheState = h24?.cache_state ?? props.model?.metrics?.cache_state ?? null
 
-  const refFormatted = formatRefMultiplier(refMultVal, refMultState)
+  if (refMultState != null && refMultState !== 'valid') return null
+  const foldText = formatDiscountFold(refMultVal)
   const cacheFormatted = formatCacheRate(cacheVal, cacheState)
-  if (!refFormatted.valid || refMultVal == null || refMultVal >= 1) return null
+  if (!foldText || refMultVal == null) return null
 
   const uncachedPerMillion = inputUnit * activeEffectiveRate.value * PER_MILLION
   const cachedPerMillion = uncachedPerMillion * refMultVal
@@ -1340,7 +1372,7 @@ const cacheSavingsSim = computed(() => {
     savedPercent,
     barPercent,
     cacheRateText: cacheFormatted.valid ? cacheFormatted.text : PLAZA_EMPTY_TEXT,
-    multiplierText: refFormatted.text
+    foldText
   }
 })
 

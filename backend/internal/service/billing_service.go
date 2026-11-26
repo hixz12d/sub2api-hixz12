@@ -488,51 +488,51 @@ func (s *BillingService) initFallbackPricing() {
 
 	// Gemini 3.6 Flash (Google AI pricing: $0.75 input / $3.75 output /
 	// $0.075 cached input per MTok, promotional through 2026-12-31; official
-	// rates double to $1.50/$7.50/$0.15 from 2027-01-01). Antigravity's
-	// -high/-low/-medium/-tiered aliases are matched below so unavailable
-	// remote pricing never records token-bearing requests at $0.
-	s.fallbackPrices["gemini-3.6-flash"] = &ModelPricing{
+	// rates double to $1.50/$7.50/$0.15 from 2027-01-01; Priority is 1.8x).
+	s.fallbackPrices["gemini-3.6-flash"] = pricingWithPriorityMultiplier(&ModelPricing{
 		InputPricePerToken:     0.75e-6,
 		OutputPricePerToken:    3.75e-6,
 		CacheReadPricePerToken: 0.075e-6,
 		SupportsCacheBreakdown: false,
-	}
+	}, 1.8)
 
 	// Gemini 3.7 Flash (Google AI pricing: $0.75 input / $3.75 output /
 	// $0.075 cached input per MTok, promotional through 2026-12-31; official
-	// rates double to $1.50/$7.50/$0.15 from 2027-01-01). Antigravity's
-	// -high/-low/-medium/-tiered aliases are matched below so unavailable
-	// remote pricing never records token-bearing requests at $0.
-	s.fallbackPrices["gemini-3.7-flash"] = &ModelPricing{
+	// rates double to $1.50/$7.50/$0.15 from 2027-01-01; Priority is 1.8x).
+	s.fallbackPrices["gemini-3.7-flash"] = pricingWithPriorityMultiplier(&ModelPricing{
 		InputPricePerToken:     0.75e-6,
 		OutputPricePerToken:    3.75e-6,
 		CacheReadPricePerToken: 0.075e-6,
 		SupportsCacheBreakdown: false,
-	}
+	}, 1.8)
 
 	// Gemini 3.8 Flash (Google AI pricing: $0.75 input / $3.75 output /
 	// $0.075 cached input per MTok, promotional through 2026-12-31; official
-	// rates double to $1.50/$7.50/$0.15 from 2027-01-01). Antigravity's
-	// -high/-low/-medium/-tiered aliases are matched below so unavailable
-	// remote pricing never records token-bearing requests at $0.
-	s.fallbackPrices["gemini-3.8-flash"] = &ModelPricing{
+	// rates double to $1.50/$7.50/$0.15 from 2027-01-01; Priority is 1.8x).
+	s.fallbackPrices["gemini-3.8-flash"] = pricingWithPriorityMultiplier(&ModelPricing{
 		InputPricePerToken:     0.75e-6,
 		OutputPricePerToken:    3.75e-6,
 		CacheReadPricePerToken: 0.075e-6,
 		SupportsCacheBreakdown: false,
-	}
+	}, 1.8)
+
+	// Gemini Flash Worker AGY (aligned with Gemini 3.8 Flash promotional/standard schedule; Priority is 1.8x).
+	s.fallbackPrices["gemini-flash-worker-agy"] = pricingWithPriorityMultiplier(&ModelPricing{
+		InputPricePerToken:     0.75e-6,
+		OutputPricePerToken:    3.75e-6,
+		CacheReadPricePerToken: 0.075e-6,
+		SupportsCacheBreakdown: false,
+	}, 1.8)
 
 	// Gemini 4 Argon (Google AI pricing: $2 input / $10 output / $0.10 cached
 	// input per MTok, promotional through 2026-11-30; official rates double to
-	// $4/$20/$0.20 from 2026-12-01). One rate covers every prompt length.
-	// Antigravity's -high/-low/-medium aliases are matched below so unavailable
-	// remote pricing never records token-bearing requests at $0.
-	s.fallbackPrices["gemini-4-argon"] = &ModelPricing{
+	// $4/$20/$0.20 from 2026-12-01; Priority is 1.8x). One rate covers every prompt length.
+	s.fallbackPrices["gemini-4-argon"] = pricingWithPriorityMultiplier(&ModelPricing{
 		InputPricePerToken:     2e-6,
 		OutputPricePerToken:    10e-6,
 		CacheReadPricePerToken: 0.1e-6,
 		SupportsCacheBreakdown: false,
-	}
+	}, 1.8)
 
 	// Gemini 4 Carbon: introductory Google AI rates through 2026-11-30.
 	// From 2026-12-01 the published $2/$10/$0.10 per MTok rates double
@@ -548,13 +548,13 @@ func (s *BillingService) initFallbackPricing() {
 	}
 
 	// Gemini 4 Argon Cyber Permissive (Vertex AI pricing: $4 input / $20 output /
-	// $0.20 cached input per MTok). The Gemini 4 Argon promotion does not apply.
-	s.fallbackPrices["gemini-4-argon-cyber-permissive"] = &ModelPricing{
+	// $0.20 cached input per MTok; Priority is 1.8x). The Gemini 4 Argon promotion does not apply.
+	s.fallbackPrices["gemini-4-argon-cyber-permissive"] = pricingWithPriorityMultiplier(&ModelPricing{
 		InputPricePerToken:     4e-6,
 		OutputPricePerToken:    20e-6,
 		CacheReadPricePerToken: 0.2e-6,
 		SupportsCacheBreakdown: false,
-	}
+	}, 1.8)
 
 	// Gemini 4 Hydrogen (Google AI pricing: $1.50 input / $7.50 output /
 	// $0.075 cached input per MTok; Priority is 1.8x). One rate covers every
@@ -566,12 +566,34 @@ func (s *BillingService) initFallbackPricing() {
 		SupportsCacheBreakdown: false,
 	}, 1.8)
 
-	// Gemini 4 Neon (aligned with Gemini 4 Argon/Carbon standard tier:
-	// $2 input / $10 output / $0.10 cached input per MTok; Priority is 1.8x).
+	// Gemini 4 Neon (official Google AI standard tier:
+	// $3 input / $15 output / $0.15 cached input per MTok; Priority is 1.8x).
 	s.fallbackPrices["gemini-4-neon"] = pricingWithPriorityMultiplier(&ModelPricing{
+		InputPricePerToken:     3e-6,
+		OutputPricePerToken:    15e-6,
+		CacheReadPricePerToken: 0.15e-6,
+		SupportsCacheBreakdown: false,
+	}, 1.8)
+
+	// Gemini Pro Orchestrator / Argon (aligned with Gemini 4 Argon promotional/standard schedule; Priority is 1.8x).
+	s.fallbackPrices["gemini-pro-orchestrator"] = pricingWithPriorityMultiplier(&ModelPricing{
 		InputPricePerToken:     2e-6,
 		OutputPricePerToken:    10e-6,
 		CacheReadPricePerToken: 0.1e-6,
+		SupportsCacheBreakdown: false,
+	}, 1.8)
+	s.fallbackPrices["gemini-pro-orchestrator-argon"] = pricingWithPriorityMultiplier(&ModelPricing{
+		InputPricePerToken:     2e-6,
+		OutputPricePerToken:    10e-6,
+		CacheReadPricePerToken: 0.1e-6,
+		SupportsCacheBreakdown: false,
+	}, 1.8)
+
+	// Gemini Pro Orchestrator Neon (aligned with Gemini 4 Neon standard tier: $3/$15/$0.15; Priority is 1.8x).
+	s.fallbackPrices["gemini-pro-orchestrator-neon"] = pricingWithPriorityMultiplier(&ModelPricing{
+		InputPricePerToken:     3e-6,
+		OutputPricePerToken:    15e-6,
+		CacheReadPricePerToken: 0.15e-6,
 		SupportsCacheBreakdown: false,
 	}, 1.8)
 
@@ -1240,20 +1262,36 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	if strings.Contains(modelLower, "gemini-3.1-pro") || strings.Contains(modelLower, "gemini-3-1-pro") {
 		return s.fallbackPrices["gemini-3.1-pro"]
 	}
-	if strings.Contains(modelLower, "gemini-3.6-flash") || strings.Contains(modelLower, "gemini-3-6-flash") {
-		return s.fallbackPrices["gemini-3.6-flash"]
+	geminiBase := canonicalGeminiPolicyModel(modelLower)
+	if !strings.Contains(modelLower, "-lite") && !strings.Contains(modelLower, "-cyber") {
+		if geminiBase == "gemini-3.6-flash" || strings.Contains(modelLower, "gemini-3.6-flash") || strings.Contains(modelLower, "gemini-3-6-flash") {
+			return s.fallbackPrices["gemini-3.6-flash"]
+		}
+		if geminiBase == "gemini-3.7-flash" || strings.Contains(modelLower, "gemini-3.7-flash") || strings.Contains(modelLower, "gemini-3-7-flash") {
+			return s.fallbackPrices["gemini-3.7-flash"]
+		}
+		if geminiBase == "gemini-3.8-flash" || strings.Contains(modelLower, "gemini-3.8-flash") || strings.Contains(modelLower, "gemini-3-8-flash") {
+			return s.fallbackPrices["gemini-3.8-flash"]
+		}
 	}
-	if strings.Contains(modelLower, "gemini-3.7-flash") || strings.Contains(modelLower, "gemini-3-7-flash") {
-		return s.fallbackPrices["gemini-3.7-flash"]
+	if geminiBase == "gemini-flash-worker-agy" || strings.Contains(modelLower, "gemini-flash-worker-agy") {
+		return s.fallbackPrices["gemini-flash-worker-agy"]
 	}
-	if strings.Contains(modelLower, "gemini-3.8-flash") || strings.Contains(modelLower, "gemini-3-8-flash") {
-		return s.fallbackPrices["gemini-3.8-flash"]
+	// 更具体的 orchestrator 子型号必须排在通用 gemini-pro-orchestrator 之前。
+	if geminiBase == "gemini-pro-orchestrator-neon" || strings.Contains(modelLower, "gemini-pro-orchestrator-neon") {
+		return s.fallbackPrices["gemini-pro-orchestrator-neon"]
 	}
-	if normalizeGeminiThinkingTierAlias(lastSegment(strings.TrimSpace(modelLower))) == "gemini-4-carbon" {
+	if geminiBase == "gemini-pro-orchestrator-argon" || strings.Contains(modelLower, "gemini-pro-orchestrator-argon") {
+		return s.fallbackPrices["gemini-pro-orchestrator-argon"]
+	}
+	if geminiBase == "gemini-pro-orchestrator" || strings.Contains(modelLower, "gemini-pro-orchestrator") {
+		return s.fallbackPrices["gemini-pro-orchestrator"]
+	}
+	if geminiBase == "gemini-4-carbon" {
 		return s.fallbackPrices["gemini-4-carbon"]
 	}
 	// Cyber 变体不享受 Gemini 4 Argon 的优惠价，必须先于 "gemini-4-argon" 判。
-	if strings.Contains(modelLower, "gemini-4-argon-cyber") {
+	if geminiBase == "gemini-4-argon-cyber-permissive" || strings.Contains(modelLower, "gemini-4-argon-cyber") {
 		return s.fallbackPrices["gemini-4-argon-cyber-permissive"]
 	}
 	if strings.Contains(modelLower, "gemini-4-argon") {
@@ -1262,7 +1300,7 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 	if strings.Contains(modelLower, "gemini-4-hydrogen") {
 		return s.fallbackPrices["gemini-4-hydrogen"]
 	}
-	if normalizeGeminiThinkingTierAlias(lastSegment(strings.TrimSpace(modelLower))) == "gemini-4-neon" {
+	if geminiBase == "gemini-4-neon" {
 		return s.fallbackPrices["gemini-4-neon"]
 	}
 
@@ -2151,11 +2189,12 @@ func (s *BillingService) applyModelSpecificPricingPolicy(model string, pricing *
 }
 
 // applyModelSpecificPricingPolicyEx 与 applyModelSpecificPricingPolicy 相同，
-// 但由调用方控制是否强制 DeepSeek 官方价（forceDeepSeekRates）。
+// 但由调用方控制是否强制应用默认目录策略（forceCatalogPolicy：含 DeepSeek 官方价、
+// Gemini 4 / 3.8 Flash 定时切价与 Gemini 4 写缓存清零）。
 // GPT-6.2 Ultrafast 按请求时点计算。
 // calculateTokenCost 对分组/渠道自定义定价（Source 非 LiteLLM）传 false：
 // 强制覆盖会把运营者配置的售价盖回官方价，违反自定义定价语义。
-func (s *BillingService) applyModelSpecificPricingPolicyEx(model string, pricing *ModelPricing, forceDeepSeekRates bool, pricingAt time.Time) *ModelPricing {
+func (s *BillingService) applyModelSpecificPricingPolicyEx(model string, pricing *ModelPricing, forceCatalogPolicy bool, pricingAt time.Time) *ModelPricing {
 	if pricing == nil {
 		return nil
 	}
@@ -2168,7 +2207,7 @@ func (s *BillingService) applyModelSpecificPricingPolicyEx(model string, pricing
 	// 官方后续保留了 Pro 服务及其计费方式，Pro 不按日期切换成 Flash 价。
 	// 高峰时段倍率不在本函数处理，由 calculateTokenCost 按 deepseekPeakMultiplierAt
 	// 对默认价卡另行叠加（分组/渠道自定义定价不叠加）。
-	if forceDeepSeekRates && isDeepSeekModel(model) {
+	if forceCatalogPolicy && isDeepSeekModel(model) {
 		cloned := *pricing
 		inputPrice, outputPrice, cacheReadPrice := deepseekFlashOffPeakInputPrice, deepseekFlashOffPeakOutputPrice, deepseekFlashOffPeakCacheRead
 		if isDeepSeekProModel(model) {
@@ -2184,6 +2223,11 @@ func (s *BillingService) applyModelSpecificPricingPolicyEx(model string, pricing
 			cloned.CacheReadPricePerToken = cacheReadPrice
 		}
 		return &cloned
+	}
+	if forceCatalogPolicy {
+		if updated, ok := applyGeminiCatalogPricingPolicy(model, pricing, pricingAt); ok {
+			return updated
+		}
 	}
 	normalized := normalizeKnownOpenAICodexModel(model)
 	usesCacheWritePremium := isOpenAIGPT56Model(normalized) || isOpenAIGPT6AstraModel(normalized) || isOpenAIGPT6SolLunaModel(normalized) || openai.GPT62ModelID(normalized) != ""
@@ -2219,7 +2263,7 @@ func (s *BillingService) applyModelSpecificPricingPolicyEx(model string, pricing
 		cloned.LongContextInputMultiplier = 2
 		cloned.LongContextOutputMultiplier = 2
 	}
-	if usesCacheWritePremium && cloned.CacheCreation12hPricePerToken == nil && (forceDeepSeekRates || !cloned.CacheCreationPriceExplicit) {
+	if usesCacheWritePremium && cloned.CacheCreation12hPricePerToken == nil && (forceCatalogPolicy || !cloned.CacheCreationPriceExplicit) {
 		price := cloned.InputPricePerToken * 2.5
 		cloned.CacheCreation12hPricePerToken = &price
 	}

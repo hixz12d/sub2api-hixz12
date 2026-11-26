@@ -796,7 +796,7 @@ export default {
       noProbeYet: 'No probe data yet',
       unauthorizedTitle: 'Exclusive / Preview Group · Access Required',
       unauthorizedHint: 'You can preview pricing and status here. Contact an administrator to request access.',
-      groupFallbackTooltip: 'Fewer than 5 live requests for this model in 24h; showing the group pool availability and probe heartbeat'
+      groupFallbackTooltip: 'Fewer than 20 live requests for this model in 24h; showing the group pool availability and probe heartbeat'
     },
     detail: {
       noModels: 'No models configured for this group',
@@ -823,7 +823,10 @@ export default {
       activeModels: 'Active Models',
       healthyModels: 'Healthy Models',
       updatedPrefix: 'Updated {time}',
-      openMonitor: 'Live Monitor'
+      openMonitor: 'Live Monitor',
+      mobileSummaryPrefix: 'Live Status',
+      mobileExpand: 'More',
+      mobileCollapse: 'Less'
     },
     toolbar: {
       groupSelectorLabel: 'Select Group',
@@ -843,7 +846,7 @@ export default {
       billingVideo: 'Video',
       filterQuick: 'Quick Filters',
       onlyHighCache: 'High cache hit only (≥70%)',
-      onlyVerifiedConsistency: 'Verified model fidelity only',
+      onlyVerifiedConsistency: 'Verified models only',
       resetFilters: 'Reset Filters',
       applyFilters: 'Done',
       sortLabel: 'Sort',
@@ -876,6 +879,7 @@ export default {
       priceInput: 'In',
       priceOutput: 'Out',
       priceCacheRead: 'Cache Read',
+      priceCacheShort: 'Cache',
       perMillionUnit: '/1M',
       tiersBadge: '{count} tiers',
       timePricingBadge: 'Time-of-day',
@@ -884,10 +888,11 @@ export default {
       metricSla: 'SLA (24h)',
       metricStatus: 'Status',
       metricCache: 'Cache Hit',
+      metricCacheShort: 'Cache',
       metricCodingCache: 'Coding Cache',
       metricRefMultiplier: 'Eff. Mult.',
       availableGroupPool: 'Available (Pool)',
-      availableGroupPoolTooltip: 'Fewer than 5 live calls in 24h; falling back to the group service pool status',
+      availableGroupPoolTooltip: 'Fewer than 20 live calls in 24h; falling back to the group service pool status',
       metricLatency: 'Latency',
       metricThroughput: 'Speed',
       effortLabel: 'Effort',
@@ -965,7 +970,7 @@ export default {
       refMultiplierHeader: 'Eff. Mult.',
       refMultiplierTooltip:
         'Equivalent cost multiplier vs. uncached baseline over the last 24h, weighted across input, cache write, cache read, and output tokens',
-      slaTooltip: '24h request success rate (falls back to the group pool status when under 5 live calls)',
+      slaTooltip: '24h request success rate (falls back to the group pool status when under 20 live calls)',
       ttftSpeedTooltip:
         'Primary: 24h median TTFT (P50). Secondary: visible output speed (TPS P50, OpenAI streaming)',
       cacheRateTooltip: 'Cache read ÷ (input + cache write + cache read); ≥70% green, 40–70% neutral, <40% amber',
@@ -995,8 +1000,10 @@ export default {
     consistency: {
       verified: 'Verified',
       verifiedShort: 'Verified',
+      verifiedBadge: 'Verified',
       mismatch: 'Mismatch',
       mismatchShort: 'Mismatch',
+      mismatchBadge: 'Mismatch',
       lowSample: 'Low sample',
       noData: 'Unmonitored',
       cardTitle: 'Model Fidelity & Anti-Downgrade Protection',
@@ -1007,7 +1014,7 @@ export default {
       autoPauseLabel: 'Silent-Downgrade Circuit Breaker',
       autoPauseActive: 'Active auto-pause protection',
       autoPauseDesc: 'Automatically pauses routes when upstream silent model downgrade is detected',
-      autoPauseInactive: 'Standard audit monitoring',
+      autoPauseInactive: 'Live response model verification',
       capabilityProbeLabel: 'Capability Probe',
       capabilityProbeReserved: 'Reserved slot (currently backed by live response audits)',
       lowSampleDesc: 'Fewer than 50 audited samples in this window; fidelity status is withheld'
@@ -1020,6 +1027,9 @@ export default {
       loadDetailFailed: 'Failed to load live metrics; base pricing is still shown below',
       retryLoad: 'Retry',
       updatedAt: 'Metrics updated {time}',
+      quickJumpConnect: 'Quick Connect',
+      quickJumpPricing: 'Pricing',
+      quickJumpPerformance: 'Reliability',
       sectionOverview: 'Overview & Capabilities',
       contextWindow: 'Context Window',
       maxOutput: 'Max Output',
@@ -1053,7 +1063,7 @@ export default {
       bareAliasHintGeneric: 'Requests using the bare model name automatically route to the -high tier',
       effortSelectorLabel: 'Thinking Effort',
       groupPoolFallbackBadge: 'Available (Pool)',
-      groupPoolFallbackHint: 'Fewer than 5 live requests in 24h; availability is backed by the group service pool',
+      groupPoolFallbackHint: 'Fewer than 20 live requests in 24h; availability is backed by the group service pool',
       pricingItem: 'Item',
       pricingPaid: 'Your Price',
       pricingOfficial: 'Official',
@@ -1076,6 +1086,7 @@ export default {
       peakPricingTitle: 'Peak-Hour Pricing',
       savingsSimTitle: '1M Context Cache Savings Estimate',
       savingsSimDesc: 'Estimated using 24h observed cache hit ({cacheRate}) and effective multiplier ({multiplier})',
+      savingsSimDescSimple: 'Estimated from 24h observed cache hit ({cacheRate}), saving roughly {percent}% vs. uncached input',
       savingsSimUncached: 'Uncached Est.',
       savingsSimWithCache: 'With Live Cache',
       savingsSimSaved: 'Est. {percent}% saved',

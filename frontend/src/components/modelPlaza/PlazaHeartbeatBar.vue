@@ -9,14 +9,13 @@
     <div
       v-for="(slot, idx) in displaySlots"
       :key="slot.start ? `${slot.start}-${idx}` : idx"
-      class="min-w-0 flex-1 rounded-none transition-opacity duration-150 hover:opacity-80"
-      :class="slotColorClass(slot.state)"
+      class="min-w-0 flex-1 rounded-none transition-opacity duration-150"
+      :class="[slotColorClass(slot.state), interactive ? 'hover:opacity-80' : '']"
       @mouseenter="showTooltip($event, slot)"
     />
 
-    <Teleport to="body">
+    <Teleport v-if="interactive && activeTooltip" to="body">
       <div
-        v-if="activeTooltip"
         role="tooltip"
         class="pointer-events-none fixed z-[9999] -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-none bg-gray-950 px-2.5 py-1.5 text-xs leading-snug text-white dark:bg-white dark:text-black"
         :style="{ left: `${activeTooltip.left}px`, top: `${activeTooltip.top}px` }"
@@ -43,10 +42,12 @@ import type { PlazaHeartbeatSlot, PlazaHeartbeatSlotState } from '@/api/modelPla
 interface Props {
   slots: PlazaHeartbeatSlot[]
   variant?: 'compact' | 'full'
+  interactive?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  variant: 'compact'
+  variant: 'compact',
+  interactive: true
 })
 
 const { t } = useI18n()
@@ -140,6 +141,7 @@ function formatSlotSummary(slot: PlazaHeartbeatSlot): string {
 }
 
 function showTooltip(event: MouseEvent, slot: PlazaHeartbeatSlot) {
+  if (!props.interactive) return
   const target = event.currentTarget as HTMLElement | null
   if (!target) return
   const rect = target.getBoundingClientRect()

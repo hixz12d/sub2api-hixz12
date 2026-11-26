@@ -16,13 +16,19 @@ import (
 const (
 	// PlazaMinimumSample 复用 ChannelMonitorV2 默认最低样本门槛（50 次），用于缓存/倍率/TTFT/TPS/一致性。
 	PlazaMinimumSample int64 = 50
-	// PlazaModelSLAMinimumSample 单模型 24h 真实流量独立展示 SLA 的最低样本门槛（5 次）；
+	// PlazaModelSLAMinimumSample 单模型 24h 真实流量独立展示 SLA 的最低样本门槛（20 次）；
 	// 低于该门槛时自动回退展示同分组服务池可用性（sla_source = "group_pool"）。
-	PlazaModelSLAMinimumSample int64 = 5
+	PlazaModelSLAMinimumSample int64 = 20
 	// PlazaConsistencyVerifiedThreshold 原模型一致率达标阈值（>= 99.5% 或 0 不一致）。
 	PlazaConsistencyVerifiedThreshold = 0.995
-	// PlazaHealthySLAThreshold 健康模型 24h 可用率判定阈值（沿用 V2 WarningErrorRate = 0.05 -> SLA >= 95%）。
-	PlazaHealthySLAThreshold = 0.95
+	// PlazaHealthySLAThreshold 健康模型 24h 可用率判定阈值（与前端 < 90% 红线对齐）。
+	PlazaHealthySLAThreshold = 0.90
+	// PlazaHeartbeatNormalMaxErrorRate 模型广场单格心跳绿灯最大错误率（<= 3%，即成功率 >= 97%）。
+	PlazaHeartbeatNormalMaxErrorRate = 0.03
+	// PlazaHeartbeatPartialMaxErrorRate 模型广场单格心跳橙黄最大错误率（3% < errRate <= 10%，即成功率 90% ~ < 97%；> 10% 为红）。
+	PlazaHeartbeatPartialMaxErrorRate = 0.10
+	// PlazaHeartbeatSlotMinCriticalSample 模型广场单格心跳标红的最低样本门槛（总请求 < 3 时出错最多标 partial_failure）。
+	PlazaHeartbeatSlotMinCriticalSample int64 = 3
 	// PlazaConsistencyMethodPassiveAudit 一致性核验方法标识。
 	PlazaConsistencyMethodPassiveAudit = "passive_response_model_audit"
 	// PlazaCapabilityProbeReserved 能力探针预留状态标识。
@@ -217,12 +223,14 @@ func NewPlazaModelKey(platform string, groupID int64, model string) PlazaModelKe
 	}
 }
 
-// PlazaListModelRaw 列表快照中单个 (platform, group_id, model) 的原始 24h 数据。
+// PlazaListModelRaw 列表快照中单个 (platform, group_id, model) 的原始 24h 数据与 30d 一致性汇总。
 type PlazaListModelRaw struct {
-	Total24h  PlazaRawBucketCounts
-	Slots12   [12]PlazaRawBucketCounts
-	TTFTHist  map[int64]int64
-	TPSCounts []int64
+	Total24h               PlazaRawBucketCounts
+	Slots12                [12]PlazaRawBucketCounts
+	TTFTHist               map[int64]int64
+	TPSCounts              []int64
+	Consistency30dObserved int64
+	Consistency30dMismatch int64
 }
 
 // PlazaProbeModelRaw 近 24h 单模型 availability_probe 探针原始计数（与真实流量隔离）。
@@ -547,14 +555,17 @@ func plazaEvalHeartbeatSlot(start, end time.Time, counts PlazaRawBucketCounts) P
 	if total <= 0 {
 		return slot
 	}
-	thresholds := DefaultChannelMonitorV2HealthThresholds()
 	errRate := plazaClampRatio(float64(counts.ErrorRequests) / float64(total))
 	successRate := plazaClampRatio(float64(counts.SuccessRequests) / float64(total))
 	slot.SuccessRate = &successRate
 	switch {
-	case errRate >= thresholds.CriticalErrorRate:
-		slot.State = PlazaHeartbeatManyFailures
-	case errRate >= thresholds.WarningErrorRate:
+	case errRate > PlazaHeartbeatPartialMaxErrorRate:
+		if total < PlazaHeartbeatSlotMinCriticalSample {
+			slot.State = PlazaHeartbeatPartialFailure
+		} else {
+			slot.State = PlazaHeartbeatManyFailures
+		}
+	case errRate > PlazaHeartbeatNormalMaxErrorRate:
 		slot.State = PlazaHeartbeatPartialFailure
 	default:
 		slot.State = PlazaHeartbeatNormal
@@ -759,6 +770,12 @@ func plazaBuildDetailHeartbeat72(
 		for i := 0; i < 72; i++ {
 			slots[i] = plazaAddRequestCounts(slots[i], snap.GroupProbeSlots72[i])
 		}
+	} else if slaSource == PlazaSLASourceModel {
+		if snap.AggregationReady {
+			for i := 0; i < 72; i++ {
+				slots[i] = snap.Slots72[i]
+			}
+		}
 	} else {
 		for i := 0; i < 72; i++ {
 			if snap.AggregationReady {
@@ -928,8 +945,76 @@ func plazaEvalConsistency(observed, mismatch int64) (*float64, PlazaConsistencyS
 	return &rate, PlazaConsistencyMismatchDetected
 }
 
-func plazaAutoPauseProtected(platform string) bool {
-	return strings.EqualFold(strings.TrimSpace(platform), PlatformOpenAI)
+func plazaClampMismatch(observed, mismatch int64) int64 {
+	if observed <= 0 || mismatch <= 0 {
+		return 0
+	}
+	if mismatch > observed {
+		return observed
+	}
+	return mismatch
+}
+
+func plazaEvalModelConsistencyWithFallback(
+	real24hObs, real24hMismatch int64,
+	obs30d, mismatch30d int64,
+	probe24hObs, probe24hMismatch int64,
+) (*float64, PlazaConsistencyState) {
+	if real24hObs < 0 {
+		real24hObs = 0
+	}
+	real24hMismatch = plazaClampMismatch(real24hObs, real24hMismatch)
+	if obs30d < 0 {
+		obs30d = 0
+	}
+	mismatch30d = plazaClampMismatch(obs30d, mismatch30d)
+	if probe24hObs < 0 {
+		probe24hObs = 0
+	}
+	probe24hMismatch = plazaClampMismatch(probe24hObs, probe24hMismatch)
+
+	if real24hObs >= PlazaMinimumSample {
+		return plazaEvalConsistency(real24hObs, real24hMismatch)
+	}
+	if real24hObs >= 5 && real24hMismatch > 0 {
+		rate24h := plazaClampRatio(float64(real24hObs-real24hMismatch) / float64(real24hObs))
+		if rate24h < PlazaConsistencyVerifiedThreshold {
+			return &rate24h, PlazaConsistencyMismatchDetected
+		}
+	}
+
+	baseObs := obs30d
+	if real24hObs > baseObs {
+		baseObs = real24hObs
+	}
+	baseMismatch := mismatch30d
+	if real24hMismatch > baseMismatch {
+		baseMismatch = real24hMismatch
+	}
+	baseMismatch = plazaClampMismatch(baseObs, baseMismatch)
+
+	combinedObs := baseObs + probe24hObs
+	combinedMismatch := plazaClampMismatch(combinedObs, baseMismatch+probe24hMismatch)
+	if combinedObs <= 0 {
+		return nil, PlazaConsistencyNoData
+	}
+	if combinedObs >= 5 && combinedMismatch == 0 {
+		rate := 1.0
+		return &rate, PlazaConsistencyVerified
+	}
+	if combinedObs >= 20 {
+		combinedRate := plazaClampRatio(float64(combinedObs-combinedMismatch) / float64(combinedObs))
+		if combinedRate >= PlazaConsistencyVerifiedThreshold {
+			return &combinedRate, PlazaConsistencyVerified
+		}
+		return &combinedRate, PlazaConsistencyMismatchDetected
+	}
+	return nil, PlazaConsistencyLowSample
+}
+
+func plazaAutoPauseProtected(platform, model string) bool {
+	return strings.EqualFold(strings.TrimSpace(platform), PlatformOpenAI) &&
+		strings.EqualFold(strings.TrimSpace(model), "gpt-6-astra")
 }
 
 func plazaBuildModelMetrics(
@@ -945,21 +1030,27 @@ func plazaBuildModelMetrics(
 ) *PlazaModelMetrics {
 	nonTextMedia := isPlazaNonTextMediaModel(platform, model, pricing)
 	prices := extractPlazaRefTokenPrices(pricing, official)
-	autoPause := plazaAutoPauseProtected(platform)
+	autoPause := plazaAutoPauseProtected(platform, model)
 
 	var realCounts PlazaRawBucketCounts
 	var ttftHist map[int64]int64
 	var tpsCounts []int64
+	var obs30d, mismatch30d int64
 	if aggregationReady && raw != nil {
 		realCounts = raw.Total24h
 		ttftHist = raw.TTFTHist
 		tpsCounts = raw.TPSCounts
+		obs30d = raw.Consistency30dObserved
+		mismatch30d = raw.Consistency30dMismatch
 	}
 
 	var modelProbeCounts *PlazaRawBucketCounts
+	var probeObs, probeMismatch int64
 	if modelProbeRaw != nil {
 		c := modelProbeRaw.Total24h
 		modelProbeCounts = &c
+		probeObs = modelProbeRaw.Total24h.ModelObservedRequests
+		probeMismatch = modelProbeRaw.Total24h.ModelMismatchRequests
 	}
 
 	sla, slaState, slaSource := plazaEvalModelSLAWithFallback(
@@ -970,7 +1061,7 @@ func plazaBuildModelMetrics(
 		modelProbeCounts,
 	)
 
-	// 严格指标隔离：TTFT / TPS / Coding 缓存 / 参考倍率 / 一致性 100% 仅消费真实流量并维持 50 样本门槛。
+	// 严格指标隔离：TTFT / TPS / Coding 缓存 / 参考倍率 100% 仅消费真实流量并维持 50 样本门槛。
 	ttftP50, ttftP90, ttftState := (*int64)(nil), (*int64)(nil), PlazaMetricStateNoData
 	tpsP50, tpsState := (*float64)(nil), PlazaOutputTPSNoData
 	if !strings.EqualFold(strings.TrimSpace(platform), PlatformOpenAI) {
@@ -978,17 +1069,35 @@ func plazaBuildModelMetrics(
 	}
 	cacheRatio, cacheState := (*float64)(nil), PlazaMetricStateNoData
 	refMult, refMultState := (*float64)(nil), PlazaMetricStateNoData
-	consRate, consState := (*float64)(nil), PlazaConsistencyNoData
 	if aggregationReady && raw != nil {
 		ttftP50, ttftP90, ttftState = plazaEvalTTFT(ttftHist, nonTextMedia)
 		tpsP50, tpsState = plazaEvalOutputTPS(platform, tpsCounts, nonTextMedia)
 		cacheRatio, cacheState, refMult, refMultState = plazaEvalCacheAndRefMultiplier(realCounts, nonTextMedia, prices)
-		consRate, consState = plazaEvalConsistency(realCounts.ModelObservedRequests, realCounts.ModelMismatchRequests)
 	}
+	consRate, consState := plazaEvalModelConsistencyWithFallback(
+		realCounts.ModelObservedRequests,
+		realCounts.ModelMismatchRequests,
+		obs30d,
+		mismatch30d,
+		probeObs,
+		probeMismatch,
+	)
 
 	hb := make([]PlazaHeartbeatSlot, 0)
 	if slaSource == PlazaSLASourceGroupPool && groupPool != nil && len(groupPool.Heartbeat12) > 0 {
 		hb = clonePlazaHeartbeatSlots(groupPool.Heartbeat12)
+	} else if slaSource == PlazaSLASourceModel {
+		if !windowStart.IsZero() && aggregationReady {
+			hb = make([]PlazaHeartbeatSlot, 12)
+			for i := 0; i < 12; i++ {
+				var slotCounts PlazaRawBucketCounts
+				if raw != nil {
+					slotCounts = raw.Slots12[i]
+				}
+				slotStart := windowStart.Add(time.Duration(i) * 2 * time.Hour)
+				hb[i] = plazaEvalHeartbeatSlot(slotStart, slotStart.Add(2*time.Hour), slotCounts)
+			}
+		}
 	} else if !windowStart.IsZero() && (aggregationReady || modelProbeRaw != nil) {
 		hb = make([]PlazaHeartbeatSlot, 12)
 		for i := 0; i < 12; i++ {

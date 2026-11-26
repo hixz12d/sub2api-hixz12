@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Wei-Shaw/sub2api/internal/pkg/openai"
 )
 
 // PlazaOfficialPricing 模型广场展示用的官方参考价（USD per token），与计费同源：
@@ -127,6 +129,7 @@ type ModelPlazaService struct {
 	resolver       *ModelPricingResolver
 	metricsCache   *ModelPlazaMetricsCache
 	settingService *SettingService
+	accountRepo    AccountRepository
 }
 
 // NewModelPlazaService 创建模型广场服务。
@@ -160,6 +163,14 @@ func (s *ModelPlazaService) SetSettingService(settingService *SettingService) {
 		return
 	}
 	s.settingService = settingService
+}
+
+// SetAccountRepository 可选注入账号仓库（用于校验 OpenAI 分组可调度账号的长上下文计费开关，不改动 NewModelPlazaService 原签名）。
+func (s *ModelPlazaService) SetAccountRepository(accountRepo AccountRepository) {
+	if s == nil {
+		return
+	}
+	s.accountRepo = accountRepo
 }
 
 // ListGroups 返回模型广场数据：每个活跃分组附带其可用模型与定价。
@@ -259,6 +270,7 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 	}
 
 	officialMemo := make(map[string]*PlazaOfficialPricing)
+	openAIAccountsMemo := make(map[int64]plazaOpenAIAccountsMemoEntry)
 	out := make([]PlazaGroup, 0, len(order))
 	for _, gid := range order {
 		pg := byGroup[gid]
@@ -273,7 +285,7 @@ func (s *ModelPlazaService) ListGroups(ctx context.Context) ([]PlazaGroup, error
 		})
 		g := groupEnt[gid]
 		for j := range pg.Models {
-			s.fillDisplayPricing(ctx, &pg.Models[j], g)
+			s.fillDisplayPricingWithMemo(ctx, &pg.Models[j], g, openAIAccountsMemo)
 			pg.Models[j].OfficialPricing = s.lookupOfficialPricing(ctx, pg.Models[j].Name, officialMemo)
 		}
 		out = append(out, *pg)
@@ -327,6 +339,7 @@ func (s *ModelPlazaService) listGroupsFromCatalog(ctx context.Context, catalogCf
 		name     string
 	}
 	officialMemo := make(map[string]*PlazaOfficialPricing)
+	openAIAccountsMemo := make(map[int64]plazaOpenAIAccountsMemoEntry)
 	out := make([]PlazaGroup, 0, len(catalogCfg.Groups))
 
 	for i := range groups {
@@ -374,7 +387,7 @@ func (s *ModelPlazaService) listGroupsFromCatalog(ctx context.Context, catalogCf
 				Note:             lookupCatalogModelNote(modelName, cfgGroup.ModelNotes, notesLower),
 				BareAliasForHigh: isCatalogBareAliasForHigh(modelName, bareAliasSet),
 			}
-			s.fillDisplayPricing(ctx, &m, g)
+			s.fillDisplayPricingWithMemo(ctx, &m, g, openAIAccountsMemo)
 			m.OfficialPricing = s.lookupOfficialPricing(ctx, m.Name, officialMemo)
 			pg.Models = append(pg.Models, m)
 		}
@@ -478,10 +491,80 @@ func lookupCatalogModelNote(modelName string, exact map[string]string, lowerMap 
 	return ""
 }
 
+type plazaOpenAIAccountsMemoEntry struct {
+	ok       bool
+	accounts []Account
+}
+
+func isOpenAISubscriptionLongContextExemptModel(model string) bool {
+	m := strings.TrimSpace(model)
+	if m == "" {
+		return false
+	}
+	return openai.GPT62ModelID(m) != "" || openai.IsGPT61SolModelSpelling(m) || openai.IsGPT61TerraModelSpelling(m)
+}
+
+func (s *ModelPlazaService) resolveOpenAILongContextGate(
+	ctx context.Context,
+	g *Group,
+	platform string,
+	model string,
+	memo map[int64]plazaOpenAIAccountsMemoEntry,
+) *bool {
+	if s == nil || s.accountRepo == nil || g == nil || g.ID <= 0 {
+		return nil
+	}
+	if !strings.EqualFold(strings.TrimSpace(platform), PlatformOpenAI) {
+		return nil
+	}
+	var entry plazaOpenAIAccountsMemoEntry
+	var exists bool
+	if memo != nil {
+		entry, exists = memo[g.ID]
+	}
+	if !exists {
+		accounts, err := s.accountRepo.ListSchedulableByGroupIDAndPlatform(ctx, g.ID, PlatformOpenAI)
+		if err != nil {
+			entry = plazaOpenAIAccountsMemoEntry{ok: false}
+		} else {
+			entry = plazaOpenAIAccountsMemoEntry{ok: true, accounts: accounts}
+		}
+		if memo != nil {
+			memo[g.ID] = entry
+		}
+	}
+	if !entry.ok {
+		return nil
+	}
+	modelExemptOnOAuth := isOpenAISubscriptionLongContextExemptModel(model)
+	enabled := false
+	for i := range entry.accounts {
+		acc := &entry.accounts[i]
+		if !acc.IsOpenAILongContextBillingEnabled() {
+			continue
+		}
+		if acc.IsOpenAIOAuthLike() && modelExemptOnOAuth {
+			continue
+		}
+		enabled = true
+		break
+	}
+	return &enabled
+}
+
 // fillDisplayPricing 把模型的展示定价换成实收口径：
 // token 模型取计费阶梯表（单价与档位均由真实计费函数得出），
 // 图片/按次模型（或阶梯表不可用时）沿用渠道定价与分组图片档位价。
 func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaModel, g *Group) {
+	s.fillDisplayPricingWithMemo(ctx, m, g, nil)
+}
+
+func (s *ModelPlazaService) fillDisplayPricingWithMemo(
+	ctx context.Context,
+	m *PlazaModel,
+	g *Group,
+	openAIAccountsMemo map[int64]plazaOpenAIAccountsMemoEntry,
+) {
 	if groupPricing := matchGroupModelPricing(g, m.Name); groupPricing != nil {
 		m.Pricing = groupPricing
 		// 分组模型级固定价就是实收价，不能再被分组图片兜底档位覆盖。
@@ -491,10 +574,12 @@ func (s *ModelPlazaService) fillDisplayPricing(ctx context.Context, m *PlazaMode
 		}
 	}
 	if s.billingService != nil && s.resolver != nil {
+		longContextGate := s.resolveOpenAILongContextGate(ctx, g, m.Platform, m.Name, openAIAccountsMemo)
 		sched, err := s.billingService.ResolveContextPricingSchedule(ctx, s.resolver, ContextPricingScheduleInput{
-			Model:    m.Name,
-			Group:    g,
-			Platform: m.Platform,
+			Model:                     m.Name,
+			Group:                     g,
+			Platform:                  m.Platform,
+			LongContextBillingEnabled: longContextGate,
 		})
 		if err == nil && sched != nil && len(sched.Tiers) > 0 {
 			m.Pricing = plazaPricingFromSchedule(m.Pricing, sched)
@@ -916,7 +1001,7 @@ func (s *ModelPlazaService) BuildModelDetail(
 		GroupComparisons: comparisons,
 		Protection: PlazaDetailProtection{
 			ConsistencyMethod:     PlazaConsistencyMethodPassiveAudit,
-			AutoPauseEnabled:      plazaAutoPauseProtected(selected.model.Platform),
+			AutoPauseEnabled:      plazaAutoPauseProtected(selected.model.Platform, selected.model.Name),
 			CapabilityProbeStatus: PlazaCapabilityProbeReserved,
 		},
 		UpdatedAt: updatedAt,

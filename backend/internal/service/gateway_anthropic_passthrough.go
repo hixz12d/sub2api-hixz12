@@ -414,6 +414,59 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 	var firstTokenMs *int
 	clientDisconnected := false
 	sawTerminalEvent := false
+	sawErrorEvent := false
+	currentEventName := ""
+	errorEventMessage := ""
+	var errorEventPayload []byte
+	recordPassthroughStreamError := func() {
+		msg := sanitizeUpstreamErrorMessage(strings.TrimSpace(errorEventMessage))
+		if msg == "" {
+			msg = "Upstream stream error"
+		}
+		statusCode := http.StatusBadGateway
+		if len(errorEventPayload) > 0 && gjson.ValidBytes(errorEventPayload) {
+			switch strings.ToLower(strings.TrimSpace(gjson.GetBytes(errorEventPayload, "error.type").String())) {
+			case "rate_limit_error":
+				statusCode = http.StatusTooManyRequests
+			case "overloaded_error":
+				statusCode = http.StatusServiceUnavailable
+			case "invalid_request_error":
+				statusCode = http.StatusBadRequest
+			case "authentication_error":
+				statusCode = http.StatusUnauthorized
+			case "permission_error":
+				statusCode = http.StatusForbidden
+			}
+		}
+		detail := ""
+		if len(errorEventPayload) > 0 && s != nil && s.cfg != nil && s.cfg.Gateway.LogUpstreamErrorBody {
+			maxBytes := s.cfg.Gateway.LogUpstreamErrorBodyMaxBytes
+			if maxBytes <= 0 {
+				maxBytes = 2048
+			}
+			detail = truncateString(string(errorEventPayload), maxBytes)
+		}
+		if c != nil {
+			setOpsUpstreamError(c, statusCode, msg, detail)
+			ev := OpsUpstreamErrorEvent{
+				ProxyID:            opsUpstreamProxyID(account),
+				ProxyName:          opsUpstreamProxyName(account),
+				Platform:           PlatformAnthropic,
+				UpstreamStatusCode: statusCode,
+				UpstreamRequestID:  resp.Header.Get("x-request-id"),
+				Passthrough:        true,
+				Kind:               "stream_failed",
+				Message:            msg,
+				Detail:             detail,
+			}
+			if account != nil {
+				ev.Platform = account.Platform
+				ev.AccountID = account.ID
+				ev.AccountName = account.Name
+			}
+			appendOpsUpstreamError(c, ev)
+		}
+	}
 
 	scanner := bufio.NewScanner(resp.Body)
 	maxLineSize := defaultMaxLineSize
@@ -514,6 +567,17 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 					// 兜底补刷，确保最后一个未以空行结尾的事件也能及时送达客户端。
 					flusher.Flush()
 				}
+				if sawErrorEvent {
+					if !clientDisconnected {
+						MarkResponseCommitted(c)
+					}
+					recordPassthroughStreamError()
+					msg := strings.TrimSpace(errorEventMessage)
+					if msg == "" {
+						msg = "Upstream stream error"
+					}
+					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, fmt.Errorf("upstream stream error: %s", msg)
+				}
 				if !sawTerminalEvent {
 					if clientDisconnected && streamInterval > 0 {
 						lastRead := time.Unix(0, atomic.LoadInt64(&lastReadAt))
@@ -528,6 +592,18 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			if ev.err != nil {
 				if sawTerminalEvent {
 					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, nil
+				}
+				if sawErrorEvent {
+					if !clientDisconnected {
+						flusher.Flush()
+						MarkResponseCommitted(c)
+					}
+					recordPassthroughStreamError()
+					msg := strings.TrimSpace(errorEventMessage)
+					if msg == "" {
+						msg = "Upstream stream error"
+					}
+					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: clientDisconnected}, fmt.Errorf("upstream stream error: %s", msg)
 				}
 				if clientDisconnected {
 					return &streamingResult{usage: usage, firstTokenMs: firstTokenMs, clientDisconnect: true}, fmt.Errorf("stream usage incomplete after disconnect: %w", ev.err)
@@ -546,6 +622,17 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 			if data, ok := extractAnthropicSSEDataLine(line); ok {
 				trimmed := strings.TrimSpace(data)
 				observer.ObserveAnthropic([]byte(trimmed))
+				if strings.EqualFold(currentEventName, "error") || gjson.Get(trimmed, "type").String() == "error" {
+					sawErrorEvent = true
+					errorEventPayload = append(errorEventPayload[:0], trimmed...)
+					if msg := strings.TrimSpace(gjson.Get(trimmed, "error.message").String()); msg != "" {
+						errorEventMessage = sanitizeUpstreamErrorMessage(msg)
+					} else if msg := strings.TrimSpace(gjson.Get(trimmed, "message").String()); msg != "" {
+						errorEventMessage = sanitizeUpstreamErrorMessage(msg)
+					} else if msg := strings.TrimSpace(extractUpstreamErrorMessage(errorEventPayload)); msg != "" {
+						errorEventMessage = sanitizeUpstreamErrorMessage(msg)
+					}
+				}
 				if anthropicStreamEventIsTerminal("", trimmed) {
 					sawTerminalEvent = true
 				}
@@ -556,8 +643,16 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 				parseSSEUsagePassthrough(data, usage)
 			} else {
 				trimmed := strings.TrimSpace(line)
-				if strings.HasPrefix(trimmed, "event:") && anthropicStreamEventIsTerminal(strings.TrimSpace(strings.TrimPrefix(trimmed, "event:")), "") {
-					sawTerminalEvent = true
+				if strings.HasPrefix(trimmed, "event:") {
+					currentEventName = strings.TrimSpace(strings.TrimPrefix(trimmed, "event:"))
+					if strings.EqualFold(currentEventName, "error") {
+						sawErrorEvent = true
+					}
+					if anthropicStreamEventIsTerminal(currentEventName, "") {
+						sawTerminalEvent = true
+					}
+				} else if trimmed == "" {
+					currentEventName = ""
 				}
 			}
 
@@ -578,6 +673,9 @@ func (s *GatewayService) handleStreamingResponseAnthropicAPIKeyPassthrough(
 				} else if line == "" {
 					// 按 SSE 事件边界刷出，减少每行 flush 带来的 syscall 开销。
 					flusher.Flush()
+					if sawErrorEvent {
+						MarkResponseCommitted(c)
+					}
 					lastDataAt = time.Now()
 					resetKeepaliveTimer()
 					inPartialEvent = false

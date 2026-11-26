@@ -2240,6 +2240,25 @@ func (s *OpenAIGatewayService) nonStreamingTerminalFailureFailover(
 	return s.newOpenAIStreamFailoverErrorWithModel(c, account, passthrough, upstreamRequestID, payload, message, firstNonEmpty(canonicalModel...), headers)
 }
 
+// isOpenAIIncompleteResponseWithError reports whether a response.incomplete SSE
+// payload carries a non-empty response.error object (as emitted on mid-stream
+// upstream interruption) as opposed to a normal max_output_tokens stop.
+func isOpenAIIncompleteResponseWithError(payload []byte) bool {
+	if !bytes.Contains(payload, []byte(`"error"`)) {
+		return false
+	}
+	errObj := gjson.GetBytes(payload, "response.error")
+	if !errObj.Exists() || !errObj.IsObject() {
+		return false
+	}
+	hasField := false
+	errObj.ForEach(func(_, _ gjson.Result) bool {
+		hasField = true
+		return false
+	})
+	return hasField
+}
+
 func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	ctx context.Context,
 	resp *http.Response,
@@ -2312,6 +2331,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 	clientOutputStarted := false
 	codexFailureTerminal := account != nil && account.Platform == PlatformOpenAI
 	failureDelivered := false
+	bareErrorPending := false
+	bareErrorDelivered := false
+	upstreamStreamErrorRecorded := false
 	suppressCurrentEvent := false
 	responseFailedPending := false
 	var bareErrorPayload []byte
@@ -2489,7 +2511,8 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				capacityFailoverSuppressedLogged = true
 			}
 			cyberHit := false
-			if eventType == "response.failed" || eventType == "error" {
+			incompleteWithError := eventType == "response.incomplete" && isOpenAIIncompleteResponseWithError(dataBytes)
+			if eventType == "response.failed" || eventType == "error" || incompleteWithError {
 				if codexFailureTerminal && eventType == "error" {
 					sawBareError = true
 					bareErrorPayload = append(bareErrorPayload[:0], dataBytes...)
@@ -2497,10 +2520,15 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 				} else if codexFailureTerminal && eventType == "response.failed" {
 					sawResponseFailed = true
 				}
-				responseFailedPending = !codexFailureTerminal || eventType == "response.failed"
+				if eventType == "response.failed" || incompleteWithError {
+					responseFailedPending = true
+				} else if !codexFailureTerminal && eventType == "error" {
+					bareErrorPending = true
+				}
 				MarkOpenAIAttemptTerminal(c, eventType)
-				failedMessage = extractOpenAISSEErrorMessage(dataBytes)
-				if failedMessage == "" {
+				if msg := extractOpenAISSEErrorMessage(dataBytes); msg != "" {
+					failedMessage = msg
+				} else if failedMessage == "" {
 					failedMessage = "Upstream response failed"
 				}
 				// response.failed 自带上游已消耗的 usage（input token 通常已扣）；必须先解析
@@ -2519,7 +2547,7 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 					})
 				}
 				outputStarted := openAIStreamClientOutputStarted(c, clientOutputStarted, attemptWriterSizeBefore, 0)
-				if !outputStarted && !cyberHit {
+				if !outputStarted && !cyberHit && !incompleteWithError {
 					if compactErr := newOpenAICompactFallbackSignal(c, dataBytes, failedMessage); compactErr != nil {
 						return resultWithUsage(), compactErr
 					}
@@ -2529,17 +2557,18 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 						// Wait for the authoritative response.failed before mutating
 						// account health; EOF synthesis applies the pending effect.
 						bareErrorAccountSideEffectsPending = true
-					} else {
+					} else if !incompleteWithError {
 						s.handleOpenAIStreamTerminalAccountSideEffects(c, account, dataBytes, failedMessage, resp.Header, mappedModel)
 						bareErrorAccountSideEffectsPending = false
 					}
-					if eventType == "response.failed" {
+					if !upstreamStreamErrorRecorded && (eventType == "response.failed" || incompleteWithError || (!codexFailureTerminal && eventType == "error")) {
 						// The stream cannot be replayed after semantic output. Preserve the
 						// terminal event, while making the upstream failure queryable.
 						s.recordOpenAIStreamUpstreamError(c, account, true, upstreamRequestID, "stream_failed", dataBytes, failedMessage)
+						upstreamStreamErrorRecorded = true
 					}
 				}
-				if !outputStarted {
+				if !outputStarted && !incompleteWithError {
 					shouldFailover := false
 					if !cyberHit {
 						if eventType == "error" {
@@ -2567,6 +2596,10 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 							return resultWithUsage(), fmt.Errorf("upstream response failed: passthrough rule matched message=%s", errMsg)
 						}
 					}
+				}
+				if !cyberHit && !upstreamStreamErrorRecorded && (eventType == "response.failed" || incompleteWithError || (!codexFailureTerminal && eventType == "error")) {
+					s.recordOpenAIStreamUpstreamError(c, account, true, upstreamRequestID, "stream_failed", dataBytes, failedMessage)
+					upstreamStreamErrorRecorded = true
 				}
 				forceFlushFailedEvent = true
 				sawFailedEvent = true
@@ -2663,12 +2696,19 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			responseFailedPending = false
 			failureDelivered = true
 		}
+		if line == "" && bareErrorPending {
+			bareErrorPending = false
+			bareErrorDelivered = true
+		}
 		// Terminal 事件（response.completed / [DONE] 等）随空行完整刷出后不再等上游
 		// EOF：上游在 keep-alive/HTTP2 复用连接上可能拖延关闭连接（观测到 8~46s 不等），
 		// 空等期间只能靠 keepalive 维持，白白拉长尾延迟。usage 已在 terminal 事件中解析。
 		// Codex bare error 序列（error 后可能跟 response.failed 或翻盘的 completed）
-		// 必须继续读取，不适用提前结束。
-		if (sawDone || sawTerminalEvent) && line == "" && (!codexFailureTerminal || !sawBareError) {
+		// 以及非 Codex 上游的 error -> response.incomplete / response.failed 序列
+		// 必须继续读取后续终结事件，不适用在 bare error 处提前结束。
+		if (sawDone || sawTerminalEvent) && line == "" &&
+			(!codexFailureTerminal || !sawBareError) &&
+			(codexFailureTerminal || terminalEventType != "error") {
 			break
 		}
 	}
@@ -2680,6 +2720,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 			return resultWithUsage(), nil
 		}
 		if sawFailedEvent {
+			if failureDelivered || bareErrorDelivered || (clientOutputStarted && (responseFailedPending || bareErrorPending)) {
+				MarkResponseCommitted(c)
+			}
 			return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
 		}
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -2711,6 +2754,9 @@ func (s *OpenAIGatewayService) handleStreamingResponsePassthrough(
 		return resultWithUsage(), NewOpenAIUpstreamStreamReadError(err)
 	}
 	if sawFailedEvent {
+		if failureDelivered || bareErrorDelivered || (clientOutputStarted && (responseFailedPending || bareErrorPending)) {
+			MarkResponseCommitted(c)
+		}
 		return resultWithUsage(), fmt.Errorf("upstream response failed: %s", failedMessage)
 	}
 	if !clientDisconnected && !sawDone && !sawTerminalEvent && ctx.Err() == nil {

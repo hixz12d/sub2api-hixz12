@@ -1,11 +1,11 @@
 <template>
-  <div class="mx-auto w-full max-w-[1320px] space-y-4">
+  <div class="mx-auto w-full max-w-[1320px] space-y-3 md:space-y-4">
     <!-- Standalone Page Header (omitted in embedded AppLayout mode where AppHeader already shows title) -->
     <div v-if="!embedded" class="space-y-1">
-      <h1 class="text-[26px] font-light leading-tight tracking-[-0.02em] text-ink sm:text-[30px]">
+      <h1 class="text-xl font-light leading-tight tracking-[-0.02em] text-ink sm:text-[28px]">
         {{ t('modelPlaza.title') }}
       </h1>
-      <p class="text-sm text-ink-3">
+      <p class="hidden text-sm text-ink-3 sm:block">
         {{ t('modelPlaza.description') }}
       </p>
     </div>
@@ -83,13 +83,11 @@
         <div
           v-for="i in 6"
           :key="i"
-          class="h-[246px] animate-pulse rounded-none bg-surface-tile p-[18px]"
+          class="h-[144px] animate-pulse rounded-none bg-surface-tile p-[18px]"
         >
           <div class="h-5 w-2/3 bg-surface-tile-2" />
-          <div class="mt-3 h-4 w-3/4 bg-surface-tile-2" />
-          <div class="mt-3 h-[58px] w-full bg-surface-tile-2" />
-          <div class="mt-3 h-9 w-full bg-surface-tile-2" />
-          <div class="mt-4 h-4 w-1/2 bg-surface-tile-2" />
+          <div class="mt-3.5 h-4 w-4/5 bg-surface-tile-2" />
+          <div class="mt-4 h-6 w-full bg-surface-tile-2" />
         </div>
       </div>
     </template>
@@ -827,14 +825,6 @@ const sortedFilteredEntries = computed<PlazaFoldedEntry[]>(() => {
             validMetricValue(a.metrics?.cache_read_ratio, a.metrics?.cache_state),
             validMetricValue(b.metrics?.cache_read_ratio, b.metrics?.cache_state),
             'desc'
-          ) || a.name.localeCompare(b.name)
-        )
-      case 'ref_multiplier_asc':
-        return (
-          compareNullable(
-            validMetricValue(a.metrics?.reference_multiplier, a.metrics?.reference_multiplier_state),
-            validMetricValue(b.metrics?.reference_multiplier, b.metrics?.reference_multiplier_state),
-            'asc'
           ) || a.name.localeCompare(b.name)
         )
       case 'sla_desc':

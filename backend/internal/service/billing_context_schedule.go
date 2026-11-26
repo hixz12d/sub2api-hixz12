@@ -64,6 +64,8 @@ type ContextPricingScheduleInput struct {
 	// Platform 为请求的具体平台（composite 分组传模型所属平台），
 	// 决定渠道定价查找与平台旧规则的适用。
 	Platform string
+	// LongContextBillingEnabled 可选账号级长上下文门闩（nil 表示不额外限制）。
+	LongContextBillingEnabled *bool
 }
 
 var errContextPricingResolverRequired = errors.New("context pricing schedule: resolver is required")
@@ -105,12 +107,13 @@ func (s *BillingService) ResolveContextPricingSchedule(ctx context.Context, reso
 	}
 
 	req := TokenCostRequest{
-		Ctx:            ctx,
-		Model:          in.Model,
-		Group:          in.Group,
-		RateMultiplier: 1,
-		Resolver:       resolver,
-		Resolved:       resolved,
+		Ctx:                       ctx,
+		Model:                     in.Model,
+		Group:                     in.Group,
+		RateMultiplier:            1,
+		Resolver:                  resolver,
+		Resolved:                  resolved,
+		LongContextBillingEnabled: in.LongContextBillingEnabled,
 	}
 	probe := func(tokens UsageTokens) (*CostBreakdown, error) {
 		r := req
@@ -118,7 +121,7 @@ func (s *BillingService) ResolveContextPricingSchedule(ctx context.Context, reso
 		return s.CalculateTokenCostForRequest(r)
 	}
 
-	plan := s.contextPricingBreakpoints(resolver, resolved, in.Model)
+	plan := s.contextPricingBreakpoints(resolver, resolved, in.Model, in.LongContextBillingEnabled)
 	segments := buildContextSegments(plan.bounds)
 
 	tiers := make([]ContextPricingTier, 0, len(segments))
@@ -198,7 +201,7 @@ type contextBreakpointPlan struct {
 }
 
 // contextPricingBreakpoints 从计费自身的规则输入收集价格断点（不读取任何倍率）。
-func (s *BillingService) contextPricingBreakpoints(resolver *ModelPricingResolver, resolved *ResolvedPricing, model string) contextBreakpointPlan {
+func (s *BillingService) contextPricingBreakpoints(resolver *ModelPricingResolver, resolved *ResolvedPricing, model string, longContextGate *bool) contextBreakpointPlan {
 	plan := contextBreakpointPlan{}
 	if !resolved.longContextPricingEnabled {
 		return plan
@@ -219,6 +222,9 @@ func (s *BillingService) contextPricingBreakpoints(resolver *ModelPricingResolve
 			plan.bounds = append(plan.bounds, b)
 		}
 		sort.Ints(plan.bounds)
+		return plan
+	}
+	if longContextGate != nil && !*longContextGate && !isGrok46BillingModel(model) {
 		return plan
 	}
 	pricing := resolver.GetIntervalPricing(resolved, 1)

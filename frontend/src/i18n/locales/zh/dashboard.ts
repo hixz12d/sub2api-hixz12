@@ -801,7 +801,7 @@ export default {
       noProbeYet: '暂无探针记录',
       unauthorizedTitle: '内测/专属分组 · 暂未开通调用权限',
       unauthorizedHint: '当前分组仅供预览价格与状态，如需调用请联系管理员开通访问权限',
-      groupFallbackTooltip: '单模型近 24h 真实调用不足 5 次，当前展示同分组服务池近 24h 可用率与探测心跳'
+      groupFallbackTooltip: '单模型近 24h 真实调用不足 20 次，当前展示同分组服务池近 24h 可用率与探测心跳'
     },
     detail: {
       noModels: '该分组暂未配置模型',
@@ -827,7 +827,10 @@ export default {
       activeModels: '在线模型',
       healthyModels: '健康模型',
       updatedPrefix: '更新于 {time}',
-      openMonitor: '全局监控趋势'
+      openMonitor: '全局监控趋势',
+      mobileSummaryPrefix: '全站实测',
+      mobileExpand: '展开',
+      mobileCollapse: '收起'
     },
     toolbar: {
       groupSelectorLabel: '选择分组',
@@ -847,7 +850,7 @@ export default {
       billingVideo: '按视频计费',
       filterQuick: '快捷筛选',
       onlyHighCache: '仅看高缓存（≥70%）',
-      onlyVerifiedConsistency: '仅看原模型一致',
+      onlyVerifiedConsistency: '仅看已核验（不降智）',
       resetFilters: '重置筛选',
       applyFilters: '完成',
       sortLabel: '排序',
@@ -880,6 +883,7 @@ export default {
       priceInput: '输入',
       priceOutput: '输出',
       priceCacheRead: '缓存读取',
+      priceCacheShort: '缓存',
       perMillionUnit: '/1M',
       tiersBadge: '{count} 档',
       timePricingBadge: '分时',
@@ -888,10 +892,11 @@ export default {
       metricSla: 'SLA(24h)',
       metricStatus: '状态',
       metricCache: '缓存率',
+      metricCacheShort: '缓存',
       metricCodingCache: 'Coding 缓存',
       metricRefMultiplier: '参考倍率',
       availableGroupPool: '可用（同组）',
-      availableGroupPoolTooltip: '该模型近 24h 真实调用不足 5 次，已自动回退展示同分组服务池可用状态',
+      availableGroupPoolTooltip: '该模型近 24h 真实调用不足 20 次，已自动回退展示同分组服务池可用状态',
       metricLatency: '延迟',
       metricThroughput: '吞吐',
       effortLabel: '思考档位',
@@ -968,7 +973,7 @@ export default {
       refMultiplierHeader: '参考倍率',
       refMultiplierTooltip:
         '近 24h 按真实输入、缓存写入、缓存读取与输出 4 项 Token 加权折算的等效倍率（相对无缓存原价）；不打折的输出与写缓存均已计入',
-      slaTooltip: '近 24h 成功请求占比（单模型真实调用不足 5 次时自动回退展示同分组服务池状态）',
+      slaTooltip: '近 24h 成功请求占比（单模型真实调用不足 20 次时自动回退展示同分组服务池状态）',
       ttftSpeedTooltip: '主行为近 24h 中位首字延迟（TTFT P50），次行为 OpenAI 文本流可见输出速度（TPS P50）',
       cacheRateTooltip: '缓存读取 ÷（输入 + 缓存写入 + 缓存读取），≥70% 绿、40–70% 中性、<40% 橙',
       consistencyTooltip:
@@ -997,8 +1002,10 @@ export default {
     consistency: {
       verified: '一致',
       verifiedShort: '原模型一致',
+      verifiedBadge: '不降智',
       mismatch: '存在差异',
       mismatchShort: '响应异常',
+      mismatchBadge: '响应异常',
       lowSample: '样本不足',
       noData: '暂未监测',
       cardTitle: '原模型一致与防降级保护',
@@ -1008,7 +1015,7 @@ export default {
       autoPauseLabel: '静默降级熔断',
       autoPauseActive: '已开启自动熔断保护',
       autoPauseDesc: '检测到上游响应模型异常降级时自动暂停异常路由，保障调用一致性',
-      autoPauseInactive: '标准路由核验中',
+      autoPauseInactive: '响应模型实时核验中',
       capabilityProbeLabel: '满血能力探针',
       capabilityProbeReserved: '预留升级槽位（当前以真实响应核对为准）',
       lowSampleDesc: '当前窗口观测样本不足 50 次，暂不给出一致率结论'
@@ -1021,6 +1028,9 @@ export default {
       loadDetailFailed: '实测指标加载失败，下方仍展示基础定价',
       retryLoad: '重试',
       updatedAt: '指标更新于 {time}',
+      quickJumpConnect: '快速接入',
+      quickJumpPricing: '价格明细',
+      quickJumpPerformance: '稳定性',
       sectionOverview: '模型概览与能力',
       contextWindow: '上下文窗口',
       maxOutput: '最大输出',
@@ -1054,7 +1064,7 @@ export default {
       bareAliasHintGeneric: '请求不带档位后缀的裸模型名将自动路由至 -high 档位',
       effortSelectorLabel: '思考档位',
       groupPoolFallbackBadge: '可用（同组）',
-      groupPoolFallbackHint: '该模型近 24h 真实调用不足 5 次，当前可用率来自同分组服务池探测与真实流量回退',
+      groupPoolFallbackHint: '该模型近 24h 真实调用不足 20 次，当前可用率来自同分组服务池探测与真实流量回退',
       pricingItem: '计费项',
       pricingPaid: '当前实付',
       pricingOfficial: '官方参考',
@@ -1077,6 +1087,7 @@ export default {
       peakPricingTitle: '高峰时段倍率',
       savingsSimTitle: '1M 上下文实测缓存省钱试算',
       savingsSimDesc: '按该模型近 24h 实测缓存命中率（{cacheRate}）与等效参考倍率（{multiplier}）估算',
+      savingsSimDescSimple: '按该模型近 24h 实测缓存命中率（{cacheRate}）估算，实际约相当于无缓存输入原价的 {fold} 折',
       savingsSimUncached: '无缓存估算',
       savingsSimWithCache: '实测缓存折算',
       savingsSimSaved: '预计节省 {percent}%',

@@ -19,7 +19,7 @@
   <!-- 独立形态:自带新版顶栏(logo/站名 + 主题/语言 + 登录/回后台) -->
   <div v-else class="min-h-screen bg-surface text-ink">
     <PlazaNavBar />
-    <main class="mx-auto w-full max-w-[1320px] px-4 py-6 md:px-6 lg:px-8 lg:py-8">
+    <main class="mx-auto w-full max-w-[1320px] px-4 py-3 md:px-6 md:py-6 lg:px-8 lg:py-8">
       <ModelPlazaContent
         :response="data"
         :loading="loading"

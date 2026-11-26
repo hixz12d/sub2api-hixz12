@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/service"
+	"github.com/lib/pq"
 )
 
 type modelPlazaMetricsRepository struct {
@@ -69,6 +70,7 @@ func (r *modelPlazaMetricsRepository) LoadPlazaListSnapshot(ctx context.Context,
 	out.UpdatedAt = &updatedAt
 	out.Window24hStart = hour24Start
 	out.Window24hEnd = hourEnd
+	ignoredCategories := service.PlazaIgnoredErrorCategories()
 
 	// 1. 全站 30d 按分组汇总（历史完整天读 86400s 桶，当天未封桶部分读 3600s 桶，互斥不重叠）
 	rows, err := tx.QueryContext(ctx, `
@@ -100,6 +102,39 @@ func (r *modelPlazaMetricsRepository) LoadPlazaListSnapshot(ctx context.Context,
 	}
 	_ = rows.Close()
 
+	if len(ignoredCategories) > 0 {
+		rows, err = tx.QueryContext(ctx, `
+			SELECT group_id, SUM(error_requests)
+			FROM channel_monitor_v2_error_metrics_rollup
+			WHERE group_id > 0
+			  AND taxonomy_version = $1
+			  AND error_category = ANY($2)
+			  AND (
+			    (bucket_seconds = 86400 AND bucket_start >= $3 AND bucket_start < $4)
+			    OR (bucket_seconds = 3600 AND bucket_start >= $4 AND bucket_start < $5)
+			  )
+			GROUP BY group_id`, service.ChannelMonitorV2TaxonomyVersion, pq.Array(ignoredCategories), start30d, todayStart, hourEnd)
+		if err != nil {
+			return nil, fmt.Errorf("query plaza 30d ignored errors: %w", err)
+		}
+		for rows.Next() {
+			var gid, ignored int64
+			if scanErr := rows.Scan(&gid, &ignored); scanErr != nil {
+				_ = rows.Close()
+				return nil, scanErr
+			}
+			if c, ok := out.Group30d[gid]; ok {
+				subtractPlazaIgnoredErrors(&c, ignored)
+				out.Group30d[gid] = c
+			}
+		}
+		if err = rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		_ = rows.Close()
+	}
+
 	// 2. 全站 7d 按分组汇总（读 3600s 桶）
 	rows, err = tx.QueryContext(ctx, `
 		SELECT group_id, SUM(success_requests), SUM(error_requests)
@@ -127,6 +162,37 @@ func (r *modelPlazaMetricsRepository) LoadPlazaListSnapshot(ctx context.Context,
 		return nil, err
 	}
 	_ = rows.Close()
+
+	if len(ignoredCategories) > 0 {
+		rows, err = tx.QueryContext(ctx, `
+			SELECT group_id, SUM(error_requests)
+			FROM channel_monitor_v2_error_metrics_rollup
+			WHERE group_id > 0
+			  AND taxonomy_version = $1
+			  AND error_category = ANY($2)
+			  AND bucket_seconds = 3600
+			  AND bucket_start >= $3 AND bucket_start < $4
+			GROUP BY group_id`, service.ChannelMonitorV2TaxonomyVersion, pq.Array(ignoredCategories), start7d, hourEnd)
+		if err != nil {
+			return nil, fmt.Errorf("query plaza 7d ignored errors: %w", err)
+		}
+		for rows.Next() {
+			var gid, ignored int64
+			if scanErr := rows.Scan(&gid, &ignored); scanErr != nil {
+				_ = rows.Close()
+				return nil, scanErr
+			}
+			if c, ok := out.Group7d[gid]; ok {
+				subtractPlazaIgnoredErrors(&c, ignored)
+				out.Group7d[gid] = c
+			}
+		}
+		if err = rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		_ = rows.Close()
+	}
 
 	// 3. 24h 按 (bucket_start, platform, group_id, model) 汇总（同时得出 24h 总计与 12 格 2h 心跳）
 	rows, err = tx.QueryContext(ctx, `
@@ -168,6 +234,90 @@ func (r *modelPlazaMetricsRepository) LoadPlazaListSnapshot(ctx context.Context,
 		if slotIdx >= 0 && slotIdx < 12 {
 			entry.Slots12[slotIdx].Add(c)
 		}
+	}
+	if err = rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	_ = rows.Close()
+
+	if len(ignoredCategories) > 0 {
+		rows, err = tx.QueryContext(ctx, `
+			SELECT bucket_start, platform, group_id, model, SUM(error_requests)
+			FROM channel_monitor_v2_error_metrics_rollup
+			WHERE group_id > 0
+			  AND taxonomy_version = $1
+			  AND error_category = ANY($2)
+			  AND bucket_seconds = 3600
+			  AND bucket_start >= $3 AND bucket_start < $4
+			GROUP BY bucket_start, platform, group_id, model`, service.ChannelMonitorV2TaxonomyVersion, pq.Array(ignoredCategories), hour24Start, hourEnd)
+		if err != nil {
+			return nil, fmt.Errorf("query plaza 24h ignored errors: %w", err)
+		}
+		for rows.Next() {
+			var bucketStart time.Time
+			var platform, model string
+			var gid, ignored int64
+			if scanErr := rows.Scan(&bucketStart, &platform, &gid, &model, &ignored); scanErr != nil {
+				_ = rows.Close()
+				return nil, scanErr
+			}
+			if ignored <= 0 {
+				continue
+			}
+			key := service.NewPlazaModelKey(platform, gid, model)
+			if key.Model == "" {
+				continue
+			}
+			entry, ok := out.Models[key]
+			if !ok || entry == nil {
+				continue
+			}
+			subtractPlazaIgnoredErrors(&entry.Total24h, ignored)
+			slotIdx := int(bucketStart.UTC().Sub(hour24Start) / (2 * time.Hour))
+			if slotIdx >= 0 && slotIdx < 12 {
+				subtractPlazaIgnoredErrors(&entry.Slots12[slotIdx], ignored)
+			}
+		}
+		if err = rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		_ = rows.Close()
+	}
+
+	// 3b. 30d 按 (platform, group_id, model) 汇总一致性观测（用于低频模型 24h 不足 50 次时回退）
+	rows, err = tx.QueryContext(ctx, `
+		SELECT platform, group_id, model,
+		       SUM(model_observed_requests), SUM(model_mismatch_requests)
+		FROM channel_monitor_v2_metrics_rollup
+		WHERE group_id > 0
+		  AND (
+		    (bucket_seconds = 86400 AND bucket_start >= $1 AND bucket_start < $2)
+		    OR (bucket_seconds = 3600 AND bucket_start >= $2 AND bucket_start < $3)
+		  )
+		GROUP BY platform, group_id, model
+		HAVING SUM(model_observed_requests) > 0`, start30d, todayStart, hourEnd)
+	if err != nil {
+		return nil, fmt.Errorf("query plaza 30d model consistency rollup: %w", err)
+	}
+	for rows.Next() {
+		var platform, model string
+		var gid, obs, mismatch int64
+		if scanErr := rows.Scan(&platform, &gid, &model, &obs, &mismatch); scanErr != nil {
+			_ = rows.Close()
+			return nil, scanErr
+		}
+		if obs <= 0 {
+			continue
+		}
+		key := service.NewPlazaModelKey(platform, gid, model)
+		if key.Model == "" {
+			continue
+		}
+		entry := getOrCreatePlazaListModelRaw(out.Models, key)
+		entry.Consistency30dObserved += obs
+		entry.Consistency30dMismatch += mismatch
 	}
 	if err = rows.Err(); err != nil {
 		_ = rows.Close()
@@ -324,6 +474,7 @@ func (r *modelPlazaMetricsRepository) LoadPlazaModelDetail(
 			TTFTHist:    make(map[int64]int64),
 		}
 	}
+	ignoredCategories := service.PlazaIgnoredErrorCategories()
 
 	// 1. 30d 汇总指标（历史完整天 86400s + 当天 3600s）
 	err = tx.QueryRowContext(ctx, `
@@ -344,6 +495,23 @@ func (r *modelPlazaMetricsRepository) LoadPlazaModelDetail(
 	)
 	if err != nil {
 		return nil, fmt.Errorf("query plaza detail 30d metrics: %w", err)
+	}
+	if len(ignoredCategories) > 0 {
+		var ignored30d int64
+		err = tx.QueryRowContext(ctx, `
+			SELECT COALESCE(SUM(error_requests), 0)
+			FROM channel_monitor_v2_error_metrics_rollup
+			WHERE platform = $1 AND group_id = $2 AND model = $3
+			  AND taxonomy_version = $4
+			  AND error_category = ANY($5)
+			  AND (
+			    (bucket_seconds = 86400 AND bucket_start >= $6 AND bucket_start < $7)
+			    OR (bucket_seconds = 3600 AND bucket_start >= $7 AND bucket_start < $8)
+			  )`, normPlatform, groupID, normModel, service.ChannelMonitorV2TaxonomyVersion, pq.Array(ignoredCategories), start30d, todayStart, hourEnd).Scan(&ignored30d)
+		if err != nil {
+			return nil, fmt.Errorf("query plaza detail 30d ignored errors: %w", err)
+		}
+		subtractPlazaIgnoredErrors(&out.D30.Counts, ignored30d)
 	}
 
 	// 2. 7d 小时级指标（同时汇总 7d、24h 与 24h 小时级趋势）
@@ -390,6 +558,46 @@ func (r *modelPlazaMetricsRepository) LoadPlazaModelDetail(
 	}
 	_ = rows.Close()
 
+	if len(ignoredCategories) > 0 {
+		rows, err = tx.QueryContext(ctx, `
+			SELECT bucket_start, SUM(error_requests)
+			FROM channel_monitor_v2_error_metrics_rollup
+			WHERE platform = $1 AND group_id = $2 AND model = $3
+			  AND taxonomy_version = $4
+			  AND error_category = ANY($5)
+			  AND bucket_seconds = 3600
+			  AND bucket_start >= $6 AND bucket_start < $7
+			GROUP BY bucket_start`, normPlatform, groupID, normModel, service.ChannelMonitorV2TaxonomyVersion, pq.Array(ignoredCategories), start7d, hourEnd)
+		if err != nil {
+			return nil, fmt.Errorf("query plaza detail 7d ignored errors: %w", err)
+		}
+		for rows.Next() {
+			var bucketStart time.Time
+			var ignored int64
+			if scanErr := rows.Scan(&bucketStart, &ignored); scanErr != nil {
+				_ = rows.Close()
+				return nil, scanErr
+			}
+			if ignored <= 0 {
+				continue
+			}
+			subtractPlazaIgnoredErrors(&out.D7.Counts, ignored)
+			at := bucketStart.UTC()
+			if !at.Before(hour24Start) && at.Before(hourEnd) {
+				subtractPlazaIgnoredErrors(&out.H24.Counts, ignored)
+				idx := int(at.Sub(hour24Start) / time.Hour)
+				if idx >= 0 && idx < 24 {
+					subtractPlazaIgnoredErrors(&out.Trend24h[idx].Counts, ignored)
+				}
+			}
+		}
+		if err = rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		_ = rows.Close()
+	}
+
 	// 3. 近 24h 的 72 格心跳（每格 20 分钟，源自 300s 桶合并）；
 	// 按 group_id 拉取同分组各模型 300s 桶，供服务层按已上架白名单过滤未上架模型 4xx 噪点并支撑 group_pool 心跳回退。
 	rows, err = tx.QueryContext(ctx, `
@@ -434,6 +642,51 @@ func (r *modelPlazaMetricsRepository) LoadPlazaModelDetail(
 		return nil, err
 	}
 	_ = rows.Close()
+
+	if len(ignoredCategories) > 0 {
+		rows, err = tx.QueryContext(ctx, `
+			SELECT bucket_start, platform, model, SUM(error_requests)
+			FROM channel_monitor_v2_error_metrics_rollup
+			WHERE group_id = $1
+			  AND taxonomy_version = $2
+			  AND error_category = ANY($3)
+			  AND bucket_seconds = 300
+			  AND bucket_start >= $4 AND bucket_start < $5
+			GROUP BY bucket_start, platform, model`, groupID, service.ChannelMonitorV2TaxonomyVersion, pq.Array(ignoredCategories), hb72Start, asOf5m)
+		if err != nil {
+			return nil, fmt.Errorf("query plaza detail 72-slot ignored errors: %w", err)
+		}
+		for rows.Next() {
+			var bucketStart time.Time
+			var rowPlatform, rowModel string
+			var ignored int64
+			if scanErr := rows.Scan(&bucketStart, &rowPlatform, &rowModel, &ignored); scanErr != nil {
+				_ = rows.Close()
+				return nil, scanErr
+			}
+			if ignored <= 0 {
+				continue
+			}
+			idx := int(bucketStart.UTC().Sub(hb72Start) / (20 * time.Minute))
+			if idx < 0 || idx >= 72 {
+				continue
+			}
+			key := service.NewPlazaModelKey(rowPlatform, groupID, rowModel)
+			if key.Model != "" {
+				if groupSlots, ok := out.GroupSlots72ByModel[key]; ok && groupSlots != nil {
+					subtractPlazaIgnoredErrors(&groupSlots[idx], ignored)
+				}
+			}
+			if key.Platform == normPlatform && key.Model == normModel {
+				subtractPlazaIgnoredErrors(&out.Slots72[idx], ignored)
+			}
+		}
+		if err = rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		_ = rows.Close()
+	}
 
 	// 4. 7d/24h 小时级 TTFT 直方图
 	rows, err = tx.QueryContext(ctx, `
@@ -594,7 +847,8 @@ SELECT DISTINCT ON (COALESCE(NULLIF(ul.request_id, ''), 'usage:' || ul.id::text)
        COALESCE(NULLIF(lower(` + usageLogEffectivePlatformExpr + `), ''), 'unknown') AS platform,
        ul.group_id,
        ` + channelMonitorV2ModelSQL + ` AS model,
-       COALESCE(NULLIF(ul.request_id, ''), '') AS request_id
+       COALESCE(NULLIF(ul.request_id, ''), '') AS request_id,
+       ul.upstream_model_mismatch
 FROM usage_logs ul
 LEFT JOIN groups g ON g.id = ul.group_id
 LEFT JOIN accounts a ON a.id = ul.account_id
@@ -675,7 +929,8 @@ func loadPlazaListProbeMetricsTx(
 		var createdAt time.Time
 		var platform, model, reqID string
 		var gid int64
-		if scanErr := rows.Scan(&createdAt, &platform, &gid, &model, &reqID); scanErr != nil {
+		var modelMismatch sql.NullBool
+		if scanErr := rows.Scan(&createdAt, &platform, &gid, &model, &reqID, &modelMismatch); scanErr != nil {
 			_ = rows.Close()
 			return scanErr
 		}
@@ -696,6 +951,12 @@ func loadPlazaListProbeMetricsTx(
 		if key.Model != "" {
 			mp := getOrCreatePlazaProbeModelRaw(out.ProbeModels, key)
 			mp.Total24h.SuccessRequests++
+			if modelMismatch.Valid {
+				mp.Total24h.ModelObservedRequests++
+				if modelMismatch.Bool {
+					mp.Total24h.ModelMismatchRequests++
+				}
+			}
 			if slotIdx >= 0 {
 				mp.Slots12[slotIdx].SuccessRequests++
 			}
@@ -936,6 +1197,17 @@ func alignPlazaHourEnd(asOf time.Time) time.Time {
 		hourEnd = hourEnd.Add(time.Hour)
 	}
 	return hourEnd
+}
+
+func subtractPlazaIgnoredErrors(counts *service.PlazaRawBucketCounts, ignored int64) {
+	if counts == nil || ignored <= 0 {
+		return
+	}
+	if ignored >= counts.ErrorRequests {
+		counts.ErrorRequests = 0
+		return
+	}
+	counts.ErrorRequests -= ignored
 }
 
 func getOrCreatePlazaListModelRaw(m map[service.PlazaModelKey]*service.PlazaListModelRaw, key service.PlazaModelKey) *service.PlazaListModelRaw {

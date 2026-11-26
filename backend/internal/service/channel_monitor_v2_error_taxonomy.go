@@ -6,6 +6,7 @@ type ChannelMonitorV2ErrorInput struct {
 	ErrorType          string
 	ErrorOwner         string
 	ErrorSource        string
+	IsBusinessLimited  bool
 	StatusCode         int
 	UpstreamStatusCode int
 	Message            string
@@ -41,6 +42,9 @@ func ClassifyChannelMonitorV2Error(input ChannelMonitorV2ErrorInput) string {
 	}
 	if channelMonitorV2ContainsAny(text, "no available accounts", "no healthy account", "no healthy upstream account", "failover budget exhausted", "account pool") {
 		return "account_pool_unavailable"
+	}
+	if (input.IsBusinessLimited && owner == "client") || owner == "client" {
+		return "business_limited"
 	}
 	if input.StatusCode == 429 || input.UpstreamStatusCode == 429 || channelMonitorV2ContainsAny(text, "rate limit", "rate_limit", "high demand", "overloaded", "concurrency limit", "capacity") {
 		return "rate_or_capacity"

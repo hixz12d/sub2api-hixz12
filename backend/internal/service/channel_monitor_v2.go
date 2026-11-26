@@ -63,6 +63,7 @@ var ChannelMonitorV2ErrorCategories = []string{
 	"group_access",
 	"quota_or_balance",
 	"account_pool_unavailable",
+	"business_limited",
 	"rate_or_capacity",
 	"timeout",
 	"transport_or_stream",
@@ -837,6 +838,7 @@ func normalizeChannelMonitorV2Config(cfg *ChannelMonitorV2Config) error {
 // Operators can clear or extend via admin config.
 var DefaultChannelMonitorV2IgnoredErrorCategories = []string{
 	"authentication",
+	"business_limited",
 	"client_cancelled",
 	"content_policy",
 	"context_limit",
@@ -844,6 +846,16 @@ var DefaultChannelMonitorV2IgnoredErrorCategories = []string{
 	"model_unsupported",
 	"not_found",
 	"quota_or_balance",
+}
+
+// PlazaIgnoredErrorCategories returns the error categories excluded from
+// Model Plaza SLA and heartbeat metrics (V2 default ignored categories plus
+// invalid_request).
+func PlazaIgnoredErrorCategories() []string {
+	out := make([]string, 0, len(DefaultChannelMonitorV2IgnoredErrorCategories)+1)
+	out = append(out, DefaultChannelMonitorV2IgnoredErrorCategories...)
+	out = append(out, "invalid_request")
+	return normalizeChannelMonitorV2IgnoredCategories(out)
 }
 
 func DefaultChannelMonitorV2HealthThresholds() ChannelMonitorV2HealthThresholds {

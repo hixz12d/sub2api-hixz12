@@ -442,6 +442,35 @@ func (s *OpenAIGatewayService) streamRawChatCompletions(
 		errors.Is(scanErr, context.Canceled) ||
 		errors.Is(scanErr, context.DeadlineExceeded)
 
+	// 上游在 HTTP 200 SSE 流内返回错误帧（如 data: {"error":{...}} + data: [DONE]）：
+	// 不能因后续 [DONE] 按 200 成功写入 0/0 usage_logs，需要记录上游流内失败；
+	// 由于错误帧已透传给客户端，标记 ResponseCommitted 防止外层 handler 追加重复错误帧。
+	if terminal.sawError {
+		if !clientDisconnected && !clientOutputStarted && len(pendingLines) > 0 {
+			writeStreamHeaders()
+			for _, pending := range pendingLines {
+				if _, werr := c.Writer.WriteString(pending + "\n"); werr != nil {
+					clientDisconnected = true
+					break
+				}
+			}
+			pendingLines = pendingLines[:0]
+			if !clientDisconnected {
+				c.Writer.Flush()
+				clientOutputStarted = true
+			}
+		}
+		s.recordOpenAIStreamUpstreamError(c, account, true, requestID, "stream_failed", terminal.errorPayload, terminal.errorMessage)
+		if clientOutputStarted {
+			MarkResponseCommitted(c)
+		}
+		streamErr := fmt.Errorf("upstream chat completions stream error: %s", terminal.errorMessage)
+		if openAIUsageHasTokens(&usage) {
+			return resultWithUsage(), streamErr
+		}
+		return nil, streamErr
+	}
+
 	// 上游在任何终止信号之前结束：连接被 reset（scanErr != nil）或干净 EOF。
 	// 两者都不能再记成功——此前统一返回 nil error，把上游截断伪装成
 	// `HTTP 200 + usage 0/0`，客户端收到半截回答且 Ops 侧完全无感。

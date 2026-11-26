@@ -18,6 +18,8 @@ type TokenCostRequest struct {
 	Resolver        *ModelPricingResolver
 	// Resolved 为调用方预先解析的定价（Resolver.Resolve 的结果），nil 表示未解析。
 	Resolved *ResolvedPricing
+	// LongContextBillingEnabled 可选账号级长上下文门闩（nil 表示不额外限制）。
+	LongContextBillingEnabled *bool
 }
 
 // CalculateTokenCostForRequest 按通用网关的路径选择计算 token 费用：
@@ -37,22 +39,26 @@ func (s *BillingService) CalculateTokenCostForRequest(req TokenCostRequest) (*Co
 	if req.ReasoningEffort != "" {
 		return s.CalculateCostUnified(s.tokenCostInput(req, resolved))
 	}
+	if req.LongContextBillingEnabled != nil {
+		return s.CalculateCostUnified(s.tokenCostInput(req, resolved))
+	}
 	return s.CalculateCost(req.Model, req.Tokens, req.RateMultiplier)
 }
 
 func (s *BillingService) tokenCostInput(req TokenCostRequest, resolved *ResolvedPricing) CostInput {
 	input := CostInput{
-		Ctx:             req.Ctx,
-		Model:           req.Model,
-		Group:           req.Group,
-		Tokens:          req.Tokens,
-		RequestCount:    1,
-		RateMultiplier:  req.RateMultiplier,
-		PricingAt:       req.PricingAt,
-		ServiceTier:     req.ServiceTier,
-		ReasoningEffort: req.ReasoningEffort,
-		Resolver:        req.Resolver,
-		Resolved:        resolved,
+		Ctx:                       req.Ctx,
+		Model:                     req.Model,
+		Group:                     req.Group,
+		Tokens:                    req.Tokens,
+		RequestCount:              1,
+		RateMultiplier:            req.RateMultiplier,
+		PricingAt:                 req.PricingAt,
+		ServiceTier:               req.ServiceTier,
+		ReasoningEffort:           req.ReasoningEffort,
+		Resolver:                  req.Resolver,
+		Resolved:                  resolved,
+		LongContextBillingEnabled: req.LongContextBillingEnabled,
 	}
 	if req.Group != nil {
 		gid := req.Group.ID

@@ -12,7 +12,73 @@
     </div>
 
     <!-- Content -->
-    <div v-else class="flex flex-col md:flex-row md:items-center md:justify-between md:gap-4">
+    <template v-else>
+      <!-- Mobile (<768px) compact 1-line summary bar -->
+      <div class="flex items-center justify-between gap-2 md:hidden">
+        <div class="flex min-w-0 items-center gap-2.5 overflow-hidden text-xs">
+          <span class="shrink-0 whitespace-nowrap font-medium text-ink-2">
+            {{ t('modelPlaza.strengthBar.mobileSummaryPrefix') }}
+          </span>
+          <span
+            class="inline-flex shrink-0 items-center gap-1 font-semibold tabular-nums"
+            :class="sla30d.valid ? plazaToneTextClass(sla30d.tone) : 'text-ink-3'"
+            :title="t('modelPlaza.strengthBar.sla30d')"
+          >
+            <Icon
+              :name="slaIcon"
+              size="xs"
+              class="h-3.5 w-3.5 shrink-0"
+              aria-hidden="true"
+            />
+            <span>{{ sla30d.text }}</span>
+          </span>
+          <span
+            class="inline-flex shrink-0 items-center gap-1 font-semibold tabular-nums"
+            :class="consistencyMetric.valid ? plazaToneTextClass(consistencyMetric.tone) : 'text-ink-3'"
+            :title="t('modelPlaza.strengthBar.consistencyRate')"
+          >
+            <Icon
+              :name="consistencyIcon"
+              size="xs"
+              class="h-3.5 w-3.5 shrink-0"
+              aria-hidden="true"
+            />
+            <span>{{ consistencyMetric.text }}</span>
+          </span>
+        </div>
+
+        <button
+          type="button"
+          class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap py-0.5 text-xs font-medium text-ink-3 transition-colors duration-150 hover:text-ink"
+          :aria-expanded="mobileExpanded"
+          @click="mobileExpanded = !mobileExpanded"
+        >
+          <span>
+            {{
+              mobileExpanded
+                ? t('modelPlaza.strengthBar.mobileCollapse')
+                : t('modelPlaza.strengthBar.mobileExpand')
+            }}
+          </span>
+          <Icon
+            name="chevronDown"
+            size="xs"
+            class="h-3.5 w-3.5 transition-transform duration-150"
+            :class="{ 'rotate-180': mobileExpanded }"
+            aria-hidden="true"
+          />
+        </button>
+      </div>
+
+      <!-- Full metrics bar: always single-row on md+, expandable drawer on mobile -->
+      <div
+        class="md:items-center md:justify-between md:gap-4"
+        :class="
+          mobileExpanded
+            ? 'mt-2.5 flex flex-col border-t border-rule pt-2.5 md:mt-0 md:flex-row md:border-t-0 md:pt-0'
+            : 'hidden md:flex md:flex-row'
+        "
+      >
       <!-- 4 core site-wide live metrics: 2x2 grid on mobile, single row on md+ -->
       <div class="grid grid-cols-2 gap-x-4 gap-y-2 md:flex md:min-w-0 md:flex-wrap md:items-center md:gap-x-6 md:gap-y-1">
         <!-- 1. 30d SLA -->
@@ -156,12 +222,13 @@
           <Icon name="arrowRight" size="xs" class="h-3.5 w-3.5" aria-hidden="true" />
         </RouterLink>
       </div>
-    </div>
+      </div>
+    </template>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 import HelpTooltip from '@/components/common/HelpTooltip.vue'
@@ -192,6 +259,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const { t } = useI18n()
+const mobileExpanded = ref(false)
 
 const EMPTY_METRIC: PlazaFormattedMetric = {
   text: PLAZA_EMPTY_TEXT,

@@ -1123,7 +1123,7 @@ func ProvideChannelMonitorV2Aggregator(repo ChannelMonitorV2Repository, db *sql.
 	return aggregator
 }
 
-// ProvideModelPlazaService 装配模型广场服务并可选注入实测质量快照缓存与系统设置服务，
+// ProvideModelPlazaService 装配模型广场服务并可选注入实测质量快照缓存、系统设置服务与账号仓库，
 // 保持 NewModelPlazaService 的 5 参数构造签名以兼容既有单测。
 func ProvideModelPlazaService(
 	channelRepo ChannelRepository,
@@ -1133,10 +1133,12 @@ func ProvideModelPlazaService(
 	resolver *ModelPricingResolver,
 	metricsCache *ModelPlazaMetricsCache,
 	settingService *SettingService,
+	accountRepo AccountRepository,
 ) *ModelPlazaService {
 	svc := NewModelPlazaService(channelRepo, groupRepo, pricingService, billingService, resolver)
 	svc.SetMetricsCache(metricsCache)
 	svc.SetSettingService(settingService)
+	svc.SetAccountRepository(accountRepo)
 	return svc
 }
 

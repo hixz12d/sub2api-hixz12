@@ -36,6 +36,31 @@ type openAIRawStreamTerminalState struct {
 	sawDone         bool
 	sawUsage        bool
 	sawFinishReason bool
+	sawError        bool
+	errorPayload    []byte
+	errorMessage    string
+}
+
+// isOpenAIRawStreamErrorPayload 判定单条 Chat Completions SSE data 载荷是否为流内错误帧：
+// 顶层含非空对象 "error" 且不包含正常 choices 输出。
+func isOpenAIRawStreamErrorPayload(payload string) bool {
+	if !strings.Contains(payload, `"error"`) {
+		return false
+	}
+	errObj := gjson.Get(payload, "error")
+	if !errObj.Exists() || !errObj.IsObject() {
+		return false
+	}
+	hasField := false
+	errObj.ForEach(func(_, _ gjson.Result) bool {
+		hasField = true
+		return false
+	})
+	if !hasField {
+		return false
+	}
+	choices := gjson.Get(payload, "choices")
+	return !choices.Exists() || !choices.IsArray() || len(choices.Array()) == 0
 }
 
 // ObserveDataLine 从单行 SSE `data:` 载荷中提取终止信号。payload 需已 TrimSpace。
@@ -46,6 +71,16 @@ func (t *openAIRawStreamTerminalState) ObserveDataLine(payload string) {
 	t.sawDataLine = true
 	if payload == "[DONE]" {
 		t.sawDone = true
+		return
+	}
+	if isOpenAIRawStreamErrorPayload(payload) {
+		t.sawError = true
+		t.errorPayload = append(t.errorPayload[:0], payload...)
+		if msg := extractOpenAISSEErrorMessage(t.errorPayload); msg != "" {
+			t.errorMessage = msg
+		} else {
+			t.errorMessage = "Upstream Chat Completions stream error"
+		}
 		return
 	}
 	if usage := gjson.Get(payload, "usage"); usage.Exists() && usage.IsObject() {
