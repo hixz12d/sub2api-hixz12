@@ -361,10 +361,12 @@ type UpdateSettingsRequest struct {
 	// Subscription feature switch (user-facing subscription surface; see SettingKeySubscriptionEnabled)
 	SubscriptionEnabled *bool `json:"subscription_enabled"`
 
-	// Model Plaza feature switches + description
-	ModelPlazaEnabled     *bool   `json:"model_plaza_enabled"`
-	ModelPlazaRequireAuth *bool   `json:"model_plaza_require_auth"`
-	ModelPlazaDescription *string `json:"model_plaza_description"`
+	// Model Plaza feature switches + description + catalog/probe config
+	ModelPlazaEnabled        *bool                            `json:"model_plaza_enabled"`
+	ModelPlazaRequireAuth    *bool                            `json:"model_plaza_require_auth"`
+	ModelPlazaDescription    *string                          `json:"model_plaza_description"`
+	ModelPlazaCatalogConfig  *service.ModelPlazaCatalogConfig `json:"model_plaza_catalog_config"`
+	ModelPlazaProbeAPIKeyIDs *[]int64                         `json:"model_plaza_probe_api_key_ids"`
 
 	// Plugin management menu visibility switch; plugin runtime is unaffected.
 	PluginManagementEnabled *bool `json:"plugin_management_enabled"`
@@ -1544,6 +1546,25 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		return
 	}
 
+	modelPlazaCatalogConfig := previousSettings.ModelPlazaCatalogConfig
+	if req.ModelPlazaCatalogConfig != nil {
+		normalizedCatalog, err := service.NormalizeAndValidateModelPlazaCatalogConfig(*req.ModelPlazaCatalogConfig)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		modelPlazaCatalogConfig = normalizedCatalog
+	}
+	modelPlazaProbeAPIKeyIDs := previousSettings.ModelPlazaProbeAPIKeyIDs
+	if req.ModelPlazaProbeAPIKeyIDs != nil {
+		normalizedProbeIDs, err := service.NormalizeAndValidateModelPlazaProbeAPIKeyIDs(*req.ModelPlazaProbeAPIKeyIDs)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		modelPlazaProbeAPIKeyIDs = normalizedProbeIDs
+	}
+
 	settings := &service.SystemSettings{
 		// 系统全局 platform quota 默认值（整体替换语义）
 		DefaultPlatformQuotas:       req.DefaultPlatformQuotas,
@@ -2061,6 +2082,8 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			}
 			return previousSettings.ModelPlazaDescription
 		}(),
+		ModelPlazaCatalogConfig:  modelPlazaCatalogConfig,
+		ModelPlazaProbeAPIKeyIDs: modelPlazaProbeAPIKeyIDs,
 		PluginManagementEnabled: func() bool {
 			if req.PluginManagementEnabled != nil {
 				return *req.PluginManagementEnabled
@@ -2520,10 +2543,12 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		AvailableChannelsEnabled: updatedSettings.AvailableChannelsEnabled,
 		SubscriptionEnabled:      updatedSettings.SubscriptionEnabled,
 
-		ModelPlazaEnabled:       updatedSettings.ModelPlazaEnabled,
-		ModelPlazaRequireAuth:   updatedSettings.ModelPlazaRequireAuth,
-		ModelPlazaDescription:   updatedSettings.ModelPlazaDescription,
-		PluginManagementEnabled: updatedSettings.PluginManagementEnabled,
+		ModelPlazaEnabled:        updatedSettings.ModelPlazaEnabled,
+		ModelPlazaRequireAuth:    updatedSettings.ModelPlazaRequireAuth,
+		ModelPlazaDescription:    updatedSettings.ModelPlazaDescription,
+		ModelPlazaCatalogConfig:  updatedSettings.ModelPlazaCatalogConfig,
+		ModelPlazaProbeAPIKeyIDs: updatedSettings.ModelPlazaProbeAPIKeyIDs,
+		PluginManagementEnabled:  updatedSettings.PluginManagementEnabled,
 
 		AffiliateEnabled: updatedSettings.AffiliateEnabled,
 

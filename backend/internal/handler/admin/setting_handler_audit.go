@@ -621,6 +621,12 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	if before.ModelPlazaDescription != after.ModelPlazaDescription {
 		changed = append(changed, "model_plaza_description")
 	}
+	if !equalModelPlazaCatalogConfig(before.ModelPlazaCatalogConfig, after.ModelPlazaCatalogConfig) {
+		changed = append(changed, service.SettingKeyModelPlazaCatalogConfig)
+	}
+	if !equalInt64Slice(before.ModelPlazaProbeAPIKeyIDs, after.ModelPlazaProbeAPIKeyIDs) {
+		changed = append(changed, service.SettingKeyModelPlazaProbeAPIKeyIDs)
+	}
 	if before.AffiliateEnabled != after.AffiliateEnabled {
 		changed = append(changed, "affiliate_enabled")
 	}
@@ -813,6 +819,51 @@ func equalIntSlice(a, b []int) bool {
 	}
 	for i := range a {
 		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func equalInt64Slice(a, b []int64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func equalStringMap(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if bv, ok := b[k]; !ok || bv != v {
+			return false
+		}
+	}
+	return true
+}
+
+func equalModelPlazaCatalogConfig(before, after service.ModelPlazaCatalogConfig) bool {
+	if len(before.Groups) != len(after.Groups) {
+		return false
+	}
+	for gid, bg := range before.Groups {
+		ag, ok := after.Groups[gid]
+		if !ok {
+			return false
+		}
+		if bg.Enabled != ag.Enabled ||
+			bg.ShowcasePublic != ag.ShowcasePublic ||
+			bg.ShowcaseBadge != ag.ShowcaseBadge ||
+			!equalStringSlice(bg.Models, ag.Models) ||
+			!equalStringSlice(bg.BareAliases, ag.BareAliases) ||
+			!equalStringMap(bg.ModelNotes, ag.ModelNotes) {
 			return false
 		}
 	}

@@ -7338,6 +7338,14 @@
                 class="input font-mono text-sm"
               ></textarea>
             </div>
+
+            <ModelPlazaCatalogEditor
+              v-if="form.model_plaza_enabled"
+              ref="modelPlazaCatalogEditorRef"
+              v-model:catalog-config="form.model_plaza_catalog_config"
+              v-model:probe-api-key-ids="form.model_plaza_probe_api_key_ids"
+              :groups="allAdminGroups"
+            />
           </div>
         </div>
 
@@ -8979,6 +8987,7 @@ import type {
   UpdateSettingsRequest,
   DefaultSubscriptionSetting,
   DefaultPlatformQuotasMap,
+  ModelPlazaCatalogConfig,
   OpenAIFastPolicyRule,
   WeChatConnectMode,
   WebSearchEmulationConfig,
@@ -9016,6 +9025,7 @@ import BackupSettings from "@/views/admin/BackupView.vue";
 import EmailTemplateEditor from "@/views/admin/settings/EmailTemplateEditor.vue";
 import AccountCreateTemplatesPanel from "@/components/account/AccountCreateTemplatesPanel.vue";
 import RechargeBonusTierEditor from "@/components/admin/settings/RechargeBonusTierEditor.vue";
+import ModelPlazaCatalogEditor from "@/components/admin/settings/ModelPlazaCatalogEditor.vue";
 import {
   normalizeRechargeBonusMode,
   normalizeRechargeBonusTiers,
@@ -9172,6 +9182,8 @@ const adminApiKeyMasked = ref("");
 const adminApiKeyOperating = ref(false);
 const newAdminApiKey = ref("");
 const subscriptionGroups = ref<AdminGroup[]>([]);
+const allAdminGroups = ref<AdminGroup[]>([]);
+const modelPlazaCatalogEditorRef = ref<InstanceType<typeof ModelPlazaCatalogEditor> | null>(null);
 
 // Upstream billing probe state
 const upstreamBillingProbeLoading = ref(true);
@@ -10051,10 +10063,12 @@ const form = reactive<SettingsForm>({
   available_channels_enabled: false,
   // Subscription feature switch (user sidebar "My Subscriptions" entry)
   subscription_enabled: true,
-  // Model Plaza feature switches + description
+  // Model Plaza feature switches + description + catalog & probe config
   model_plaza_enabled: true,
   model_plaza_require_auth: false,
   model_plaza_description: '',
+  model_plaza_catalog_config: { groups: {} } as ModelPlazaCatalogConfig,
+  model_plaza_probe_api_key_ids: [] as number[],
   // Plugin management menu visibility; plugin runtime is unaffected.
   plugin_management_enabled: false,
   // Affiliate (邀请返利) feature switch
@@ -11118,6 +11132,20 @@ async function loadSettings() {
     form.default_subscriptions = normalizeDefaultSubscriptionSettings(
       settings.default_subscriptions,
     );
+    form.model_plaza_catalog_config =
+      settings.model_plaza_catalog_config &&
+      typeof settings.model_plaza_catalog_config === "object" &&
+      settings.model_plaza_catalog_config.groups &&
+      typeof settings.model_plaza_catalog_config.groups === "object"
+        ? settings.model_plaza_catalog_config
+        : { groups: {} };
+    form.model_plaza_probe_api_key_ids = Array.isArray(
+      settings.model_plaza_probe_api_key_ids,
+    )
+      ? settings.model_plaza_probe_api_key_ids
+          .map((id) => Number(id))
+          .filter((id) => Number.isSafeInteger(id) && id > 0)
+      : [];
     registrationEmailSuffixWhitelistTags.value =
       normalizeRegistrationEmailSuffixDomains(
         settings.registration_email_suffix_whitelist,
@@ -11233,11 +11261,13 @@ async function loadSettings() {
 async function loadSubscriptionGroups() {
   try {
     const groups = await adminAPI.groups.getAll();
+    allAdminGroups.value = groups;
     subscriptionGroups.value = groups.filter(
       (group) =>
         group.subscription_type === "subscription" && group.status === "active",
     );
   } catch (_error: unknown) {
+    allAdminGroups.value = [];
     subscriptionGroups.value = [];
   }
 }
@@ -11319,6 +11349,17 @@ const siteBillingModeHint = computed(() =>
 async function saveSettings() {
   saving.value = true;
   try {
+    if (form.model_plaza_enabled && modelPlazaCatalogEditorRef.value) {
+      const plazaValidation = modelPlazaCatalogEditorRef.value.validate();
+      if (!plazaValidation.valid) {
+        appStore.showError(
+          plazaValidation.errorMessage ||
+            t("admin.settings.features.modelPlaza.catalog.jsonInvalid"),
+        );
+        return;
+      }
+    }
+
     const normalizedTableDefaultPageSize = Math.floor(
       Number(form.table_default_page_size),
     );
@@ -11796,10 +11837,12 @@ async function saveSettings() {
       available_channels_enabled: form.available_channels_enabled,
       // Subscription feature switch
       subscription_enabled: form.subscription_enabled,
-      // Model Plaza feature switches + description
+      // Model Plaza feature switches + description + catalog & probe config
       model_plaza_enabled: form.model_plaza_enabled,
       model_plaza_require_auth: form.model_plaza_require_auth,
       model_plaza_description: form.model_plaza_description,
+      model_plaza_catalog_config: form.model_plaza_catalog_config,
+      model_plaza_probe_api_key_ids: form.model_plaza_probe_api_key_ids,
       plugin_management_enabled: form.plugin_management_enabled,
       // Affiliate (邀请返利) feature switch
       affiliate_enabled: form.affiliate_enabled,
@@ -11863,6 +11906,20 @@ async function saveSettings() {
     form.account_scheduling_thresholds = normalizeAccountSchedulingThresholdsMap(
       updated.account_scheduling_thresholds,
     );
+    form.model_plaza_catalog_config =
+      updated.model_plaza_catalog_config &&
+      typeof updated.model_plaza_catalog_config === "object" &&
+      updated.model_plaza_catalog_config.groups &&
+      typeof updated.model_plaza_catalog_config.groups === "object"
+        ? updated.model_plaza_catalog_config
+        : { groups: {} };
+    form.model_plaza_probe_api_key_ids = Array.isArray(
+      updated.model_plaza_probe_api_key_ids,
+    )
+      ? updated.model_plaza_probe_api_key_ids
+          .map((id) => Number(id))
+          .filter((id) => Number.isSafeInteger(id) && id > 0)
+      : [];
     registrationEmailSuffixWhitelistTags.value =
       normalizeRegistrationEmailSuffixDomains(
         updated.registration_email_suffix_whitelist,

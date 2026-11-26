@@ -72,6 +72,8 @@ function slotColorClass(state: PlazaHeartbeatSlotState): string {
       return 'bg-warn'
     case 'many_failures':
       return 'bg-bad'
+    case 'idle':
+      return 'bg-ink-3/20 dark:bg-ink-3/25'
     case 'low_sample':
     case 'no_data':
     default:
@@ -117,6 +119,9 @@ function formatSlotRange(startIso: string, endIso: string): string {
 }
 
 function formatSlotSummary(slot: PlazaHeartbeatSlot): string {
+  if (slot.state === 'idle') {
+    return t('modelPlaza.heartbeat.idleTooltip')
+  }
   if (slot.state === 'low_sample') {
     return t('modelPlaza.heartbeat.lowSample')
   }
@@ -124,7 +129,7 @@ function formatSlotSummary(slot: PlazaHeartbeatSlot): string {
     return t('modelPlaza.heartbeat.noData')
   }
   const pct = Math.max(0, Math.min(1, slot.success_rate)) * 100
-  const rateText = pct >= 100 ? '100%' : `${pct.toFixed(1)}%`
+  const rateText = pct >= 100 ? '100%' : `${pct.toFixed(2)}%`
   const stateLabel =
     slot.state === 'normal'
       ? t('modelPlaza.heartbeat.normal')

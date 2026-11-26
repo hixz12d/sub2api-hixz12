@@ -92,6 +92,7 @@ func (s *SettingService) refreshCachedSettingsAfterWrite(ctx context.Context, se
 	}
 	stored, err := s.GetAllSettings(ctx)
 	if err != nil {
+		s.InvalidateModelPlazaProbeAPIKeyCache()
 		slog.Warn("refresh cached settings after partial update failed", "error", err)
 		return
 	}
@@ -442,10 +443,30 @@ func (s *SettingService) buildSystemSettingsUpdates(ctx context.Context, setting
 	// Subscription feature switch
 	updates[SettingKeySubscriptionEnabled] = strconv.FormatBool(settings.SubscriptionEnabled)
 
-	// Model plaza feature switches + description
+	// Model plaza feature switches + description + catalog/probe config
 	updates[SettingKeyModelPlazaEnabled] = strconv.FormatBool(settings.ModelPlazaEnabled)
 	updates[SettingKeyModelPlazaRequireAuth] = strconv.FormatBool(settings.ModelPlazaRequireAuth)
 	updates[SettingKeyModelPlazaDescription] = settings.ModelPlazaDescription
+	normalizedPlazaCatalog, err := NormalizeAndValidateModelPlazaCatalogConfig(settings.ModelPlazaCatalogConfig)
+	if err != nil {
+		return nil, err
+	}
+	settings.ModelPlazaCatalogConfig = normalizedPlazaCatalog
+	plazaCatalogJSON, err := json.Marshal(normalizedPlazaCatalog)
+	if err != nil {
+		return nil, fmt.Errorf("marshal model plaza catalog config: %w", err)
+	}
+	updates[SettingKeyModelPlazaCatalogConfig] = string(plazaCatalogJSON)
+	normalizedProbeKeyIDs, err := NormalizeAndValidateModelPlazaProbeAPIKeyIDs(settings.ModelPlazaProbeAPIKeyIDs)
+	if err != nil {
+		return nil, err
+	}
+	settings.ModelPlazaProbeAPIKeyIDs = normalizedProbeKeyIDs
+	probeKeyIDsJSON, err := json.Marshal(normalizedProbeKeyIDs)
+	if err != nil {
+		return nil, fmt.Errorf("marshal model plaza probe api key ids: %w", err)
+	}
+	updates[SettingKeyModelPlazaProbeAPIKeyIDs] = string(probeKeyIDsJSON)
 	updates[SettingKeyPluginManagementEnabled] = strconv.FormatBool(settings.PluginManagementEnabled)
 
 	// Affiliate (邀请返利) feature switch
@@ -824,6 +845,7 @@ func (s *SettingService) refreshCachedSettings(settings *SystemSettings) {
 	allowlistedUsers, _ := ParseCyberPolicyUserAllowlist(settings.CyberPolicyUserAllowlist)
 	s.cyberSessionBlockRuntimeCache.Store(&cachedCyberSessionBlockRuntime{allowlistedUsers: allowlistedUsers})
 	s.cyberSessionBlockRuntimeMu.Unlock()
+	s.updateModelPlazaProbeAPIKeyCache(settings.ModelPlazaProbeAPIKeyIDs)
 	if s.onUpdate != nil {
 		s.onUpdate() // Invalidate cache after settings update
 	}

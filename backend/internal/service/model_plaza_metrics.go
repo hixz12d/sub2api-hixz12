@@ -14,8 +14,11 @@ import (
 )
 
 const (
-	// PlazaMinimumSample 复用 ChannelMonitorV2 默认最低样本门槛（50 次）。
+	// PlazaMinimumSample 复用 ChannelMonitorV2 默认最低样本门槛（50 次），用于缓存/倍率/TTFT/TPS/一致性。
 	PlazaMinimumSample int64 = 50
+	// PlazaModelSLAMinimumSample 单模型 24h 真实流量独立展示 SLA 的最低样本门槛（5 次）；
+	// 低于该门槛时自动回退展示同分组服务池可用性（sla_source = "group_pool"）。
+	PlazaModelSLAMinimumSample int64 = 5
 	// PlazaConsistencyVerifiedThreshold 原模型一致率达标阈值（>= 99.5% 或 0 不一致）。
 	PlazaConsistencyVerifiedThreshold = 0.995
 	// PlazaHealthySLAThreshold 健康模型 24h 可用率判定阈值（沿用 V2 WarningErrorRate = 0.05 -> SLA >= 95%）。
@@ -60,7 +63,26 @@ const (
 	PlazaHeartbeatManyFailures   PlazaHeartbeatSlotState = "many_failures"
 	PlazaHeartbeatLowSample      PlazaHeartbeatSlotState = "low_sample"
 	PlazaHeartbeatNoData         PlazaHeartbeatSlotState = "no_data"
+	PlazaHeartbeatIdle           PlazaHeartbeatSlotState = "idle"
 )
+
+// PlazaSLASource 模型 SLA 数据来源：单模型真实流量、同分组服务池回退、或无数据。
+type PlazaSLASource string
+
+const (
+	PlazaSLASourceModel     PlazaSLASource = "model"
+	PlazaSLASourceGroupPool PlazaSLASource = "group_pool"
+	PlazaSLASourceNone      PlazaSLASource = "none"
+)
+
+// PlazaGroupPoolStatus 分组级服务池近 24h 可用性状态与心跳。
+// 仅汇总已上架模型白名单内的真实流量与 availability_probe 探针流量，剔除未上架模型 4xx 噪点。
+type PlazaGroupPoolStatus struct {
+	SLA24h      *float64               `json:"sla_24h"`
+	SLAState    PlazaMetricSampleState `json:"sla_state"`
+	Heartbeat12 []PlazaHeartbeatSlot   `json:"heartbeat_12"`
+	LastProbeAt *string                `json:"last_probe_at,omitempty"`
+}
 
 // PlazaConsistencyState 原模型一致核验状态。
 type PlazaConsistencyState string
@@ -98,6 +120,7 @@ type PlazaHeartbeatSlot struct {
 type PlazaModelMetrics struct {
 	SLA24h                   *float64               `json:"sla_24h"`
 	SLAState                 PlazaMetricSampleState `json:"sla_state"`
+	SLASource                PlazaSLASource         `json:"sla_source,omitempty"`
 	Heartbeat12              []PlazaHeartbeatSlot   `json:"heartbeat_12"`
 	TTFTP50Ms                *int64                 `json:"ttft_p50_ms"`
 	TTFTP90Ms                *int64                 `json:"ttft_p90_ms"`
@@ -118,6 +141,7 @@ type PlazaModelMetrics struct {
 type PlazaDetailWindow struct {
 	SLA                      *float64               `json:"sla"`
 	SLAState                 PlazaMetricSampleState `json:"sla_state"`
+	SLASource                PlazaSLASource         `json:"sla_source,omitempty"`
 	TTFTP50Ms                *int64                 `json:"ttft_p50_ms"`
 	TTFTP90Ms                *int64                 `json:"ttft_p90_ms"`
 	TTFTState                PlazaMetricSampleState `json:"ttft_state"`
@@ -201,6 +225,20 @@ type PlazaListModelRaw struct {
 	TPSCounts []int64
 }
 
+// PlazaProbeModelRaw 近 24h 单模型 availability_probe 探针原始计数（与真实流量隔离）。
+type PlazaProbeModelRaw struct {
+	Total24h    PlazaRawBucketCounts
+	Slots12     [12]PlazaRawBucketCounts
+	LastProbeAt *time.Time
+}
+
+// PlazaGroupProbeRaw 近 24h 分组级 availability_probe 探针原始计数与最近探测时间。
+type PlazaGroupProbeRaw struct {
+	Total24h    PlazaRawBucketCounts
+	Slots12     [12]PlazaRawBucketCounts
+	LastProbeAt *time.Time
+}
+
 // PlazaListMetricsRawSnapshot 模型广场列表快照的内部原始聚合数据。
 type PlazaListMetricsRawSnapshot struct {
 	AggregationReady bool
@@ -210,6 +248,8 @@ type PlazaListMetricsRawSnapshot struct {
 	Group30d         map[int64]PlazaRawBucketCounts
 	Group7d          map[int64]PlazaRawBucketCounts
 	Models           map[PlazaModelKey]*PlazaListModelRaw
+	ProbeModels      map[PlazaModelKey]*PlazaProbeModelRaw
+	ProbeGroups      map[int64]*PlazaGroupProbeRaw
 }
 
 // PlazaDetailWindowRaw 详情页单个时间窗（24h / 7d / 30d）的原始数据。
@@ -228,14 +268,20 @@ type PlazaDetailHourRaw struct {
 
 // PlazaModelDetailRawSnapshot 单模型详情的内部原始聚合数据。
 type PlazaModelDetailRawSnapshot struct {
-	AggregationReady bool
-	UpdatedAt        *time.Time
-	H24              PlazaDetailWindowRaw
-	D7               PlazaDetailWindowRaw
-	D30              PlazaDetailWindowRaw
-	HeartbeatStart   time.Time
-	Slots72          [72]PlazaRawBucketCounts
-	Trend24h         []PlazaDetailHourRaw
+	AggregationReady    bool
+	UpdatedAt           *time.Time
+	H24                 PlazaDetailWindowRaw
+	D7                  PlazaDetailWindowRaw
+	D30                 PlazaDetailWindowRaw
+	HeartbeatStart      time.Time
+	Slots72             [72]PlazaRawBucketCounts
+	GroupSlots72ByModel map[PlazaModelKey]*[72]PlazaRawBucketCounts
+	ModelProbe24h       PlazaRawBucketCounts
+	ModelProbeSlots72   [72]PlazaRawBucketCounts
+	GroupProbe24h       PlazaRawBucketCounts
+	GroupProbeSlots72   [72]PlazaRawBucketCounts
+	LastProbeAt         *time.Time
+	Trend24h            []PlazaDetailHourRaw
 }
 
 // ModelPlazaMetricsRepository 模型广场专用只读质量聚合仓库。
@@ -495,14 +541,10 @@ func plazaEvalHeartbeatSlot(start, end time.Time, counts PlazaRawBucketCounts) P
 	slot := PlazaHeartbeatSlot{
 		Start: start.UTC().Format(time.RFC3339),
 		End:   end.UTC().Format(time.RFC3339),
-		State: PlazaHeartbeatNoData,
+		State: PlazaHeartbeatIdle,
 	}
 	total := counts.SuccessRequests + counts.ErrorRequests
 	if total <= 0 {
-		return slot
-	}
-	if total < PlazaMinimumSample {
-		slot.State = PlazaHeartbeatLowSample
 		return slot
 	}
 	thresholds := DefaultChannelMonitorV2HealthThresholds()
@@ -518,6 +560,220 @@ func plazaEvalHeartbeatSlot(start, end time.Time, counts PlazaRawBucketCounts) P
 		slot.State = PlazaHeartbeatNormal
 	}
 	return slot
+}
+
+func plazaAddRequestCounts(a, b PlazaRawBucketCounts) PlazaRawBucketCounts {
+	return PlazaRawBucketCounts{
+		SuccessRequests: a.SuccessRequests + b.SuccessRequests,
+		ErrorRequests:   a.ErrorRequests + b.ErrorRequests,
+	}
+}
+
+type plazaGroupWhitelist struct {
+	isComposite    bool
+	groupPlatform  string
+	modelNames     map[string]struct{}
+	platformModels map[string]struct{}
+	bareAliases    map[string]struct{}
+}
+
+func buildPlazaGroupWhitelist(g PlazaGroup) plazaGroupWhitelist {
+	w := plazaGroupWhitelist{
+		isComposite:    strings.EqualFold(strings.TrimSpace(g.Platform), PlatformComposite),
+		groupPlatform:  strings.ToLower(strings.TrimSpace(g.Platform)),
+		modelNames:     make(map[string]struct{}, len(g.Models)+len(g.BareAliases)),
+		platformModels: make(map[string]struct{}, len(g.Models)),
+		bareAliases:    make(map[string]struct{}, len(g.BareAliases)),
+	}
+	for i := range g.Models {
+		name := strings.ToLower(strings.TrimSpace(g.Models[i].Name))
+		if name == "" {
+			continue
+		}
+		w.modelNames[name] = struct{}{}
+		plat := strings.ToLower(strings.TrimSpace(g.Models[i].Platform))
+		if plat != "" {
+			w.platformModels[plat+"\x00"+name] = struct{}{}
+		}
+	}
+	for _, alias := range g.BareAliases {
+		if norm := strings.ToLower(strings.TrimSpace(alias)); norm != "" {
+			w.modelNames[norm] = struct{}{}
+			w.bareAliases[norm] = struct{}{}
+		}
+	}
+	return w
+}
+
+func (w plazaGroupWhitelist) matches(platform, model string) bool {
+	name := strings.ToLower(strings.TrimSpace(model))
+	if name == "" {
+		return false
+	}
+	if w.isComposite {
+		plat := strings.ToLower(strings.TrimSpace(platform))
+		if _, ok := w.platformModels[plat+"\x00"+name]; ok {
+			return true
+		}
+		_, ok := w.bareAliases[name]
+		return ok
+	}
+	_, ok := w.modelNames[name]
+	return ok
+}
+
+// plazaBuildGroupPoolStatus 汇总分组级服务池近 24h 可用性状态与 12 格心跳。
+// 仅统计该分组在广场已上架模型白名单（含 bare_aliases）内的真实流量 + 该分组 availability_probe 探针流量，
+// 剔除未上架模型触发的 4xx 噪点。总请求 >= 1 即产出有效 sla_24h。
+func plazaBuildGroupPoolStatus(g PlazaGroup, snap *PlazaListMetricsRawSnapshot) *PlazaGroupPoolStatus {
+	if snap == nil {
+		return nil
+	}
+	var gp *PlazaGroupProbeRaw
+	if snap.ProbeGroups != nil {
+		gp = snap.ProbeGroups[g.ID]
+	}
+	if !snap.AggregationReady && gp == nil {
+		return nil
+	}
+
+	whitelist := buildPlazaGroupWhitelist(g)
+	var totalCounts PlazaRawBucketCounts
+	var slots12 [12]PlazaRawBucketCounts
+
+	if snap.AggregationReady {
+		for key, raw := range snap.Models {
+			if raw == nil || key.GroupID != g.ID {
+				continue
+			}
+			if !whitelist.matches(key.Platform, key.Model) {
+				continue
+			}
+			totalCounts = plazaAddRequestCounts(totalCounts, raw.Total24h)
+			for i := 0; i < 12; i++ {
+				slots12[i] = plazaAddRequestCounts(slots12[i], raw.Slots12[i])
+			}
+		}
+	}
+
+	var lastProbeAt *string
+	if gp != nil {
+		totalCounts = plazaAddRequestCounts(totalCounts, gp.Total24h)
+		for i := 0; i < 12; i++ {
+			slots12[i] = plazaAddRequestCounts(slots12[i], gp.Slots12[i])
+		}
+		if gp.LastProbeAt != nil && !gp.LastProbeAt.IsZero() {
+			ts := gp.LastProbeAt.UTC().Format(time.RFC3339)
+			lastProbeAt = &ts
+		}
+	}
+
+	var sla *float64
+	slaState := PlazaMetricStateNoData
+	if total := totalCounts.SuccessRequests + totalCounts.ErrorRequests; total >= 1 {
+		rate := plazaClampRatio(float64(totalCounts.SuccessRequests) / float64(total))
+		sla = &rate
+		slaState = PlazaMetricStateValid
+	}
+
+	hb12 := make([]PlazaHeartbeatSlot, 0)
+	if !snap.Window24hStart.IsZero() {
+		hb12 = make([]PlazaHeartbeatSlot, 12)
+		for i := 0; i < 12; i++ {
+			slotStart := snap.Window24hStart.Add(time.Duration(i) * 2 * time.Hour)
+			hb12[i] = plazaEvalHeartbeatSlot(slotStart, slotStart.Add(2*time.Hour), slots12[i])
+		}
+	}
+
+	return &PlazaGroupPoolStatus{
+		SLA24h:      sla,
+		SLAState:    slaState,
+		Heartbeat12: hb12,
+		LastProbeAt: lastProbeAt,
+	}
+}
+
+func plazaEvalModelSLAWithFallback(
+	realSuccess, realErrs int64,
+	aggregationReady bool,
+	groupPool *PlazaGroupPoolStatus,
+	fallbackProbe *PlazaRawBucketCounts,
+) (*float64, PlazaMetricSampleState, PlazaSLASource) {
+	realTotal := realSuccess + realErrs
+	if aggregationReady && realTotal >= PlazaModelSLAMinimumSample {
+		rate := plazaClampRatio(float64(realSuccess) / float64(realTotal))
+		return &rate, PlazaMetricStateValid, PlazaSLASourceModel
+	}
+	if groupPool != nil && groupPool.SLAState == PlazaMetricStateValid && groupPool.SLA24h != nil {
+		rate := *groupPool.SLA24h
+		return &rate, PlazaMetricStateValid, PlazaSLASourceGroupPool
+	}
+	if fallbackProbe != nil {
+		if total := fallbackProbe.SuccessRequests + fallbackProbe.ErrorRequests; total >= 1 {
+			rate := plazaClampRatio(float64(fallbackProbe.SuccessRequests) / float64(total))
+			return &rate, PlazaMetricStateValid, PlazaSLASourceGroupPool
+		}
+	}
+	return nil, PlazaMetricStateNoData, PlazaSLASourceNone
+}
+
+func clonePlazaHeartbeatSlots(slots []PlazaHeartbeatSlot) []PlazaHeartbeatSlot {
+	if len(slots) == 0 {
+		return []PlazaHeartbeatSlot{}
+	}
+	out := make([]PlazaHeartbeatSlot, len(slots))
+	copy(out, slots)
+	return out
+}
+
+func plazaBuildDetailHeartbeat72(
+	group PlazaGroup,
+	snap *PlazaModelDetailRawSnapshot,
+	slaSource PlazaSLASource,
+) []PlazaHeartbeatSlot {
+	if snap == nil || snap.HeartbeatStart.IsZero() {
+		return []PlazaHeartbeatSlot{}
+	}
+	if !snap.AggregationReady &&
+		(snap.GroupProbe24h.SuccessRequests+snap.GroupProbe24h.ErrorRequests) <= 0 &&
+		(snap.ModelProbe24h.SuccessRequests+snap.ModelProbe24h.ErrorRequests) <= 0 {
+		return []PlazaHeartbeatSlot{}
+	}
+
+	var slots [72]PlazaRawBucketCounts
+	if slaSource == PlazaSLASourceGroupPool {
+		whitelist := buildPlazaGroupWhitelist(group)
+		if snap.AggregationReady {
+			for key, modelSlots := range snap.GroupSlots72ByModel {
+				if modelSlots == nil || key.GroupID != group.ID {
+					continue
+				}
+				if !whitelist.matches(key.Platform, key.Model) {
+					continue
+				}
+				for i := 0; i < 72; i++ {
+					slots[i] = plazaAddRequestCounts(slots[i], modelSlots[i])
+				}
+			}
+		}
+		for i := 0; i < 72; i++ {
+			slots[i] = plazaAddRequestCounts(slots[i], snap.GroupProbeSlots72[i])
+		}
+	} else {
+		for i := 0; i < 72; i++ {
+			if snap.AggregationReady {
+				slots[i] = plazaAddRequestCounts(slots[i], snap.Slots72[i])
+			}
+			slots[i] = plazaAddRequestCounts(slots[i], snap.ModelProbeSlots72[i])
+		}
+	}
+
+	out := make([]PlazaHeartbeatSlot, 72)
+	for i := 0; i < 72; i++ {
+		slotStart := snap.HeartbeatStart.Add(time.Duration(i) * 20 * time.Minute)
+		out[i] = plazaEvalHeartbeatSlot(slotStart, slotStart.Add(20*time.Minute), slots[i])
+	}
+	return out
 }
 
 func plazaEvalCacheAndRefMultiplier(
@@ -682,6 +938,8 @@ func plazaBuildModelMetrics(
 	pricing *ChannelModelPricing,
 	official *PlazaOfficialPricing,
 	raw *PlazaListModelRaw,
+	modelProbeRaw *PlazaProbeModelRaw,
+	groupPool *PlazaGroupPoolStatus,
 	windowStart time.Time,
 	aggregationReady bool,
 ) *PlazaModelMetrics {
@@ -689,47 +947,67 @@ func plazaBuildModelMetrics(
 	prices := extractPlazaRefTokenPrices(pricing, official)
 	autoPause := plazaAutoPauseProtected(platform)
 
-	if !aggregationReady || raw == nil {
-		tpsState := PlazaOutputTPSNoData
-		if !strings.EqualFold(strings.TrimSpace(platform), PlatformOpenAI) {
-			tpsState = PlazaOutputTPSUnsupported
-		}
-		hb := make([]PlazaHeartbeatSlot, 0)
-		if aggregationReady && !windowStart.IsZero() {
-			hb = make([]PlazaHeartbeatSlot, 12)
-			for i := 0; i < 12; i++ {
-				slotStart := windowStart.Add(time.Duration(i) * 2 * time.Hour)
-				hb[i] = plazaEvalHeartbeatSlot(slotStart, slotStart.Add(2*time.Hour), PlazaRawBucketCounts{})
-			}
-		}
-		return &PlazaModelMetrics{
-			SLAState:                 PlazaMetricStateNoData,
-			Heartbeat12:              hb,
-			TTFTState:                PlazaMetricStateNoData,
-			OutputTPSState:           tpsState,
-			CacheState:               PlazaMetricStateNoData,
-			ReferenceMultiplierState: PlazaMetricStateNoData,
-			ConsistencyState:         PlazaConsistencyNoData,
-			AutoPauseProtected:       autoPause,
-			Capability:               nil,
-		}
+	var realCounts PlazaRawBucketCounts
+	var ttftHist map[int64]int64
+	var tpsCounts []int64
+	if aggregationReady && raw != nil {
+		realCounts = raw.Total24h
+		ttftHist = raw.TTFTHist
+		tpsCounts = raw.TPSCounts
 	}
 
-	sla, slaState := plazaEvalSLA(raw.Total24h.SuccessRequests, raw.Total24h.ErrorRequests)
-	ttftP50, ttftP90, ttftState := plazaEvalTTFT(raw.TTFTHist, nonTextMedia)
-	tpsP50, tpsState := plazaEvalOutputTPS(platform, raw.TPSCounts, nonTextMedia)
-	cacheRatio, cacheState, refMult, refMultState := plazaEvalCacheAndRefMultiplier(raw.Total24h, nonTextMedia, prices)
-	consRate, consState := plazaEvalConsistency(raw.Total24h.ModelObservedRequests, raw.Total24h.ModelMismatchRequests)
+	var modelProbeCounts *PlazaRawBucketCounts
+	if modelProbeRaw != nil {
+		c := modelProbeRaw.Total24h
+		modelProbeCounts = &c
+	}
 
-	hb := make([]PlazaHeartbeatSlot, 12)
-	for i := 0; i < 12; i++ {
-		slotStart := windowStart.Add(time.Duration(i) * 2 * time.Hour)
-		hb[i] = plazaEvalHeartbeatSlot(slotStart, slotStart.Add(2*time.Hour), raw.Slots12[i])
+	sla, slaState, slaSource := plazaEvalModelSLAWithFallback(
+		realCounts.SuccessRequests,
+		realCounts.ErrorRequests,
+		aggregationReady,
+		groupPool,
+		modelProbeCounts,
+	)
+
+	// 严格指标隔离：TTFT / TPS / Coding 缓存 / 参考倍率 / 一致性 100% 仅消费真实流量并维持 50 样本门槛。
+	ttftP50, ttftP90, ttftState := (*int64)(nil), (*int64)(nil), PlazaMetricStateNoData
+	tpsP50, tpsState := (*float64)(nil), PlazaOutputTPSNoData
+	if !strings.EqualFold(strings.TrimSpace(platform), PlatformOpenAI) {
+		tpsState = PlazaOutputTPSUnsupported
+	}
+	cacheRatio, cacheState := (*float64)(nil), PlazaMetricStateNoData
+	refMult, refMultState := (*float64)(nil), PlazaMetricStateNoData
+	consRate, consState := (*float64)(nil), PlazaConsistencyNoData
+	if aggregationReady && raw != nil {
+		ttftP50, ttftP90, ttftState = plazaEvalTTFT(ttftHist, nonTextMedia)
+		tpsP50, tpsState = plazaEvalOutputTPS(platform, tpsCounts, nonTextMedia)
+		cacheRatio, cacheState, refMult, refMultState = plazaEvalCacheAndRefMultiplier(realCounts, nonTextMedia, prices)
+		consRate, consState = plazaEvalConsistency(realCounts.ModelObservedRequests, realCounts.ModelMismatchRequests)
+	}
+
+	hb := make([]PlazaHeartbeatSlot, 0)
+	if slaSource == PlazaSLASourceGroupPool && groupPool != nil && len(groupPool.Heartbeat12) > 0 {
+		hb = clonePlazaHeartbeatSlots(groupPool.Heartbeat12)
+	} else if !windowStart.IsZero() && (aggregationReady || modelProbeRaw != nil) {
+		hb = make([]PlazaHeartbeatSlot, 12)
+		for i := 0; i < 12; i++ {
+			var slotCounts PlazaRawBucketCounts
+			if aggregationReady && raw != nil {
+				slotCounts = plazaAddRequestCounts(slotCounts, raw.Slots12[i])
+			}
+			if modelProbeRaw != nil {
+				slotCounts = plazaAddRequestCounts(slotCounts, modelProbeRaw.Slots12[i])
+			}
+			slotStart := windowStart.Add(time.Duration(i) * 2 * time.Hour)
+			hb[i] = plazaEvalHeartbeatSlot(slotStart, slotStart.Add(2*time.Hour), slotCounts)
+		}
 	}
 
 	return &PlazaModelMetrics{
 		SLA24h:                   sla,
 		SLAState:                 slaState,
+		SLASource:                slaSource,
 		Heartbeat12:              hb,
 		TTFTP50Ms:                ttftP50,
 		TTFTP90Ms:                ttftP90,
@@ -753,17 +1031,30 @@ func plazaBuildDetailWindow(
 	pricing *ChannelModelPricing,
 	official *PlazaOfficialPricing,
 	raw PlazaDetailWindowRaw,
+	groupPool *PlazaGroupPoolStatus,
+	fallbackProbe *PlazaRawBucketCounts,
 	aggregationReady bool,
 ) PlazaDetailWindow {
 	nonTextMedia := isPlazaNonTextMediaModel(platform, model, pricing)
 	prices := extractPlazaRefTokenPrices(pricing, official)
+
+	sla, slaState, slaSource := plazaEvalModelSLAWithFallback(
+		raw.Counts.SuccessRequests,
+		raw.Counts.ErrorRequests,
+		aggregationReady,
+		groupPool,
+		fallbackProbe,
+	)
+
 	if !aggregationReady {
 		tpsState := PlazaOutputTPSNoData
 		if !strings.EqualFold(strings.TrimSpace(platform), PlatformOpenAI) {
 			tpsState = PlazaOutputTPSUnsupported
 		}
 		return PlazaDetailWindow{
-			SLAState:                 PlazaMetricStateNoData,
+			SLA:                      sla,
+			SLAState:                 slaState,
+			SLASource:                slaSource,
 			TTFTState:                PlazaMetricStateNoData,
 			OutputTPSState:           tpsState,
 			CacheState:               PlazaMetricStateNoData,
@@ -772,7 +1063,6 @@ func plazaBuildDetailWindow(
 		}
 	}
 
-	sla, slaState := plazaEvalSLA(raw.Counts.SuccessRequests, raw.Counts.ErrorRequests)
 	ttftP50, ttftP90, ttftState := plazaEvalTTFT(raw.TTFTHist, nonTextMedia)
 	tpsP50, tpsState := plazaEvalOutputTPS(platform, raw.TPSCounts, nonTextMedia)
 	cacheRatio, cacheState, refMult, refMultState := plazaEvalCacheAndRefMultiplier(raw.Counts, nonTextMedia, prices)
@@ -781,6 +1071,7 @@ func plazaBuildDetailWindow(
 	return PlazaDetailWindow{
 		SLA:                      sla,
 		SLAState:                 slaState,
+		SLASource:                slaSource,
 		TTFTP50Ms:                ttftP50,
 		TTFTP90Ms:                ttftP90,
 		TTFTState:                ttftState,
@@ -843,11 +1134,11 @@ func plazaBuildSiteSummary(visible []PlazaGroup, snap *PlazaListMetricsRawSnapsh
 		platform string
 		model    string
 	}
-	visibleGroupSet := make(map[int64]struct{}, len(visible))
+	visibleGroupSet := make(map[int64]plazaGroupWhitelist, len(visible))
 	distinctModels := make(map[distinctModelKey]struct{})
 	for i := range visible {
 		g := &visible[i]
-		visibleGroupSet[g.ID] = struct{}{}
+		visibleGroupSet[g.ID] = buildPlazaGroupWhitelist(*g)
 		for j := range g.Models {
 			m := &g.Models[j]
 			distinctModels[distinctModelKey{
@@ -884,7 +1175,11 @@ func plazaBuildSiteSummary(visible []PlazaGroup, snap *PlazaListMetricsRawSnapsh
 
 	model24hCounts := make(map[distinctModelKey][2]int64, len(distinctModels))
 	for key, raw := range snap.Models {
-		if _, ok := visibleGroupSet[key.GroupID]; !ok {
+		whitelist, ok := visibleGroupSet[key.GroupID]
+		if !ok || raw == nil {
+			continue
+		}
+		if !whitelist.matches(key.Platform, key.Model) {
 			continue
 		}
 		total24h.Add(raw.Total24h)

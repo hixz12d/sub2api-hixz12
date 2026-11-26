@@ -17,40 +17,44 @@
 
     <!-- Empty state -->
     <EmptyState
-      v-else-if="models.length === 0 && !hideEmptyState"
+      v-else-if="entries.length === 0 && !hideEmptyState"
       :title="t('modelPlaza.card.emptyTitle')"
       :description="t('modelPlaza.card.emptyDescription')"
     />
 
-    <!-- 5-segment strictly equal-height card grid -->
+    <!-- 5-segment aligned card grid (pure RMB ¥ pricing, effort folding, light/dark adaptive) -->
     <div
-      v-else-if="models.length > 0"
+      v-else-if="entries.length > 0"
       class="tile-grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
     >
       <article
         v-for="row in cardRows"
-        :key="`${row.model.platform}:${row.model.name}`"
+        :key="row.entry.key"
         role="button"
         tabindex="0"
         class="group flex h-full cursor-pointer flex-col rounded-none bg-surface-tile p-[18px] text-ink transition-colors duration-150 hover:bg-surface-tile-2"
-        @click="emit('select-model', row.model)"
-        @keydown.enter.self="emit('select-model', row.model)"
-        @keydown.space.prevent.self="emit('select-model', row.model)"
+        @click="emit('select-model', row.activeModel)"
+        @keydown.enter.self="emit('select-model', row.activeModel)"
+        @keydown.space.prevent.self="emit('select-model', row.activeModel)"
       >
-        <!-- Segment 1: Header row (fixed single-line height) -->
-        <header class="flex h-7 shrink-0 items-center justify-between gap-2">
-          <div class="flex min-w-0 flex-1 items-center gap-2">
-            <ModelIcon
-              :model="row.model.name"
-              size="20px"
-              :class="row.darkInvert ? 'dark:invert' : ''"
+        <!-- Segment 1: Header row (icon frame + mono model ID + outlined Details button + icon-only Copy button) -->
+        <header class="flex h-8 shrink-0 items-center justify-between gap-2">
+          <div class="flex min-w-0 flex-1 items-center gap-2.5">
+            <span
+              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-none border border-rule/80 bg-surface transition-colors duration-150"
               aria-hidden="true"
-            />
+            >
+              <ModelIcon
+                :model="row.activeModel.name"
+                size="18px"
+                :class="row.darkInvert ? 'dark:invert' : ''"
+              />
+            </span>
             <span
               class="min-w-0 truncate font-mono text-[14px] font-semibold text-ink"
-              :title="row.model.name"
+              :title="row.activeModel.name"
             >
-              {{ row.model.name }}
+              {{ row.activeModel.name }}
             </span>
             <span
               v-if="row.consistencyBadge"
@@ -64,77 +68,110 @@
             </span>
           </div>
 
-          <div class="flex shrink-0 items-center gap-1">
+          <div class="flex shrink-0 items-center gap-1.5">
             <span
-              class="inline-flex items-center gap-0.5 px-1.5 py-1 text-xs font-medium text-ink-2 transition-colors duration-150 group-hover:text-ink"
+              class="inline-flex h-7 items-center gap-0.5 rounded-none border border-rule bg-surface px-2 text-xs font-medium text-ink-2 transition-colors duration-150 group-hover:border-ink-3/50 group-hover:text-ink"
             >
               <span>{{ t('modelPlaza.card.details') }}</span>
               <Icon name="chevronRight" size="xs" class="h-3.5 w-3.5" aria-hidden="true" />
             </span>
             <button
               type="button"
-              class="inline-flex h-7 items-center gap-1 rounded-none px-2 text-xs font-medium transition-colors duration-150 active:scale-[0.985]"
+              class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-none border transition-colors duration-150 active:scale-[0.985]"
               :class="
-                copiedModelName === row.model.name
-                  ? 'bg-ok text-white'
-                  : 'bg-surface-tile-2 text-ink-2 hover:bg-surface hover:text-ink'
+                copiedModelName === row.activeModel.name
+                  ? 'border-ok bg-ok text-white'
+                  : 'border-rule bg-surface text-ink-2 hover:border-ink-3/50 hover:text-ink'
               "
-              :title="t('modelPlaza.table.copyModelId', { model: row.model.name })"
-              :aria-label="t('modelPlaza.table.copyModelId', { model: row.model.name })"
-              @click.stop="handleCopy(row.model.name)"
+              :title="
+                copiedModelName === row.activeModel.name
+                  ? t('modelPlaza.card.copied')
+                  : t('modelPlaza.table.copyModelId', { model: row.activeModel.name })
+              "
+              :aria-label="t('modelPlaza.table.copyModelId', { model: row.activeModel.name })"
+              @click.stop="handleCopy(row.activeModel.name)"
             >
               <Icon
-                :name="copiedModelName === row.model.name ? 'check' : 'copy'"
+                :name="copiedModelName === row.activeModel.name ? 'check' : 'copy'"
                 size="xs"
                 class="h-3.5 w-3.5"
                 aria-hidden="true"
               />
-              <span>
-                {{
-                  copiedModelName === row.model.name
-                    ? t('modelPlaza.card.copied')
-                    : t('modelPlaza.card.copyId')
-                }}
-              </span>
             </button>
           </div>
         </header>
 
-        <!-- Segment 2: Single-line pricing row -->
-        <div class="mt-2.5 flex min-h-[24px] shrink-0 items-center justify-between gap-2 text-xs tabular-nums">
-          <div class="flex min-w-0 items-center gap-x-2 overflow-hidden whitespace-nowrap">
+        <!-- Optional folded thinking-effort pill switcher (only rendered for folded families) -->
+        <div
+          v-if="row.entry.isFolded"
+          class="mt-2.5 flex flex-wrap items-center gap-1.5"
+          role="radiogroup"
+          :aria-label="t('modelPlaza.card.effortSwitchAria', { model: row.entry.baseName })"
+          @click.stop
+        >
+          <button
+            v-for="variant in row.entry.variants"
+            :key="variant.effort"
+            type="button"
+            role="radio"
+            :aria-checked="variant.effort === row.activeEffort"
+            class="rounded-none px-2 py-0.5 font-mono text-[11px] leading-4 transition-colors duration-150"
+            :class="
+              variant.effort === row.activeEffort
+                ? 'bg-money font-semibold text-money-ink'
+                : 'border border-rule bg-surface text-ink-2 hover:bg-surface-tile-2 hover:text-ink'
+            "
+            @click.stop="emit('select-effort', row.entry.key, variant.effort)"
+          >
+            {{ variant.label }}
+          </button>
+          <span
+            v-if="row.entry.bareAliasForHigh"
+            class="ml-auto truncate text-[11px] text-ink-3"
+          >
+            {{ t('modelPlaza.card.bareAliasShort') }}
+          </span>
+        </div>
+
+        <!-- Segment 2: Pure RMB ¥ pricing row (space-separated, each with /1M, zero $ / savings %) -->
+        <div class="mt-2.5 flex min-h-[22px] shrink-0 items-center justify-between gap-2 text-xs tabular-nums">
+          <div class="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-0.5">
             <template v-if="row.pricing.isToken">
               <template v-if="row.pricing.hasPrice">
-                <span class="inline-flex items-baseline gap-1">
+                <span class="inline-flex items-baseline gap-1 whitespace-nowrap">
                   <span class="text-ink-3">{{ t('modelPlaza.card.priceInput') }}</span>
-                  <span class="font-mono font-semibold text-ink">{{ row.pricing.inputText }}</span>
+                  <span class="font-mono font-semibold text-ink">{{ row.pricing.inputDisplay }}</span>
                 </span>
-                <span class="text-ink-3" aria-hidden="true">/</span>
-                <span class="inline-flex items-baseline gap-1">
+                <span class="inline-flex items-baseline gap-1 whitespace-nowrap">
                   <span class="text-ink-3">{{ t('modelPlaza.card.priceOutput') }}</span>
-                  <span class="font-mono font-semibold text-ink">{{ row.pricing.outputText }}</span>
+                  <span class="font-mono font-semibold text-ink">{{ row.pricing.outputDisplay }}</span>
                 </span>
-                <template v-if="row.pricing.cacheReadText">
-                  <span class="text-ink-3" aria-hidden="true">·</span>
-                  <span class="inline-flex items-baseline gap-1 truncate">
-                    <span class="text-ink-3">{{ t('modelPlaza.card.priceCacheRead') }}</span>
-                    <span class="font-mono font-medium text-ink-2">{{ row.pricing.cacheReadText }}</span>
-                  </span>
-                </template>
+                <span
+                  v-if="row.pricing.cacheReadDisplay"
+                  class="inline-flex items-baseline gap-1 whitespace-nowrap"
+                >
+                  <span class="text-ink-3">{{ t('modelPlaza.card.priceCacheRead') }}</span>
+                  <span class="font-mono font-medium text-ink-2">{{ row.pricing.cacheReadDisplay }}</span>
+                </span>
               </template>
               <span v-else class="text-ink-3">{{ t('modelPlaza.detail.noPricing') }}</span>
             </template>
 
             <template v-else>
               <template v-if="row.pricing.requestPriceText">
-                <span class="font-mono font-semibold text-ink">{{ row.pricing.requestPriceText }}</span>
-                <span class="text-ink-3">{{ row.pricing.requestUnitSuffix }}</span>
+                <span class="inline-flex items-baseline gap-1 whitespace-nowrap">
+                  <span class="font-mono font-semibold text-ink">{{ row.pricing.requestPriceText }}</span>
+                  <span class="text-ink-3">{{ row.pricing.requestUnitSuffix }}</span>
+                </span>
               </template>
               <span v-else class="text-ink-3">{{ t('modelPlaza.detail.noPricing') }}</span>
             </template>
           </div>
 
-          <div class="flex shrink-0 items-center gap-1">
+          <div
+            v-if="row.pricing.tierCount > 1 || row.pricing.hasTimePricing || row.pricing.hasPeakRate"
+            class="flex shrink-0 items-center gap-1"
+          >
             <span
               v-if="row.pricing.tierCount > 1"
               class="rounded-none bg-surface-tile-2 px-1.5 py-0.5 text-[11px] font-medium text-ink-2"
@@ -153,49 +190,75 @@
             >
               {{ t('modelPlaza.card.peakBadge') }}
             </span>
-            <span
-              v-if="row.pricing.savingsPercent != null"
-              class="rounded-none bg-ok/10 px-1.5 py-0.5 text-[11px] font-semibold text-ok"
-            >
-              {{ t('modelPlaza.card.savingsBadge', { percent: row.pricing.savingsPercent }) }}
-            </span>
           </div>
         </div>
 
-        <!-- Segment 3: Embedded bg-surface-tile-2 3-column live metrics strip -->
+        <!-- Segment 3: Light-tint 3-column live metrics strip (no vertical dividers) -->
         <div
-          class="mt-3 grid shrink-0 grid-cols-3 divide-x divide-rule border border-transparent bg-surface-tile-2 py-2.5 transition-colors duration-150 group-hover:border-rule"
+          class="mt-3 grid shrink-0 grid-cols-[1.35fr_1fr_0.9fr] gap-2 bg-surface/80 px-3 py-2.5 transition-colors duration-150 dark:bg-dark-900/60"
         >
-          <!-- Col 1: SLA (24h) + 12-slot compact heartbeat -->
-          <div class="min-w-0 px-2.5">
-            <div class="mb-1.5 flex items-center justify-between gap-1 text-[11px] leading-4">
-              <span class="truncate text-ink-3">{{ t('modelPlaza.card.metricSla') }}</span>
+          <!-- Col 1: Status (12-slot heartbeat + 2-decimal SLA inline, or group_pool fallback) -->
+          <div class="min-w-0">
+            <div class="mb-1 text-[11px] leading-4 text-ink-3">
+              {{ t('modelPlaza.card.metricStatus') }}
+            </div>
+            <div
+              v-if="row.isGroupPoolFallback"
+              class="flex items-center gap-1.5"
+              @click.stop
+            >
+              <div class="w-[48px] shrink-0 sm:w-[54px]">
+                <PlazaHeartbeatBar
+                  :slots="row.heartbeatSlots"
+                  variant="compact"
+                  class="!h-[12px]"
+                />
+              </div>
               <span
-                class="shrink-0 font-semibold tabular-nums"
-                :class="plazaToneTextClass(row.sla.tone)"
-                @mouseenter="row.slaTooltip && showTooltip($event, row.slaTooltip)"
+                class="cursor-help truncate text-xs font-semibold text-ok"
+                @mouseenter="showTooltip($event, t('modelPlaza.card.availableGroupPoolTooltip'))"
                 @mouseleave="hideTooltip"
+              >
+                {{ t('modelPlaza.card.availableGroupPool') }}
+              </span>
+            </div>
+            <div
+              v-else-if="row.sla.valid"
+              class="flex items-center gap-1.5"
+              @click.stop
+            >
+              <div class="w-[50px] shrink-0 sm:w-[56px]">
+                <PlazaHeartbeatBar
+                  :slots="row.heartbeatSlots"
+                  variant="compact"
+                  class="!h-[12px]"
+                />
+              </div>
+              <span
+                class="shrink-0 text-[13px] font-semibold leading-5 tabular-nums"
+                :class="plazaToneTextClass(row.sla.tone)"
               >
                 {{ row.sla.text }}
               </span>
             </div>
-            <div @click.stop>
-              <PlazaHeartbeatBar
-                :slots="row.model.metrics?.heartbeat_12 ?? []"
-                variant="compact"
-                class="!h-[14px]"
-              />
+            <div
+              v-else
+              class="cursor-help text-[14px] font-semibold leading-5 text-ink-3 tabular-nums"
+              @mouseenter="showTooltip($event, row.slaTooltip)"
+              @mouseleave="hideTooltip"
+            >
+              {{ PLAZA_EMPTY_TEXT }}
             </div>
           </div>
 
-          <!-- Col 2: Cache Hit Rate -->
-          <div class="min-w-0 px-2.5">
-            <div class="mb-1 text-[11px] leading-4 text-ink-3">
-              {{ t('modelPlaza.card.metricCache') }}
+          <!-- Col 2: Coding Cache (2 decimals, neutral bold ink) -->
+          <div class="min-w-0">
+            <div class="mb-1 truncate text-[11px] leading-4 text-ink-3">
+              {{ t('modelPlaza.card.metricCodingCache') }}
             </div>
             <div
-              class="truncate text-[16px] font-semibold leading-5 tabular-nums"
-              :class="[plazaToneTextClass(row.cache.tone), row.cacheTooltip ? 'cursor-help' : '']"
+              class="truncate text-[14px] font-semibold leading-5 tabular-nums"
+              :class="[row.cache.valid ? 'text-ink' : 'text-ink-3', row.cacheTooltip ? 'cursor-help' : '']"
               @mouseenter="row.cacheTooltip && showTooltip($event, row.cacheTooltip)"
               @mouseleave="hideTooltip"
             >
@@ -203,8 +266,8 @@
             </div>
           </div>
 
-          <!-- Col 3: 4-token Reference Multiplier -->
-          <div class="min-w-0 px-2.5">
+          <!-- Col 3: Reference Multiplier (fixed 3 decimals, neutral bold mono ink) -->
+          <div class="min-w-0">
             <div class="mb-1 text-[11px] leading-4 text-ink-3">
               <span
                 class="cursor-help border-b border-dashed border-ink-3/70"
@@ -216,8 +279,8 @@
               </span>
             </div>
             <div
-              class="truncate text-[16px] font-semibold leading-5 tabular-nums"
-              :class="[plazaToneTextClass(row.refMult.tone), row.refMultTooltip ? 'cursor-help' : '']"
+              class="truncate font-mono text-[14px] font-semibold leading-5 tabular-nums"
+              :class="[row.refMult.valid ? 'text-ink' : 'text-ink-3', row.refMultTooltip ? 'cursor-help' : '']"
               @mouseenter="row.refMultTooltip && showTooltip($event, row.refMultTooltip)"
               @mouseleave="hideTooltip"
             >
@@ -227,73 +290,88 @@
         </div>
 
         <!-- Segment 4: Locked 2-line summary -->
-        <p class="mt-3 line-clamp-2 min-h-[2.6rem] text-[13px] leading-[1.3rem] text-ink-2">
+        <p class="mt-3 line-clamp-2 min-h-[2.5rem] text-[13px] leading-[1.25rem] text-ink-2">
           {{ row.summary }}
         </p>
 
-        <!-- Segment 5: Footer (group & billing + TTFT/TPS, then 4+N capabilities) -->
+        <!-- Segment 5: Footer (no top divider line) -->
         <footer class="mt-auto pt-3">
-          <div class="space-y-2 border-t border-rule pt-2.5">
-            <!-- Top line: Group & billing nature | TTFT + TPS -->
-            <div class="flex items-center justify-between gap-2 text-xs">
+          <div class="flex items-end justify-between gap-3">
+            <!-- Left stacked metadata: Group / Billing nature / Model note -->
+            <div class="min-w-0 flex-1 space-y-0.5 text-xs">
               <div class="flex min-w-0 items-center gap-1.5 text-ink-3">
                 <span class="truncate text-ink-2">{{ group.name }}</span>
                 <span aria-hidden="true">·</span>
                 <span class="shrink-0">{{ row.billingNature }}</span>
               </div>
-
-              <div class="flex shrink-0 items-center gap-1 tabular-nums">
-                <span
-                  :class="[
-                    row.ttft.valid
-                      ? row.ttft.tone === 'ok'
-                        ? 'font-semibold text-ok'
-                        : 'text-ink-2'
-                      : 'text-ink-3',
-                    'cursor-help'
-                  ]"
-                  @mouseenter="showTooltip($event, row.ttftTooltip)"
-                  @mouseleave="hideTooltip"
-                >
-                  {{ t('modelPlaza.card.ttftLabel', { value: row.ttft.text }) }}
-                </span>
-                <template v-if="row.tpsText">
-                  <span class="text-ink-3" aria-hidden="true">·</span>
-                  <span
-                    class="cursor-help text-ink-2"
-                    @mouseenter="showTooltip($event, t('modelPlaza.card.tpsTooltip'))"
-                    @mouseleave="hideTooltip"
-                  >
-                    {{ row.tpsText }}
-                  </span>
-                </template>
+              <div
+                v-if="row.modelNote"
+                class="truncate text-[11px] text-warn"
+                :title="row.modelNote"
+                @mouseenter="showTooltip($event, row.modelNote)"
+                @mouseleave="hideTooltip"
+                @click.stop
+              >
+                {{ row.modelNote }}
               </div>
             </div>
 
-            <!-- Bottom line: single-row capabilities (max 4 + "+N") -->
-            <div class="flex h-[22px] items-center gap-1.5 overflow-hidden">
-              <template v-if="row.visibleCapabilities.length > 0">
-                <span
-                  v-for="cap in row.visibleCapabilities"
-                  :key="cap.key"
-                  class="inline-flex shrink-0 items-center rounded-none bg-surface-tile-2 px-1.5 py-0.5 text-[11px] leading-4 text-ink-2"
+            <!-- Right compact vertical mini metrics: Latency + Throughput (hidden for non-OpenAI / unsupported) -->
+            <div class="flex shrink-0 items-end gap-4 text-right tabular-nums">
+              <div
+                class="cursor-help"
+                @mouseenter="showTooltip($event, row.latencyTooltip)"
+                @mouseleave="hideTooltip"
+              >
+                <div class="text-[11px] leading-4 text-ink-3">
+                  {{ t('modelPlaza.card.metricLatency') }}
+                </div>
+                <div
+                  class="font-mono text-xs font-semibold leading-4"
+                  :class="row.latency.valid ? 'text-ink' : 'text-ink-3'"
                 >
-                  {{ cap.label }}
-                </span>
-                <span
-                  v-if="row.overflowCapabilities.length > 0"
-                  class="inline-flex shrink-0 cursor-help items-center rounded-none bg-surface-tile-2 px-1.5 py-0.5 text-[11px] font-medium leading-4 text-ink-3 tabular-nums"
-                  @mouseenter="showTooltip($event, row.overflowCapabilities.join(' · '))"
-                  @mouseleave="hideTooltip"
-                  @click.stop
-                >
-                  {{ t('modelPlaza.card.moreCapabilities', { count: row.overflowCapabilities.length }) }}
-                </span>
-              </template>
-              <span v-else class="text-[11px] leading-4 text-ink-3">
-                {{ t('modelPlaza.drawer.noCapabilities') }}
-              </span>
+                  {{ row.latency.text }}
+                </div>
+              </div>
+
+              <div
+                v-if="row.showThroughput && row.compactTpsText"
+                class="cursor-help"
+                @mouseenter="showTooltip($event, t('modelPlaza.card.tpsTooltip'))"
+                @mouseleave="hideTooltip"
+              >
+                <div class="text-[11px] leading-4 text-ink-3">
+                  {{ t('modelPlaza.card.metricThroughput') }}
+                </div>
+                <div class="font-mono text-xs font-semibold leading-4 text-ink">
+                  {{ row.compactTpsText }}
+                </div>
+              </div>
             </div>
+          </div>
+
+          <!-- Bottom plain muted tag line (no pill backgrounds): Vendor  Capabilities  ContextWindow  +N -->
+          <div class="mt-2.5 flex items-center gap-x-2.5 overflow-hidden whitespace-nowrap text-[11px] leading-4 text-ink-3">
+            <span class="shrink-0 font-medium text-ink-2">{{ row.vendorText }}</span>
+            <span
+              v-for="cap in row.visibleCapabilities"
+              :key="cap.key"
+              class="shrink-0"
+            >
+              {{ cap.label }}
+            </span>
+            <span v-if="row.contextText" class="shrink-0 font-mono tabular-nums">
+              {{ row.contextText }}
+            </span>
+            <span
+              v-if="row.overflowCapabilities.length > 0"
+              class="shrink-0 cursor-help tabular-nums text-ink-3 hover:text-ink-2"
+              @mouseenter="showTooltip($event, row.overflowCapabilities.join(' · '))"
+              @mouseleave="hideTooltip"
+              @click.stop
+            >
+              {{ t('modelPlaza.card.moreCapabilities', { count: row.overflowCapabilities.length }) }}
+            </span>
           </div>
         </footer>
       </article>
@@ -321,7 +399,7 @@ import ModelIcon from '@/components/common/ModelIcon.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import PlazaHeartbeatBar from './PlazaHeartbeatBar.vue'
 import { useClipboard } from '@/composables/useClipboard'
-import { formatScaled, resolveIntervalPrices } from '@/utils/pricing'
+import { resolveIntervalPrices } from '@/utils/pricing'
 import { hasPeakRate } from '@/utils/peak-rate'
 import {
   BILLING_MODE_IMAGE,
@@ -337,31 +415,45 @@ import type {
 } from '@/api/modelPlaza'
 import type { UserPricingInterval } from '@/api/channels'
 import {
+  KNOWN_CAPABILITY_KEYS,
+  KNOWN_VENDOR_KEYS,
+  PLAZA_EMPTY_TEXT,
   buildFallbackSummary,
-  computeOfficialSavingsPercent,
   formatCacheRate,
+  formatCompactLatency,
+  formatCompactTps,
   formatConsistencyPercent,
+  formatContextWindow,
+  formatPlazaPrice,
   formatRefMultiplier,
   formatSlaPercent,
-  formatTps,
-  formatTtft,
+  inferVendorKey,
+  needsDarkInvert,
   plazaToneTextClass
 } from '@/utils/plazaFormat'
+import {
+  resolveVariantForEntry,
+  type PlazaEffortLevel,
+  type PlazaFoldedEntry
+} from '@/utils/plazaFolding'
 
 interface Props {
   group: ModelPlazaGroup
-  models: PlazaModel[]
+  entries: PlazaFoldedEntry[]
+  selectedEfforts?: Record<string, PlazaEffortLevel>
   loading?: boolean
   hideEmptyState?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  selectedEfforts: () => ({}),
   loading: false,
   hideEmptyState: false
 })
 
 const emit = defineEmits<{
   'select-model': [model: PlazaModel]
+  'select-effort': [entryKey: string, effort: PlazaEffortLevel]
   'copy-model': [modelName: string]
 }>()
 
@@ -369,24 +461,7 @@ const { t } = useI18n()
 const { copyToClipboard } = useClipboard()
 
 const PER_MILLION = 1_000_000
-const MIN_DECIMALS = 2
-const MAX_VISIBLE_CAPABILITIES = 4
-
-const KNOWN_CAPABILITY_KEYS = new Set([
-  'reasoning',
-  'tools',
-  'vision',
-  'audio',
-  'image',
-  'video',
-  'prompt_caching',
-  'web_search',
-  'long_context',
-  'structured_outputs',
-  'code',
-  'embedding',
-  'realtime'
-])
+const MAX_VISIBLE_CAPABILITIES = 3
 
 const copiedModelName = ref<string | null>(null)
 let copyTimer: ReturnType<typeof setTimeout> | null = null
@@ -432,36 +507,20 @@ async function handleCopy(modelName: string) {
   }
 }
 
-function needsDarkInvert(modelName: string): boolean {
-  const lower = modelName.toLowerCase()
-  return (
-    lower.startsWith('gpt') ||
-    lower.startsWith('o1') ||
-    lower.startsWith('o3') ||
-    lower.startsWith('o4') ||
-    lower.includes('chatgpt') ||
-    lower.includes('dall-e') ||
-    lower.includes('whisper') ||
-    lower.includes('tts-1') ||
-    lower.includes('text-embedding-3') ||
-    lower.includes('text-moderation') ||
-    lower.includes('grok') ||
-    lower.includes('moonshot') ||
-    lower.includes('kimi') ||
-    lower.includes('midjourney') ||
-    lower.includes('mj_') ||
-    lower.includes('jina') ||
-    lower.includes('suno') ||
-    lower.includes('ollama')
-  )
-}
-
 function capabilityLabel(cap: string): string {
   const norm = cap.trim().toLowerCase()
   if (KNOWN_CAPABILITY_KEYS.has(norm)) {
     return t(`modelPlaza.capabilities.${norm}`)
   }
   return cap
+}
+
+function vendorLabel(vendorKey: string): string {
+  const norm = vendorKey.trim().toLowerCase()
+  if (KNOWN_VENDOR_KEYS.has(norm)) {
+    return t(`modelPlaza.vendors.${norm}`)
+  }
+  return vendorKey
 }
 
 function sortByContext(intervals: UserPricingInterval[]): UserPricingInterval[] {
@@ -483,6 +542,7 @@ function computeModelPricing(model: PlazaModel) {
   const mode = (model.pricing?.billing_mode || BILLING_MODE_TOKEN) as BillingMode
   const isToken = mode === BILLING_MODE_TOKEN
   const hasTimePricing = (model.time_pricing?.periods?.length ?? 0) > 0
+  const perMillionUnit = t('modelPlaza.card.perMillionUnit')
 
   if (isToken) {
     const intervals = model.pricing?.intervals?.length
@@ -496,29 +556,24 @@ function computeModelPricing(model: PlazaModel) {
 
     const paidInNum = rawIn != null ? rawIn * rate : null
     const paidOutNum = rawOut != null ? rawOut * rate : null
+    const paidCacheNum = rawCacheRead != null ? rawCacheRead * rate : null
     const hasPrice = paidInNum != null || paidOutNum != null
-
-    const officialIntervals = sortByContext(model.official_pricing?.intervals ?? [])
-    const officialIn = model.official_pricing?.input_price ?? officialIntervals[0]?.input_price ?? null
-    const officialOut = model.official_pricing?.output_price ?? officialIntervals[0]?.output_price ?? null
-    const savingsPercent =
-      computeOfficialSavingsPercent(paidInNum, officialIn) ??
-      computeOfficialSavingsPercent(paidOutNum, officialOut)
 
     return {
       mode,
       isToken: true,
       hasPrice,
-      inputText: paidInNum != null ? formatScaled(paidInNum, PER_MILLION, MIN_DECIMALS) : '—',
-      outputText: paidOutNum != null ? formatScaled(paidOutNum, PER_MILLION, MIN_DECIMALS) : '—',
-      cacheReadText:
-        rawCacheRead != null ? formatScaled(rawCacheRead * rate, PER_MILLION, MIN_DECIMALS) : null,
+      inputDisplay:
+        paidInNum != null ? `${formatPlazaPrice(paidInNum, PER_MILLION)}${perMillionUnit}` : PLAZA_EMPTY_TEXT,
+      outputDisplay:
+        paidOutNum != null ? `${formatPlazaPrice(paidOutNum, PER_MILLION)}${perMillionUnit}` : PLAZA_EMPTY_TEXT,
+      cacheReadDisplay:
+        paidCacheNum != null ? `${formatPlazaPrice(paidCacheNum, PER_MILLION)}${perMillionUnit}` : null,
       requestPriceText: null as string | null,
       requestUnitSuffix: '',
       tierCount: intervals.length,
       hasTimePricing,
-      hasPeakRate: groupHasPeakRate.value,
-      savingsPercent
+      hasPeakRate: groupHasPeakRate.value
     }
   }
 
@@ -535,21 +590,22 @@ function computeModelPricing(model: PlazaModel) {
   const requestUnitSuffix =
     mode === BILLING_MODE_IMAGE
       ? t('modelPlaza.table.perUnitImage')
-      : t('modelPlaza.table.perUnitRequest')
+      : mode === BILLING_MODE_VIDEO
+        ? t('modelPlaza.table.perUnitVideo')
+        : t('modelPlaza.table.perUnitRequest')
 
   return {
     mode,
     isToken: false,
     hasPrice: rawReqPrice != null,
-    inputText: '—',
-    outputText: '—',
-    cacheReadText: null as string | null,
-    requestPriceText: rawReqPrice != null ? formatScaled(rawReqPrice * reqRate, 1, MIN_DECIMALS) : null,
+    inputDisplay: PLAZA_EMPTY_TEXT,
+    outputDisplay: PLAZA_EMPTY_TEXT,
+    cacheReadDisplay: null as string | null,
+    requestPriceText: rawReqPrice != null ? formatPlazaPrice(rawReqPrice * reqRate, 1) : null,
     requestUnitSuffix,
     tierCount: reqIntervals.length,
     hasTimePricing,
-    hasPeakRate: groupHasPeakRate.value,
-    savingsPercent: null as number | null
+    hasPeakRate: groupHasPeakRate.value
   }
 }
 
@@ -592,41 +648,72 @@ function buildConsistencyBadge(model: PlazaModel) {
 }
 
 const cardRows = computed(() =>
-  props.models.map((model) => {
-    const pricing = computeModelPricing(model)
-    const metrics = model.metrics
-    const sla = formatSlaPercent(metrics?.sla_24h, metrics?.sla_state, 1)
-    const cache = formatCacheRate(metrics?.cache_read_ratio, metrics?.cache_state)
+  props.entries.map((entry) => {
+    const activeEffort = entry.isFolded
+      ? (props.selectedEfforts[entry.key] ?? entry.defaultEffort)
+      : null
+    const activeModel = resolveVariantForEntry(entry, activeEffort)
+    const pricing = computeModelPricing(activeModel)
+    const metrics = activeModel.metrics
+    const isGroupPoolFallback = metrics?.sla_source === 'group_pool'
+    const sla = formatSlaPercent(metrics?.sla_24h, metrics?.sla_state, 2)
+    const cache = formatCacheRate(metrics?.cache_read_ratio, metrics?.cache_state, 2)
     const refMult = formatRefMultiplier(
       metrics?.reference_multiplier,
-      metrics?.reference_multiplier_state
+      metrics?.reference_multiplier_state,
+      3
     )
-    const ttft = formatTtft(metrics?.ttft_p50_ms, metrics?.ttft_state)
-    const tpsText = formatTps(metrics?.output_tps_p50, metrics?.output_tps_state)
+    const latency = formatCompactLatency(metrics?.ttft_p50_ms, metrics?.ttft_state)
+    const compactTpsText = formatCompactTps(metrics?.output_tps_p50, metrics?.output_tps_state)
 
-    const allCaps = (model.metadata?.capabilities ?? [])
+    const vendorKey = inferVendorKey(
+      activeModel.name,
+      activeModel.platform,
+      activeModel.metadata?.vendor
+    )
+    const showThroughput =
+      vendorKey === 'openai' &&
+      metrics?.output_tps_state !== 'unsupported' &&
+      compactTpsText !== null
+
+    const heartbeatSlots =
+      (metrics?.heartbeat_12?.length ?? 0) > 0
+        ? metrics!.heartbeat_12
+        : isGroupPoolFallback
+          ? (props.group.pool_status?.heartbeat_12 ?? [])
+          : []
+
+    const allCaps = (activeModel.metadata?.capabilities ?? [])
       .map((c) => c.trim())
       .filter(Boolean)
       .map((key) => ({ key, label: capabilityLabel(key) }))
 
     return {
-      model,
-      darkInvert: needsDarkInvert(model.name),
+      entry,
+      activeEffort,
+      activeModel,
+      darkInvert: needsDarkInvert(activeModel.name),
       pricing,
       billingNature: billingNatureLabel(pricing.mode, pricing.tierCount, pricing.hasTimePricing),
-      consistencyBadge: buildConsistencyBadge(model),
+      modelNote: activeModel.note?.trim() || '',
+      consistencyBadge: buildConsistencyBadge(activeModel),
+      isGroupPoolFallback,
+      heartbeatSlots,
       sla,
       slaTooltip: sla.valid ? '' : sampleStateTooltip(metrics?.sla_state),
       cache,
       cacheTooltip: cache.valid ? '' : sampleStateTooltip(metrics?.cache_state),
       refMult,
       refMultTooltip: refMult.valid ? '' : sampleStateTooltip(metrics?.reference_multiplier_state),
-      ttft,
-      ttftTooltip: ttft.valid
+      latency,
+      latencyTooltip: latency.valid
         ? t('modelPlaza.card.ttftTooltip')
         : sampleStateTooltip(metrics?.ttft_state),
-      tpsText,
-      summary: buildFallbackSummary(model.metadata, t),
+      compactTpsText,
+      showThroughput,
+      summary: buildFallbackSummary(activeModel.metadata, t),
+      vendorText: vendorLabel(vendorKey),
+      contextText: formatContextWindow(activeModel.metadata?.context_window),
       visibleCapabilities: allCaps.slice(0, MAX_VISIBLE_CAPABILITIES),
       overflowCapabilities: allCaps.slice(MAX_VISIBLE_CAPABILITIES).map((c) => c.label)
     }

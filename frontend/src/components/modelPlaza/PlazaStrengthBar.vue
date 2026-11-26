@@ -136,13 +136,16 @@
         </HelpTooltip>
       </div>
 
-      <!-- Right side: updated relative time + monitor link -->
+      <!-- Right side: updated relative time / warmup hint + monitor link -->
       <div
-        v-if="updatedLabel || canOpenMonitor"
+        v-if="updatedLabel || !isReady || canOpenMonitor"
         class="mt-2 flex shrink-0 items-center justify-between gap-4 border-t border-rule pt-2 text-xs md:mt-0 md:justify-end md:border-t-0 md:pt-0"
       >
         <span v-if="updatedLabel" class="whitespace-nowrap text-ink-3 tabular-nums">
           {{ updatedLabel }}
+        </span>
+        <span v-else-if="!isReady" class="whitespace-nowrap text-ink-3">
+          {{ t('modelPlaza.strengthBar.notReady') }}
         </span>
         <RouterLink
           v-if="canOpenMonitor"
@@ -220,7 +223,7 @@ const ttftMetric = computed(() =>
 )
 
 const cacheMetric = computed(() =>
-  isReady.value ? formatCacheRate(props.summary?.cache_read_ratio, null) : EMPTY_METRIC
+  isReady.value ? formatCacheRate(props.summary?.cache_read_ratio, null, 2) : EMPTY_METRIC
 )
 
 const consistencyMetric = computed(() =>

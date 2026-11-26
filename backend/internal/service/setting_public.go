@@ -5,13 +5,17 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/timezone"
+	"golang.org/x/sync/singleflight"
 )
 
 func normalizeLoginAgreementMode(raw string) string {
@@ -521,33 +525,160 @@ func (s *SettingService) GetAvailableChannelsRuntime(ctx context.Context) Availa
 }
 
 // ModelPlazaRuntime is the lightweight view of the model-plaza feature consumed
-// by the public plaza handler.
+// by the public plaza handler and catalog service.
 type ModelPlazaRuntime struct {
-	Enabled     bool
-	RequireAuth bool
-	Description string
+	Enabled       bool
+	RequireAuth   bool
+	Description   string
+	CatalogConfig ModelPlazaCatalogConfig
 }
 
-// GetModelPlazaRuntime reads the model-plaza feature switches directly from the
-// settings store. Fail-open: on error returns Enabled=true, matching the
-// opt-out default (unknown ↔ enabled).
+// GetModelPlazaRuntime reads the model-plaza feature switches and catalog config
+// directly from the settings store. Fail-open: on error returns Enabled=true,
+// matching the opt-out default (unknown ↔ enabled).
 func (s *SettingService) GetModelPlazaRuntime(ctx context.Context) ModelPlazaRuntime {
 	if s == nil || s.settingRepo == nil {
-		return ModelPlazaRuntime{Enabled: true}
+		return ModelPlazaRuntime{
+			Enabled:       true,
+			CatalogConfig: DefaultModelPlazaCatalogConfig(),
+		}
 	}
 	vals, err := s.settingRepo.GetMultiple(ctx, []string{
 		SettingKeyModelPlazaEnabled,
 		SettingKeyModelPlazaRequireAuth,
 		SettingKeyModelPlazaDescription,
+		SettingKeyModelPlazaCatalogConfig,
 	})
 	if err != nil {
-		return ModelPlazaRuntime{Enabled: true}
+		return ModelPlazaRuntime{
+			Enabled:       true,
+			CatalogConfig: DefaultModelPlazaCatalogConfig(),
+		}
 	}
 	return ModelPlazaRuntime{
-		Enabled:     !isFalseSettingValue(vals[SettingKeyModelPlazaEnabled]),
-		RequireAuth: vals[SettingKeyModelPlazaRequireAuth] == "true",
-		Description: vals[SettingKeyModelPlazaDescription],
+		Enabled:       !isFalseSettingValue(vals[SettingKeyModelPlazaEnabled]),
+		RequireAuth:   vals[SettingKeyModelPlazaRequireAuth] == "true",
+		Description:   vals[SettingKeyModelPlazaDescription],
+		CatalogConfig: ParseModelPlazaCatalogConfig(vals[SettingKeyModelPlazaCatalogConfig]),
 	}
+}
+
+type cachedModelPlazaProbeAPIKeyIDs struct {
+	owner     *SettingService
+	ids       map[int64]struct{}
+	expiresAt int64 // unix nano
+}
+
+var (
+	modelPlazaProbeAPIKeyCache atomic.Value // *cachedModelPlazaProbeAPIKeyIDs
+	modelPlazaProbeAPIKeySF    singleflight.Group
+)
+
+const (
+	modelPlazaProbeAPIKeyCacheTTL  = 30 * time.Second
+	modelPlazaProbeAPIKeyErrorTTL  = 5 * time.Second
+	modelPlazaProbeAPIKeyDBTimeout = 5 * time.Second
+)
+
+func modelPlazaProbeCacheSFKey(s *SettingService) string {
+	return fmt.Sprintf("model_plaza_probe_api_key_ids:%p", s)
+}
+
+func buildModelPlazaProbeAPIKeyIDSet(ids []int64) map[int64]struct{} {
+	set := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		if id > 0 {
+			set[id] = struct{}{}
+		}
+	}
+	return set
+}
+
+// InvalidateModelPlazaProbeAPIKeyCache actively invalidates the in-memory cache of
+// dedicated Model Plaza probe API key IDs so the next hot-path check reloads from DB.
+func (s *SettingService) InvalidateModelPlazaProbeAPIKeyCache() {
+	if s != nil {
+		modelPlazaProbeAPIKeySF.Forget(modelPlazaProbeCacheSFKey(s))
+	}
+	modelPlazaProbeAPIKeyCache.Store(&cachedModelPlazaProbeAPIKeyIDs{})
+}
+
+func (s *SettingService) updateModelPlazaProbeAPIKeyCache(ids []int64) {
+	if s == nil {
+		return
+	}
+	modelPlazaProbeAPIKeySF.Forget(modelPlazaProbeCacheSFKey(s))
+	modelPlazaProbeAPIKeyCache.Store(&cachedModelPlazaProbeAPIKeyIDs{
+		owner:     s,
+		ids:       buildModelPlazaProbeAPIKeyIDSet(ids),
+		expiresAt: time.Now().Add(modelPlazaProbeAPIKeyCacheTTL).UnixNano(),
+	})
+}
+
+// IsModelPlazaProbeAPIKey reports whether apiKeyID is configured as a dedicated
+// Model Plaza availability probe API key. Uses an in-memory map with a short TTL
+// (actively refreshed/invalidated on settings save) to avoid DB queries on the
+// gateway hot path. Fails closed (returns false) on nil receiver or storage error.
+func (s *SettingService) IsModelPlazaProbeAPIKey(ctx context.Context, apiKeyID int64) bool {
+	if s == nil || s.settingRepo == nil || apiKeyID <= 0 {
+		return false
+	}
+	idSet := s.getModelPlazaProbeAPIKeyIDSet(ctx)
+	_, ok := idSet[apiKeyID]
+	return ok
+}
+
+func (s *SettingService) getModelPlazaProbeAPIKeyIDSet(ctx context.Context) map[int64]struct{} {
+	if cached, ok := modelPlazaProbeAPIKeyCache.Load().(*cachedModelPlazaProbeAPIKeyIDs); ok {
+		if cached != nil && cached.owner == s && time.Now().UnixNano() < cached.expiresAt {
+			return cached.ids
+		}
+	}
+
+	sfKey := modelPlazaProbeCacheSFKey(s)
+	result, _, _ := modelPlazaProbeAPIKeySF.Do(sfKey, func() (any, error) {
+		if cached, ok := modelPlazaProbeAPIKeyCache.Load().(*cachedModelPlazaProbeAPIKeyIDs); ok {
+			if cached != nil && cached.owner == s && time.Now().UnixNano() < cached.expiresAt {
+				return cached.ids, nil
+			}
+		}
+
+		baseCtx := ctx
+		if baseCtx == nil {
+			baseCtx = context.Background()
+		}
+		dbCtx, cancel := context.WithTimeout(context.WithoutCancel(baseCtx), modelPlazaProbeAPIKeyDBTimeout)
+		defer cancel()
+
+		raw, err := s.settingRepo.GetValue(dbCtx, SettingKeyModelPlazaProbeAPIKeyIDs)
+		if err != nil {
+			empty := map[int64]struct{}{}
+			ttl := modelPlazaProbeAPIKeyErrorTTL
+			if errors.Is(err, ErrSettingNotFound) {
+				ttl = modelPlazaProbeAPIKeyCacheTTL
+			} else {
+				slog.Warn("failed to get model_plaza_probe_api_key_ids, defaulting to empty", "error", err)
+			}
+			modelPlazaProbeAPIKeyCache.Store(&cachedModelPlazaProbeAPIKeyIDs{
+				owner:     s,
+				ids:       empty,
+				expiresAt: time.Now().Add(ttl).UnixNano(),
+			})
+			return empty, nil
+		}
+
+		idSet := buildModelPlazaProbeAPIKeyIDSet(ParseModelPlazaProbeAPIKeyIDs(raw))
+		modelPlazaProbeAPIKeyCache.Store(&cachedModelPlazaProbeAPIKeyIDs{
+			owner:     s,
+			ids:       idSet,
+			expiresAt: time.Now().Add(modelPlazaProbeAPIKeyCacheTTL).UnixNano(),
+		})
+		return idSet, nil
+	})
+	if idSet, ok := result.(map[int64]struct{}); ok {
+		return idSet
+	}
+	return nil
 }
 
 // IsUserErrorViewAllowed reads the user-facing error-requests visibility switch

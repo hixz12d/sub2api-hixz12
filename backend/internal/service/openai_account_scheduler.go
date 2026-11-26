@@ -8,6 +8,7 @@ import (
 	"hash/fnv"
 	"log/slog"
 	"math"
+	randv2 "math/rand/v2"
 	"sort"
 	"strconv"
 	"strings"
@@ -511,6 +512,20 @@ func (s *defaultOpenAIAccountScheduler) Select(
 		decision.LatencyMs = time.Since(start).Milliseconds()
 		s.metrics.recordSelect(decision)
 	}()
+	if IsAvailabilityProbeRequest(ctx) && s != nil && s.service != nil {
+		return s.service.selectProbeAccountRandomly(
+			ctx,
+			req.GroupID,
+			req.PriorityMode,
+			normalizeOpenAICompatiblePlatform(req.Platform),
+			req.RequestedModel,
+			req.ExcludedIDs,
+			req.RequiredTransport,
+			req.RequiredCapability,
+			req.RequiredImageCapability,
+			req.RequireCompact,
+		)
+	}
 	if req.PriorityMode == OpenAIAccountPriorityModeBinding {
 		bestPriority, found, err := s.bestEligibleBindingPriority(ctx, req)
 		if err != nil {
@@ -2656,6 +2671,14 @@ func (s *OpenAIGatewayService) selectAccountWithScheduler(
 	previousResponseCanMove bool,
 	useUpstreamTokenCost bool,
 ) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	// 探针请求跳过粘性溢出租约并清空会话锚点，直接走随机选号。
+	if IsAvailabilityProbeRequest(ctx) {
+		return s.selectAccountWithSchedulerBase(
+			ctx, groupID, "", "", requestedModel, excludedIDs,
+			requiredTransport, requiredCapability, requiredImageCapability, requireCompact,
+			platform, false, useUpstreamTokenCost,
+		)
+	}
 	req := openAIStickySpilloverRequest{
 		groupID:                 groupID,
 		previousResponseID:      previousResponseID,
@@ -2968,6 +2991,12 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 	if err != nil {
 		return nil, OpenAIAccountScheduleDecision{}, err
 	}
+	if IsAvailabilityProbeRequest(ctx) {
+		return s.selectProbeAccountRandomly(
+			ctx, groupID, priorityMode, platform, requestedModel, excludedIDs,
+			requiredTransport, requiredCapability, requiredImageCapability, requireCompact,
+		)
+	}
 	decision := OpenAIAccountScheduleDecision{PrioritySource: priorityMode}
 	populateLegacyDecision := func(selection *AccountSelectionResult) {
 		if selection == nil || selection.Account == nil {
@@ -3132,6 +3161,163 @@ func (s *OpenAIGatewayService) selectAccountWithSchedulerOnce(
 		RequireCompact:          requireCompact,
 		ExcludedIDs:             excludedIDs,
 	})
+}
+
+func (s *OpenAIGatewayService) selectProbeAccountRandomly(
+	ctx context.Context,
+	groupID *int64,
+	priorityMode string,
+	platform string,
+	requestedModel string,
+	excludedIDs map[int64]struct{},
+	requiredTransport OpenAIUpstreamTransport,
+	requiredCapability OpenAIEndpointCapability,
+	requiredImageCapability OpenAIImagesCapability,
+	requireCompact bool,
+) (*AccountSelectionResult, OpenAIAccountScheduleDecision, error) {
+	platform = normalizeOpenAICompatiblePlatform(platform)
+	decision := OpenAIAccountScheduleDecision{
+		Layer:          openAIAccountScheduleLayerLoadBalance,
+		PrioritySource: priorityMode,
+	}
+	if s.checkChannelPricingRestriction(ctx, groupID, requestedModel) {
+		slog.Warn("channel pricing restriction blocked request",
+			"group_id", derefGroupID(groupID),
+			"model", requestedModel)
+		return nil, decision, fmt.Errorf("%w supporting model: %s (channel pricing restriction)", ErrNoAvailableAccounts, requestedModel)
+	}
+
+	accounts, err := s.listSchedulableAccounts(ctx, groupID, platform)
+	if err != nil {
+		return nil, decision, err
+	}
+	if len(accounts) == 0 {
+		return nil, decision, noAvailableOpenAISelectionError(requestedModel, false, openAISelectionFilterStats{}.summary(""))
+	}
+	if platform == PlatformGrok {
+		now := time.Now()
+		if filtered := filterGrokTeamModelRateLimitedAccounts(accounts, requestedModel, now); len(filtered) == 0 && len(accounts) > 0 {
+			return nil, decision, noAvailableOpenAISelectionError(requestedModel, false, openAISelectionFilterStats{}.summary("grok_team_model_rate_limit"))
+		} else if filtered != nil {
+			accounts = filtered
+		}
+		modelFiltered := filterGrokModelQuotaBlockedAccounts(accounts, requestedModel, now)
+		if len(modelFiltered) == 0 && len(accounts) > 0 {
+			return nil, decision, noAvailableOpenAISelectionError(requestedModel, false, openAISelectionFilterStats{}.summary("grok_model_quota_block"))
+		}
+		accounts = modelFiltered
+	}
+
+	probeReq := OpenAIAccountScheduleRequest{
+		GroupID:                 groupID,
+		PriorityMode:            priorityMode,
+		Platform:                platform,
+		RequirePrivacySet:       s.openAIGroupRequiresPrivacySet(ctx, groupID),
+		RequestedModel:          requestedModel,
+		RequiredTransport:       requiredTransport,
+		RequiredCapability:      requiredCapability,
+		RequiredImageCapability: requiredImageCapability,
+		RequireCompact:          requireCompact,
+		ExcludedIDs:             excludedIDs,
+	}
+	probeScheduler := &defaultOpenAIAccountScheduler{service: s, stats: s.openaiAccountStats}
+	filterStats := openAISelectionFilterStats{pool: len(accounts)}
+	candidates := make([]*Account, 0, len(accounts))
+	compactBlocked := false
+	for i := range accounts {
+		account := &accounts[i]
+		if _, ok := openAIAccountSchedulingPriority(account, groupID, priorityMode); !ok {
+			filterStats.exclude("binding_priority_missing")
+			continue
+		}
+		if excludedIDs != nil {
+			if _, excluded := excludedIDs[account.ID]; excluded {
+				filterStats.exclude("excluded")
+				continue
+			}
+		}
+		if !account.IsSchedulableForModel(requestedModel) {
+			filterStats.exclude("not_schedulable")
+			continue
+		}
+		if account.Platform != platform || !account.IsOpenAICompatible() {
+			filterStats.exclude("platform_mismatch")
+			continue
+		}
+		if compatible, reason := probeScheduler.isAccountRequestCompatibleReason(ctx, account, probeReq); !compatible {
+			filterStats.exclude(reason)
+			continue
+		}
+		if !probeScheduler.isAccountTransportCompatible(account, requiredTransport) {
+			filterStats.exclude("transport_incompatible")
+			continue
+		}
+		if requireCompact && openAICompactSupportTier(account) == 0 {
+			compactBlocked = true
+			filterStats.exclude("compact_unsupported")
+			continue
+		}
+		candidates = append(candidates, account)
+	}
+	if len(candidates) == 0 {
+		return nil, decision, noAvailableOpenAISelectionError(requestedModel, compactBlocked, filterStats.summary(""))
+	}
+
+	decision.CandidateCount = len(candidates)
+	randv2.Shuffle(len(candidates), func(i, j int) {
+		candidates[i], candidates[j] = candidates[j], candidates[i]
+	})
+
+	verified := make([]*Account, 0, len(candidates))
+	for _, candidate := range candidates {
+		fresh := s.resolveFreshSchedulableOpenAIAccount(ctx, candidate, platform, requestedModel, false, requiredCapability)
+		if fresh == nil || !probeScheduler.isAccountTransportCompatible(fresh, requiredTransport) || !probeScheduler.isAccountRequestCompatible(ctx, fresh, probeReq) {
+			continue
+		}
+		fresh = s.recheckSelectedOpenAIAccountFromDB(ctx, fresh, groupID, platform, requestedModel, false, requiredCapability)
+		if fresh == nil || !probeScheduler.isAccountTransportCompatible(fresh, requiredTransport) || !probeScheduler.isAccountRequestCompatible(ctx, fresh, probeReq) {
+			continue
+		}
+		if requireCompact && openAICompactSupportTier(fresh) == 0 {
+			compactBlocked = true
+			continue
+		}
+		verified = append(verified, fresh)
+		result, acquireErr := s.tryAcquireAccountSlot(ctx, fresh.ID, fresh.Concurrency)
+		if acquireErr != nil {
+			return nil, decision, acquireErr
+		}
+		if result != nil && result.Acquired {
+			selection, selectErr := s.newAcquiredSelectionResult(ctx, fresh, result.ReleaseFunc)
+			if selectErr != nil {
+				return nil, decision, selectErr
+			}
+			decision.SelectedAccountID = selection.Account.ID
+			decision.SelectedAccountType = selection.Account.Type
+			populateOpenAIAccountPriorityDecision(&decision, probeReq, selection.Account)
+			return selection, decision, nil
+		}
+	}
+
+	if len(verified) > 0 {
+		cfg := s.schedulingConfig()
+		fresh := verified[0]
+		selection, selectErr := s.newSelectionResult(ctx, fresh, false, nil, &AccountWaitPlan{
+			AccountID:      fresh.ID,
+			MaxConcurrency: fresh.Concurrency,
+			Timeout:        cfg.FallbackWaitTimeout,
+			MaxWaiting:     cfg.FallbackMaxWaiting,
+		})
+		if selectErr != nil {
+			return nil, decision, selectErr
+		}
+		decision.SelectedAccountID = selection.Account.ID
+		decision.SelectedAccountType = selection.Account.Type
+		populateOpenAIAccountPriorityDecision(&decision, probeReq, selection.Account)
+		return selection, decision, nil
+	}
+
+	return nil, decision, noAvailableOpenAISelectionError(requestedModel, compactBlocked, filterStats.summary("selection_order_exhausted"))
 }
 
 func accountSupportsOpenAICapabilities(account *Account, requiredCapability OpenAIEndpointCapability, requiredImageCapability OpenAIImagesCapability) bool {

@@ -42,46 +42,52 @@ var (
 var plazaBuiltinModelCatalog = map[string]plazaModelCatalogEntry{
 	// OpenAI GPT-6 系列
 	"gpt-6": {
-		DisplayName: "GPT-6", Vendor: "openai", ContextWindow: 1_000_000, MaxOutputTokens: 128_000,
+		DisplayName: "GPT-6", Vendor: "openai", ContextWindow: 1_050_000, MaxOutputTokens: 128_000,
 		DescriptionZH: "OpenAI 新一代旗舰多模态模型，面向复杂推理、工程开发与超长上下文任务",
 		DescriptionEN: "OpenAI's next-generation flagship multimodal model for complex reasoning, engineering, and long-context tasks",
 		Capabilities:  []string{"reasoning", "tools", "vision", "prompt_caching", "long_context", "structured_outputs", "code"},
 	},
 	"gpt-6-astra": {
-		DisplayName: "GPT-6 Astra", Vendor: "openai", ContextWindow: 1_000_000, MaxOutputTokens: 128_000,
+		DisplayName: "GPT-6 Astra", Vendor: "openai", ContextWindow: 1_050_000, MaxOutputTokens: 128_000,
 		DescriptionZH: "OpenAI 顶级深度推理与复杂工程旗舰，适合高难度代码与多步规划",
 		DescriptionEN: "OpenAI's top-tier flagship for deep reasoning, complex software engineering, and multi-step planning",
 		Capabilities:  []string{"reasoning", "tools", "vision", "prompt_caching", "long_context", "structured_outputs", "code"},
 	},
 	"gpt-6.2-astra": {
-		DisplayName: "GPT-6.2 Astra", Vendor: "openai", ContextWindow: 1_000_000, MaxOutputTokens: 128_000,
+		DisplayName: "GPT-6.2 Astra", Vendor: "openai", ContextWindow: 1_050_000, MaxOutputTokens: 128_000,
 		DescriptionZH: "OpenAI 旗舰推理升级版，兼顾顶尖代码能力与大上下文稳定性",
 		DescriptionEN: "Upgraded OpenAI flagship combining top coding accuracy with long-context reliability",
 		Capabilities:  []string{"reasoning", "tools", "vision", "prompt_caching", "long_context", "structured_outputs", "code"},
 	},
+	"gpt-6.2-sol": {
+		DisplayName: "GPT-6.2 Sol", Vendor: "openai", ContextWindow: 1_050_000, MaxOutputTokens: 128_000,
+		DescriptionZH: "OpenAI 新一代均衡主力模型，在推理精度、代码工程、工具调用与 1.05M 长上下文间实现极佳平衡",
+		DescriptionEN: "OpenAI's next-generation balanced workhorse uniting strong reasoning, coding, tool use, and a 1.05M context window",
+		Capabilities:  []string{"reasoning", "tools", "vision", "prompt_caching", "long_context", "structured_outputs", "code"},
+	},
 	"gpt-6-sol": {
-		DisplayName: "GPT-6 Sol", Vendor: "openai", ContextWindow: 1_000_000, MaxOutputTokens: 128_000,
+		DisplayName: "GPT-6 Sol", Vendor: "openai", ContextWindow: 1_050_000, MaxOutputTokens: 128_000,
 		DescriptionZH: "OpenAI 均衡主力模型，在推理质量、响应速度与成本间表现平衡",
 		DescriptionEN: "Balanced OpenAI workhorse model combining strong reasoning, low latency, and efficiency",
 		Capabilities:  []string{"reasoning", "tools", "vision", "prompt_caching", "long_context", "structured_outputs", "code"},
 	},
 	"gpt-6.1-sol": {
-		DisplayName: "GPT-6.1 Sol", Vendor: "openai", ContextWindow: 1_000_000, MaxOutputTokens: 128_000,
+		DisplayName: "GPT-6.1 Sol", Vendor: "openai", ContextWindow: 1_050_000, MaxOutputTokens: 128_000,
 		DescriptionZH: "OpenAI 均衡主力升级版，适合日常开发、Agent 工具调用与多模态交互",
 		DescriptionEN: "Upgraded balanced OpenAI model for daily engineering, agentic tool use, and multimodal workflows",
 		Capabilities:  []string{"reasoning", "tools", "vision", "prompt_caching", "long_context", "structured_outputs", "code"},
 	},
 	"gpt-6.1-terra": {
-		DisplayName: "GPT-6.1 Terra", Vendor: "openai", ContextWindow: 1_000_000, MaxOutputTokens: 64_000,
+		DisplayName: "GPT-6.1 Terra", Vendor: "openai", ContextWindow: 1_050_000, MaxOutputTokens: 128_000,
 		DescriptionZH: "OpenAI 高性价比主力模型，适合高频业务调用与长文档处理",
 		DescriptionEN: "Cost-efficient OpenAI workhorse tailored for high-throughput workloads and long documents",
 		Capabilities:  []string{"reasoning", "tools", "vision", "prompt_caching", "long_context", "structured_outputs"},
 	},
 	"gpt-6-luna": {
-		DisplayName: "GPT-6 Luna", Vendor: "openai", ContextWindow: 1_000_000, MaxOutputTokens: 64_000,
+		DisplayName: "GPT-6 Luna", Vendor: "openai", ContextWindow: 1_050_000, MaxOutputTokens: 128_000,
 		DescriptionZH: "OpenAI 轻量高速模型，极低延迟与成本，适合批量处理与轻量对话",
 		DescriptionEN: "Fast, lightweight OpenAI model with ultra-low cost for high-volume and low-latency workloads",
-		Capabilities:  []string{"tools", "vision", "prompt_caching", "long_context", "structured_outputs"},
+		Capabilities:  []string{"reasoning", "tools", "vision", "prompt_caching", "long_context", "structured_outputs"},
 	},
 
 	// OpenAI GPT-5 / Codex 系列
@@ -348,10 +354,10 @@ var plazaBuiltinModelCatalog = map[string]plazaModelCatalogEntry{
 		Capabilities:  []string{"reasoning", "tools", "vision", "prompt_caching", "long_context", "code"},
 	},
 	"claude-haiku-5-5": {
-		DisplayName: "Claude Haiku 5.5", Vendor: "anthropic", ContextWindow: 200_000, MaxOutputTokens: 64_000,
-		DescriptionZH: "Claude 5 代超快轻量模型，极低单价与毫秒级首字响应",
-		DescriptionEN: "Ultra-fast Claude 5 compact model delivering minimal cost and rapid time-to-first-token",
-		Capabilities:  []string{"tools", "vision", "prompt_caching", "code"},
+		DisplayName: "Claude Haiku 5.5", Vendor: "anthropic", ContextWindow: 1_000_000, MaxOutputTokens: 128_000,
+		DescriptionZH: "Claude 5 代超快轻量模型，支持 1M 上下文与自适应思考，极低单价与毫秒级首字响应",
+		DescriptionEN: "Ultra-fast Claude 5 compact model with 1M context, adaptive thinking, minimal cost, and rapid time-to-first-token",
+		Capabilities:  []string{"reasoning", "tools", "vision", "prompt_caching", "long_context", "code"},
 	},
 	"claude-fable-5-2": {
 		DisplayName: "Claude Fable 5.2", Vendor: "anthropic", ContextWindow: 1_000_000, MaxOutputTokens: 128_000,
@@ -415,6 +421,18 @@ var plazaBuiltinModelCatalog = map[string]plazaModelCatalogEntry{
 		DescriptionEN: "Fast Gemini 3.1 image generation and editing model supporting high-resolution outputs",
 		Capabilities:  []string{"image", "vision"},
 	},
+	"gemini-4-neon": {
+		DisplayName: "Gemini 4 Neon", Vendor: "google", ContextWindow: 1_048_576, MaxOutputTokens: 65_536,
+		DescriptionZH: "Google Gemini 4 新一代旗舰多模态推理模型，支持多档思考力度、1M 超长上下文与复杂代码工程",
+		DescriptionEN: "Google Gemini 4 next-generation flagship multimodal reasoning model with tiered thinking effort, 1M context, and advanced coding",
+		Capabilities:  []string{"reasoning", "tools", "vision", "audio", "prompt_caching", "long_context", "web_search", "structured_outputs", "code"},
+	},
+	"gemini-4-hydrogen": {
+		DisplayName: "Gemini 4 Hydrogen", Vendor: "google", ContextWindow: 1_048_576, MaxOutputTokens: 65_536,
+		DescriptionZH: "Google Gemini 4 高速高性价比思考模型，支持多档推理力度与 1M 长上下文多模态处理",
+		DescriptionEN: "Fast, cost-efficient Google Gemini 4 thinking model with tiered reasoning effort and 1M multimodal context",
+		Capabilities:  []string{"reasoning", "tools", "vision", "audio", "prompt_caching", "long_context", "web_search", "structured_outputs", "code"},
+	},
 	"gemini-4-carbon": {
 		DisplayName: "Gemini 4 Carbon", Vendor: "google", ContextWindow: 1_048_576, MaxOutputTokens: 65_536,
 		DescriptionZH: "Google Gemini 4 旗舰多模态模型，面向高难度推理与超长上下文工程",
@@ -459,11 +477,17 @@ var plazaBuiltinModelCatalog = map[string]plazaModelCatalogEntry{
 		DescriptionEN: "Upgraded xAI flagship strengthening software engineering and multi-step tool use",
 		Capabilities:  []string{"reasoning", "tools", "vision", "prompt_caching", "web_search", "structured_outputs", "code"},
 	},
+	"grok-4.6": {
+		DisplayName: "Grok 4.6", Vendor: "xai", ContextWindow: 500_000, MaxOutputTokens: 64_000,
+		DescriptionZH: "xAI 新一代主力推理与编程模型，支持 500K 上下文、实时搜索与高阶工具调用",
+		DescriptionEN: "xAI's flagship reasoning and coding model featuring a 500K context window, live search, and tool use",
+		Capabilities:  []string{"reasoning", "tools", "vision", "prompt_caching", "long_context", "web_search", "structured_outputs", "code"},
+	},
 	"grok-4.7": {
-		DisplayName: "Grok 4.7", Vendor: "xai", ContextWindow: 256_000, MaxOutputTokens: 64_000,
+		DisplayName: "Grok 4.7", Vendor: "xai", ContextWindow: 500_000, MaxOutputTokens: 64_000,
 		DescriptionZH: "xAI 最新旗舰模型，兼具强劲深度思考、联网检索与代码生成实力",
 		DescriptionEN: "Latest xAI flagship combining deep reasoning, live web search, and code generation",
-		Capabilities:  []string{"reasoning", "tools", "vision", "prompt_caching", "web_search", "structured_outputs", "code"},
+		Capabilities:  []string{"reasoning", "tools", "vision", "prompt_caching", "long_context", "web_search", "structured_outputs", "code"},
 	},
 
 	// DeepSeek 系列
@@ -558,6 +582,7 @@ var plazaBuiltinModelCatalog = map[string]plazaModelCatalogEntry{
 // plazaBuiltinPrefixRules 按前缀降序匹配的家族回落规则（处理 -high/-low/-thinking/-preview/-max 等变体）。
 var plazaBuiltinPrefixRules = []plazaModelPrefixEntry{
 	{Prefix: "gpt-6.2-astra", Entry: plazaBuiltinModelCatalog["gpt-6.2-astra"]},
+	{Prefix: "gpt-6.2-sol", Entry: plazaBuiltinModelCatalog["gpt-6.2-sol"]},
 	{Prefix: "gpt-6.1-sol", Entry: plazaBuiltinModelCatalog["gpt-6.1-sol"]},
 	{Prefix: "gpt-6.1-terra", Entry: plazaBuiltinModelCatalog["gpt-6.1-terra"]},
 	{Prefix: "gpt-6-astra", Entry: plazaBuiltinModelCatalog["gpt-6-astra"]},
@@ -612,6 +637,8 @@ var plazaBuiltinPrefixRules = []plazaModelPrefixEntry{
 	{Prefix: "claude-haiku-4-5", Entry: plazaBuiltinModelCatalog["claude-haiku-4-5"]},
 	{Prefix: "claude-3-7-sonnet", Entry: plazaBuiltinModelCatalog["claude-3-7-sonnet"]},
 	{Prefix: "claude-3.7-sonnet", Entry: plazaBuiltinModelCatalog["claude-3-7-sonnet"]},
+	{Prefix: "gemini-4-neon", Entry: plazaBuiltinModelCatalog["gemini-4-neon"]},
+	{Prefix: "gemini-4-hydrogen", Entry: plazaBuiltinModelCatalog["gemini-4-hydrogen"]},
 	{Prefix: "gemini-4-carbon", Entry: plazaBuiltinModelCatalog["gemini-4-carbon"]},
 	{Prefix: "gemini-4-argon", Entry: plazaBuiltinModelCatalog["gemini-4-argon"]},
 	{Prefix: "gemini-3.1-flash-image", Entry: plazaBuiltinModelCatalog["gemini-3.1-flash-image"]},
@@ -627,6 +654,7 @@ var plazaBuiltinPrefixRules = []plazaModelPrefixEntry{
 	{Prefix: "gemini-2.5-flash", Entry: plazaBuiltinModelCatalog["gemini-2.5-flash"]},
 	{Prefix: "gemini-2.5-pro", Entry: plazaBuiltinModelCatalog["gemini-2.5-pro"]},
 	{Prefix: "grok-4.7", Entry: plazaBuiltinModelCatalog["grok-4.7"]},
+	{Prefix: "grok-4.6", Entry: plazaBuiltinModelCatalog["grok-4.6"]},
 	{Prefix: "grok-4.5", Entry: plazaBuiltinModelCatalog["grok-4.5"]},
 	{Prefix: "grok-4-fast", Entry: plazaBuiltinModelCatalog["grok-4-fast"]},
 	{Prefix: "grok-4", Entry: plazaBuiltinModelCatalog["grok-4"]},

@@ -19,6 +19,21 @@ export interface DefaultSubscriptionSetting {
   validity_days: number;
 }
 
+/** 模型广场单分组上架目录配置（存于 system settings: model_plaza_catalog_config）。 */
+export interface ModelPlazaCatalogGroupConfig {
+  enabled: boolean;
+  showcase_public?: boolean;
+  showcase_badge?: string;
+  models: string[];
+  bare_aliases?: string[];
+  model_notes?: Record<string, string>;
+}
+
+/** 模型广场目录配置（按分组 ID 字符串索引）。 */
+export interface ModelPlazaCatalogConfig {
+  groups: Record<string, ModelPlazaCatalogGroupConfig>;
+}
+
 // ── 平台限额类型 ──────────────────────────────────────────────────
 /** 可设置默认限额的平台：平台清单中的全部具体平台（与后端 AllowedQuotaPlatforms 同源）。 */
 export type PlatformType = AccountPlatform
@@ -758,10 +773,12 @@ export interface SystemSettings {
   // Subscription feature switch (user sidebar "My Subscriptions" entry)
   subscription_enabled: boolean;
 
-  // Model Plaza feature switches + description
+  // Model Plaza feature switches + description + catalog & probe config
   model_plaza_enabled: boolean;
   model_plaza_require_auth: boolean;
   model_plaza_description: string;
+  model_plaza_catalog_config?: ModelPlazaCatalogConfig;
+  model_plaza_probe_api_key_ids?: number[];
   plugin_management_enabled: boolean;
 
   // Affiliate (邀请返利) feature switch
@@ -1081,10 +1098,12 @@ export interface UpdateSettingsRequest {
   // Subscription feature switch
   subscription_enabled?: boolean;
 
-  // Model Plaza feature switches + description
+  // Model Plaza feature switches + description + catalog & probe config
   model_plaza_enabled?: boolean;
   model_plaza_require_auth?: boolean;
   model_plaza_description?: string;
+  model_plaza_catalog_config?: ModelPlazaCatalogConfig;
+  model_plaza_probe_api_key_ids?: number[];
   plugin_management_enabled?: boolean;
 
   // Affiliate (邀请返利) feature switch

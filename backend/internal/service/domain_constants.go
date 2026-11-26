@@ -577,6 +577,14 @@ const (
 	// the Model Plaza page (global pricing notes, exchange rate, promotions, ...).
 	SettingKeyModelPlazaDescription = "model_plaza_description"
 
+	// SettingKeyModelPlazaCatalogConfig stores the JSON catalog configuration
+	// decoupling Model Plaza groups/models from billing channels (admin-only, never in PublicSettings).
+	SettingKeyModelPlazaCatalogConfig = "model_plaza_catalog_config"
+
+	// SettingKeyModelPlazaProbeAPIKeyIDs stores a JSON int64[] list of dedicated
+	// availability probe API key IDs (admin-only, never in PublicSettings).
+	SettingKeyModelPlazaProbeAPIKeyIDs = "model_plaza_probe_api_key_ids"
+
 	// SettingKeyPluginManagementEnabled controls sidebar visibility only; it does
 	// not stop or otherwise change already loaded plugin runtimes.
 	SettingKeyPluginManagementEnabled = "plugin_management_enabled"

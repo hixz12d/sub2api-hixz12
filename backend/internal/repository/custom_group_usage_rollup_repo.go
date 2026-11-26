@@ -131,6 +131,7 @@ func (r *usageLogRepository) getAllGroupUsageSummaryFromRollups(ctx context.Cont
 				), 0) AS yesterday_cost
 			FROM usage_logs ul
 			WHERE ul.created_at >= $7
+				AND (ul.request_origin IS NULL OR ul.request_origin <> 'availability_probe')
 			GROUP BY ul.group_id
 		)
 		SELECT
@@ -392,6 +393,7 @@ func beginGroupUsageRollupBuild(ctx context.Context, q sqlExecutor, todayStart t
 			SELECT MIN(created_at)
 			FROM usage_logs
 			WHERE created_at >= $1
+				AND (request_origin IS NULL OR request_origin <> 'availability_probe')
 		`, []any{expiredBefore.UTC()}, &earliest); err != nil {
 			return nil, fmt.Errorf("读取最早用量记录: %w", err)
 		}
@@ -471,6 +473,7 @@ func buildGroupUsageRollups(ctx context.Context, q sqlExecutor, plan *groupUsage
 			AND created_at >= $1
 			AND created_at < $2
 			AND (created_at AT TIME ZONE $3::text)::date >= $4::date
+			AND (request_origin IS NULL OR request_origin <> 'availability_probe')
 		GROUP BY 1, 2
 		ON CONFLICT (bucket_date, group_id)
 		DO UPDATE SET

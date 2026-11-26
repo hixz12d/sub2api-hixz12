@@ -35,6 +35,7 @@ func (r *usageLogRepository) GetAPIKeyUsageTrend(ctx context.Context, startTime,
 			SELECT api_key_id
 			FROM usage_logs
 			WHERE created_at >= $1 AND created_at < $2
+			  AND (request_origin IS NULL OR request_origin <> 'availability_probe')
 			GROUP BY api_key_id
 			ORDER BY SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens) DESC
 			LIMIT $3
@@ -49,6 +50,7 @@ func (r *usageLogRepository) GetAPIKeyUsageTrend(ctx context.Context, startTime,
 		LEFT JOIN api_keys k ON u.api_key_id = k.id
 		WHERE u.api_key_id IN (SELECT api_key_id FROM top_keys)
 		  AND u.created_at >= $4 AND u.created_at < $5
+		  AND (u.request_origin IS NULL OR u.request_origin <> 'availability_probe')
 		GROUP BY date, u.api_key_id, k.name
 		ORDER BY date ASC, tokens DESC
 	`, dateFormat)
@@ -94,6 +96,7 @@ func (r *usageLogRepository) GetUserUsageTrend(ctx context.Context, startTime, e
 			SELECT user_id
 			FROM usage_logs
 			WHERE created_at >= $1 AND created_at < $2
+			  AND (request_origin IS NULL OR request_origin <> 'availability_probe')
 			GROUP BY user_id
 			ORDER BY %s DESC, user_id ASC
 			LIMIT $3
@@ -111,6 +114,7 @@ func (r *usageLogRepository) GetUserUsageTrend(ctx context.Context, startTime, e
 		LEFT JOIN users us ON u.user_id = us.id
 		WHERE u.user_id IN (SELECT user_id FROM top_users)
 		  AND u.created_at >= $4 AND u.created_at < $5
+		  AND (u.request_origin IS NULL OR u.request_origin <> 'availability_probe')
 		GROUP BY date, u.user_id, us.email, us.username
 		ORDER BY date ASC, tokens DESC
 	`, rankExpr, dateFormat)
@@ -161,6 +165,7 @@ func (r *usageLogRepository) GetUserSpendingRanking(ctx context.Context, startTi
 			FROM usage_logs u
 			LEFT JOIN users us ON u.user_id = us.id
 			WHERE u.created_at >= $1 AND u.created_at < $2
+			  AND (u.request_origin IS NULL OR u.request_origin <> 'availability_probe')
 			GROUP BY u.user_id, us.email, us.username
 		),
 		ranked AS (
@@ -243,6 +248,7 @@ func (r *usageLogRepository) GetUserUsageTrendByUserID(ctx context.Context, user
 			COALESCE(SUM(actual_cost), 0) as actual_cost
 		FROM usage_logs
 		WHERE user_id = $1 AND created_at >= $2 AND created_at < $3
+		  AND (request_origin IS NULL OR request_origin <> 'availability_probe')
 		GROUP BY date
 		ORDER BY date ASC
 	`, dateFormat)
@@ -304,6 +310,7 @@ func (r *usageLogRepository) getUsageTrendWithFilters(ctx context.Context, start
 			COALESCE(SUM(actual_cost), 0) as actual_cost
 		FROM usage_logs
 		WHERE created_at >= $1 AND created_at < $2
+		  AND (request_origin IS NULL OR request_origin <> 'availability_probe')
 	`, dateFormat)
 
 	args := []any{startTime, endTime}
@@ -465,6 +472,7 @@ func (r *usageLogRepository) getModelStatsWithFiltersBySource(ctx context.Contex
 			COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)), 0) as account_cost
 		FROM usage_logs
 		WHERE created_at >= $1 AND created_at < $2
+		  AND (request_origin IS NULL OR request_origin <> 'availability_probe')
 	`, modelExpr)
 
 	args := []any{startTime, endTime}
@@ -545,6 +553,7 @@ func (r *usageLogRepository) getGroupStatsWithFilters(ctx context.Context, start
 		FROM usage_logs ul
 		LEFT JOIN groups g ON g.id = ul.group_id
 		WHERE ul.created_at >= $1 AND ul.created_at < $2
+		  AND (ul.request_origin IS NULL OR ul.request_origin <> 'availability_probe')
 	`
 
 	args := []any{startTime, endTime}
@@ -634,6 +643,7 @@ func (r *usageLogRepository) GetUserBreakdownStats(ctx context.Context, startTim
 		FROM usage_logs ul
 		LEFT JOIN users u ON u.id = ul.user_id
 		WHERE ul.created_at >= $1 AND ul.created_at < $2
+		  AND (ul.request_origin IS NULL OR ul.request_origin <> 'availability_probe')
 	`
 	args := []any{startTime, endTime}
 

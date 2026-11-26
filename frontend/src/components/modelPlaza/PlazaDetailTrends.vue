@@ -26,7 +26,7 @@
 
         <!-- Primary SLA metric with dual color + icon encoding -->
         <div
-          class="mt-1.5 flex items-center gap-1.5"
+          class="mt-1.5 flex flex-wrap items-center gap-1.5"
           :title="card.slaTooltip"
         >
           <Icon
@@ -41,6 +41,13 @@
             :class="plazaToneTextClass(card.sla.tone)"
           >
             {{ card.sla.text }}
+          </span>
+          <span
+            v-if="card.slaFromGroupPool"
+            class="badge badge-gray text-[11px] font-normal"
+            :title="card.slaTooltip"
+          >
+            {{ t('modelPlaza.drawer.groupPoolFallbackBadge') }}
           </span>
         </div>
 
@@ -69,6 +76,14 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <div
+      v-if="hasGroupPoolFallback"
+      class="flex items-start gap-2 bg-surface-tile px-3.5 py-2 text-[11px] leading-relaxed text-ink-3"
+    >
+      <Icon name="infoCircle" size="xs" class="mt-0.5 shrink-0 text-ink-3" />
+      <span>{{ t('modelPlaza.drawer.groupPoolFallbackHint') }}</span>
     </div>
 
     <!-- 72-slot 24h heartbeat strip -->
@@ -100,6 +115,13 @@
           <span class="inline-flex items-center gap-1">
             <i class="inline-block h-2 w-2 bg-bad" />
             {{ t('modelPlaza.heartbeat.manyFailures') }}
+          </span>
+          <span
+            class="inline-flex items-center gap-1"
+            :title="t('modelPlaza.heartbeat.idleTooltip')"
+          >
+            <i class="inline-block h-2 w-2 bg-ink-3/20 dark:bg-ink-3/25" />
+            {{ t('modelPlaza.heartbeat.idle') }}
           </span>
           <span class="inline-flex items-center gap-1">
             <i class="inline-block h-2 w-2 border border-rule bg-surface-tile-2" />
@@ -229,6 +251,7 @@ interface WindowCardModel {
   label: string
   sla: PlazaFormattedMetric
   slaIcon: 'checkCircle' | 'exclamationTriangle' | 'xCircle' | null
+  slaFromGroupPool: boolean
   slaTooltip?: string
   ttft: PlazaFormattedMetric
   ttftTooltip?: string
@@ -242,9 +265,10 @@ function buildWindowCard(
   label: string,
   win?: PlazaDetailWindow | null
 ): WindowCardModel {
-  const sla = formatSlaPercent(win?.sla, win?.sla_state)
+  const sla = formatSlaPercent(win?.sla, win?.sla_state, 2)
+  const slaFromGroupPool = sla.valid && win?.sla_source === 'group_pool'
   const ttft = formatTtft(win?.ttft_p50_ms, win?.ttft_state)
-  const cache = formatCacheRate(win?.cache_read_ratio, win?.cache_state)
+  const cache = formatCacheRate(win?.cache_read_ratio, win?.cache_state, 2)
   const tpsText = formatTps(win?.output_tps_p50, win?.output_tps_state)
 
   return {
@@ -252,7 +276,12 @@ function buildWindowCard(
     label,
     sla,
     slaIcon: slaIconForTone(sla.tone, sla.valid),
-    slaTooltip: sla.valid ? undefined : sampleStateTooltip(win?.sla_state),
+    slaFromGroupPool,
+    slaTooltip: slaFromGroupPool
+      ? t('modelPlaza.drawer.groupPoolFallbackHint')
+      : sla.valid
+        ? undefined
+        : sampleStateTooltip(win?.sla_state),
     ttft,
     ttftTooltip: ttft.valid ? undefined : sampleStateTooltip(win?.ttft_state),
     cache,
@@ -266,6 +295,10 @@ const windowCards = computed<WindowCardModel[]>(() => [
   buildWindowCard('d7', t('modelPlaza.drawer.window7d'), props.windows?.d7),
   buildWindowCard('d30', t('modelPlaza.drawer.window30d'), props.windows?.d30)
 ])
+
+const hasGroupPoolFallback = computed(() =>
+  windowCards.value.some((card) => card.slaFromGroupPool)
+)
 
 // Theme observer: re-read CSS variables whenever light/dark or UI style switches
 const themeKey = ref(0)
@@ -398,7 +431,7 @@ const chartOptions = computed<ChartOptions<'line'>>(() => {
             const val = ctx.parsed.y
             if (val == null || !Number.isFinite(val)) return ''
             const formatted =
-              metric === 'ttft' ? formatTtftAxis(val) : `${val.toFixed(1)}%`
+              metric === 'ttft' ? formatTtftAxis(val) : `${val.toFixed(2)}%`
             return `${ctx.dataset.label ?? ''}  ${formatted}`
           }
         }

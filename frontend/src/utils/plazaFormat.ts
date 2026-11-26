@@ -1,7 +1,7 @@
 /**
- * Shared pure formatters and tone helpers for the Model Plaza views.
- * Follows DESIGN.md semantic tones (ok / warn / bad / neutral / muted)
- * and honest low-sample fallbacks (always "—", never fabricated green values).
+ * Shared pure formatters, vendor/icon helpers, and tone utilities for the Model Plaza views.
+ * Model Plaza pricing is strictly denominated in RMB (¥) at 1R = 1 baseline × group multiplier,
+ * with trailing zeros stripped and zero FX conversion.
  */
 
 import type {
@@ -10,8 +10,10 @@ import type {
   PlazaModelMetadata,
   PlazaOutputTpsState
 } from '@/api/modelPlaza'
+import { formatScaled } from '@/utils/pricing'
 
 export const PLAZA_EMPTY_TEXT = '—'
+export const PLAZA_CURRENCY_SYMBOL = '¥'
 
 export type PlazaMetricTone = 'ok' | 'warn' | 'bad' | 'neutral' | 'muted'
 
@@ -23,7 +25,7 @@ export interface PlazaFormattedMetric {
 
 export type PlazaTranslateFn = (key: string, params?: Record<string, unknown>) => string
 
-const KNOWN_CAPABILITY_KEYS = new Set([
+export const KNOWN_CAPABILITY_KEYS: ReadonlySet<string> = new Set([
   'reasoning',
   'tools',
   'vision',
@@ -38,6 +40,145 @@ const KNOWN_CAPABILITY_KEYS = new Set([
   'embedding',
   'realtime'
 ])
+
+export const KNOWN_VENDOR_KEYS: ReadonlySet<string> = new Set([
+  'all',
+  'openai',
+  'anthropic',
+  'google',
+  'xai',
+  'deepseek',
+  'qwen',
+  'zhipu',
+  'meta',
+  'mistral',
+  'moonshot',
+  'minimax',
+  'doubao',
+  'cohere',
+  'other'
+])
+
+/**
+ * Infers a normalized vendor key from explicit metadata vendor, model name, or platform.
+ */
+export function inferVendorKey(
+  modelName: string,
+  platform?: string | null,
+  vendor?: string | null
+): string {
+  const metaVendor = vendor?.trim().toLowerCase()
+  if (metaVendor) return metaVendor
+
+  const name = (modelName || '').trim().toLowerCase()
+  if (name.includes('claude')) return 'anthropic'
+  if (
+    name.startsWith('gpt') ||
+    name.startsWith('o1') ||
+    name.startsWith('o3') ||
+    name.startsWith('o4') ||
+    name.startsWith('codex') ||
+    name.includes('chatgpt') ||
+    name.includes('dall-e') ||
+    name.includes('whisper') ||
+    name.includes('tts-') ||
+    name.includes('text-embedding') ||
+    name.includes('text-moderation')
+  ) {
+    return 'openai'
+  }
+  if (
+    name.includes('gemini') ||
+    name.includes('imagen') ||
+    name.includes('veo') ||
+    name.includes('gemma')
+  ) {
+    return 'google'
+  }
+  if (name.includes('grok')) return 'xai'
+  if (name.includes('deepseek')) return 'deepseek'
+  if (name.includes('qwen') || name.includes('qwq')) return 'qwen'
+  if (name.includes('glm')) return 'zhipu'
+  if (name.includes('llama')) return 'meta'
+  if (name.includes('mistral') || name.includes('mixtral') || name.includes('codestral')) {
+    return 'mistral'
+  }
+  if (name.includes('kimi') || name.includes('moonshot')) return 'moonshot'
+  if (name.includes('minimax') || name.includes('abab')) return 'minimax'
+  if (name.includes('doubao')) return 'doubao'
+  if (name.includes('command')) return 'cohere'
+
+  const normPlatform = platform?.trim().toLowerCase()
+  switch (normPlatform) {
+    case 'anthropic':
+      return 'anthropic'
+    case 'openai':
+      return 'openai'
+    case 'gemini':
+    case 'antigravity':
+      return 'google'
+    case 'grok':
+      return 'xai'
+    case 'deepseek':
+      return 'deepseek'
+    case 'qwen':
+      return 'qwen'
+    case 'zhipu':
+      return 'zhipu'
+    case 'kimi':
+    case 'moonshot':
+      return 'moonshot'
+    case 'minimax':
+      return 'minimax'
+    default:
+      return 'other'
+  }
+}
+
+/**
+ * Returns true for monochrome dark SVG model icons that require `dark:invert` in dark mode.
+ */
+export function needsDarkInvert(modelName: string): boolean {
+  const lower = (modelName || '').trim().toLowerCase()
+  return (
+    lower.startsWith('gpt') ||
+    lower.startsWith('o1') ||
+    lower.startsWith('o3') ||
+    lower.startsWith('o4') ||
+    lower.startsWith('codex') ||
+    lower.includes('chatgpt') ||
+    lower.includes('dall-e') ||
+    lower.includes('whisper') ||
+    lower.includes('tts-1') ||
+    lower.includes('text-embedding-3') ||
+    lower.includes('text-moderation') ||
+    lower.includes('grok') ||
+    lower.includes('moonshot') ||
+    lower.includes('kimi') ||
+    lower.includes('midjourney') ||
+    lower.includes('mj_') ||
+    lower.includes('jina') ||
+    lower.includes('suno') ||
+    lower.includes('ollama')
+  )
+}
+
+/**
+ * Formats a Model Plaza price strictly in RMB (¥) without trailing zeros (minFractionDigits = 0).
+ *   formatPlazaPrice(4e-7, 1_000_000)   -> "¥0.4"
+ *   formatPlazaPrice(2e-6, 1_000_000)   -> "¥2"
+ *   formatPlazaPrice(1.5e-8, 1_000_000) -> "¥0.015"
+ *   formatPlazaPrice(null, 1_000_000)   -> "—"
+ */
+export function formatPlazaPrice(
+  value: number | null | undefined,
+  scale = 1_000_000
+): string {
+  if (value == null || !Number.isFinite(value)) {
+    return PLAZA_EMPTY_TEXT
+  }
+  return formatScaled(value, scale, 0, PLAZA_CURRENCY_SYMBOL)
+}
 
 /** Maps a semantic tone to its DESIGN.md Tailwind text color class. */
 export function plazaToneTextClass(tone: PlazaMetricTone): string {
@@ -57,7 +198,7 @@ export function plazaToneTextClass(tone: PlazaMetricTone): string {
 }
 
 /**
- * Formats an SLA ratio (0~1) with status tone:
+ * Formats an SLA ratio (0~1) with 2 decimals by default (e.g. "99.85%") and status tone:
  * - >= 0.995 -> 'ok'
  * - 0.95 ~ 0.995 -> 'warn'
  * - < 0.95 -> 'bad'
@@ -110,6 +251,29 @@ export function formatTtft(
 }
 
 /**
+ * Formats compact latency for Model Plaza cards:
+ * - < 1000ms -> e.g. "820ms"
+ * - >= 1000ms -> rounded whole seconds, e.g. "9s"
+ */
+export function formatCompactLatency(
+  ms: number | null | undefined,
+  state?: PlazaMetricSampleState | null
+): PlazaFormattedMetric {
+  if ((state != null && state !== 'valid') || ms == null || !Number.isFinite(ms) || ms < 0) {
+    return { text: PLAZA_EMPTY_TEXT, tone: 'muted', valid: false }
+  }
+  const text = ms < 1000 ? `${Math.round(ms)}ms` : `${Math.round(ms / 1000)}s`
+
+  let tone: PlazaMetricTone = 'neutral'
+  if (ms < 1500) {
+    tone = 'ok'
+  } else if (ms > 15000) {
+    tone = 'warn'
+  }
+  return { text, tone, valid: true }
+}
+
+/**
  * Formats visible output speed (tokens/sec).
  * Returns `null` when unsupported, low-sample, or unavailable so callers can omit TPS cleanly
  * instead of rendering placeholder "— t/s".
@@ -131,7 +295,27 @@ export function formatTps(
 }
 
 /**
- * Formats cache hit ratio (0~1) strictly following DESIGN.md:
+ * Formats compact throughput for Model Plaza cards (e.g. "105t").
+ * Returns `null` when unsupported, low-sample, or unavailable so cards hide the column cleanly.
+ */
+export function formatCompactTps(
+  tps: number | null | undefined,
+  state?: PlazaOutputTpsState | null
+): string | null {
+  if (
+    state === 'unsupported' ||
+    (state != null && state !== 'valid') ||
+    tps == null ||
+    !Number.isFinite(tps) ||
+    tps <= 0
+  ) {
+    return null
+  }
+  return tps >= 1 ? `${Math.round(tps)}t` : `${Number(tps.toFixed(1))}t`
+}
+
+/**
+ * Formats cache hit ratio (0~1) with 2 decimals by default (e.g. "92.46%"):
  * - >= 0.70 -> 'ok'
  * - 0.40 ~ 0.70 -> 'neutral' (ink-2)
  * - < 0.40 -> 'warn'
@@ -139,14 +323,15 @@ export function formatTps(
  */
 export function formatCacheRate(
   ratio: number | null | undefined,
-  state?: PlazaMetricSampleState | null
+  state?: PlazaMetricSampleState | null,
+  decimals = 2
 ): PlazaFormattedMetric {
   if ((state != null && state !== 'valid') || ratio == null || !Number.isFinite(ratio)) {
     return { text: PLAZA_EMPTY_TEXT, tone: 'muted', valid: false }
   }
   const clamped = Math.max(0, Math.min(1, ratio))
   const pct = clamped * 100
-  const text = pct >= 100 ? '100%' : `${pct.toFixed(1)}%`
+  const text = pct >= 100 ? '100%' : `${pct.toFixed(decimals)}%`
 
   let tone: PlazaMetricTone = 'warn'
   if (clamped >= 0.7) {
@@ -158,18 +343,20 @@ export function formatCacheRate(
 }
 
 /**
- * Formats 4-token-weighted effective reference multiplier (e.g. "0.172×").
+ * Formats 4-token-weighted effective reference multiplier with fixed 3 decimals (e.g. "0.780×").
  * Values strictly below 0.5 receive 'ok' tone to highlight meaningful cache savings.
  */
 export function formatRefMultiplier(
   val: number | null | undefined,
-  state?: PlazaMetricSampleState | null
+  state?: PlazaMetricSampleState | null,
+  decimals = 3
 ): PlazaFormattedMetric {
   if ((state != null && state !== 'valid') || val == null || !Number.isFinite(val) || val <= 0) {
     return { text: PLAZA_EMPTY_TEXT, tone: 'muted', valid: false }
   }
-  const rounded = Math.round(val * 1000) / 1000
-  const formatted = rounded.toFixed(3).replace(/(\.\d{2})0$/, '$1')
+  const factor = 10 ** decimals
+  const rounded = Math.round(val * factor) / factor
+  const formatted = rounded.toFixed(decimals)
   const tone: PlazaMetricTone = val < 0.5 ? 'ok' : 'neutral'
   return { text: `${formatted}×`, tone, valid: true }
 }
@@ -202,9 +389,8 @@ export function formatConsistencyPercent(
 }
 
 /**
- * Computes official savings percentage (integer).
- * Returns a positive integer only when `paid` is strictly lower than `official` by at least 5%.
- * Never returns negative or misleading values.
+ * Computes baseline vs paid savings percentage (integer).
+ * Kept for backward compatibility during incremental component migration.
  */
 export function computeOfficialSavingsPercent(
   paid: number | null | undefined,

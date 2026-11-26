@@ -11,228 +11,189 @@
 
     <!-- Empty state -->
     <EmptyState
-      v-else-if="models.length === 0 && !hideEmptyState"
+      v-else-if="entries.length === 0 && !hideEmptyState"
       :title="t('modelPlaza.card.emptyTitle')"
       :description="t('modelPlaza.card.emptyDescription')"
     />
 
-    <!-- 8-column zero-horizontal-scroll flat tile table -->
-    <div v-else-if="models.length > 0" class="w-full">
-      <table class="w-full table-fixed border-separate border-spacing-y-1 text-sm tabular-nums">
+    <!-- Fixed 7-column left-aligned table (pure RMB ¥ pricing, effort pills, light/dark adaptive) -->
+    <div v-else-if="entries.length > 0" class="w-full border border-rule bg-surface">
+      <table class="w-full table-fixed border-collapse text-left text-sm tabular-nums">
         <colgroup>
-          <col class="w-[24%]" />
-          <col class="w-[17%]" />
-          <col class="w-[9%]" />
-          <col class="w-[11%]" />
-          <col class="w-[12%]" />
-          <col class="w-[10%]" />
+          <col class="w-[32%]" />
           <col class="w-[8%]" />
-          <col class="w-[9%]" />
+          <col class="w-[17%]" />
+          <col class="w-[10%]" />
+          <col class="w-[13%]" />
+          <col class="w-[10%]" />
+          <col class="w-[10%]" />
         </colgroup>
         <thead>
-          <tr class="text-[13px] text-ink-3">
-            <!-- 1. Model (sortable) -->
-            <th class="px-3 pb-1.5 text-left font-normal">
+          <tr class="border-b border-rule bg-surface-tile text-xs text-ink-3">
+            <!-- 1. Model (only column with sort arrows) -->
+            <th class="px-4 py-3 text-left font-medium">
               <button
                 type="button"
                 class="group/th inline-flex items-center gap-1 transition-colors duration-150 hover:text-ink"
-                :class="activeColumn === 'model' ? 'font-medium text-money-text' : ''"
-                @click="handleColumnSort('model')"
+                :class="modelSortDir ? 'font-semibold text-money-text' : ''"
+                @click="toggleModelSort"
               >
                 <span>{{ t('modelPlaza.table.model') }}</span>
                 <Icon
-                  :name="sortIconFor('model')"
+                  :name="modelSortIcon"
                   size="xs"
                   class="h-3.5 w-3.5"
-                  :class="activeColumn === 'model' ? 'text-money-text' : 'opacity-40 group-hover/th:opacity-100'"
+                  :class="modelSortDir ? 'text-money-text' : 'opacity-50 group-hover/th:opacity-100'"
                   aria-hidden="true"
                 />
               </button>
             </th>
 
-            <!-- 2. Price (In / Out) (sortable) -->
-            <th class="px-2.5 pb-1.5 text-right font-normal">
-              <button
-                type="button"
-                class="group/th inline-flex items-center justify-end gap-1 transition-colors duration-150 hover:text-ink"
-                :class="activeColumn === 'price' ? 'font-medium text-money-text' : ''"
-                @click="handleColumnSort('price')"
-              >
-                <span class="truncate">{{ t('modelPlaza.table.priceHeader') }}</span>
-                <Icon
-                  :name="sortIconFor('price')"
-                  size="xs"
-                  class="h-3.5 w-3.5 shrink-0"
-                  :class="activeColumn === 'price' ? 'text-money-text' : 'opacity-40 group-hover/th:opacity-100'"
-                  aria-hidden="true"
-                />
-              </button>
+            <!-- 2. Type -->
+            <th class="px-3 py-3 text-left font-medium">
+              <span>{{ t('modelPlaza.table.typeHeader') }}</span>
             </th>
 
-            <!-- 3. Cache Read Price -->
-            <th class="px-2.5 pb-1.5 text-right font-normal">
-              <span class="truncate">{{ t('modelPlaza.table.cacheReadHeader') }}</span>
+            <!-- 3. Price -->
+            <th class="px-3 py-3 text-left font-medium">
+              <span>{{ t('modelPlaza.table.priceColumnHeader') }}</span>
             </th>
 
-            <!-- 4. SLA (24h) (sortable) -->
-            <th class="px-2.5 pb-1.5 text-right font-normal">
-              <button
-                type="button"
-                class="group/th inline-flex items-center justify-end gap-1 transition-colors duration-150 hover:text-ink"
-                :class="activeColumn === 'sla' ? 'font-medium text-money-text' : ''"
-                @click="handleColumnSort('sla')"
+            <!-- 4. Cache -->
+            <th class="px-3 py-3 text-left font-medium">
+              <span>{{ t('modelPlaza.table.cacheColumnHeader') }}</span>
+            </th>
+
+            <!-- 5. Status -->
+            <th class="px-3 py-3 text-left font-medium">
+              <span
+                class="cursor-help"
                 @mouseenter="showTooltip($event, t('modelPlaza.table.slaTooltip'))"
                 @mouseleave="hideTooltip"
               >
-                <span class="border-b border-dashed border-ink-3/60">
-                  {{ t('modelPlaza.table.sla24hHeader') }}
-                </span>
-                <Icon
-                  :name="sortIconFor('sla')"
-                  size="xs"
-                  class="h-3.5 w-3.5 shrink-0"
-                  :class="activeColumn === 'sla' ? 'text-money-text' : 'opacity-40 group-hover/th:opacity-100'"
-                  aria-hidden="true"
-                />
-              </button>
-            </th>
-
-            <!-- 5. TTFT / Speed (sortable) -->
-            <th class="px-2.5 pb-1.5 text-right font-normal">
-              <button
-                type="button"
-                class="group/th inline-flex items-center justify-end gap-1 transition-colors duration-150 hover:text-ink"
-                :class="activeColumn === 'ttft' ? 'font-medium text-money-text' : ''"
-                @click="handleColumnSort('ttft')"
-                @mouseenter="showTooltip($event, t('modelPlaza.table.ttftSpeedTooltip'))"
-                @mouseleave="hideTooltip"
-              >
-                <span class="border-b border-dashed border-ink-3/60">
-                  {{ t('modelPlaza.table.ttftSpeedHeader') }}
-                </span>
-                <Icon
-                  :name="sortIconFor('ttft')"
-                  size="xs"
-                  class="h-3.5 w-3.5 shrink-0"
-                  :class="activeColumn === 'ttft' ? 'text-money-text' : 'opacity-40 group-hover/th:opacity-100'"
-                  aria-hidden="true"
-                />
-              </button>
-            </th>
-
-            <!-- 6. Model Consistency -->
-            <th class="px-2.5 pb-1.5 text-right font-normal">
-              <span
-                class="cursor-help border-b border-dashed border-ink-3/60"
-                @mouseenter="showTooltip($event, t('modelPlaza.table.consistencyTooltip'))"
-                @mouseleave="hideTooltip"
-              >
-                {{ t('modelPlaza.table.consistencyHeader') }}
+                {{ t('modelPlaza.table.statusColumnHeader') }}
               </span>
             </th>
 
-            <!-- 7. Cache Rate (sortable) -->
-            <th class="px-2.5 pb-1.5 text-right font-normal">
-              <button
-                type="button"
-                class="group/th inline-flex items-center justify-end gap-1 transition-colors duration-150 hover:text-ink"
-                :class="activeColumn === 'cache' ? 'font-medium text-money-text' : ''"
-                @click="handleColumnSort('cache')"
-                @mouseenter="showTooltip($event, t('modelPlaza.table.cacheRateTooltip'))"
-                @mouseleave="hideTooltip"
-              >
-                <span class="border-b border-dashed border-ink-3/60">
-                  {{ t('modelPlaza.table.cacheRateHeader') }}
-                </span>
-                <Icon
-                  :name="sortIconFor('cache')"
-                  size="xs"
-                  class="h-3.5 w-3.5 shrink-0"
-                  :class="activeColumn === 'cache' ? 'text-money-text' : 'opacity-40 group-hover/th:opacity-100'"
-                  aria-hidden="true"
-                />
-              </button>
+            <!-- 6. Coding Cache -->
+            <th class="px-3 py-3 text-left font-medium">
+              <span>{{ t('modelPlaza.table.codingCacheHeader') }}</span>
             </th>
 
-            <!-- 8. Reference Multiplier (sortable + dashed Tooltip) -->
-            <th class="px-3 pb-1.5 text-right font-normal">
-              <button
-                type="button"
-                class="group/th inline-flex items-center justify-end gap-1 transition-colors duration-150 hover:text-ink"
-                :class="activeColumn === 'ref_multiplier' ? 'font-medium text-money-text' : ''"
-                @click="handleColumnSort('ref_multiplier')"
+            <!-- 7. Reference Multiplier (with dashed underline tooltip) -->
+            <th class="px-4 py-3 text-left font-medium">
+              <span
+                class="cursor-help border-b border-dashed border-ink-3/70"
                 @mouseenter="showTooltip($event, t('modelPlaza.table.refMultiplierTooltip'))"
                 @mouseleave="hideTooltip"
               >
-                <span class="border-b border-dashed border-ink-3/70">
-                  {{ t('modelPlaza.table.refMultiplierHeader') }}
-                </span>
-                <Icon
-                  :name="sortIconFor('ref_multiplier')"
-                  size="xs"
-                  class="h-3.5 w-3.5 shrink-0"
-                  :class="activeColumn === 'ref_multiplier' ? 'text-money-text' : 'opacity-40 group-hover/th:opacity-100'"
-                  aria-hidden="true"
-                />
-              </button>
+                {{ t('modelPlaza.table.refMultiplierHeader') }}
+              </span>
             </th>
           </tr>
         </thead>
 
-        <tbody>
+        <tbody class="divide-y divide-rule">
           <tr
             v-for="row in tableRows"
-            :key="`${row.model.platform}:${row.model.name}`"
+            :key="row.entry.key"
             tabindex="0"
-            class="group cursor-pointer"
+            class="group cursor-pointer bg-surface transition-colors duration-150 hover:bg-surface-tile"
             :title="t('modelPlaza.table.clickForDetails')"
-            @click="emit('select-model', row.model)"
-            @keydown.enter.self="emit('select-model', row.model)"
-            @keydown.space.prevent.self="emit('select-model', row.model)"
+            @click="emit('select-model', row.activeModel)"
+            @keydown.enter.self="emit('select-model', row.activeModel)"
+            @keydown.space.prevent.self="emit('select-model', row.activeModel)"
           >
-            <!-- 1. Model -->
-            <td class="bg-surface-tile px-3 py-3 align-middle transition-colors duration-150 group-hover:bg-surface-tile-2">
-              <div class="flex min-w-0 items-center gap-2">
+            <!-- 1. Model: icon + mono ID + inline right copy button + optional folded effort pills -->
+            <td class="px-4 py-3 align-middle">
+              <div class="flex max-w-full items-center gap-2">
                 <ModelIcon
-                  :model="row.model.name"
+                  :model="row.activeModel.name"
                   size="18px"
                   :class="row.darkInvert ? 'dark:invert' : ''"
                   aria-hidden="true"
                 />
-                <span
-                  class="min-w-0 flex-1 truncate font-mono text-[13.5px] font-semibold text-ink"
-                  :title="row.model.name"
-                >
-                  {{ row.model.name }}
-                </span>
+                <div class="inline-flex min-w-0 max-w-full items-center gap-1.5">
+                  <span
+                    class="min-w-0 truncate font-mono text-[13.5px] font-semibold text-ink"
+                    :title="row.activeModel.name"
+                  >
+                    {{ row.activeModel.name }}
+                  </span>
+                  <button
+                    type="button"
+                    class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-none transition-colors duration-150"
+                    :class="
+                      copiedModelName === row.activeModel.name
+                        ? 'bg-ok text-white'
+                        : 'text-ink-3 opacity-65 hover:bg-surface-tile-2 hover:text-ink group-hover:opacity-100'
+                    "
+                    :title="
+                      copiedModelName === row.activeModel.name
+                        ? t('modelPlaza.card.copied')
+                        : t('modelPlaza.table.copyModelId', { model: row.activeModel.name })
+                    "
+                    :aria-label="t('modelPlaza.table.copyModelId', { model: row.activeModel.name })"
+                    @click.stop="handleCopy(row.activeModel.name)"
+                  >
+                    <Icon
+                      :name="copiedModelName === row.activeModel.name ? 'check' : 'copy'"
+                      size="xs"
+                      class="h-3.5 w-3.5"
+                      aria-hidden="true"
+                    />
+                  </button>
+                </div>
+              </div>
+
+              <!-- Folded effort pill selector -->
+              <div
+                v-if="row.entry.isFolded"
+                class="mt-1.5 flex flex-wrap items-center gap-1 pl-[26px]"
+                role="radiogroup"
+                :aria-label="t('modelPlaza.card.effortSwitchAria', { model: row.entry.baseName })"
+                @click.stop
+              >
                 <button
+                  v-for="variant in row.entry.variants"
+                  :key="variant.effort"
                   type="button"
-                  class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-none transition-colors duration-150"
+                  role="radio"
+                  :aria-checked="variant.effort === row.activeEffort"
+                  class="rounded-none px-1.5 py-0.5 font-mono text-[11px] leading-4 transition-colors duration-150"
                   :class="
-                    copiedModelName === row.model.name
-                      ? 'bg-ok text-white'
-                      : 'text-ink-3 opacity-60 hover:bg-surface hover:text-ink group-hover:opacity-100'
+                    variant.effort === row.activeEffort
+                      ? 'bg-money font-semibold text-money-ink'
+                      : 'border border-rule bg-surface-tile text-ink-2 hover:bg-surface-tile-2 hover:text-ink'
                   "
-                  :title="
-                    copiedModelName === row.model.name
-                      ? t('modelPlaza.card.copied')
-                      : t('modelPlaza.table.copyModelId', { model: row.model.name })
-                  "
-                  :aria-label="t('modelPlaza.table.copyModelId', { model: row.model.name })"
-                  @click.stop="handleCopy(row.model.name)"
+                  @click.stop="emit('select-effort', row.entry.key, variant.effort)"
                 >
-                  <Icon
-                    :name="copiedModelName === row.model.name ? 'check' : 'copy'"
-                    size="xs"
-                    class="h-3.5 w-3.5"
-                    aria-hidden="true"
-                  />
+                  {{ variant.label }}
                 </button>
+              </div>
+
+              <!-- Optional model note -->
+              <div
+                v-if="row.modelNote"
+                class="mt-1 truncate pl-[26px] text-[11px] text-warn"
+                :title="row.modelNote"
+                @mouseenter="showTooltip($event, row.modelNote)"
+                @mouseleave="hideTooltip"
+                @click.stop
+              >
+                {{ row.modelNote }}
               </div>
             </td>
 
-            <!-- 2. Price (In / Out) -->
-            <td class="bg-surface-tile px-2.5 py-3 text-right align-middle transition-colors duration-150 group-hover:bg-surface-tile-2">
+            <!-- 2. Type (blue semantic text) -->
+            <td class="px-3 py-3 align-middle">
+              <span class="whitespace-nowrap text-xs font-medium text-series-2">
+                {{ row.typeLabel }}
+              </span>
+            </td>
+
+            <!-- 3. Price (pure RMB ¥, no $, no savings %) -->
+            <td class="px-3 py-3 align-middle">
               <template v-if="row.pricing.isToken">
                 <template v-if="row.pricing.hasPrice">
                   <div class="truncate font-mono text-[13px] font-semibold text-ink">
@@ -240,21 +201,13 @@
                     <span class="font-sans font-normal text-ink-3">/</span>
                     {{ row.pricing.outputText }}
                   </div>
-                  <div class="mt-0.5 flex items-center justify-end gap-1.5 text-[11px] leading-4 text-ink-3">
-                    <span>{{ t('modelPlaza.table.perMillionShort') }}</span>
-                    <span v-if="row.pricing.tierCount > 1" aria-hidden="true">·</span>
+                  <div class="mt-0.5 truncate text-[11px] leading-4 text-ink-3">
+                    <span>{{ t('modelPlaza.table.perMillionTokens') }}</span>
                     <span v-if="row.pricing.tierCount > 1" class="text-ink-2">
-                      {{ t('modelPlaza.card.tiersBadge', { count: row.pricing.tierCount }) }}
+                      {{ t('modelPlaza.table.tiersCountSuffix', { count: row.pricing.tierCount }) }}
                     </span>
-                    <span v-else-if="row.pricing.hasTimePricing" aria-hidden="true">·</span>
-                    <span v-if="row.pricing.tierCount <= 1 && row.pricing.hasTimePricing" class="text-ink-2">
-                      {{ t('modelPlaza.card.timePricingBadge') }}
-                    </span>
-                    <span
-                      v-if="row.pricing.savingsPercent != null"
-                      class="font-semibold text-ok"
-                    >
-                      {{ t('modelPlaza.card.savingsBadge', { percent: row.pricing.savingsPercent }) }}
+                    <span v-else-if="row.pricing.hasTimePricing" class="text-ink-2">
+                      · {{ t('modelPlaza.card.timePricingBadge') }}
                     </span>
                   </div>
                 </template>
@@ -280,8 +233,8 @@
               </template>
             </td>
 
-            <!-- 3. Cache Read Price -->
-            <td class="bg-surface-tile px-2.5 py-3 text-right align-middle transition-colors duration-150 group-hover:bg-surface-tile-2">
+            <!-- 4. Cache Read Price -->
+            <td class="px-3 py-3 align-middle">
               <template v-if="row.pricing.cacheReadText">
                 <div class="font-mono text-[13px] font-medium text-ink">
                   {{ row.pricing.cacheReadText }}
@@ -293,14 +246,28 @@
               <span v-else class="text-ink-3">{{ PLAZA_EMPTY_TEXT }}</span>
             </td>
 
-            <!-- 4. SLA (24h) -->
-            <td class="bg-surface-tile px-2.5 py-3 text-right align-middle transition-colors duration-150 group-hover:bg-surface-tile-2">
+            <!-- 5. Status (solid dot + 2-decimal SLA, or green dot + Available (Pool)) -->
+            <td class="px-3 py-3 align-middle">
               <span
-                v-if="row.sla.valid"
-                class="inline-flex items-center justify-end gap-1 font-semibold"
+                v-if="row.isGroupPoolFallback"
+                class="inline-flex cursor-help items-center gap-1.5 whitespace-nowrap text-xs font-medium text-ok"
+                @mouseenter="showTooltip($event, t('modelPlaza.card.availableGroupPoolTooltip'))"
+                @mouseleave="hideTooltip"
+                @click.stop
+              >
+                <span class="h-2 w-2 shrink-0 rounded-full bg-ok" aria-hidden="true" />
+                <span>{{ t('modelPlaza.card.availableGroupPool') }}</span>
+              </span>
+              <span
+                v-else-if="row.sla.valid"
+                class="inline-flex items-center gap-1.5 whitespace-nowrap font-semibold"
                 :class="plazaToneTextClass(row.sla.tone)"
               >
-                <Icon :name="row.slaIcon" size="xs" class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span
+                  class="h-2 w-2 shrink-0 rounded-full"
+                  :class="row.slaDotClass"
+                  aria-hidden="true"
+                />
                 <span>{{ row.sla.text }}</span>
               </span>
               <span
@@ -313,58 +280,11 @@
               </span>
             </td>
 
-            <!-- 5. TTFT / Speed -->
-            <td class="bg-surface-tile px-2.5 py-3 text-right align-middle transition-colors duration-150 group-hover:bg-surface-tile-2">
-              <template v-if="row.ttft.valid">
-                <div
-                  class="whitespace-nowrap text-[13px]"
-                  :class="row.ttft.tone === 'ok' ? 'font-semibold text-ok' : 'text-ink'"
-                >
-                  <span class="mr-1 text-xs font-normal text-ink-3">{{ t('modelPlaza.table.ttftPrefix') }}</span>
-                  <span>{{ row.ttft.text }}</span>
-                </div>
-                <div v-if="row.tpsText" class="mt-0.5 text-[11px] leading-4 text-ink-3">
-                  {{ row.tpsText }}
-                </div>
-              </template>
-              <span
-                v-else
-                class="cursor-help text-ink-3"
-                @mouseenter="showTooltip($event, row.ttftTooltip)"
-                @mouseleave="hideTooltip"
-              >
-                {{ PLAZA_EMPTY_TEXT }}
-              </span>
-            </td>
-
-            <!-- 6. Model Consistency -->
-            <td class="bg-surface-tile px-2.5 py-3 text-right align-middle transition-colors duration-150 group-hover:bg-surface-tile-2">
-              <span
-                v-if="row.consistency.icon"
-                class="inline-flex cursor-help items-center justify-end gap-1 text-xs font-semibold"
-                :class="row.consistency.toneClass"
-                @mouseenter="showTooltip($event, row.consistency.tooltip)"
-                @mouseleave="hideTooltip"
-              >
-                <Icon :name="row.consistency.icon" size="xs" class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                <span>{{ row.consistency.label }}</span>
-              </span>
-              <span
-                v-else
-                class="cursor-help text-ink-3"
-                @mouseenter="showTooltip($event, row.consistency.tooltip)"
-                @mouseleave="hideTooltip"
-              >
-                {{ PLAZA_EMPTY_TEXT }}
-              </span>
-            </td>
-
-            <!-- 7. Cache Rate -->
-            <td class="bg-surface-tile px-2.5 py-3 text-right align-middle transition-colors duration-150 group-hover:bg-surface-tile-2">
+            <!-- 6. Coding Cache (2 decimals, neutral text) -->
+            <td class="px-3 py-3 align-middle">
               <span
                 v-if="row.cache.valid"
-                class="font-semibold"
-                :class="plazaToneTextClass(row.cache.tone)"
+                class="font-medium text-ink"
               >
                 {{ row.cache.text }}
               </span>
@@ -378,12 +298,11 @@
               </span>
             </td>
 
-            <!-- 8. Reference Multiplier -->
-            <td class="bg-surface-tile px-3 py-3 text-right align-middle transition-colors duration-150 group-hover:bg-surface-tile-2">
+            <!-- 7. Reference Multiplier (fixed 3 decimals, neutral mono text) -->
+            <td class="px-4 py-3 align-middle">
               <span
                 v-if="row.refMult.valid"
-                class="font-mono font-semibold"
-                :class="plazaToneTextClass(row.refMult.tone)"
+                class="font-mono font-medium text-ink"
               >
                 {{ row.refMult.text }}
               </span>
@@ -422,9 +341,10 @@ import Icon from '@/components/icons/Icon.vue'
 import ModelIcon from '@/components/common/ModelIcon.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import { useClipboard } from '@/composables/useClipboard'
-import { formatScaled, resolveIntervalPrices } from '@/utils/pricing'
+import { resolveIntervalPrices } from '@/utils/pricing'
 import {
   BILLING_MODE_IMAGE,
+  BILLING_MODE_PER_REQUEST,
   BILLING_MODE_TOKEN,
   BILLING_MODE_VIDEO,
   type BillingMode
@@ -438,30 +358,30 @@ import type { UserPricingInterval } from '@/api/channels'
 import type { PlazaSortBy } from './PlazaToolbar.vue'
 import {
   PLAZA_EMPTY_TEXT,
-  computeOfficialSavingsPercent,
   formatCacheRate,
-  formatConsistencyPercent,
+  formatPlazaPrice,
   formatRefMultiplier,
   formatSlaPercent,
-  formatTps,
-  formatTtft,
+  needsDarkInvert,
   plazaToneTextClass
 } from '@/utils/plazaFormat'
-
-type TableColumnKey = 'model' | 'price' | 'sla' | 'ttft' | 'cache' | 'ref_multiplier'
-type LocalSortOverride =
-  | { column: TableColumnKey; dir: 'asc' | 'desc' }
-  | null
+import {
+  resolveVariantForEntry,
+  type PlazaEffortLevel,
+  type PlazaFoldedEntry
+} from '@/utils/plazaFolding'
 
 interface Props {
   group: ModelPlazaGroup
-  models: PlazaModel[]
+  entries: PlazaFoldedEntry[]
+  selectedEfforts?: Record<string, PlazaEffortLevel>
   sortBy?: PlazaSortBy
   loading?: boolean
   hideEmptyState?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  selectedEfforts: () => ({}),
   sortBy: 'default',
   loading: false,
   hideEmptyState: false
@@ -469,6 +389,7 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
   'select-model': [model: PlazaModel]
+  'select-effort': [entryKey: string, effort: PlazaEffortLevel]
   'update:sortBy': [value: PlazaSortBy]
   'copy-model': [modelName: string]
 }>()
@@ -477,16 +398,15 @@ const { t } = useI18n()
 const { copyToClipboard } = useClipboard()
 
 const PER_MILLION = 1_000_000
-const MIN_DECIMALS = 2
 
-const localSort = ref<LocalSortOverride>(null)
+const modelSortDir = ref<'asc' | 'desc' | null>(null)
 const copiedModelName = ref<string | null>(null)
 let copyTimer: ReturnType<typeof setTimeout> | null = null
 
 watch(
   () => props.sortBy,
   () => {
-    localSort.value = null
+    modelSortDir.value = null
   }
 )
 
@@ -531,114 +451,19 @@ async function handleCopy(modelName: string) {
   }
 }
 
-const activeSortDescriptor = computed<{ column: TableColumnKey; dir: 'asc' | 'desc' } | null>(() => {
-  if (localSort.value) return localSort.value
-  switch (props.sortBy) {
-    case 'price_asc':
-      return { column: 'price', dir: 'asc' }
-    case 'price_desc':
-      return { column: 'price', dir: 'desc' }
-    case 'sla_desc':
-      return { column: 'sla', dir: 'desc' }
-    case 'ttft_asc':
-      return { column: 'ttft', dir: 'asc' }
-    case 'cache_desc':
-      return { column: 'cache', dir: 'desc' }
-    case 'ref_multiplier_asc':
-      return { column: 'ref_multiplier', dir: 'asc' }
-    default:
-      return null
-  }
+const modelSortIcon = computed(() => {
+  if (!modelSortDir.value) return 'sort' as const
+  return modelSortDir.value === 'asc' ? ('arrowUp' as const) : ('arrowDown' as const)
 })
 
-const activeColumn = computed(() => activeSortDescriptor.value?.column ?? null)
-
-function sortIconFor(column: TableColumnKey) {
-  const active = activeSortDescriptor.value
-  if (!active || active.column !== column) return 'sort' as const
-  return active.dir === 'asc' ? ('arrowUp' as const) : ('arrowDown' as const)
-}
-
-function handleColumnSort(column: TableColumnKey) {
-  const current = activeSortDescriptor.value
-  if (column === 'model') {
-    if (localSort.value?.column === 'model') {
-      localSort.value =
-        localSort.value.dir === 'asc' ? { column: 'model', dir: 'desc' } : null
-    } else {
-      localSort.value = { column: 'model', dir: 'asc' }
-    }
-    return
+function toggleModelSort() {
+  if (modelSortDir.value === 'asc') {
+    modelSortDir.value = 'desc'
+  } else if (modelSortDir.value === 'desc') {
+    modelSortDir.value = null
+  } else {
+    modelSortDir.value = 'asc'
   }
-
-  if (column === 'price') {
-    localSort.value = null
-    emit('update:sortBy', current?.column === 'price' && current.dir === 'asc' ? 'price_desc' : 'price_asc')
-    return
-  }
-
-  if (column === 'sla') {
-    if (current?.column === 'sla' && current.dir === 'desc') {
-      localSort.value = { column: 'sla', dir: 'asc' }
-    } else {
-      localSort.value = null
-      emit('update:sortBy', 'sla_desc')
-    }
-    return
-  }
-
-  if (column === 'ttft') {
-    if (current?.column === 'ttft' && current.dir === 'asc') {
-      localSort.value = { column: 'ttft', dir: 'desc' }
-    } else {
-      localSort.value = null
-      emit('update:sortBy', 'ttft_asc')
-    }
-    return
-  }
-
-  if (column === 'cache') {
-    if (current?.column === 'cache' && current.dir === 'desc') {
-      localSort.value = { column: 'cache', dir: 'asc' }
-    } else {
-      localSort.value = null
-      emit('update:sortBy', 'cache_desc')
-    }
-    return
-  }
-
-  if (column === 'ref_multiplier') {
-    if (current?.column === 'ref_multiplier' && current.dir === 'asc') {
-      localSort.value = { column: 'ref_multiplier', dir: 'desc' }
-    } else {
-      localSort.value = null
-      emit('update:sortBy', 'ref_multiplier_asc')
-    }
-  }
-}
-
-function needsDarkInvert(modelName: string): boolean {
-  const lower = modelName.toLowerCase()
-  return (
-    lower.startsWith('gpt') ||
-    lower.startsWith('o1') ||
-    lower.startsWith('o3') ||
-    lower.startsWith('o4') ||
-    lower.includes('chatgpt') ||
-    lower.includes('dall-e') ||
-    lower.includes('whisper') ||
-    lower.includes('tts-1') ||
-    lower.includes('text-embedding-3') ||
-    lower.includes('text-moderation') ||
-    lower.includes('grok') ||
-    lower.includes('moonshot') ||
-    lower.includes('kimi') ||
-    lower.includes('midjourney') ||
-    lower.includes('mj_') ||
-    lower.includes('jina') ||
-    lower.includes('suno') ||
-    lower.includes('ollama')
-  )
 }
 
 function sortByContext(intervals: UserPricingInterval[]): UserPricingInterval[] {
@@ -653,6 +478,20 @@ function sampleStateTooltip(state: PlazaMetricSampleState | null | undefined): s
 const effectiveRate = computed(
   () => props.group.user_rate_multiplier ?? props.group.rate_multiplier
 )
+
+function billingTypeLabel(mode: BillingMode): string {
+  switch (mode) {
+    case BILLING_MODE_PER_REQUEST:
+      return t('modelPlaza.table.typePerRequest')
+    case BILLING_MODE_IMAGE:
+      return t('modelPlaza.table.typePerImage')
+    case BILLING_MODE_VIDEO:
+      return t('modelPlaza.table.typePerVideo')
+    case BILLING_MODE_TOKEN:
+    default:
+      return t('modelPlaza.table.typeToken')
+  }
+}
 
 function computePricing(model: PlazaModel) {
   const mode = (model.pricing?.billing_mode || BILLING_MODE_TOKEN) as BillingMode
@@ -672,26 +511,18 @@ function computePricing(model: PlazaModel) {
     const paidOutNum = rawOut != null ? rawOut * rate : null
     const hasPrice = paidInNum != null || paidOutNum != null
 
-    const officialIntervals = sortByContext(model.official_pricing?.intervals ?? [])
-    const officialIn = model.official_pricing?.input_price ?? officialIntervals[0]?.input_price ?? null
-    const officialOut = model.official_pricing?.output_price ?? officialIntervals[0]?.output_price ?? null
-    const savingsPercent =
-      computeOfficialSavingsPercent(paidInNum, officialIn) ??
-      computeOfficialSavingsPercent(paidOutNum, officialOut)
-
     return {
+      mode,
       isToken: true,
       hasPrice,
-      sortPrice: paidInNum ?? paidOutNum,
-      inputText: paidInNum != null ? formatScaled(paidInNum, PER_MILLION, MIN_DECIMALS) : PLAZA_EMPTY_TEXT,
-      outputText: paidOutNum != null ? formatScaled(paidOutNum, PER_MILLION, MIN_DECIMALS) : PLAZA_EMPTY_TEXT,
+      inputText: paidInNum != null ? formatPlazaPrice(paidInNum, PER_MILLION) : PLAZA_EMPTY_TEXT,
+      outputText: paidOutNum != null ? formatPlazaPrice(paidOutNum, PER_MILLION) : PLAZA_EMPTY_TEXT,
       cacheReadText:
-        rawCacheRead != null ? formatScaled(rawCacheRead * rate, PER_MILLION, MIN_DECIMALS) : null,
+        rawCacheRead != null ? formatPlazaPrice(rawCacheRead * rate, PER_MILLION) : null,
       requestPriceText: null as string | null,
       requestUnitSuffix: '',
       tierCount: intervals.length,
-      hasTimePricing,
-      savingsPercent
+      hasTimePricing
     }
   }
 
@@ -708,171 +539,70 @@ function computePricing(model: PlazaModel) {
   const requestUnitSuffix =
     mode === BILLING_MODE_IMAGE
       ? t('modelPlaza.table.perUnitImage')
-      : t('modelPlaza.table.perUnitRequest')
+      : mode === BILLING_MODE_VIDEO
+        ? t('modelPlaza.table.perUnitVideo')
+        : t('modelPlaza.table.perUnitRequest')
 
   return {
+    mode,
     isToken: false,
     hasPrice: rawReqPrice != null,
-    sortPrice: rawReqPrice != null ? rawReqPrice * reqRate : null,
     inputText: PLAZA_EMPTY_TEXT,
     outputText: PLAZA_EMPTY_TEXT,
     cacheReadText: null as string | null,
-    requestPriceText: rawReqPrice != null ? formatScaled(rawReqPrice * reqRate, 1, MIN_DECIMALS) : null,
+    requestPriceText: rawReqPrice != null ? formatPlazaPrice(rawReqPrice * reqRate, 1) : null,
     requestUnitSuffix,
     tierCount: reqIntervals.length,
-    hasTimePricing,
-    savingsPercent: null as number | null
+    hasTimePricing
   }
 }
 
-function buildConsistencyCell(model: PlazaModel) {
-  const m = model.metrics
-  if (!m || m.consistency_state === 'no_data') {
-    return {
-      icon: null,
-      label: PLAZA_EMPTY_TEXT,
-      toneClass: 'text-ink-3',
-      tooltip: t('modelPlaza.common.noDataTooltip')
-    }
-  }
-  if (m.consistency_state === 'low_sample') {
-    return {
-      icon: null,
-      label: PLAZA_EMPTY_TEXT,
-      toneClass: 'text-ink-3',
-      tooltip: t('modelPlaza.consistency.lowSampleDesc')
-    }
-  }
-  if (m.consistency_state === 'verified') {
-    const pct = formatConsistencyPercent(m.consistency_rate, m.consistency_state, 2)
-    const header = pct.valid
-      ? `${t('modelPlaza.consistency.verified')} (${pct.text})`
-      : t('modelPlaza.consistency.verified')
-    const extra = m.auto_pause_protected ? ` · ${t('modelPlaza.consistency.autoPauseActive')}` : ''
-    return {
-      icon: 'shield' as const,
-      label: t('modelPlaza.consistency.verified'),
-      toneClass: 'text-ok',
-      tooltip: `${header}${extra} — ${t('modelPlaza.consistency.methodDesc')}`
-    }
-  }
-  const pct = formatConsistencyPercent(m.consistency_rate, m.consistency_state, 2)
-  const header = pct.valid
-    ? `${t('modelPlaza.consistency.mismatchShort')} (${pct.text})`
-    : t('modelPlaza.consistency.mismatchShort')
-  return {
-    icon: 'exclamationTriangle' as const,
-    label: t('modelPlaza.consistency.mismatchShort'),
-    toneClass: pct.tone === 'bad' ? 'text-bad' : 'text-warn',
-    tooltip: `${header} — ${t('modelPlaza.consistency.autoPauseDesc')}`
-  }
-}
-
-function validMetricValue(
-  val: number | null | undefined,
-  state: PlazaMetricSampleState | null | undefined
-): number | null {
-  if (state != null && state !== 'valid') return null
-  if (val == null || !Number.isFinite(val)) return null
-  return val
-}
-
-function compareNullable(a: number | null, b: number | null, dir: 'asc' | 'desc'): number {
-  // Missing / insufficient-sample values ALWAYS sort to the bottom
-  if (a == null && b == null) return 0
-  if (a == null) return 1
-  if (b == null) return -1
-  return dir === 'asc' ? a - b : b - a
-}
-
-const orderedModels = computed<PlazaModel[]>(() => {
-  const override = localSort.value
-  if (!override) return props.models
-
-  const list = [...props.models]
-  const { column, dir } = override
+const orderedEntries = computed<PlazaFoldedEntry[]>(() => {
+  const dir = modelSortDir.value
+  if (!dir) return props.entries
+  const list = [...props.entries]
   list.sort((a, b) => {
-    if (column === 'model') {
-      return dir === 'asc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
-    }
-    if (column === 'sla') {
-      return (
-        compareNullable(
-          validMetricValue(a.metrics?.sla_24h, a.metrics?.sla_state),
-          validMetricValue(b.metrics?.sla_24h, b.metrics?.sla_state),
-          dir
-        ) || a.name.localeCompare(b.name)
-      )
-    }
-    if (column === 'ttft') {
-      return (
-        compareNullable(
-          validMetricValue(a.metrics?.ttft_p50_ms, a.metrics?.ttft_state),
-          validMetricValue(b.metrics?.ttft_p50_ms, b.metrics?.ttft_state),
-          dir
-        ) || a.name.localeCompare(b.name)
-      )
-    }
-    if (column === 'cache') {
-      return (
-        compareNullable(
-          validMetricValue(a.metrics?.cache_read_ratio, a.metrics?.cache_state),
-          validMetricValue(b.metrics?.cache_read_ratio, b.metrics?.cache_state),
-          dir
-        ) || a.name.localeCompare(b.name)
-      )
-    }
-    if (column === 'ref_multiplier') {
-      return (
-        compareNullable(
-          validMetricValue(
-            a.metrics?.reference_multiplier,
-            a.metrics?.reference_multiplier_state
-          ),
-          validMetricValue(
-            b.metrics?.reference_multiplier,
-            b.metrics?.reference_multiplier_state
-          ),
-          dir
-        ) || a.name.localeCompare(b.name)
-      )
-    }
-    return 0
+    const modelA = resolveVariantForEntry(a, props.selectedEfforts[a.key] ?? null)
+    const modelB = resolveVariantForEntry(b, props.selectedEfforts[b.key] ?? null)
+    return dir === 'asc'
+      ? modelA.name.localeCompare(modelB.name)
+      : modelB.name.localeCompare(modelA.name)
   })
   return list
 })
 
 const tableRows = computed(() =>
-  orderedModels.value.map((model) => {
-    const pricing = computePricing(model)
-    const metrics = model.metrics
-    const sla = formatSlaPercent(metrics?.sla_24h, metrics?.sla_state, 1)
-    const ttft = formatTtft(metrics?.ttft_p50_ms, metrics?.ttft_state)
-    const tpsText = formatTps(metrics?.output_tps_p50, metrics?.output_tps_state)
-    const cache = formatCacheRate(metrics?.cache_read_ratio, metrics?.cache_state)
+  orderedEntries.value.map((entry) => {
+    const activeEffort = entry.isFolded
+      ? (props.selectedEfforts[entry.key] ?? entry.defaultEffort)
+      : null
+    const activeModel = resolveVariantForEntry(entry, activeEffort)
+    const pricing = computePricing(activeModel)
+    const metrics = activeModel.metrics
+    const isGroupPoolFallback = metrics?.sla_source === 'group_pool'
+    const sla = formatSlaPercent(metrics?.sla_24h, metrics?.sla_state, 2)
+    const cache = formatCacheRate(metrics?.cache_read_ratio, metrics?.cache_state, 2)
     const refMult = formatRefMultiplier(
       metrics?.reference_multiplier,
-      metrics?.reference_multiplier_state
+      metrics?.reference_multiplier_state,
+      3
     )
 
-    const slaIcon =
-      sla.tone === 'ok'
-        ? ('checkCircle' as const)
-        : sla.tone === 'warn'
-          ? ('exclamationTriangle' as const)
-          : ('xCircle' as const)
+    const slaDotClass =
+      sla.tone === 'ok' ? 'bg-ok' : sla.tone === 'warn' ? 'bg-warn' : 'bg-bad'
 
     return {
-      model,
-      darkInvert: needsDarkInvert(model.name),
+      entry,
+      activeEffort,
+      activeModel,
+      darkInvert: needsDarkInvert(activeModel.name),
+      typeLabel: billingTypeLabel(pricing.mode),
+      modelNote: activeModel.note?.trim() || '',
       pricing,
+      isGroupPoolFallback,
       sla,
-      slaIcon,
+      slaDotClass,
       slaTooltip: sampleStateTooltip(metrics?.sla_state),
-      ttft,
-      ttftTooltip: sampleStateTooltip(metrics?.ttft_state),
-      tpsText,
-      consistency: buildConsistencyCell(model),
       cache,
       cacheTooltip: sampleStateTooltip(metrics?.cache_state),
       refMult,

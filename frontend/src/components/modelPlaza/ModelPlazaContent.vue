@@ -129,7 +129,7 @@
         :title="t('modelPlaza.empty')"
       />
 
-      <!-- Layer 2: Toolbar + Active View (Card Grid / Table) -->
+      <!-- Layer 2: Toolbar + Group Pool Bar + Active View (Card Grid / Table) -->
       <template v-else>
         <PlazaToolbar
           :groups="sortedGroups"
@@ -144,8 +144,10 @@
           :view-mode="effectiveViewMode"
           :filtered-model-ids="filteredModelIds"
           :group-match-counts="groupMatchCounts"
+          :group-total-counts="groupTotalCounts"
           :vendors="vendorOptions"
-          :total-in-group="activeGroup.models.length"
+          :total-in-group="foldedGroupEntries.length"
+          :shown-count="sortedFilteredEntries.length"
           @update:selected-group-name="handleSelectGroup"
           @update:search="searchQuery = $event"
           @update:selected-vendor="selectedVendor = $event"
@@ -158,6 +160,12 @@
           @reset-filters="handleResetFilters"
         />
 
+        <!-- Group Description & Service Pool Status Bar -->
+        <PlazaGroupPoolBar
+          :group="activeGroup"
+          :ordered-group-ids="orderedGroupIds"
+        />
+
         <!-- Group has no models configured at all -->
         <EmptyState
           v-if="activeGroup.models.length === 0 && !hasCrossGroupFallback"
@@ -168,10 +176,12 @@
         <PlazaModelTable
           v-else-if="effectiveViewMode === 'table'"
           :group="activeGroup"
-          :models="sortedFilteredModels"
+          :entries="sortedFilteredEntries"
+          :selected-efforts="selectedEffortMap"
           :sort-by="sortBy"
           :hide-empty-state="hasCrossGroupFallback"
           @update:sort-by="sortBy = $event"
+          @select-effort="handleSelectEffort"
           @select-model="handleSelectModel"
         />
 
@@ -179,13 +189,15 @@
         <PlazaModelCardGrid
           v-else
           :group="activeGroup"
-          :models="sortedFilteredModels"
+          :entries="sortedFilteredEntries"
+          :selected-efforts="selectedEffortMap"
           :hide-empty-state="hasCrossGroupFallback"
+          @select-effort="handleSelectEffort"
           @select-model="handleSelectModel"
         />
       </template>
 
-      <!-- Layer 3: Model Detail Drawer -->
+      <!-- Layer 3: Model Detail Drawer (zero prop conflict with Part 4) -->
       <PlazaModelDetailDrawer
         :show="drawerOpen"
         :model="drawerModel"
@@ -193,6 +205,7 @@
         :all-groups="sortedGroups"
         @close="handleCloseDrawer"
         @switch-group="handleDrawerSwitchGroup"
+        @select-model="handleSelectModel"
       />
     </template>
   </div>
@@ -206,6 +219,7 @@ import DOMPurify from 'dompurify'
 import Icon from '@/components/icons/Icon.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import PlazaStrengthBar from './PlazaStrengthBar.vue'
+import PlazaGroupPoolBar from './PlazaGroupPoolBar.vue'
 import PlazaToolbar, {
   type PlazaBillingFilter,
   type PlazaSortBy,
@@ -217,6 +231,18 @@ import PlazaModelTable from './PlazaModelTable.vue'
 import PlazaModelDetailDrawer from './PlazaModelDetailDrawer.vue'
 import { resolveIntervalPrices } from '@/utils/pricing'
 import { isChannelMonitorRouteEnabled } from '@/utils/featureFlags'
+import {
+  KNOWN_CAPABILITY_KEYS,
+  KNOWN_VENDOR_KEYS,
+  inferVendorKey
+} from '@/utils/plazaFormat'
+import {
+  foldPlazaModels,
+  parseEffortSuffix,
+  resolveVariantForEntry,
+  type PlazaEffortLevel,
+  type PlazaFoldedEntry
+} from '@/utils/plazaFolding'
 import {
   BILLING_MODE_IMAGE,
   BILLING_MODE_TOKEN,
@@ -234,40 +260,7 @@ import { useAuthStore } from '@/stores/auth'
 
 const VIEW_STORAGE_KEY = 'sub2api:model-plaza:view'
 const MOBILE_MEDIA_QUERY = '(max-width: 767px)'
-
-const KNOWN_CAPABILITY_KEYS = new Set([
-  'reasoning',
-  'tools',
-  'vision',
-  'audio',
-  'image',
-  'video',
-  'prompt_caching',
-  'web_search',
-  'long_context',
-  'structured_outputs',
-  'code',
-  'embedding',
-  'realtime'
-])
-
-const KNOWN_VENDOR_KEYS = new Set([
-  'all',
-  'openai',
-  'anthropic',
-  'google',
-  'xai',
-  'deepseek',
-  'qwen',
-  'zhipu',
-  'meta',
-  'mistral',
-  'moonshot',
-  'minimax',
-  'doubao',
-  'cohere',
-  'other'
-])
+const PER_MILLION = 1_000_000
 
 const props = defineProps<{
   response: ModelPlazaResponse | null
@@ -393,8 +386,30 @@ const sortedGroups = computed<ModelPlazaGroup[]>(() =>
   )
 )
 
+const orderedGroupIds = computed(() => sortedGroups.value.map((g) => g.id))
+
 const selectedGroupName = ref('')
 const drawerModelName = ref('')
+
+// Selected thinking effort isolated per group (`groupName -> entryKey -> effort`)
+// so switching groups never races with deep-link or cross-group search effort sync.
+const selectedEffortByGroup = ref<Record<string, Record<string, PlazaEffortLevel>>>({})
+const selectedEffortMap = computed<Record<string, PlazaEffortLevel>>(
+  () => selectedEffortByGroup.value[selectedGroupName.value] ?? {}
+)
+
+function setGroupEffort(groupName: string, entryKey: string, effort: PlazaEffortLevel) {
+  if (!groupName) return
+  const current = selectedEffortByGroup.value[groupName]
+  if (current?.[entryKey] === effort) return
+  selectedEffortByGroup.value = {
+    ...selectedEffortByGroup.value,
+    [groupName]: {
+      ...(current ?? {}),
+      [entryKey]: effort
+    }
+  }
+}
 
 // Toolbar filters & sort state
 const searchQuery = ref('')
@@ -404,6 +419,27 @@ const billingType = ref<PlazaBillingFilter>('all')
 const onlyHighCache = ref(false)
 const onlyVerifiedConsistency = ref(false)
 const sortBy = ref<PlazaSortBy>('default')
+
+function resolveModelInGroup(group: ModelPlazaGroup, targetName: string): PlazaModel | null {
+  const exact = group.models.find((m) => m.name === targetName)
+  if (exact) return exact
+  // Support bare alias deep links (e.g. ?model=gemini-4-neon -> gemini-4-neon-high)
+  const folded = foldPlazaModels(group.models)
+  const lower = targetName.toLowerCase()
+  for (const entry of folded) {
+    if (entry.isFolded && entry.bareAliasForHigh && entry.baseName.toLowerCase() === lower) {
+      return entry.defaultModel
+    }
+  }
+  return null
+}
+
+function syncEffortForModel(model: PlazaModel | null, groupName = selectedGroupName.value) {
+  if (!model || !groupName) return
+  const parsed = parseEffortSuffix(model.name)
+  if (!parsed) return
+  setGroupEffort(groupName, `${model.platform}:${parsed.baseName}`, parsed.effort)
+}
 
 function reconcileSelectionFromProps() {
   const groups = sortedGroups.value
@@ -421,17 +457,19 @@ function reconcileSelectionFromProps() {
     ? groups.find((g) => g.name === requestedGroup)
     : undefined
 
-  let nextModelName = ''
+  let resolvedModel: PlazaModel | null = null
   if (requestedModel) {
-    if (nextGroup && nextGroup.models.some((m) => m.name === requestedModel)) {
-      nextModelName = requestedModel
-    } else {
-      const fallbackGroup = groups.find((g) =>
-        g.models.some((m) => m.name === requestedModel)
-      )
-      if (fallbackGroup) {
-        nextGroup = fallbackGroup
-        nextModelName = requestedModel
+    if (nextGroup) {
+      resolvedModel = resolveModelInGroup(nextGroup, requestedModel)
+    }
+    if (!resolvedModel) {
+      for (const candidate of groups) {
+        const hit = resolveModelInGroup(candidate, requestedModel)
+        if (hit) {
+          nextGroup = candidate
+          resolvedModel = hit
+          break
+        }
       }
     }
   }
@@ -441,8 +479,10 @@ function reconcileSelectionFromProps() {
       groups.find((g) => g.name === selectedGroupName.value) ?? groups[0]
   }
 
+  const nextModelName = resolvedModel?.name ?? ''
   selectedGroupName.value = nextGroup.name
   drawerModelName.value = nextModelName
+  syncEffortForModel(resolvedModel, nextGroup.name)
 
   if (props.selectedGroup !== undefined && requestedGroup !== nextGroup.name) {
     emit('update:selectedGroup', nextGroup.name)
@@ -471,39 +511,40 @@ const drawerModel = computed<PlazaModel | null>(() => {
 
 const drawerOpen = computed(() => Boolean(drawerModel.value))
 
-// Vendor inference (aligned with PlazaToolbar)
-function inferVendorKey(model: PlazaModel): string {
-  const metaVendor = model.metadata?.vendor?.trim().toLowerCase()
-  if (metaVendor) return metaVendor
-  const name = model.name.toLowerCase()
-  if (name.includes('claude')) return 'anthropic'
-  if (
-    name.startsWith('gpt') ||
-    name.startsWith('o1') ||
-    name.startsWith('o3') ||
-    name.startsWith('o4') ||
-    name.includes('chatgpt')
-  ) {
-    return 'openai'
+// Pre-fold entries per group so counts, vendor chips, search, cards, and table stay 100% consistent
+const foldedEntriesByGroup = computed<Record<string, PlazaFoldedEntry[]>>(() => {
+  const map: Record<string, PlazaFoldedEntry[]> = {}
+  for (const g of sortedGroups.value) {
+    map[g.name] = foldPlazaModels(g.models)
   }
-  if (name.includes('gemini') || name.includes('imagen') || name.includes('veo')) return 'google'
-  if (name.includes('grok')) return 'xai'
-  if (name.includes('deepseek')) return 'deepseek'
-  if (name.includes('qwen') || name.includes('qwq')) return 'qwen'
-  if (name.includes('glm')) return 'zhipu'
-  if (name.includes('llama')) return 'meta'
-  if (name.includes('mistral') || name.includes('mixtral') || name.includes('codestral')) return 'mistral'
-  if (name.includes('kimi') || name.includes('moonshot')) return 'moonshot'
-  if (name.includes('minimax') || name.includes('abab')) return 'minimax'
-  if (name.includes('doubao')) return 'doubao'
-  if (name.includes('command')) return 'cohere'
-  return 'other'
+  return map
+})
+
+const foldedGroupEntries = computed<PlazaFoldedEntry[]>(() => {
+  const g = activeGroup.value
+  return g ? (foldedEntriesByGroup.value[g.name] ?? []) : []
+})
+
+const groupTotalCounts = computed<Record<string, number>>(() => {
+  const counts: Record<string, number> = {}
+  for (const g of sortedGroups.value) {
+    counts[g.name] = (foldedEntriesByGroup.value[g.name] ?? []).length
+  }
+  return counts
+})
+
+function getActiveModelForEntry(entry: PlazaFoldedEntry): PlazaModel {
+  return resolveVariantForEntry(entry, selectedEffortMap.value[entry.key] ?? null)
+}
+
+function modelVendorKey(model: PlazaModel): string {
+  return inferVendorKey(model.name, model.platform, model.metadata?.vendor)
 }
 
 const vendorOptions = computed<PlazaVendorOption[]>(() => {
   const counts = new Map<string, number>()
-  for (const m of activeGroup.value?.models ?? []) {
-    const key = inferVendorKey(m)
+  for (const entry of foldedGroupEntries.value) {
+    const key = modelVendorKey(entry.defaultModel)
     counts.set(key, (counts.get(key) ?? 0) + 1)
   }
   return [...counts.entries()]
@@ -531,12 +572,13 @@ function vendorLabel(vendorKey: string): string {
   return vendorKey
 }
 
-function matchesSearch(model: PlazaModel, queryLower: string): boolean {
+function matchesSearchModel(model: PlazaModel, queryLower: string): boolean {
   if (!queryLower) return true
   if (model.name.toLowerCase().includes(queryLower)) return true
   if (model.metadata?.display_name?.toLowerCase().includes(queryLower)) return true
   if (model.metadata?.description?.toLowerCase().includes(queryLower)) return true
-  const vendorKey = inferVendorKey(model)
+  if (model.note?.toLowerCase().includes(queryLower)) return true
+  const vendorKey = modelVendorKey(model)
   if (vendorKey.includes(queryLower) || vendorLabel(vendorKey).toLowerCase().includes(queryLower)) {
     return true
   }
@@ -546,7 +588,13 @@ function matchesSearch(model: PlazaModel, queryLower: string): boolean {
   })
 }
 
-function matchesPopoverFilters(model: PlazaModel): boolean {
+function matchesEntrySearch(entry: PlazaFoldedEntry, queryLower: string): boolean {
+  if (!queryLower) return true
+  if (entry.baseName.toLowerCase().includes(queryLower)) return true
+  return entry.models.some((m) => matchesSearchModel(m, queryLower))
+}
+
+function matchesPopoverFiltersModel(model: PlazaModel): boolean {
   if (selectedCapabilities.value.length > 0) {
     const modelCaps = new Set(
       (model.metadata?.capabilities ?? []).map((c) => c.trim().toLowerCase()).filter(Boolean)
@@ -576,21 +624,64 @@ function matchesPopoverFilters(model: PlazaModel): boolean {
   return true
 }
 
+function matchesEntryPopoverFilters(entry: PlazaFoldedEntry): boolean {
+  if (!entry.isFolded) {
+    return matchesPopoverFiltersModel(entry.defaultModel)
+  }
+  return entry.models.some((m) => matchesPopoverFiltersModel(m))
+}
+
 const trimmedSearchLower = computed(() => searchQuery.value.trim().toLowerCase())
 const hasSearch = computed(() => trimmedSearchLower.value.length > 0)
 
-// Cross-group search match counts across all visible groups
+// When searching a specific folded effort variant (e.g. "gemini-4-neon-xhigh"),
+// automatically switch that folded entry's active effort pill to the matched variant
+// (also covers switching into a target group from the cross-group search banner).
+watch(
+  () => [trimmedSearchLower.value, selectedGroupName.value, foldedGroupEntries.value] as const,
+  ([q, groupName, entries]) => {
+    if (!q || !groupName) return
+    const current = selectedEffortByGroup.value[groupName] ?? {}
+    let updated: Record<string, PlazaEffortLevel> | null = null
+    for (const entry of entries) {
+      if (!entry.isFolded) continue
+      const directMatches = entry.variants.filter((v) =>
+        v.model.name.toLowerCase().includes(q)
+      )
+      if (directMatches.length > 0 && directMatches.length < entry.variants.length) {
+        const preferred =
+          directMatches.find((v) => v.effort === 'high') ?? directMatches[0]
+        if (current[entry.key] !== preferred.effort) {
+          if (!updated) {
+            updated = { ...current }
+          }
+          updated[entry.key] = preferred.effort
+        }
+      }
+    }
+    if (updated) {
+      selectedEffortByGroup.value = {
+        ...selectedEffortByGroup.value,
+        [groupName]: updated
+      }
+    }
+  },
+  { immediate: true }
+)
+
+// Cross-group search match counts across all visible groups (folded entry counts, vendor-agnostic)
 const groupMatchCounts = computed<Record<string, number>>(() => {
   const counts: Record<string, number> = {}
   const q = trimmedSearchLower.value
   for (const group of sortedGroups.value) {
+    const entries = foldedEntriesByGroup.value[group.name] ?? []
     if (!q) {
-      counts[group.name] = group.models.length
+      counts[group.name] = entries.length
       continue
     }
     let matched = 0
-    for (const model of group.models) {
-      if (matchesSearch(model, q) && matchesPopoverFilters(model)) {
+    for (const entry of entries) {
+      if (matchesEntrySearch(entry, q) && matchesEntryPopoverFilters(entry)) {
         matched += 1
       }
     }
@@ -602,18 +693,20 @@ const groupMatchCounts = computed<Record<string, number>>(() => {
 // Reset selectedVendor if switching to a group where it is absent or hides search results
 watch(selectedGroupName, () => {
   if (selectedVendor.value === 'all') return
-  const models = activeGroup.value?.models ?? []
-  const hasVendorInGroup = models.some((m) => inferVendorKey(m) === selectedVendor.value)
+  const entries = foldedGroupEntries.value
+  const hasVendorInGroup = entries.some(
+    (entry) => modelVendorKey(entry.defaultModel) === selectedVendor.value
+  )
   if (!hasVendorInGroup) {
     selectedVendor.value = 'all'
     return
   }
   if (hasSearch.value) {
-    const hasMatchWithVendor = models.some(
-      (m) =>
-        inferVendorKey(m) === selectedVendor.value &&
-        matchesSearch(m, trimmedSearchLower.value) &&
-        matchesPopoverFilters(m)
+    const hasMatchWithVendor = entries.some(
+      (entry) =>
+        modelVendorKey(entry.defaultModel) === selectedVendor.value &&
+        matchesEntrySearch(entry, trimmedSearchLower.value) &&
+        matchesEntryPopoverFilters(entry)
     )
     if (!hasMatchWithVendor) {
       selectedVendor.value = 'all'
@@ -621,7 +714,8 @@ watch(selectedGroupName, () => {
   }
 })
 
-// Sorting helpers (missing / low-sample values always sort to the end)
+// Sorting helpers (missing / low-sample values always sort to the end;
+// token models sorted by per-1M paid RMB price, non-token models grouped below token models)
 function sortByContext(intervals: UserPricingInterval[]): UserPricingInterval[] {
   return [...intervals].sort((a, b) => a.min_tokens - b.min_tokens)
 }
@@ -635,7 +729,12 @@ function validMetricValue(
   return val
 }
 
-function computeSortPrice(model: PlazaModel, group: ModelPlazaGroup): number | null {
+interface SortPriceDescriptor {
+  isToken: boolean
+  price: number | null
+}
+
+function computeSortPrice(model: PlazaModel, group: ModelPlazaGroup): SortPriceDescriptor {
   const mode = (model.pricing?.billing_mode || BILLING_MODE_TOKEN) as BillingMode
   const rate = effectiveRate(group)
 
@@ -646,9 +745,9 @@ function computeSortPrice(model: PlazaModel, group: ModelPlazaGroup): number | n
     const base = intervals[0]
     const rawIn = base ? base.input_price : (model.pricing?.input_price ?? null)
     const rawOut = base ? base.output_price : (model.pricing?.output_price ?? null)
-    const paidIn = rawIn != null && Number.isFinite(rawIn) ? rawIn * rate : null
-    const paidOut = rawOut != null && Number.isFinite(rawOut) ? rawOut * rate : null
-    return paidIn ?? paidOut
+    const paidIn = rawIn != null && Number.isFinite(rawIn) ? rawIn * rate * PER_MILLION : null
+    const paidOut = rawOut != null && Number.isFinite(rawOut) ? rawOut * rate * PER_MILLION : null
+    return { isToken: true, price: paidIn ?? paidOut }
   }
 
   let reqRate = rate
@@ -663,7 +762,25 @@ function computeSortPrice(model: PlazaModel, group: ModelPlazaGroup): number | n
     reqIntervals.length > 0
       ? reqIntervals[0].per_request_price
       : (model.pricing?.per_request_price ?? null)
-  return rawReqPrice != null && Number.isFinite(rawReqPrice) ? rawReqPrice * reqRate : null
+  return {
+    isToken: false,
+    price: rawReqPrice != null && Number.isFinite(rawReqPrice) ? rawReqPrice * reqRate : null
+  }
+}
+
+function compareSortPrice(
+  a: SortPriceDescriptor,
+  b: SortPriceDescriptor,
+  dir: 'asc' | 'desc'
+): number {
+  if (a.price == null && b.price == null) return 0
+  if (a.price == null) return 1
+  if (b.price == null) return -1
+  // Keep token models (per-1M price) separated from non-token models (per-request/image/video)
+  if (a.isToken !== b.isToken) {
+    return a.isToken ? -1 : 1
+  }
+  return dir === 'asc' ? a.price - b.price : b.price - a.price
 }
 
 function compareNullable(a: number | null, b: number | null, dir: 'asc' | 'desc'): number {
@@ -673,33 +790,35 @@ function compareNullable(a: number | null, b: number | null, dir: 'asc' | 'desc'
   return dir === 'asc' ? a - b : b - a
 }
 
-const sortedFilteredModels = computed<PlazaModel[]>(() => {
+const sortedFilteredEntries = computed<PlazaFoldedEntry[]>(() => {
   const group = activeGroup.value
   if (!group) return []
 
   const q = trimmedSearchLower.value
   const vendor = selectedVendor.value
 
-  const filtered = group.models.filter((model) => {
-    if (q && !matchesSearch(model, q)) return false
-    if (vendor !== 'all' && inferVendorKey(model) !== vendor) return false
-    return matchesPopoverFilters(model)
+  const filtered = foldedGroupEntries.value.filter((entry) => {
+    if (q && !matchesEntrySearch(entry, q)) return false
+    if (vendor !== 'all' && modelVendorKey(entry.defaultModel) !== vendor) return false
+    return matchesEntryPopoverFilters(entry)
   })
 
   const currentSort = sortBy.value
   if (currentSort === 'default') return filtered
 
   const list = [...filtered]
-  list.sort((a, b) => {
+  list.sort((entryA, entryB) => {
+    const a = getActiveModelForEntry(entryA)
+    const b = getActiveModelForEntry(entryB)
     switch (currentSort) {
       case 'price_asc':
         return (
-          compareNullable(computeSortPrice(a, group), computeSortPrice(b, group), 'asc') ||
+          compareSortPrice(computeSortPrice(a, group), computeSortPrice(b, group), 'asc') ||
           a.name.localeCompare(b.name)
         )
       case 'price_desc':
         return (
-          compareNullable(computeSortPrice(a, group), computeSortPrice(b, group), 'desc') ||
+          compareSortPrice(computeSortPrice(a, group), computeSortPrice(b, group), 'desc') ||
           a.name.localeCompare(b.name)
         )
       case 'cache_desc':
@@ -741,10 +860,15 @@ const sortedFilteredModels = computed<PlazaModel[]>(() => {
   return list
 })
 
-const filteredModelIds = computed(() => sortedFilteredModels.value.map((m) => m.name))
+const filteredModelIds = computed(() =>
+  sortedFilteredEntries.value.map((entry) => getActiveModelForEntry(entry).name)
+)
 
+// Only treat as cross-group fallback when the current group truly has 0 search matches
+// (ignoring the vendor chip so selecting a vendor does not trigger false cross-group hints).
 const hasCrossGroupFallback = computed(() => {
-  if (!hasSearch.value || sortedFilteredModels.value.length > 0) return false
+  if (!hasSearch.value || sortedFilteredEntries.value.length > 0) return false
+  if ((groupMatchCounts.value[selectedGroupName.value] ?? 0) > 0) return false
   return sortedGroups.value.some(
     (g) => g.name !== selectedGroupName.value && (groupMatchCounts.value[g.name] ?? 0) > 0
   )
@@ -757,10 +881,14 @@ function handleSelectGroup(groupName: string) {
   if (!target) return
   selectedGroupName.value = target.name
   emit('update:selectedGroup', target.name)
-  if (drawerModelName.value && !target.models.some((m) => m.name === drawerModelName.value)) {
+  if (drawerModelName.value && !resolveModelInGroup(target, drawerModelName.value)) {
     drawerModelName.value = ''
     emit('update:activeModel', '')
   }
+}
+
+function handleSelectEffort(entryKey: string, effort: PlazaEffortLevel) {
+  setGroupEffort(selectedGroupName.value, entryKey, effort)
 }
 
 function handleResetFilters() {
@@ -771,6 +899,7 @@ function handleResetFilters() {
 }
 
 function handleSelectModel(model: PlazaModel) {
+  syncEffortForModel(model)
   drawerModelName.value = model.name
   emit('update:activeModel', model.name)
 }
@@ -785,7 +914,7 @@ function handleDrawerSwitchGroup(targetGroupName: string) {
   if (!target) return
   selectedGroupName.value = target.name
   emit('update:selectedGroup', target.name)
-  if (drawerModelName.value && !target.models.some((m) => m.name === drawerModelName.value)) {
+  if (drawerModelName.value && !resolveModelInGroup(target, drawerModelName.value)) {
     drawerModelName.value = ''
     emit('update:activeModel', '')
   }

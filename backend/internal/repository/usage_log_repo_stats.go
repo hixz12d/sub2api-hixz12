@@ -31,6 +31,7 @@ func (r *usageLogRepository) GetUserStatsAggregated(ctx context.Context, userID 
 			COALESCE(AVG(COALESCE(duration_ms, 0)), 0) as avg_duration_ms
 		FROM usage_logs
 		WHERE user_id = $1 AND created_at >= $2 AND created_at < $3
+		  AND (request_origin IS NULL OR request_origin <> 'availability_probe')
 	`
 
 	var stats usagestats.UsageStats
@@ -70,6 +71,7 @@ func (r *usageLogRepository) GetAPIKeyStatsAggregated(ctx context.Context, apiKe
 			COALESCE(AVG(COALESCE(duration_ms, 0)), 0) as avg_duration_ms
 		FROM usage_logs
 		WHERE api_key_id = $1 AND created_at >= $2 AND created_at < $3
+		  AND (request_origin IS NULL OR request_origin <> 'availability_probe')
 	`
 
 	var stats usagestats.UsageStats
@@ -119,6 +121,7 @@ func (r *usageLogRepository) GetAccountStatsAggregated(ctx context.Context, acco
 			COALESCE(AVG(COALESCE(duration_ms, 0)), 0) as avg_duration_ms
 		FROM usage_logs
 		WHERE account_id = $1 AND created_at >= $2 AND created_at < $3
+		  AND (request_origin IS NULL OR request_origin <> 'availability_probe')
 	`
 
 	var stats usagestats.UsageStats
@@ -159,6 +162,7 @@ func (r *usageLogRepository) GetModelStatsAggregated(ctx context.Context, modelN
 			COALESCE(AVG(COALESCE(duration_ms, 0)), 0) as avg_duration_ms
 		FROM usage_logs
 		WHERE %s = $1 AND created_at >= $2 AND created_at < $3
+		  AND (request_origin IS NULL OR request_origin <> 'availability_probe')
 	`, rawUsageLogModelColumn)
 
 	var stats usagestats.UsageStats
@@ -200,6 +204,7 @@ func (r *usageLogRepository) GetDailyStatsAggregated(ctx context.Context, userID
 			COALESCE(AVG(COALESCE(duration_ms, 0)), 0) as avg_duration_ms
 		FROM usage_logs
 		WHERE user_id = $1 AND created_at >= $2 AND created_at < $3
+		  AND (request_origin IS NULL OR request_origin <> 'availability_probe')
 		GROUP BY 1
 		ORDER BY 1
 	`
@@ -285,6 +290,7 @@ func (r *usageLogRepository) GetAccountTodayStats(ctx context.Context, accountID
 			COALESCE(SUM(actual_cost), 0) as user_cost
 		FROM usage_logs
 		WHERE account_id = $1 AND created_at >= $2
+		  AND (request_origin IS NULL OR request_origin <> 'availability_probe')
 	`
 
 	stats := &usagestats.AccountStats{}
@@ -315,6 +321,7 @@ func (r *usageLogRepository) GetAccountWindowStats(ctx context.Context, accountI
 			COALESCE(SUM(actual_cost), 0) as user_cost
 		FROM usage_logs
 		WHERE account_id = $1 AND created_at >= $2
+		  AND (request_origin IS NULL OR request_origin <> 'availability_probe')
 	`
 
 	stats := &usagestats.AccountStats{}
@@ -352,6 +359,7 @@ func (r *usageLogRepository) GetAccountWindowStatsBatch(ctx context.Context, acc
 			COALESCE(SUM(actual_cost), 0) as user_cost
 		FROM usage_logs
 		WHERE account_id = ANY($1) AND created_at >= $2
+		  AND (request_origin IS NULL OR request_origin <> 'availability_probe')
 		GROUP BY account_id
 	`
 	rows, err := r.sql.QueryContext(ctx, query, pq.Array(accountIDs), startTime)
@@ -406,6 +414,7 @@ func (r *usageLogRepository) GetGeminiUsageTotalsBatch(ctx context.Context, acco
 			COALESCE(SUM(CASE WHEN LOWER(COALESCE(model, '')) LIKE '%flash%' OR LOWER(COALESCE(model, '')) LIKE '%lite%' THEN 0 ELSE COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1) END), 0) AS pro_cost
 		FROM usage_logs
 		WHERE account_id = ANY($1) AND created_at >= $2 AND created_at < $3
+		  AND (request_origin IS NULL OR request_origin <> 'availability_probe')
 		GROUP BY account_id
 	`
 	rows, err := r.sql.QueryContext(ctx, query, pq.Array(accountIDs), startTime, endTime)
@@ -505,6 +514,7 @@ func (r *usageLogRepository) GetBatchUserUsageStats(ctx context.Context, userIDs
 		WHERE ul.user_id = ANY($1)
 		  AND ul.created_at >= LEAST($2, $4)
 		  AND ` + usageLogSuccessFilterUL + `
+		  AND (ul.request_origin IS NULL OR ul.request_origin <> 'availability_probe')
 		GROUP BY ul.user_id, ` + usageLogEffectivePlatformExpr + `
 	`
 	today := timezone.Today()
@@ -577,6 +587,7 @@ func (r *usageLogRepository) GetBatchAPIKeyUsageStats(ctx context.Context, apiKe
 		FROM usage_logs
 		WHERE api_key_id = ANY($1)
 		  AND created_at >= LEAST($2, $4)
+		  AND (request_origin IS NULL OR request_origin <> 'availability_probe')
 		GROUP BY api_key_id
 	`
 	today := timezone.Today()
@@ -632,6 +643,7 @@ func (r *usageLogRepository) GetGlobalStats(ctx context.Context, startTime, endT
 			COALESCE(AVG(duration_ms), 0) as avg_duration_ms
 		FROM usage_logs
 		WHERE created_at >= $1 AND created_at < $2
+		  AND (request_origin IS NULL OR request_origin <> 'availability_probe')
 	`
 
 	stats := &UsageStats{}
@@ -656,7 +668,8 @@ func (r *usageLogRepository) GetGlobalStats(ctx context.Context, startTime, endT
 
 // GetStatsWithFilters gets usage statistics with optional filters
 func (r *usageLogRepository) GetStatsWithFilters(ctx context.Context, filters UsageLogFilters) (*UsageStats, error) {
-	conditions := make([]string, 0, 9)
+	conditions := make([]string, 0, 10)
+	conditions = append(conditions, "(request_origin IS NULL OR request_origin <> 'availability_probe')")
 	args := make([]any, 0, 9)
 
 	if filters.UserID > 0 {
@@ -843,6 +856,7 @@ func (r *usageLogRepository) getEndpointStatsByColumnWithFilters(ctx context.Con
 			COALESCE(SUM(COALESCE(account_stats_cost, total_cost) * COALESCE(account_rate_multiplier, 1)), 0) as account_cost
 		FROM usage_logs
 		WHERE created_at >= $1 AND created_at < $2
+		  AND (request_origin IS NULL OR request_origin <> 'availability_probe')
 	`, endpointColumn)
 
 	args := []any{startTime, endTime}
@@ -923,6 +937,7 @@ func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID
 			COALESCE(SUM(actual_cost), 0) as user_cost
 		FROM usage_logs
 		WHERE account_id = $1 AND created_at >= $2 AND created_at < $3
+		  AND (request_origin IS NULL OR request_origin <> 'availability_probe')
 		GROUP BY date
 		ORDER BY date ASC
 	`
@@ -991,7 +1006,7 @@ func (r *usageLogRepository) GetAccountUsageStats(ctx context.Context, accountID
 		actualDaysUsed = 1
 	}
 
-	avgQuery := "SELECT COALESCE(AVG(duration_ms), 0) as avg_duration_ms FROM usage_logs WHERE account_id = $1 AND created_at >= $2 AND created_at < $3"
+	avgQuery := "SELECT COALESCE(AVG(duration_ms), 0) as avg_duration_ms FROM usage_logs WHERE account_id = $1 AND created_at >= $2 AND created_at < $3 AND (request_origin IS NULL OR request_origin <> 'availability_probe')"
 	var avgDuration float64
 	if err := scanSingleRow(ctx, r.sql, avgQuery, []any{accountID, startTime, endTime}, &avgDuration); err != nil {
 		return nil, err

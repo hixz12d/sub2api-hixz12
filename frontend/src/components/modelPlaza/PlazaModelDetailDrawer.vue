@@ -13,6 +13,7 @@
           :model="modelName"
           size="24px"
           class="mt-0.5 shrink-0"
+          :class="needsDarkInvert(modelName) ? 'dark:invert' : ''"
         />
         <div class="min-w-0 flex-1">
           <h2 class="break-all font-mono text-base font-semibold leading-snug text-ink">
@@ -29,8 +30,14 @@
               v-if="effectiveGroupName"
               class="inline-flex items-center gap-1.5 text-ink-2"
             >
-              <i class="inline-block h-2.5 w-2.5 shrink-0" :class="groupSeriesClass(effectiveGroupName)" />
+              <i class="inline-block h-2.5 w-2.5 shrink-0" :class="resolveGroupColorClass(effectiveGroupName)" />
               <span>{{ effectiveGroupName }}</span>
+            </span>
+            <span
+              v-if="!effectiveIsAuthorized"
+              class="badge badge-gray text-[11px]"
+            >
+              {{ effectiveShowcaseBadge || t('modelPlaza.badges.unauthorized') }}
             </span>
             <span v-if="updatedLabel">
               {{ t('modelPlaza.drawer.updatedAt', { time: updatedLabel }) }}
@@ -98,11 +105,65 @@
         </button>
       </div>
 
+      <!-- Thinking effort tier switcher (when model belongs to a folded multi-effort family) -->
+      <div
+        v-if="effortGroup && effortGroup.variants.length >= 2"
+        class="tile flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5"
+      >
+        <span class="text-xs font-medium text-ink-2">
+          {{ t('modelPlaza.drawer.effortSelectorLabel') }}
+        </span>
+        <div
+          class="inline-flex flex-wrap items-center gap-1"
+          role="group"
+          :aria-label="t('modelPlaza.card.effortSwitchAria', { model: effortGroup.baseName })"
+        >
+          <button
+            v-for="variant in effortGroup.variants"
+            :key="variant.effort"
+            type="button"
+            class="rounded-full border px-2.5 py-0.5 font-mono text-xs transition-colors"
+            :class="
+              currentEffort === variant.effort
+                ? 'border-ink bg-ink font-medium text-bg'
+                : 'border-rule bg-surface-tile-2 text-ink-2 hover:border-ink-3 hover:text-ink'
+            "
+            :aria-pressed="currentEffort === variant.effort"
+            @click="handleSelectEffort(variant)"
+          >
+            {{ variant.label }}
+          </button>
+        </div>
+      </div>
+
+      <!-- Bare alias -> -high routing hint -->
+      <div
+        v-if="bareAliasHintText"
+        class="flex items-start gap-2 bg-surface-tile px-3.5 py-2.5 text-xs text-ink-2"
+      >
+        <Icon name="infoCircle" size="sm" class="mt-0.5 shrink-0 text-ink-3" />
+        <span>{{ bareAliasHintText }}</span>
+      </div>
+
       <!-- 2. Overview & Capabilities -->
       <section class="space-y-3">
         <h3 class="text-sm font-semibold text-ink">
           {{ t('modelPlaza.drawer.sectionOverview') }}
         </h3>
+
+        <!-- Per-model admin note callout -->
+        <div
+          v-if="effectiveNote"
+          class="tile border-l-2 border-warn px-3.5 py-2.5 text-xs"
+        >
+          <div class="flex items-center gap-1.5 font-semibold text-ink">
+            <Icon name="exclamationTriangle" size="xs" class="shrink-0 text-warn" />
+            <span>{{ t('modelPlaza.drawer.modelNoteTitle') }}</span>
+          </div>
+          <p class="mt-1 leading-relaxed text-ink-2">
+            {{ effectiveNote }}
+          </p>
+        </div>
 
         <p class="text-sm leading-relaxed text-ink-2">
           {{ overviewDescription }}
@@ -239,17 +300,20 @@
         </div>
       </section>
 
-      <!-- 4. Full Pricing, Official Comparison, Tiers, Time/Peak, Cache Savings & Group Comparison -->
+      <!-- 4. Full RMB Pricing, Tiers, Time/Peak, Cache Savings & Group Comparison -->
       <section class="space-y-4 border-t border-rule pt-5">
         <div class="flex flex-wrap items-baseline justify-between gap-2">
           <h3 class="text-sm font-semibold text-ink">
-            {{ t('modelPlaza.drawer.sectionPricing') }}
+            {{ t('modelPlaza.drawer.sectionPricingRmb') }}
           </h3>
-          <div class="flex items-center gap-2 text-xs text-ink-3">
+          <div class="flex flex-wrap items-center gap-2 text-xs text-ink-3">
             <span v-if="effectiveBillingMode === BILLING_MODE_TOKEN">
               {{ t('modelPlaza.table.unitPerMillion') }}
             </span>
             <span class="font-mono tabular-nums text-ink-2">
+              <span class="mr-1 font-sans text-ink-3">
+                {{ t('modelPlaza.drawer.pricingGroupRateLabel') }}
+              </span>
               <span v-if="hasCustomRate" class="mr-1 text-ink-3 line-through">
                 {{ formatRate(defaultGroupRate) }}×
               </span>
@@ -260,7 +324,13 @@
           </div>
         </div>
 
-        <!-- Paid vs Official table -->
+        <!-- Explicit 1R = 1 baseline RMB billing note (no FX conversion) -->
+        <div class="flex items-start gap-2 bg-surface-tile px-3.5 py-2.5 text-xs text-ink-2">
+          <Icon name="infoCircle" size="sm" class="mt-0.5 shrink-0 text-money-text" />
+          <span>{{ t('modelPlaza.drawer.pricingRmbNote') }}</span>
+        </div>
+
+        <!-- Paid vs 1x Baseline table (pure RMB ¥) -->
         <div v-if="!effectivePricing && !effectiveOfficial" class="tile p-4 text-xs text-ink-3">
           {{ t('modelPlaza.detail.noPricing') }}
         </div>
@@ -276,10 +346,7 @@
                   {{ t('modelPlaza.drawer.pricingPaid') }}
                 </th>
                 <th class="px-3 py-1.5 text-right font-normal">
-                  {{ t('modelPlaza.drawer.pricingOfficial') }}
-                </th>
-                <th class="px-3 py-1.5 text-right font-normal">
-                  {{ t('modelPlaza.drawer.pricingSavings') }}
+                  {{ t('modelPlaza.drawer.pricingBaseline1x') }}
                 </th>
               </tr>
             </thead>
@@ -294,13 +361,7 @@
                   {{ row.paidText }}
                 </td>
                 <td class="px-3 py-2 text-right font-mono text-ink-3">
-                  {{ row.officialText }}
-                </td>
-                <td class="px-3 py-2 text-right font-mono">
-                  <span v-if="row.savingsPercent != null" class="font-medium text-ok">
-                    {{ t('modelPlaza.badges.savings', { percent: row.savingsPercent }) }}
-                  </span>
-                  <span v-else class="text-ink-3">{{ PLAZA_EMPTY_TEXT }}</span>
+                  {{ row.baselineText }}
                 </td>
               </tr>
             </tbody>
@@ -574,7 +635,7 @@
                     <div class="flex flex-wrap items-center gap-1.5">
                       <i
                         class="inline-block h-2.5 w-2.5 shrink-0"
-                        :class="groupSeriesClass(row.groupName)"
+                        :class="resolveGroupColorClass(row.groupName)"
                       />
                       <span class="font-medium text-ink">{{ row.groupName }}</span>
                       <span v-if="row.isCurrent" class="badge badge-primary">
@@ -624,6 +685,8 @@
           :model-name="modelName"
           :group-name="effectiveGroupName"
           :group-id="currentGroup?.id ?? null"
+          :is-authorized="effectiveIsAuthorized"
+          :showcase-badge="effectiveShowcaseBadge"
           :active="show"
         />
       </section>
@@ -650,18 +713,30 @@ import {
 } from '@/api/modelPlaza'
 import type { UserPricingInterval, UserSupportedModelPricing } from '@/api/channels'
 import {
+  KNOWN_CAPABILITY_KEYS,
+  KNOWN_VENDOR_KEYS,
   PLAZA_EMPTY_TEXT,
   buildFallbackSummary,
-  computeOfficialSavingsPercent,
   formatCacheRate,
   formatConsistencyPercent,
   formatContextWindow,
+  formatPlazaPrice,
   formatRefMultiplier,
   formatRelativeUpdatedAt,
+  inferVendorKey,
+  needsDarkInvert,
   plazaToneTextClass,
   type PlazaFormattedMetric
 } from '@/utils/plazaFormat'
-import { formatScaled, resolveIntervalPrices } from '@/utils/pricing'
+import {
+  findEffortGroupForModel,
+  parseEffortSuffix,
+  type PlazaEffortLevel,
+  type PlazaEffortVariant,
+  type PlazaFoldedEntry
+} from '@/utils/plazaFolding'
+import { groupSeriesClass } from '@/utils/groupSeriesColor'
+import { resolveIntervalPrices } from '@/utils/pricing'
 import { formatPeakRateWindow, hasPeakRate, serverTimezoneLabel } from '@/utils/peak-rate'
 import { platformLabel } from '@/utils/platformColors'
 import {
@@ -684,6 +759,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'close'): void
   (e: 'switch-group', groupName: string): void
+  (e: 'select-model', model: PlazaModel): void
 }>()
 
 const { t } = useI18n()
@@ -691,48 +767,6 @@ const appStore = useAppStore()
 const { copyToClipboard } = useClipboard()
 
 const PER_MILLION = 1_000_000
-const MIN_DECIMALS = 2
-
-const SERIES_BG_CLASSES = [
-  'bg-series-1',
-  'bg-series-2',
-  'bg-series-3',
-  'bg-series-4',
-  'bg-series-5'
-] as const
-
-const KNOWN_CAPABILITY_KEYS = new Set([
-  'reasoning',
-  'tools',
-  'vision',
-  'audio',
-  'image',
-  'video',
-  'prompt_caching',
-  'web_search',
-  'long_context',
-  'structured_outputs',
-  'code',
-  'embedding',
-  'realtime'
-])
-
-const KNOWN_VENDOR_KEYS = new Set([
-  'openai',
-  'anthropic',
-  'google',
-  'xai',
-  'deepseek',
-  'qwen',
-  'zhipu',
-  'meta',
-  'mistral',
-  'moonshot',
-  'minimax',
-  'doubao',
-  'cohere',
-  'other'
-])
 
 // Lazy-loaded detail state with AbortController race protection
 const detail = ref<ModelPlazaDetailResponse | null>(null)
@@ -806,17 +840,81 @@ function retryLoad() {
   void fetchDetail(modelName.value, effectiveGroupName.value)
 }
 
-function groupSeriesClass(name: string): string {
-  const idx = props.allGroups.findIndex((g) => g.name === name)
-  if (idx >= 0) {
-    return SERIES_BG_CLASSES[idx % SERIES_BG_CLASSES.length]
+const orderedGroupIds = computed(() => props.allGroups.map((g) => g.id))
+
+function resolveGroupColorClass(name: string): string {
+  const matched = props.allGroups.find((g) => g.name === name)
+  if (matched) {
+    return groupSeriesClass(matched.id, orderedGroupIds.value)
   }
   let hash = 0
   for (let i = 0; i < name.length; i++) {
     hash = (hash * 31 + name.charCodeAt(i)) >>> 0
   }
-  return SERIES_BG_CLASSES[hash % SERIES_BG_CLASSES.length]
+  return groupSeriesClass(hash)
 }
+
+// Thinking effort folding & switching (derived from existing allGroups + groupName props)
+const effortGroup = computed<PlazaFoldedEntry | null>(() => {
+  if (!currentGroup.value || !modelName.value) return null
+  return findEffortGroupForModel(
+    currentGroup.value.models,
+    modelName.value,
+    effectivePlatform.value
+  )
+})
+
+const currentEffort = computed<PlazaEffortLevel | null>(() => {
+  if (!effortGroup.value) return null
+  const matched = effortGroup.value.variants.find(
+    (v) => v.model.name.toLowerCase() === modelName.value.toLowerCase()
+  )
+  if (matched) return matched.effort
+  return parseEffortSuffix(modelName.value)?.effort ?? effortGroup.value.defaultEffort
+})
+
+function handleSelectEffort(variant: PlazaEffortVariant) {
+  if (variant.model.name === modelName.value) return
+  emit('select-model', variant.model)
+}
+
+const effectiveNote = computed(() =>
+  (detail.value?.note ?? props.model?.note ?? '').trim()
+)
+
+const hasBareAliasForHigh = computed(
+  () =>
+    Boolean(detail.value?.bare_alias_for_high) ||
+    Boolean(props.model?.bare_alias_for_high) ||
+    Boolean(effortGroup.value?.bareAliasForHigh)
+)
+
+const bareAliasHintText = computed(() => {
+  if (!hasBareAliasForHigh.value) return ''
+  const alias =
+    effortGroup.value?.bareAliasName || parseEffortSuffix(modelName.value)?.baseName || ''
+  if (alias) {
+    return t('modelPlaza.drawer.bareAliasHint', {
+      alias,
+      target: `${alias}-high`
+    })
+  }
+  return t('modelPlaza.drawer.bareAliasHintGeneric')
+})
+
+const effectiveIsAuthorized = computed<boolean>(() => {
+  if (typeof detail.value?.is_authorized === 'boolean') {
+    return detail.value.is_authorized
+  }
+  if (typeof currentGroup.value?.is_authorized === 'boolean') {
+    return currentGroup.value.is_authorized
+  }
+  return true
+})
+
+const effectiveShowcaseBadge = computed<string>(() =>
+  (detail.value?.showcase_badge ?? currentGroup.value?.showcase_badge ?? '').trim()
+)
 
 // Header actions: Copy Model ID & Share Direct Link (no numeric ID)
 async function handleCopyModelId() {
@@ -875,11 +973,16 @@ const maxOutputText = computed(
 
 const vendorText = computed(() => {
   const raw = effectiveMetadata.value?.vendor?.trim().toLowerCase()
-  if (!raw) return PLAZA_EMPTY_TEXT
-  if (KNOWN_VENDOR_KEYS.has(raw)) {
-    return t(`modelPlaza.vendors.${raw}`)
+  if (raw) {
+    return KNOWN_VENDOR_KEYS.has(raw)
+      ? t(`modelPlaza.vendors.${raw}`)
+      : effectiveMetadata.value?.vendor || PLAZA_EMPTY_TEXT
   }
-  return effectiveMetadata.value?.vendor || PLAZA_EMPTY_TEXT
+  const inferred = inferVendorKey(modelName.value, effectivePlatform.value)
+  if (inferred && KNOWN_VENDOR_KEYS.has(inferred)) {
+    return t(`modelPlaza.vendors.${inferred}`)
+  }
+  return PLAZA_EMPTY_TEXT
 })
 
 const platformText = computed(() =>
@@ -1022,17 +1125,17 @@ function formatRate(val: number): string {
 
 function formatTokenPrice(value: number | null | undefined, rate: number): string {
   if (value == null || !Number.isFinite(value)) return PLAZA_EMPTY_TEXT
-  return formatScaled(value * rate, PER_MILLION, MIN_DECIMALS)
+  return formatPlazaPrice(value * rate, PER_MILLION)
 }
 
-function formatOfficialTokenPrice(value: number | null | undefined): string {
+function formatBaselineTokenPrice(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return PLAZA_EMPTY_TEXT
-  return formatScaled(value, PER_MILLION, MIN_DECIMALS)
+  return formatPlazaPrice(value, PER_MILLION)
 }
 
 function formatRequestPrice(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) return PLAZA_EMPTY_TEXT
-  return formatScaled(value * activeRequestRate.value, 1, MIN_DECIMALS)
+  return formatPlazaPrice(value * activeRequestRate.value, 1)
 }
 
 const resolvedTokenIntervals = computed<UserPricingInterval[]>(() => {
@@ -1054,12 +1157,12 @@ const baseTokenPrices = computed(() => {
   const p = effectivePricing.value
   const first = resolvedTokenIntervals.value[0]
   return {
-    input_price: p?.input_price ?? first?.input_price ?? null,
-    output_price: p?.output_price ?? first?.output_price ?? null,
-    cache_read_price: p?.cache_read_price ?? first?.cache_read_price ?? null,
-    cache_write_price: p?.cache_write_price ?? first?.cache_write_price ?? null,
-    cache_write_1h_price: p?.cache_write_1h_price ?? first?.cache_write_1h_price ?? null,
-    cache_write_12h_price: p?.cache_write_12h_price ?? first?.cache_write_12h_price ?? null
+    input_price: first?.input_price ?? p?.input_price ?? null,
+    output_price: first?.output_price ?? p?.output_price ?? null,
+    cache_read_price: first?.cache_read_price ?? p?.cache_read_price ?? null,
+    cache_write_price: first?.cache_write_price ?? p?.cache_write_price ?? null,
+    cache_write_1h_price: first?.cache_write_1h_price ?? p?.cache_write_1h_price ?? null,
+    cache_write_12h_price: first?.cache_write_12h_price ?? p?.cache_write_12h_price ?? null
   }
 })
 
@@ -1067,8 +1170,7 @@ interface TokenPriceRow {
   key: string
   label: string
   paidText: string
-  officialText: string
-  savingsPercent: number | null
+  baselineText: string
 }
 
 const tokenPriceRows = computed<TokenPriceRow[]>(() => {
@@ -1126,13 +1228,12 @@ const tokenPriceRows = computed<TokenPriceRow[]>(() => {
   return defs
     .filter((d) => d.alwaysShow || d.paidUnit != null || d.officialUnit != null)
     .map((d) => {
-      const paidVal = d.paidUnit != null ? d.paidUnit * rate : null
+      const baselineUnit = d.paidUnit ?? d.officialUnit
       return {
         key: d.key,
         label: d.label,
         paidText: formatTokenPrice(d.paidUnit, rate),
-        officialText: formatOfficialTokenPrice(d.officialUnit),
-        savingsPercent: computeOfficialSavingsPercent(paidVal, d.officialUnit)
+        baselineText: formatBaselineTokenPrice(baselineUnit)
       }
     })
 })
@@ -1157,11 +1258,13 @@ const nonTokenItemLabel = computed(() => {
   return t('modelPlaza.drawer.itemPerRequest')
 })
 
-const perUnitSuffix = computed(() =>
-  effectiveBillingMode.value === BILLING_MODE_IMAGE
-    ? t('modelPlaza.table.perUnitImage')
-    : t('modelPlaza.table.perUnitRequest')
-)
+function nonTokenUnitSuffix(mode: BillingMode): string {
+  if (mode === BILLING_MODE_IMAGE) return t('modelPlaza.table.perUnitImage')
+  if (mode === BILLING_MODE_VIDEO) return t('modelPlaza.table.perUnitVideo')
+  return t('modelPlaza.table.perUnitRequest')
+}
+
+const perUnitSuffix = computed(() => nonTokenUnitSuffix(effectiveBillingMode.value))
 
 const requestIntervals = computed<UserPricingInterval[]>(() =>
   (effectivePricing.value?.intervals ?? []).filter((iv) => iv.per_request_price != null)
@@ -1232,8 +1335,8 @@ const cacheSavingsSim = computed(() => {
   const barPercent = Math.max(4, Math.min(100, Math.round(refMultVal * 100)))
 
   return {
-    uncachedText: formatScaled(uncachedPerMillion, 1, MIN_DECIMALS),
-    cachedText: formatScaled(cachedPerMillion, 1, MIN_DECIMALS),
+    uncachedText: formatPlazaPrice(uncachedPerMillion, 1),
+    cachedText: formatPlazaPrice(cachedPerMillion, 1),
     savedPercent,
     barPercent,
     cacheRateText: cacheFormatted.valid ? cacheFormatted.text : PLAZA_EMPTY_TEXT,
@@ -1266,11 +1369,8 @@ function formatComparisonPrice(
       pricing.intervals?.find((iv) => iv.per_request_price != null)?.per_request_price ??
       null
     if (unit == null) return PLAZA_EMPTY_TEXT
-    const suffix =
-      mode === BILLING_MODE_IMAGE
-        ? t('modelPlaza.table.perUnitImage')
-        : t('modelPlaza.table.perUnitRequest')
-    return `${formatScaled(unit * reqRate, 1, MIN_DECIMALS)} ${suffix}`
+    const suffix = nonTokenUnitSuffix(mode)
+    return `${formatPlazaPrice(unit * reqRate, 1)} ${suffix}`
   }
   const firstInterval = pricing.intervals?.length
     ? resolveIntervalPrices(
@@ -1278,8 +1378,8 @@ function formatComparisonPrice(
         pricing
       )
     : null
-  const inUnit = pricing.input_price ?? firstInterval?.input_price ?? null
-  const outUnit = pricing.output_price ?? firstInterval?.output_price ?? null
+  const inUnit = firstInterval?.input_price ?? pricing.input_price ?? null
+  const outUnit = firstInterval?.output_price ?? pricing.output_price ?? null
   if (inUnit == null && outUnit == null) return PLAZA_EMPTY_TEXT
   return `${formatTokenPrice(inUnit, rate)} / ${formatTokenPrice(outUnit, rate)}`
 }

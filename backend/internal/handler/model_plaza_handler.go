@@ -73,9 +73,11 @@ type modelPlazaModel struct {
 	// LongContextBasis 多档时的计价基准："whole_request"（整单按档）| "marginal"（仅超出部分）。
 	LongContextBasis string `json:"long_context_basis,omitempty"`
 	// TimePricing 分时倍率时段，落在时段内的请求整单乘倍率；无分时省略。
-	TimePricing *modelPlazaTimePricing      `json:"time_pricing,omitempty"`
-	Metadata    *service.PlazaModelMetadata `json:"metadata,omitempty"`
-	Metrics     *service.PlazaModelMetrics  `json:"metrics,omitempty"`
+	TimePricing      *modelPlazaTimePricing      `json:"time_pricing,omitempty"`
+	Metadata         *service.PlazaModelMetadata `json:"metadata,omitempty"`
+	Metrics          *service.PlazaModelMetrics  `json:"metrics,omitempty"`
+	Note             string                      `json:"note,omitempty"`
+	BareAliasForHigh bool                        `json:"bare_alias_for_high,omitempty"`
 }
 
 // modelPlazaGroupComparison 用户可见的全部分组横向比价项（严禁暴露分组数字 ID）。
@@ -100,6 +102,10 @@ type modelPlazaDetailResponse struct {
 	OfficialPricing  *modelPlazaOfficialPricing      `json:"official_pricing"`
 	LongContextBasis string                          `json:"long_context_basis,omitempty"`
 	TimePricing      *modelPlazaTimePricing          `json:"time_pricing,omitempty"`
+	Note             string                          `json:"note,omitempty"`
+	BareAliasForHigh bool                            `json:"bare_alias_for_high,omitempty"`
+	IsAuthorized     bool                            `json:"is_authorized"`
+	ShowcaseBadge    string                          `json:"showcase_badge,omitempty"`
 	Windows          service.PlazaDetailWindows      `json:"windows"`
 	Heartbeat72      []service.PlazaHeartbeatSlot    `json:"heartbeat_72"`
 	Trend24h         []service.PlazaDetailTrendPoint `json:"trend_24h"`
@@ -110,18 +116,21 @@ type modelPlazaDetailResponse struct {
 
 // modelPlazaGroup 广场分组条目（白名单字段）。
 type modelPlazaGroup struct {
-	ID                 int64    `json:"id"`
-	Name               string   `json:"name"`
-	Description        string   `json:"description"`
-	Platform           string   `json:"platform"`
-	SubscriptionType   string   `json:"subscription_type"`
-	RateMultiplier     float64  `json:"rate_multiplier"`
-	UserRateMultiplier *float64 `json:"user_rate_multiplier,omitempty"`
-	PeakRateEnabled    bool     `json:"peak_rate_enabled"`
-	PeakStart          string   `json:"peak_start"`
-	PeakEnd            string   `json:"peak_end"`
-	PeakRateMultiplier float64  `json:"peak_rate_multiplier"`
-	IsExclusive        bool     `json:"is_exclusive"`
+	ID                 int64                         `json:"id"`
+	Name               string                        `json:"name"`
+	Description        string                        `json:"description"`
+	Platform           string                        `json:"platform"`
+	SubscriptionType   string                        `json:"subscription_type"`
+	RateMultiplier     float64                       `json:"rate_multiplier"`
+	UserRateMultiplier *float64                      `json:"user_rate_multiplier,omitempty"`
+	PeakRateEnabled    bool                          `json:"peak_rate_enabled"`
+	PeakStart          string                        `json:"peak_start"`
+	PeakEnd            string                        `json:"peak_end"`
+	PeakRateMultiplier float64                       `json:"peak_rate_multiplier"`
+	IsExclusive        bool                          `json:"is_exclusive"`
+	IsAuthorized       bool                          `json:"is_authorized"`
+	ShowcaseBadge      string                        `json:"showcase_badge,omitempty"`
+	PoolStatus         *service.PlazaGroupPoolStatus `json:"pool_status,omitempty"`
 	// 生图独立倍率：为 true 时图片计费模型的实付倍率取 ImageRateMultiplier，
 	// 不取分组/用户专属倍率。
 	ImageRateIndependent bool    `json:"image_rate_independent"`
@@ -273,10 +282,11 @@ func (h *ModelPlazaHandler) loadVisibleGroupsForSubject(
 	return visible, userRates, true
 }
 
-// filterPlazaVisibleGroups 按登录态裁剪分组可见性。
-// allowedGroups == nil 表示匿名（仅非专属）；非 nil 包含普通授权及有效订阅分组。
-// restrictPublicGroups 为 true 时，公开分组也必须落在 allowedGroups 内，否则用户会
-// 在广场看到自己实际绑定不了的分组。
+// filterPlazaVisibleGroups 按登录态裁剪分组可见性并标注 IsAuthorized。
+//   - 非专属分组（且未命中 restrictPublicGroups 限制）：可见，IsAuthorized = true；
+//   - 专属分组（或受限公开分组）：若落在 allowedGroups 内则可见且 IsAuthorized = true；
+//     若未获授权（含匿名访问）但配置了 ShowcasePublic = true，则保留在可见列表中并标记
+//     IsAuthorized = false（供前端展示内测徽章与联系管理员开通指引）；否则隐藏。
 func filterPlazaVisibleGroups(
 	groups []service.PlazaGroup,
 	allowedGroups map[int64]struct{},
@@ -284,15 +294,23 @@ func filterPlazaVisibleGroups(
 ) []service.PlazaGroup {
 	visible := make([]service.PlazaGroup, 0, len(groups))
 	for _, g := range groups {
-		if g.IsExclusive || (restrictPublicGroups && allowedGroups != nil) {
-			if allowedGroups == nil {
-				continue
-			}
-			if _, ok := allowedGroups[g.ID]; !ok {
+		requiresGrant := g.IsExclusive || (restrictPublicGroups && allowedGroups != nil)
+		if !requiresGrant {
+			g.IsAuthorized = true
+			visible = append(visible, g)
+			continue
+		}
+		if allowedGroups != nil {
+			if _, ok := allowedGroups[g.ID]; ok {
+				g.IsAuthorized = true
+				visible = append(visible, g)
 				continue
 			}
 		}
-		visible = append(visible, g)
+		if g.ShowcasePublic {
+			g.IsAuthorized = false
+			visible = append(visible, g)
+		}
 	}
 	return visible
 }
@@ -322,6 +340,8 @@ func toModelPlazaGroupDTO(g *service.PlazaGroup, userRates map[int64]float64) mo
 			TimePricing:      toModelPlazaTimePricing(m.TimePricing),
 			Metadata:         m.Metadata,
 			Metrics:          m.Metrics,
+			Note:             m.Note,
+			BareAliasForHigh: m.BareAliasForHigh,
 		})
 	}
 	dto := modelPlazaGroup{
@@ -336,6 +356,9 @@ func toModelPlazaGroupDTO(g *service.PlazaGroup, userRates map[int64]float64) mo
 		PeakEnd:                   g.PeakEnd,
 		PeakRateMultiplier:        g.PeakRateMultiplier,
 		IsExclusive:               g.IsExclusive,
+		IsAuthorized:              g.IsAuthorized,
+		ShowcaseBadge:             g.ShowcaseBadge,
+		PoolStatus:                g.PoolStatus,
 		ImageRateIndependent:      g.ImageRateIndependent,
 		ImageRateMultiplier:       g.ImageRateMultiplier,
 		VideoRateIndependent:      g.VideoRateIndependent,
@@ -343,8 +366,10 @@ func toModelPlazaGroupDTO(g *service.PlazaGroup, userRates map[int64]float64) mo
 		LongContextPricingEnabled: g.LongContextPricingEnabled,
 		Models:                    models,
 	}
-	if rate, ok := userRates[g.ID]; ok {
-		dto.UserRateMultiplier = &rate
+	if !g.ShowcasePublic || g.IsAuthorized {
+		if rate, ok := userRates[g.ID]; ok {
+			dto.UserRateMultiplier = &rate
+		}
 	}
 	return dto
 }
@@ -418,6 +443,10 @@ func toModelPlazaDetailDTO(d *service.PlazaModelDetail) modelPlazaDetailResponse
 		OfficialPricing:  toModelPlazaOfficialPricing(d.OfficialPricing),
 		LongContextBasis: string(d.LongContextBasis),
 		TimePricing:      toModelPlazaTimePricing(d.TimePricing),
+		Note:             d.Note,
+		BareAliasForHigh: d.BareAliasForHigh,
+		IsAuthorized:     d.IsAuthorized,
+		ShowcaseBadge:    d.ShowcaseBadge,
 		Windows:          d.Windows,
 		Heartbeat72:      heartbeat,
 		Trend24h:         trend,

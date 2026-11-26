@@ -212,10 +212,12 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeySubscriptionEnabled: "true",
 
 		// Model plaza feature (default enabled; opt-out, public unless require_auth)
-		SettingKeyModelPlazaEnabled:       "true",
-		SettingKeyModelPlazaRequireAuth:   "false",
-		SettingKeyModelPlazaDescription:   "",
-		SettingKeyPluginManagementEnabled: "false",
+		SettingKeyModelPlazaEnabled:        "true",
+		SettingKeyModelPlazaRequireAuth:    "false",
+		SettingKeyModelPlazaDescription:    "",
+		SettingKeyModelPlazaCatalogConfig:  `{"groups":{}}`,
+		SettingKeyModelPlazaProbeAPIKeyIDs: "[]",
+		SettingKeyPluginManagementEnabled:  "false",
 
 		// Affiliate (邀请返利) feature (default disabled; opt-in)
 		SettingKeyAffiliateEnabled:              "false",
@@ -850,6 +852,8 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 	result.ModelPlazaEnabled = !isFalseSettingValue(settings[SettingKeyModelPlazaEnabled])
 	result.ModelPlazaRequireAuth = settings[SettingKeyModelPlazaRequireAuth] == "true"
 	result.ModelPlazaDescription = settings[SettingKeyModelPlazaDescription]
+	result.ModelPlazaCatalogConfig = ParseModelPlazaCatalogConfig(settings[SettingKeyModelPlazaCatalogConfig])
+	result.ModelPlazaProbeAPIKeyIDs = ParseModelPlazaProbeAPIKeyIDs(settings[SettingKeyModelPlazaProbeAPIKeyIDs])
 	result.PluginManagementEnabled = settings[SettingKeyPluginManagementEnabled] == "true"
 
 	// Affiliate (邀请返利) feature (default: disabled; strict true)
@@ -1372,4 +1376,149 @@ func normalizeTablePreferences(defaultPageSize int, options []int) (int, []int) 
 	}
 
 	return defaultPageSize, normalizedOptions
+}
+
+// DefaultModelPlazaCatalogConfig 返回空的模型广场目录配置（Groups 非 nil，序列化为 {"groups":{}}）。
+func DefaultModelPlazaCatalogConfig() ModelPlazaCatalogConfig {
+	return ModelPlazaCatalogConfig{
+		Groups: map[string]ModelPlazaCatalogGroupConfig{},
+	}
+}
+
+func normalizeModelPlazaStringList(items []string) []string {
+	out := make([]string, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, raw := range items {
+		v := strings.TrimSpace(raw)
+		if v == "" {
+			continue
+		}
+		if _, exists := seen[v]; exists {
+			continue
+		}
+		seen[v] = struct{}{}
+		out = append(out, v)
+	}
+	return out
+}
+
+func normalizeModelPlazaModelNotes(notes map[string]string) map[string]string {
+	out := make(map[string]string, len(notes))
+	for rawKey, rawVal := range notes {
+		key := strings.TrimSpace(rawKey)
+		val := strings.TrimSpace(rawVal)
+		if key == "" || val == "" {
+			continue
+		}
+		out[key] = val
+	}
+	return out
+}
+
+// NormalizeAndValidateModelPlazaCatalogConfig 校验并规范化模型广场目录配置。
+// 每个分组键必须为正整数 group_id 字符串，切片和 map 统一归一化为非 nil 值。
+func NormalizeAndValidateModelPlazaCatalogConfig(cfg ModelPlazaCatalogConfig) (ModelPlazaCatalogConfig, error) {
+	out := DefaultModelPlazaCatalogConfig()
+	for rawGroupID, grp := range cfg.Groups {
+		trimmedID := strings.TrimSpace(rawGroupID)
+		id, err := strconv.ParseInt(trimmedID, 10, 64)
+		if err != nil || id <= 0 {
+			return ModelPlazaCatalogConfig{}, infraerrors.BadRequest(
+				"INVALID_MODEL_PLAZA_CATALOG_CONFIG",
+				fmt.Sprintf("invalid model_plaza_catalog_config group_id %q: must be a positive integer", rawGroupID),
+			)
+		}
+		canonicalKey := strconv.FormatInt(id, 10)
+		if _, exists := out.Groups[canonicalKey]; exists {
+			return ModelPlazaCatalogConfig{}, infraerrors.BadRequest(
+				"INVALID_MODEL_PLAZA_CATALOG_CONFIG",
+				fmt.Sprintf("duplicate model_plaza_catalog_config group_id %q", canonicalKey),
+			)
+		}
+		out.Groups[canonicalKey] = ModelPlazaCatalogGroupConfig{
+			Enabled:        grp.Enabled,
+			ShowcasePublic: grp.ShowcasePublic,
+			ShowcaseBadge:  strings.TrimSpace(grp.ShowcaseBadge),
+			Models:         normalizeModelPlazaStringList(grp.Models),
+			BareAliases:    normalizeModelPlazaStringList(grp.BareAliases),
+			ModelNotes:     normalizeModelPlazaModelNotes(grp.ModelNotes),
+		}
+	}
+	return out, nil
+}
+
+// ParseModelPlazaCatalogConfig 从存储字符串解析模型广场目录配置；空值或非法 JSON 返回空配置。
+func ParseModelPlazaCatalogConfig(raw string) ModelPlazaCatalogConfig {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return DefaultModelPlazaCatalogConfig()
+	}
+	var parsed ModelPlazaCatalogConfig
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		slog.Warn("[Setting] parse model_plaza_catalog_config failed", "error", err)
+		return DefaultModelPlazaCatalogConfig()
+	}
+	out := DefaultModelPlazaCatalogConfig()
+	for rawGroupID, grp := range parsed.Groups {
+		id, err := strconv.ParseInt(strings.TrimSpace(rawGroupID), 10, 64)
+		if err != nil || id <= 0 {
+			continue
+		}
+		canonicalKey := strconv.FormatInt(id, 10)
+		out.Groups[canonicalKey] = ModelPlazaCatalogGroupConfig{
+			Enabled:        grp.Enabled,
+			ShowcasePublic: grp.ShowcasePublic,
+			ShowcaseBadge:  strings.TrimSpace(grp.ShowcaseBadge),
+			Models:         normalizeModelPlazaStringList(grp.Models),
+			BareAliases:    normalizeModelPlazaStringList(grp.BareAliases),
+			ModelNotes:     normalizeModelPlazaModelNotes(grp.ModelNotes),
+		}
+	}
+	return out
+}
+
+// NormalizeAndValidateModelPlazaProbeAPIKeyIDs 校验并去重探针 API Key ID 列表。
+func NormalizeAndValidateModelPlazaProbeAPIKeyIDs(ids []int64) ([]int64, error) {
+	out := make([]int64, 0, len(ids))
+	seen := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			return nil, infraerrors.BadRequest(
+				"INVALID_MODEL_PLAZA_PROBE_API_KEY_IDS",
+				"model_plaza_probe_api_key_ids must contain positive integers only",
+			)
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out, nil
+}
+
+// ParseModelPlazaProbeAPIKeyIDs 从存储 JSON 解析探针 API Key ID 列表；空值或非法 JSON 返回空切片。
+func ParseModelPlazaProbeAPIKeyIDs(raw string) []int64 {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return []int64{}
+	}
+	var parsed []int64
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		slog.Warn("[Setting] parse model_plaza_probe_api_key_ids failed", "error", err)
+		return []int64{}
+	}
+	out := make([]int64, 0, len(parsed))
+	seen := make(map[int64]struct{}, len(parsed))
+	for _, id := range parsed {
+		if id <= 0 {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
 }

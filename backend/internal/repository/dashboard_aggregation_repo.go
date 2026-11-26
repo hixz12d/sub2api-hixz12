@@ -333,6 +333,7 @@ func (r *dashboardAggregationRepository) insertHourlyActiveUsers(ctx context.Con
 			user_id
 		FROM usage_logs
 		WHERE created_at >= $1 AND created_at < $2
+			AND (request_origin IS NULL OR request_origin <> 'availability_probe')
 		ON CONFLICT DO NOTHING
 	`
 	_, err := r.sql.ExecContext(ctx, query, start, end, tzName)
@@ -371,6 +372,7 @@ func (r *dashboardAggregationRepository) upsertHourlyAggregates(ctx context.Cont
 				COALESCE(SUM(COALESCE(duration_ms, 0)), 0) AS total_duration_ms
 			FROM usage_logs
 			WHERE created_at >= $1 AND created_at < $2
+				AND (request_origin IS NULL OR request_origin <> 'availability_probe')
 			GROUP BY 1
 		),
 		user_counts AS (

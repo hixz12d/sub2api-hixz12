@@ -228,10 +228,12 @@ type SystemSettings struct {
 	SubscriptionEnabled bool `json:"subscription_enabled"`
 
 	// Model Plaza feature (public group/model pricing showcase)
-	ModelPlazaEnabled       bool   `json:"model_plaza_enabled"`
-	ModelPlazaRequireAuth   bool   `json:"model_plaza_require_auth"`
-	ModelPlazaDescription   string `json:"model_plaza_description"`
-	PluginManagementEnabled bool   `json:"plugin_management_enabled"`
+	ModelPlazaEnabled        bool                    `json:"model_plaza_enabled"`
+	ModelPlazaRequireAuth    bool                    `json:"model_plaza_require_auth"`
+	ModelPlazaDescription    string                  `json:"model_plaza_description"`
+	ModelPlazaCatalogConfig  ModelPlazaCatalogConfig `json:"model_plaza_catalog_config"`
+	ModelPlazaProbeAPIKeyIDs []int64                 `json:"model_plaza_probe_api_key_ids"`
+	PluginManagementEnabled  bool                    `json:"plugin_management_enabled"`
 
 	// Claude Code version check
 	MinClaudeCodeVersion string
@@ -332,6 +334,22 @@ type SystemSettings struct {
 type DefaultSubscriptionSetting struct {
 	GroupID      int64 `json:"group_id"`
 	ValidityDays int   `json:"validity_days"`
+}
+
+// ModelPlazaCatalogGroupConfig 单分组的模型广场上架配置。
+type ModelPlazaCatalogGroupConfig struct {
+	Enabled        bool              `json:"enabled"`
+	ShowcasePublic bool              `json:"showcase_public"`
+	ShowcaseBadge  string            `json:"showcase_badge"`
+	Models         []string          `json:"models"`
+	BareAliases    []string          `json:"bare_aliases"`
+	ModelNotes     map[string]string `json:"model_notes"`
+}
+
+// ModelPlazaCatalogConfig 模型广场目录配置（零迁移系统设置 model_plaza_catalog_config）。
+// Groups 以十进制 group_id 字符串为键；Groups 为空时广场回退既有 Channel.SupportedModels() 逻辑。
+type ModelPlazaCatalogConfig struct {
+	Groups map[string]ModelPlazaCatalogGroupConfig `json:"groups"`
 }
 
 type PublicSettings struct {

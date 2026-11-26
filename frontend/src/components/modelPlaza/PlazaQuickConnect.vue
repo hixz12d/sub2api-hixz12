@@ -1,7 +1,26 @@
 <template>
   <div class="space-y-3">
-    <!-- Authenticated API Key selector -->
-    <div v-if="isAuthenticated" class="tile p-4">
+    <!-- Unauthorized exclusive / preview group guidance -->
+    <div
+      v-if="!isAuthorized"
+      class="tile border-l-2 border-warn p-4"
+    >
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-1.5 text-xs font-semibold text-ink">
+          <Icon name="lock" size="sm" class="shrink-0 text-warn" />
+          <span>{{ t('modelPlaza.quickConnect.unauthorizedTitle') }}</span>
+        </div>
+        <span class="badge badge-gray text-[11px]">
+          {{ resolvedShowcaseBadge }}
+        </span>
+      </div>
+      <p class="mt-2 text-xs leading-relaxed text-ink-2">
+        {{ t('modelPlaza.quickConnect.unauthorizedDesc') }}
+      </p>
+    </div>
+
+    <!-- Authenticated API Key selector (only when authorized for this group) -->
+    <div v-if="isAuthenticated && isAuthorized" class="tile p-4">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <label :for="selectId" class="text-xs font-medium text-ink-2">
           {{ t('modelPlaza.quickConnect.apiKeyLabel') }}
@@ -147,10 +166,16 @@ const props = withDefaults(
     groupId?: number | null
     /** Only lazy-fetch user API keys while visible. */
     active?: boolean
+    /** Whether the current visitor is authorized to call this group. */
+    isAuthorized?: boolean
+    /** Optional showcase / preview badge label for unauthorized exclusive groups. */
+    showcaseBadge?: string
   }>(),
   {
     groupId: null,
-    active: true
+    active: true,
+    isAuthorized: true,
+    showcaseBadge: ''
   }
 )
 
@@ -163,6 +188,9 @@ const { copyToClipboard } = useClipboard()
 
 const selectId = `plaza-qc-key-${Math.random().toString(36).slice(2, 8)}`
 const isAuthenticated = computed(() => authStore.isAuthenticated)
+const resolvedShowcaseBadge = computed(
+  () => props.showcaseBadge?.trim() || t('modelPlaza.quickConnect.unauthorizedBadgeFallback')
+)
 
 const allActiveKeys = ref<ApiKey[]>([])
 const keysLoaded = ref(false)
@@ -190,7 +218,7 @@ function isExactGroupMatch(item: ApiKey): boolean {
 }
 
 const matchingKeys = computed<ApiKey[]>(() => {
-  if (!isAuthenticated.value) return []
+  if (!isAuthenticated.value || !props.isAuthorized) return []
   const activeOnly = allActiveKeys.value.filter((k) => k.status === 'active')
   const matched = activeOnly.filter((k) => isExactGroupMatch(k) || k.group_id == null)
   return matched.sort((a, b) => {
@@ -216,7 +244,7 @@ watch(
 )
 
 async function loadUserKeys() {
-  if (!isAuthenticated.value || keysLoaded.value || keysLoading.value) return
+  if (!isAuthenticated.value || !props.isAuthorized || keysLoaded.value || keysLoading.value) return
   fetchController?.abort()
   const controller = new AbortController()
   fetchController = controller
@@ -238,13 +266,20 @@ async function loadUserKeys() {
 }
 
 watch(
-  () => [props.active, isAuthenticated.value] as const,
-  ([isActive, authed]) => {
+  () => [props.active, isAuthenticated.value, props.isAuthorized] as const,
+  ([isActive, authed, authorized]) => {
     if (!authed) {
       fetchController?.abort()
       fetchController = null
       allActiveKeys.value = []
       keysLoaded.value = false
+      keysLoading.value = false
+      selectedKeyValue.value = ''
+      return
+    }
+    if (!authorized) {
+      fetchController?.abort()
+      fetchController = null
       keysLoading.value = false
       selectedKeyValue.value = ''
       return
@@ -257,7 +292,7 @@ watch(
 )
 
 const resolvedApiKey = computed(() => {
-  if (!isAuthenticated.value) return PLACEHOLDER_API_KEY
+  if (!isAuthenticated.value || !props.isAuthorized) return PLACEHOLDER_API_KEY
   return selectedKeyValue.value || PLACEHOLDER_API_KEY
 })
 

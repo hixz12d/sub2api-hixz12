@@ -13,6 +13,7 @@ import (
 	"log"
 	"math"
 	mathrand "math/rand"
+	randv2 "math/rand/v2"
 	"net/http"
 	"regexp"
 	"sort"
@@ -116,6 +117,8 @@ func (s *GeminiMessagesCompatService) SelectAccountForModel(ctx context.Context,
 }
 
 func (s *GeminiMessagesCompatService) SelectAccountForModelWithExclusions(ctx context.Context, groupID *int64, sessionHash string, requestedModel string, excludedIDs map[int64]struct{}) (*Account, error) {
+	isProbe := IsAvailabilityProbeRequest(ctx)
+
 	// 1. 确定目标平台和调度模式
 	// Determine target platform and scheduling mode
 	platform, useMixedScheduling, hasForcePlatform, err := s.resolvePlatformAndSchedulingMode(ctx, groupID)
@@ -125,10 +128,12 @@ func (s *GeminiMessagesCompatService) SelectAccountForModelWithExclusions(ctx co
 
 	cacheKey := "gemini:" + sessionHash
 
-	// 2. 尝试粘性会话命中
+	// 2. 尝试粘性会话命中（探针请求跳过粘性读取）
 	// Try sticky session hit
-	if account := s.tryStickySessionHit(ctx, groupID, sessionHash, cacheKey, requestedModel, excludedIDs, platform, useMixedScheduling); account != nil {
-		return account, nil
+	if !isProbe {
+		if account := s.tryStickySessionHit(ctx, groupID, sessionHash, cacheKey, requestedModel, excludedIDs, platform, useMixedScheduling); account != nil {
+			return account, nil
+		}
 	}
 
 	// 3. 查询可调度账户（强制平台模式：优先按分组查找，找不到再查全部）
@@ -145,7 +150,7 @@ func (s *GeminiMessagesCompatService) SelectAccountForModelWithExclusions(ctx co
 		}
 	}
 
-	// 4. 按优先级 + LRU 选择最佳账号
+	// 4. 按优先级 + LRU 选择最佳账号（探针请求在健康候选中随机挑选）
 	// Select best account by priority + LRU
 	selected := s.selectBestGeminiAccount(ctx, accounts, requestedModel, excludedIDs, platform, useMixedScheduling)
 
@@ -156,9 +161,9 @@ func (s *GeminiMessagesCompatService) SelectAccountForModelWithExclusions(ctx co
 		return nil, errors.New("no available Gemini accounts")
 	}
 
-	// 5. 设置粘性会话绑定
+	// 5. 设置粘性会话绑定（探针请求禁止回写粘性缓存）
 	// Set sticky session binding
-	if sessionHash != "" {
+	if !isProbe && sessionHash != "" && s.cache != nil {
 		_ = s.cache.SetSessionAccountID(ctx, derefGroupID(groupID), cacheKey, selected.ID, geminiStickySessionTTL)
 	}
 
@@ -340,6 +345,8 @@ func (s *GeminiMessagesCompatService) selectBestGeminiAccount(
 	platform string,
 	useMixedScheduling bool,
 ) *Account {
+	isProbe := IsAvailabilityProbeRequest(ctx)
+	var probeCandidates []*Account
 	var selected *Account
 	precheckResult := s.buildPreCheckUsageResultMap(ctx, accounts, requestedModel)
 
@@ -356,6 +363,11 @@ func (s *GeminiMessagesCompatService) selectBestGeminiAccount(
 			continue
 		}
 
+		if isProbe {
+			probeCandidates = append(probeCandidates, acc)
+			continue
+		}
+
 		// 选择最佳账号
 		if selected == nil {
 			selected = acc
@@ -365,6 +377,13 @@ func (s *GeminiMessagesCompatService) selectBestGeminiAccount(
 		if s.isBetterGeminiAccount(acc, selected) {
 			selected = acc
 		}
+	}
+
+	if isProbe {
+		if len(probeCandidates) == 0 {
+			return nil
+		}
+		return probeCandidates[randv2.IntN(len(probeCandidates))]
 	}
 
 	return selected

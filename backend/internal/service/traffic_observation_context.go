@@ -27,3 +27,10 @@ func RequestOriginFromContext(ctx context.Context) RequestOrigin {
 	}
 	return RequestOriginBusiness
 }
+
+// IsAvailabilityProbeRequest reports whether ctx carries the trusted
+// RequestOriginAvailabilityProbe attribution injected by server-side middleware
+// or probe executors.
+func IsAvailabilityProbeRequest(ctx context.Context) bool {
+	return RequestOriginFromContext(ctx) == RequestOriginAvailabilityProbe
+}

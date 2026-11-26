@@ -859,6 +859,18 @@ func (s *GatewayService) recordUsageCore(ctx context.Context, input *recordUsage
 		addCacheStorageToAccountStatsCost(usageLog, cacheStorageCost)
 	}
 
+	// 探针请求零扣费：跳过所有余额/订阅/配额扣减，仅落库 usage_logs 供广场可用性统计。
+	if IsAvailabilityProbeRequest(ctx) {
+		origin := string(RequestOriginAvailabilityProbe)
+		usageLog.RequestOrigin = &origin
+		usageLog.ActualCost = 0
+		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")
+		if s.deferredService != nil && account != nil {
+			s.deferredService.ScheduleLastUsedUpdate(account.ID)
+		}
+		return nil
+	}
+
 	simpleModeKeyRateLimitOnly := simpleModeKeyRateLimitBillingEnabled(s.cfg, apiKey)
 	if s.cfg != nil && s.cfg.RunMode == config.RunModeSimple && !simpleModeKeyRateLimitOnly {
 		writeUsageLogBestEffort(ctx, s.usageLogRepo, usageLog, "service.gateway")

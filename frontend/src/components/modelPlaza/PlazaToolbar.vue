@@ -3,10 +3,10 @@
     <!-- Row 1: Main single-row toolbar on lg+ -->
     <div class="flex flex-wrap items-center gap-2 lg:flex-nowrap">
       <!-- Group single-select switcher (no numeric ID ever displayed) -->
-      <div class="relative shrink-0">
+      <div class="relative max-w-full shrink-0">
         <button
           type="button"
-          class="inline-flex h-10 max-w-[260px] items-center gap-2 rounded-none bg-surface-tile px-3 text-sm font-medium text-ink transition-colors duration-150 hover:bg-surface-tile-2"
+          class="inline-flex h-10 max-w-full items-center gap-2 rounded-none bg-surface-tile px-3 text-sm font-medium text-ink transition-colors duration-150 hover:bg-surface-tile-2 sm:max-w-[300px]"
           :disabled="groups.length === 0"
           :aria-expanded="groupOpen"
           :aria-label="t('modelPlaza.toolbar.groupSelectorLabel')"
@@ -28,7 +28,20 @@
             {{ formatRate(activeGroup) }}×
           </span>
           <span
-            v-if="activeGroup?.is_exclusive"
+            v-if="activeGroup?.is_authorized === false"
+            class="hidden shrink-0 items-center gap-1 bg-warn/15 px-1.5 py-0.5 text-[11px] font-medium text-warn sm:inline-flex"
+          >
+            <Icon name="lock" size="xs" class="h-3 w-3" aria-hidden="true" />
+            <span>{{ activeGroup.showcase_badge || t('modelPlaza.toolbar.groupUnauthorizedBadge') }}</span>
+          </span>
+          <span
+            v-else-if="activeGroup?.showcase_badge"
+            class="hidden shrink-0 bg-surface-tile-2 px-1.5 py-0.5 text-[11px] font-medium text-ink-2 sm:inline-flex"
+          >
+            {{ activeGroup.showcase_badge }}
+          </span>
+          <span
+            v-else-if="activeGroup?.is_exclusive"
             class="hidden shrink-0 bg-surface-tile-2 px-1.5 py-0.5 text-[11px] font-medium text-ink-2 sm:inline-flex"
           >
             {{ t('modelPlaza.badges.exclusive') }}
@@ -54,7 +67,7 @@
           v-if="groupOpen && groups.length > 0"
           role="listbox"
           :aria-label="t('modelPlaza.toolbar.groupSelectorLabel')"
-          class="absolute left-0 top-full z-40 mt-1 max-h-[340px] w-[300px] overflow-y-auto rounded-none border border-rule bg-surface py-1 sm:w-[340px]"
+          class="absolute left-0 top-full z-40 mt-1 max-h-[340px] w-[300px] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-none border border-rule bg-surface py-1 sm:w-[360px]"
         >
           <button
             v-for="g in groups"
@@ -70,7 +83,7 @@
             "
             @click="selectGroup(g.name)"
           >
-            <div class="flex min-w-0 flex-1 items-center gap-2">
+            <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
               <span
                 class="h-3.5 w-3.5 shrink-0 rounded-none"
                 :class="groupColorClass(g.id)"
@@ -78,7 +91,20 @@
               />
               <span class="truncate">{{ g.name }}</span>
               <span
-                v-if="g.is_exclusive"
+                v-if="g.is_authorized === false"
+                class="inline-flex shrink-0 items-center gap-0.5 bg-warn/15 px-1.5 py-0.5 text-[11px] font-medium text-warn"
+              >
+                <Icon name="lock" size="xs" class="h-3 w-3" aria-hidden="true" />
+                <span>{{ g.showcase_badge || t('modelPlaza.toolbar.groupUnauthorizedBadge') }}</span>
+              </span>
+              <span
+                v-else-if="g.showcase_badge"
+                class="shrink-0 bg-surface-tile-2 px-1.5 py-0.5 text-[11px] font-medium text-ink-2"
+              >
+                {{ g.showcase_badge }}
+              </span>
+              <span
+                v-else-if="g.is_exclusive"
                 class="shrink-0 bg-surface-tile-2 px-1.5 py-0.5 text-[11px] font-medium text-ink-2"
               >
                 {{ t('modelPlaza.badges.exclusive') }}
@@ -101,7 +127,7 @@
                 ({{ getGroupMatchCount(g) }})
               </span>
               <span v-else class="text-ink-3">
-                {{ t('modelPlaza.toolbar.groupModelCount', { count: g.models.length }) }}
+                {{ t('modelPlaza.toolbar.groupModelCount', { count: getGroupBaseCount(g) }) }}
               </span>
               <Icon
                 v-if="g.name === selectedGroupName"
@@ -116,7 +142,7 @@
       </div>
 
       <!-- Search input -->
-      <div class="relative min-w-[180px] flex-1">
+      <div class="relative min-w-[160px] flex-1">
         <Icon
           name="search"
           size="sm"
@@ -167,7 +193,7 @@
 
         <div
           v-if="filterOpen"
-          class="absolute right-0 top-full z-40 mt-1 w-[310px] rounded-none border border-rule bg-surface p-4 sm:w-[360px]"
+          class="absolute left-0 top-full z-40 mt-1 w-[310px] max-w-[calc(100vw-2rem)] rounded-none border border-rule bg-surface p-4 sm:left-auto sm:right-0 sm:w-[360px]"
         >
           <!-- Capabilities multi-select -->
           <div>
@@ -289,7 +315,7 @@
           v-if="sortOpen"
           role="listbox"
           :aria-label="t('modelPlaza.toolbar.sortLabel')"
-          class="absolute right-0 top-full z-40 mt-1 w-48 rounded-none border border-rule bg-surface py-1"
+          class="absolute right-0 top-full z-40 mt-1 w-48 max-w-[calc(100vw-2rem)] rounded-none border border-rule bg-surface py-1"
         >
           <button
             v-for="opt in sortOptions"
@@ -434,16 +460,16 @@
       >
         {{
           t('modelPlaza.toolbar.resultSummary', {
-            shown: filteredModelIds.length,
+            shown: shownEntryCount,
             total: effectiveTotalInGroup
           })
         }}
       </span>
     </div>
 
-    <!-- Cross-group search smart banner: Case A (current group empty, other groups matched) -->
+    <!-- Cross-group search smart banner: Case A (current group truly has 0 matches, other groups matched) -->
     <div
-      v-if="hasSearch && filteredModelIds.length === 0 && otherGroupMatches.length > 0"
+      v-if="showCrossGroupEmptyBanner"
       class="rounded-none border-l-2 border-money bg-surface-tile px-4 py-3.5"
       role="status"
     >
@@ -486,7 +512,7 @@
 
     <!-- Cross-group search smart banner: Case B (current group has results, other groups also matched) -->
     <div
-      v-else-if="hasSearch && filteredModelIds.length > 0 && otherGroupMatches.length > 0"
+      v-else-if="showCrossGroupAlsoFoundBanner"
       class="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-none bg-surface-tile px-3.5 py-2 text-xs text-ink-2"
       role="status"
     >
@@ -547,7 +573,13 @@ import Icon from '@/components/icons/Icon.vue'
 import ModelIcon from '@/components/common/ModelIcon.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { groupSeriesClass } from '@/utils/groupSeriesColor'
-import type { ModelPlazaGroup, PlazaModel } from '@/api/modelPlaza'
+import {
+  KNOWN_CAPABILITY_KEYS,
+  KNOWN_VENDOR_KEYS,
+  inferVendorKey,
+  needsDarkInvert
+} from '@/utils/plazaFormat'
+import type { ModelPlazaGroup } from '@/api/modelPlaza'
 
 interface Props {
   groups: ModelPlazaGroup[]
@@ -561,14 +593,18 @@ interface Props {
   sortBy: PlazaSortBy
   viewMode: PlazaViewMode
   filteredModelIds: string[]
-  /** Optional map of groupName -> matched count when searching. Falls back to in-memory scan if omitted. */
+  /** Optional map of groupName -> matched entry count when searching. Falls back to in-memory scan if omitted. */
   groupMatchCounts?: Record<string, number>
+  /** Optional map of groupName -> total folded entry count when not searching. */
+  groupTotalCounts?: Record<string, number>
   /** Optional vendor chips for current group. Falls back to deriving from active group models. */
   vendors?: PlazaVendorOption[]
   /** Optional capability keys shown in filter popover. */
   availableCapabilities?: string[]
-  /** Optional total models in current group (defaults to activeGroup.models.length). */
+  /** Optional total visible entries in current group (defaults to activeGroup.models.length). */
   totalInGroup?: number
+  /** Optional count of currently shown entries (defaults to filteredModelIds.length). */
+  shownCount?: number
 }
 
 const props = defineProps<Props>()
@@ -598,22 +634,6 @@ const batchCopied = ref(false)
 const batchCopiedCount = ref(0)
 let batchCopyTimer: ReturnType<typeof setTimeout> | null = null
 
-const KNOWN_CAPABILITY_KEYS = new Set([
-  'reasoning',
-  'tools',
-  'vision',
-  'audio',
-  'image',
-  'video',
-  'prompt_caching',
-  'web_search',
-  'long_context',
-  'structured_outputs',
-  'code',
-  'embedding',
-  'realtime'
-])
-
 const DEFAULT_CAPABILITY_ORDER = [
   'reasoning',
   'tools',
@@ -626,24 +646,6 @@ const DEFAULT_CAPABILITY_ORDER = [
   'web_search',
   'code'
 ]
-
-const KNOWN_VENDOR_KEYS = new Set([
-  'all',
-  'openai',
-  'anthropic',
-  'google',
-  'xai',
-  'deepseek',
-  'qwen',
-  'zhipu',
-  'meta',
-  'mistral',
-  'moonshot',
-  'minimax',
-  'doubao',
-  'cohere',
-  'other'
-])
 
 const VENDOR_ICON_PROBES: Record<string, string> = {
   openai: 'gpt-4o',
@@ -661,8 +663,6 @@ const VENDOR_ICON_PROBES: Record<string, string> = {
   cohere: 'command-r'
 }
 
-const DARK_INVERT_VENDORS = new Set(['openai', 'xai', 'moonshot'])
-
 const orderedGroupIds = computed(() => props.groups.map((g) => g.id))
 
 const activeGroup = computed(
@@ -672,6 +672,8 @@ const activeGroup = computed(
 const effectiveTotalInGroup = computed(
   () => props.totalInGroup ?? activeGroup.value?.models.length ?? 0
 )
+
+const shownEntryCount = computed(() => props.shownCount ?? props.filteredModelIds.length)
 
 const trimmedSearch = computed(() => props.search.trim())
 const hasSearch = computed(() => trimmedSearch.value.length > 0)
@@ -783,41 +785,13 @@ const currentSortLabel = computed(
   () => sortOptions.value.find((o) => o.value === props.sortBy)?.label ?? t('modelPlaza.toolbar.sortDefault')
 )
 
-function inferVendorKey(model: PlazaModel): string {
-  const metaVendor = model.metadata?.vendor?.trim().toLowerCase()
-  if (metaVendor) return metaVendor
-  const name = model.name.toLowerCase()
-  if (name.includes('claude')) return 'anthropic'
-  if (
-    name.startsWith('gpt') ||
-    name.startsWith('o1') ||
-    name.startsWith('o3') ||
-    name.startsWith('o4') ||
-    name.includes('chatgpt')
-  ) {
-    return 'openai'
-  }
-  if (name.includes('gemini') || name.includes('imagen') || name.includes('veo')) return 'google'
-  if (name.includes('grok')) return 'xai'
-  if (name.includes('deepseek')) return 'deepseek'
-  if (name.includes('qwen') || name.includes('qwq')) return 'qwen'
-  if (name.includes('glm')) return 'zhipu'
-  if (name.includes('llama')) return 'meta'
-  if (name.includes('mistral') || name.includes('mixtral') || name.includes('codestral')) return 'mistral'
-  if (name.includes('kimi') || name.includes('moonshot')) return 'moonshot'
-  if (name.includes('minimax') || name.includes('abab')) return 'minimax'
-  if (name.includes('doubao')) return 'doubao'
-  if (name.includes('command')) return 'cohere'
-  return 'other'
-}
-
 const resolvedVendors = computed<PlazaVendorOption[]>(() => {
   if (props.vendors) {
     return props.vendors
   }
   const counts = new Map<string, number>()
   for (const m of activeGroup.value?.models ?? []) {
-    const key = inferVendorKey(m)
+    const key = inferVendorKey(m.name, m.platform, m.metadata?.vendor)
     counts.set(key, (counts.get(key) ?? 0) + 1)
   }
   return [...counts.entries()]
@@ -838,7 +812,8 @@ function vendorModelProbe(vendorKey: string): string | null {
 }
 
 function vendorNeedsDarkInvert(vendorKey: string): boolean {
-  return DARK_INVERT_VENDORS.has(vendorKey.toLowerCase())
+  const probe = vendorModelProbe(vendorKey)
+  return probe ? needsDarkInvert(probe) : false
 }
 
 function vendorLabel(vendorKey: string): string {
@@ -864,6 +839,11 @@ function fallbackMatchCount(group: ModelPlazaGroup, queryLower: string): number 
       matched += 1
       continue
     }
+    const vendorKey = inferVendorKey(m.name, m.platform, m.metadata?.vendor)
+    if (vendorKey.includes(queryLower) || vendorLabel(vendorKey).toLowerCase().includes(queryLower)) {
+      matched += 1
+      continue
+    }
     const capsMatch = (m.metadata?.capabilities ?? []).some((cap) => {
       const norm = cap.toLowerCase()
       return norm.includes(queryLower) || capabilityLabel(cap).toLowerCase().includes(queryLower)
@@ -873,13 +853,24 @@ function fallbackMatchCount(group: ModelPlazaGroup, queryLower: string): number 
   return matched
 }
 
+function getGroupBaseCount(group: ModelPlazaGroup): number {
+  if (props.groupTotalCounts && group.name in props.groupTotalCounts) {
+    return props.groupTotalCounts[group.name] ?? 0
+  }
+  return group.models.length
+}
+
 function getGroupMatchCount(group: ModelPlazaGroup): number {
-  if (!hasSearch.value) return group.models.length
+  if (!hasSearch.value) return getGroupBaseCount(group)
   if (props.groupMatchCounts && group.name in props.groupMatchCounts) {
     return props.groupMatchCounts[group.name] ?? 0
   }
   return fallbackMatchCount(group, trimmedSearch.value.toLowerCase())
 }
+
+const currentGroupRawMatchCount = computed(() =>
+  activeGroup.value ? getGroupMatchCount(activeGroup.value) : 0
+)
 
 const otherGroupMatches = computed(() => {
   if (!hasSearch.value) return []
@@ -896,6 +887,24 @@ const otherGroupMatches = computed(() => {
 
 const totalOtherMatches = computed(() =>
   otherGroupMatches.value.reduce((sum, item) => sum + item.count, 0)
+)
+
+// Avoid false "not found in current group" banner when current group actually has matches
+// that are simply filtered out by the currently active vendor chip.
+const showCrossGroupEmptyBanner = computed(
+  () =>
+    hasSearch.value &&
+    shownEntryCount.value === 0 &&
+    currentGroupRawMatchCount.value === 0 &&
+    otherGroupMatches.value.length > 0
+)
+
+const showCrossGroupAlsoFoundBanner = computed(
+  () =>
+    hasSearch.value &&
+    !showCrossGroupEmptyBanner.value &&
+    otherGroupMatches.value.length > 0 &&
+    (shownEntryCount.value > 0 || currentGroupRawMatchCount.value > 0)
 )
 
 async function handleCopyAll() {

@@ -57,6 +57,18 @@ export type PlazaHeartbeatSlotState =
   | 'many_failures'
   | 'low_sample'
   | 'no_data'
+  | 'idle'
+
+/** SLA 数据来源：单模型自身统计、同分组服务池回退、或无数据。 */
+export type PlazaSlaSource = 'model' | 'group_pool' | 'none'
+
+/** 分组级服务池近 24h 可用性状态与心跳。 */
+export interface PlazaGroupPoolStatus {
+  sla_24h: number | null
+  sla_state: PlazaMetricSampleState
+  heartbeat_12: PlazaHeartbeatSlot[]
+  last_probe_at?: string | null
+}
 
 /** 原模型一致核验状态。 */
 export type PlazaConsistencyState = 'verified' | 'mismatch_detected' | 'low_sample' | 'no_data'
@@ -99,6 +111,7 @@ export interface PlazaHeartbeatSlot {
 export interface PlazaModelMetrics {
   sla_24h: number | null
   sla_state: PlazaMetricSampleState
+  sla_source?: PlazaSlaSource
   heartbeat_12: PlazaHeartbeatSlot[]
   ttft_p50_ms: number | null
   ttft_p90_ms: number | null
@@ -120,6 +133,7 @@ export interface PlazaModelMetrics {
 export interface PlazaDetailWindow {
   sla: number | null
   sla_state: PlazaMetricSampleState
+  sla_source?: PlazaSlaSource
   ttft_p50_ms: number | null
   ttft_p90_ms: number | null
   ttft_state: PlazaMetricSampleState
@@ -174,6 +188,10 @@ export interface PlazaModel {
   metadata?: PlazaModelMetadata | null
   /** 近 24h 脱敏实测指标。 */
   metrics?: PlazaModelMetrics | null
+  /** 管理端配置的单模型备注。 */
+  note?: string
+  /** 裸模型名是否自动路由至 -high 档位。 */
+  bare_alias_for_high?: boolean
 }
 
 export interface ModelPlazaGroup {
@@ -191,6 +209,12 @@ export interface ModelPlazaGroup {
   peak_end: string
   peak_rate_multiplier: number
   is_exclusive: boolean
+  /** 当前访问者是否有权调用该分组（公开展示的内测/专属分组对未授权用户为 false）。 */
+  is_authorized: boolean
+  /** 公开展示的专属/内测分组徽章文案（如 "内测·联系管理员开通"）。 */
+  showcase_badge?: string
+  /** 分组级服务池 24h 可用性状态与心跳。 */
+  pool_status?: PlazaGroupPoolStatus | null
   /** 生图独立倍率：true 时图片计费模型的实付倍率取 image_rate_multiplier，不取分组/专属倍率。 */
   image_rate_independent: boolean
   image_rate_multiplier: number
@@ -220,6 +244,14 @@ export interface ModelPlazaDetailResponse {
   official_pricing: PlazaOfficialPricing | null
   long_context_basis?: PlazaLongContextBasis
   time_pricing?: PlazaTimePricing
+  /** 管理端配置的单模型备注。 */
+  note?: string
+  /** 裸模型名是否自动路由至 -high 档位。 */
+  bare_alias_for_high?: boolean
+  /** 当前访问者是否有权调用该分组。 */
+  is_authorized?: boolean
+  /** 公开展示的专属/内测分组徽章文案。 */
+  showcase_badge?: string
   windows: {
     h24: PlazaDetailWindow
     d7: PlazaDetailWindow
