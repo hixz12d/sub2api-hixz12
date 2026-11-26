@@ -362,6 +362,14 @@ func upstreamModelsMatchForAudit(sentModel, responseModel string) bool {
 		return true
 	}
 
+	// Codex Guardian safety-review sub-agent requests sent to OpenAI GPT chat models
+	// are legitimately rewritten upstream to codex-auto-review. Exempt only this
+	// exact response model for non-image GPT models while keeping raw response_model
+	// preserved for auditing and billing.
+	if isOpenAIGuardianReviewModelMatch(sentModel, responseModel) {
+		return true
+	}
+
 	// xAI reports the runtime build ID for these supported public aliases.
 	// Canonicalize only for mismatch auditing; keep the raw response model for
 	// observability and for the separate response-model billing safeguards.
@@ -373,6 +381,18 @@ func upstreamModelsMatchForAudit(sentModel, responseModel string) bool {
 	// Official providers commonly resolve unpinned aliases to dated snapshots
 	// (e.g. gpt-4o -> gpt-4o-2024-08-06, claude-sonnet-4-5 -> claude-sonnet-4-5-20250929).
 	return isOfficialDateSnapshotMatch(sentModel, responseModel)
+}
+
+func isOpenAIGuardianReviewModelMatch(sentModel, responseModel string) bool {
+	if !strings.EqualFold(strings.TrimSpace(responseModel), "codex-auto-review") {
+		return false
+	}
+	sent := strings.TrimSpace(sentModel)
+	if idx := strings.LastIndex(sent, "/"); idx >= 0 {
+		sent = strings.TrimSpace(sent[idx+1:])
+	}
+	sent = strings.ToLower(sent)
+	return strings.HasPrefix(sent, "gpt-") && !strings.HasPrefix(sent, "gpt-image-")
 }
 
 func isOfficialDateSnapshotMatch(sentModel, responseModel string) bool {

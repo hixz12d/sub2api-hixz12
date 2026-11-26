@@ -818,7 +818,7 @@ export default {
         'Average cache read ratio over the last 24h (cache read ÷ total input context); ≥70% is excellent',
       consistencyRate: 'Model Fidelity',
       consistencyTooltip:
-        'Measured from cross-platform response model audits (allowing valid channel mappings and official date-snapshot suffixes), backed by automatic silent-degradation circuit breaking',
+        'Measured from GPT-series response model audits (allowing valid channel mappings and official date-snapshot suffixes), backed by automatic silent-degradation circuit breaking',
       notReady: 'Aggregated metrics are warming up and will appear once enough samples are collected',
       activeModels: 'Active Models',
       healthyModels: 'Healthy Models',
@@ -975,7 +975,7 @@ export default {
         'Primary: 24h median TTFT (P50). Secondary: visible output speed (TPS P50, OpenAI streaming)',
       cacheRateTooltip: 'Cache read ÷ (input + cache write + cache read); ≥70% green, 40–70% neutral, <40% amber',
       consistencyTooltip:
-        'Based on cross-platform response model audits (compatible with valid channel mappings and official date suffixes); shows — under 50 samples',
+        'Based on GPT-series response model audits (compatible with valid channel mappings and official date suffixes); shows — under 50 samples',
       perMillionShort: '/ 1M',
       ttftPrefix: 'TTFT',
       sortAsc: 'Ascending',
@@ -1010,7 +1010,7 @@ export default {
       rateLabel: 'Audit Match Rate',
       methodLabel: 'Audit Method',
       methodDesc:
-        'Cross-platform verification of upstream response model fields, honoring valid channel mappings and official date-snapshot suffixes (e.g., -20250929)',
+        'Verification of GPT-series upstream response model fields, honoring valid channel mappings and official date-snapshot suffixes (e.g., -20250929)',
       autoPauseLabel: 'Silent-Downgrade Circuit Breaker',
       autoPauseActive: 'Active auto-pause protection',
       autoPauseDesc: 'Automatically pauses routes when upstream silent model downgrade is detected',

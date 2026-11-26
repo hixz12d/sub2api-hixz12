@@ -138,6 +138,7 @@
           :billing-type="billingType"
           :only-high-cache="onlyHighCache"
           :only-verified-consistency="onlyVerifiedConsistency"
+          :show-verified-consistency-filter="activeGroupHasConsistencySupport"
           :sort-by="sortBy"
           :view-mode="effectiveViewMode"
           :filtered-model-ids="filteredModelIds"
@@ -500,6 +501,24 @@ watch(
 
 const activeGroup = computed<ModelPlazaGroup | null>(
   () => sortedGroups.value.find((g) => g.name === selectedGroupName.value) ?? sortedGroups.value[0] ?? null
+)
+
+const activeGroupHasConsistencySupport = computed(() =>
+  Boolean(
+    activeGroup.value?.models.some(
+      (m) => m.metrics != null && m.metrics.consistency_state !== 'unsupported'
+    )
+  )
+)
+
+watch(
+  activeGroupHasConsistencySupport,
+  (supported) => {
+    if (!supported && onlyVerifiedConsistency.value) {
+      onlyVerifiedConsistency.value = false
+    }
+  },
+  { immediate: true }
 )
 
 const drawerModel = computed<PlazaModel | null>(() => {

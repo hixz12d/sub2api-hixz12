@@ -260,7 +260,7 @@
         />
 
         <!-- Model fidelity & silent-downgrade circuit breaker card -->
-        <div class="tile p-4">
+        <div v-if="showConsistencyCard" class="tile p-4">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex items-center gap-1.5 text-xs font-semibold text-ink">
               <Icon name="shield" size="sm" :class="consistencyBadge.toneClass" />
@@ -1051,6 +1051,8 @@ const consistencyState = computed<PlazaConsistencyState>(
     props.model?.metrics?.consistency_state ??
     'no_data'
 )
+
+const showConsistencyCard = computed(() => consistencyState.value !== 'unsupported')
 
 const consistencyRate = computed<number | null>(
   () =>

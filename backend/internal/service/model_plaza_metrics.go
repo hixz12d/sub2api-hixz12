@@ -98,6 +98,7 @@ const (
 	PlazaConsistencyMismatchDetected PlazaConsistencyState = "mismatch_detected"
 	PlazaConsistencyLowSample        PlazaConsistencyState = "low_sample"
 	PlazaConsistencyNoData           PlazaConsistencyState = "no_data"
+	PlazaConsistencyUnsupported      PlazaConsistencyState = "unsupported"
 )
 
 // PlazaSiteSummary 第 1 层：全站实力招牌条脱敏摘要（严禁包含绝对请求量与 Token 量）。
@@ -521,6 +522,39 @@ func isPlazaNonTextMediaModel(platform, model string, pricing *ChannelModelPrici
 		return true
 	}
 	return IsImageGenerationIntentForPlatform("", model, nil, platform)
+}
+
+// isPlazaConsistencySupported 判断模型是否适用模型广场原模型一致性核验。
+// 仅对 OpenAI 平台下的 GPT/推理文本对话模型生效，排除非 OpenAI 平台与非文本多媒体/按次计费模型。
+func isPlazaConsistencySupported(platform, model string, pricing *ChannelModelPricing) bool {
+	if !strings.EqualFold(strings.TrimSpace(platform), PlatformOpenAI) {
+		return false
+	}
+	if isPlazaNonTextMediaModel(platform, model, pricing) {
+		return false
+	}
+	if pricing != nil && pricing.BillingMode != "" && pricing.BillingMode != BillingModeToken {
+		return false
+	}
+	normalized := normalizePlazaMetadataModelKey(model)
+	if normalized == "" || inferPlazaModelVendor(normalized, platform) != "openai" {
+		return false
+	}
+	for _, prefix := range []string{
+		"dall-e",
+		"whisper",
+		"tts-",
+		"text-embedding",
+		"text-moderation",
+		"sora",
+		"gpt-image",
+		"chatgpt-image",
+	} {
+		if strings.HasPrefix(normalized, prefix) {
+			return false
+		}
+	}
+	return true
 }
 
 func plazaClampRatio(v float64) float64 {
@@ -1074,14 +1108,18 @@ func plazaBuildModelMetrics(
 		tpsP50, tpsState = plazaEvalOutputTPS(platform, tpsCounts, nonTextMedia)
 		cacheRatio, cacheState, refMult, refMultState = plazaEvalCacheAndRefMultiplier(realCounts, nonTextMedia, prices)
 	}
-	consRate, consState := plazaEvalModelConsistencyWithFallback(
-		realCounts.ModelObservedRequests,
-		realCounts.ModelMismatchRequests,
-		obs30d,
-		mismatch30d,
-		probeObs,
-		probeMismatch,
-	)
+	var consRate *float64
+	consState := PlazaConsistencyUnsupported
+	if isPlazaConsistencySupported(platform, model, pricing) {
+		consRate, consState = plazaEvalModelConsistencyWithFallback(
+			realCounts.ModelObservedRequests,
+			realCounts.ModelMismatchRequests,
+			obs30d,
+			mismatch30d,
+			probeObs,
+			probeMismatch,
+		)
+	}
 
 	hb := make([]PlazaHeartbeatSlot, 0)
 	if slaSource == PlazaSLASourceGroupPool && groupPool != nil && len(groupPool.Heartbeat12) > 0 {
@@ -1145,6 +1183,7 @@ func plazaBuildDetailWindow(
 	aggregationReady bool,
 ) PlazaDetailWindow {
 	nonTextMedia := isPlazaNonTextMediaModel(platform, model, pricing)
+	consistencySupported := isPlazaConsistencySupported(platform, model, pricing)
 	prices := extractPlazaRefTokenPrices(pricing, official)
 
 	sla, slaState, slaSource := plazaEvalModelSLAWithFallback(
@@ -1160,6 +1199,10 @@ func plazaBuildDetailWindow(
 		if !strings.EqualFold(strings.TrimSpace(platform), PlatformOpenAI) {
 			tpsState = PlazaOutputTPSUnsupported
 		}
+		consState := PlazaConsistencyNoData
+		if !consistencySupported {
+			consState = PlazaConsistencyUnsupported
+		}
 		return PlazaDetailWindow{
 			SLA:                      sla,
 			SLAState:                 slaState,
@@ -1168,14 +1211,18 @@ func plazaBuildDetailWindow(
 			OutputTPSState:           tpsState,
 			CacheState:               PlazaMetricStateNoData,
 			ReferenceMultiplierState: PlazaMetricStateNoData,
-			ConsistencyState:         PlazaConsistencyNoData,
+			ConsistencyState:         consState,
 		}
 	}
 
 	ttftP50, ttftP90, ttftState := plazaEvalTTFT(raw.TTFTHist, nonTextMedia)
 	tpsP50, tpsState := plazaEvalOutputTPS(platform, raw.TPSCounts, nonTextMedia)
 	cacheRatio, cacheState, refMult, refMultState := plazaEvalCacheAndRefMultiplier(raw.Counts, nonTextMedia, prices)
-	consRate, consState := plazaEvalConsistency(raw.Counts.ModelObservedRequests, raw.Counts.ModelMismatchRequests)
+	var consRate *float64
+	consState := PlazaConsistencyUnsupported
+	if consistencySupported {
+		consRate, consState = plazaEvalConsistency(raw.Counts.ModelObservedRequests, raw.Counts.ModelMismatchRequests)
+	}
 
 	return PlazaDetailWindow{
 		SLA:                      sla,
@@ -1245,15 +1292,24 @@ func plazaBuildSiteSummary(visible []PlazaGroup, snap *PlazaListMetricsRawSnapsh
 	}
 	visibleGroupSet := make(map[int64]plazaGroupWhitelist, len(visible))
 	distinctModels := make(map[distinctModelKey]struct{})
+	listedPricing := make(map[distinctModelKey]*ChannelModelPricing)
+	groupModelPricing := make(map[PlazaModelKey]*ChannelModelPricing)
 	for i := range visible {
 		g := &visible[i]
 		visibleGroupSet[g.ID] = buildPlazaGroupWhitelist(*g)
 		for j := range g.Models {
 			m := &g.Models[j]
-			distinctModels[distinctModelKey{
+			dmKey := distinctModelKey{
 				platform: strings.ToLower(strings.TrimSpace(m.Platform)),
 				model:    strings.TrimSpace(m.Name),
-			}] = struct{}{}
+			}
+			distinctModels[dmKey] = struct{}{}
+			if m.Pricing != nil {
+				groupModelPricing[NewPlazaModelKey(m.Platform, g.ID, m.Name)] = m.Pricing
+				if listedPricing[dmKey] == nil {
+					listedPricing[dmKey] = m.Pricing
+				}
+			}
 		}
 	}
 
@@ -1271,6 +1327,7 @@ func plazaBuildSiteSummary(visible []PlazaGroup, snap *PlazaListMetricsRawSnapsh
 
 	var total30d, total7d, total24h PlazaRawBucketCounts
 	var cache24hSuccess, cache24hRead, cache24hDenom int64
+	var consistency24hObserved, consistency24hMismatch int64
 	mergedTTFT := make(map[int64]int64, 16)
 
 	for gid := range visibleGroupSet {
@@ -1309,6 +1366,14 @@ func plazaBuildSiteSummary(visible []PlazaGroup, snap *PlazaListMetricsRawSnapsh
 		}
 
 		dmKey := distinctModelKey{platform: key.Platform, model: key.Model}
+		pricing := groupModelPricing[key]
+		if pricing == nil {
+			pricing = listedPricing[dmKey]
+		}
+		if isPlazaConsistencySupported(key.Platform, key.Model, pricing) {
+			consistency24hObserved += raw.Total24h.ModelObservedRequests
+			consistency24hMismatch += raw.Total24h.ModelMismatchRequests
+		}
 		if _, listed := distinctModels[dmKey]; listed {
 			pair := model24hCounts[dmKey]
 			pair[0] += raw.Total24h.SuccessRequests
@@ -1328,7 +1393,7 @@ func plazaBuildSiteSummary(visible []PlazaGroup, snap *PlazaListMetricsRawSnapsh
 		ratio := plazaClampRatio(float64(cache24hRead) / float64(cache24hDenom))
 		summary.CacheReadRatio = &ratio
 	}
-	if consRate, consState := plazaEvalConsistency(total24h.ModelObservedRequests, total24h.ModelMismatchRequests); consState == PlazaConsistencyVerified || consState == PlazaConsistencyMismatchDetected {
+	if consRate, consState := plazaEvalConsistency(consistency24hObserved, consistency24hMismatch); consState == PlazaConsistencyVerified || consState == PlazaConsistencyMismatchDetected {
 		summary.ConsistencyRate = consRate
 	}
 

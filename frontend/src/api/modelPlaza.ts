@@ -70,8 +70,13 @@ export interface PlazaGroupPoolStatus {
   last_probe_at?: string | null
 }
 
-/** 原模型一致核验状态。 */
-export type PlazaConsistencyState = 'verified' | 'mismatch_detected' | 'low_sample' | 'no_data'
+/** 原模型一致核验状态（非 GPT 对话模型返回 unsupported）。 */
+export type PlazaConsistencyState =
+  | 'verified'
+  | 'mismatch_detected'
+  | 'low_sample'
+  | 'no_data'
+  | 'unsupported'
 
 /** 第 1 层：全站实力招牌条脱敏摘要。 */
 export interface PlazaSiteSummary {

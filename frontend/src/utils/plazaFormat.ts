@@ -385,6 +385,7 @@ export function formatConsistencyPercent(
   decimals = 2
 ): PlazaFormattedMetric {
   if (
+    state === 'unsupported' ||
     state === 'low_sample' ||
     state === 'no_data' ||
     rate == null ||

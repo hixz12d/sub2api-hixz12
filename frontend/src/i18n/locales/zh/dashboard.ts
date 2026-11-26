@@ -822,7 +822,7 @@ export default {
       cacheRateTooltip: '近 24 小时全站平均缓存读取占比（缓存读取 ÷ 总输入上下文），≥70% 为优秀',
       consistencyRate: '原模型一致率',
       consistencyTooltip:
-        '基于全平台响应模型核对（兼容合法渠道映射与官方日期快照后缀），并配备上游静默降级自动熔断保护',
+        '基于 GPT 系列模型响应核对（兼容合法渠道映射与官方日期快照后缀），并配备上游静默降级自动熔断保护',
       notReady: '聚合指标预热中，样本充足后自动展示',
       activeModels: '在线模型',
       healthyModels: '健康模型',
@@ -977,7 +977,7 @@ export default {
       ttftSpeedTooltip: '主行为近 24h 中位首字延迟（TTFT P50），次行为 OpenAI 文本流可见输出速度（TPS P50）',
       cacheRateTooltip: '缓存读取 ÷（输入 + 缓存写入 + 缓存读取），≥70% 绿、40–70% 中性、<40% 橙',
       consistencyTooltip:
-        '基于全平台响应模型核对（兼容合法渠道映射与官方日期快照后缀），样本不足 50 次显示 —',
+        '基于 GPT 系列响应模型核对（兼容合法渠道映射与官方日期快照后缀），样本不足 50 次显示 —',
       perMillionShort: '/ 1M',
       ttftPrefix: '首字',
       sortAsc: '升序',
@@ -1011,7 +1011,7 @@ export default {
       cardTitle: '原模型一致与防降级保护',
       rateLabel: '核验一致率',
       methodLabel: '核验方式',
-      methodDesc: '全平台真实请求响应模型字段核对，兼容合法渠道映射及官方日期快照后缀（如 -20250929）',
+      methodDesc: 'GPT 系列真实请求响应模型字段核对，兼容合法渠道映射及官方日期快照后缀（如 -20250929）',
       autoPauseLabel: '静默降级熔断',
       autoPauseActive: '已开启自动熔断保护',
       autoPauseDesc: '检测到上游响应模型异常降级时自动暂停异常路由，保障调用一致性',

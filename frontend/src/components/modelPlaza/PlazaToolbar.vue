@@ -256,7 +256,10 @@
                 />
                 <span>{{ t('modelPlaza.toolbar.onlyHighCache') }}</span>
               </label>
-              <label class="flex cursor-pointer items-center gap-2 text-xs text-ink">
+              <label
+                v-if="showVerifiedConsistencyFilter"
+                class="flex cursor-pointer items-center gap-2 text-xs text-ink"
+              >
                 <input
                   type="checkbox"
                   :checked="onlyVerifiedConsistency"
@@ -604,6 +607,7 @@ interface Props {
   billingType: PlazaBillingFilter
   onlyHighCache: boolean
   onlyVerifiedConsistency: boolean
+  showVerifiedConsistencyFilter?: boolean
   sortBy: PlazaSortBy
   viewMode: PlazaViewMode
   filteredModelIds: string[]
@@ -621,7 +625,9 @@ interface Props {
   shownCount?: number
 }
 
-const props = defineProps<Props>()
+const props = withDefaults(defineProps<Props>(), {
+  showVerifiedConsistencyFilter: true
+})
 
 const emit = defineEmits<{
   'update:selectedGroupName': [value: string]
@@ -744,7 +750,7 @@ const activeFilterCount = computed(() => {
   let count = props.selectedCapabilities.length
   if (props.billingType !== 'all') count += 1
   if (props.onlyHighCache) count += 1
-  if (props.onlyVerifiedConsistency) count += 1
+  if (props.showVerifiedConsistencyFilter && props.onlyVerifiedConsistency) count += 1
   return count
 })
 
